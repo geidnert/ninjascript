@@ -234,6 +234,9 @@ public class ORBOTesting : Strategy
     private bool hasReturnedOnce = false;     // becomes true after price has returned inside the zone
     private bool tpWasHit = false;            // true right after TP hit
 
+    private int entryBar = -1;
+
+
 #endregion
 
 #region State Management
@@ -389,6 +392,45 @@ public class ORBOTesting : Strategy
         ExitIfSessionEnded();
         CancelEntryIfAfterNoTrades();
         CancelOrphanOrdersIfSessionOver();
+
+        if (CurrentBar != entryBar)
+        {
+            // === LONG side exits ===
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                // --- Stop Loss FIRST for realism ---
+                if (Low[0] <= todayLongStoploss)
+                {
+                    ExitLongLimit(0, true, Position.Quantity, todayLongStoploss, "ManualSL", currentSignalName);
+                    DebugPrint($"❌ SL hit manually at {todayLongStoploss}");
+                }
+                // --- Take Profit SECOND ---
+                else if (High[0] >= todayLongProfit)
+                {
+                    ExitLongLimit(0, true, Position.Quantity, todayLongProfit, "ManualTP", currentSignalName);
+                    tpWasHit = true;
+                    DebugPrint($"✅ TP hit manually at {todayLongProfit}");
+                }
+            }
+
+            // === SHORT side exits ===
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                // --- Stop Loss FIRST ---
+                if (High[0] >= todayShortStoploss)
+                {
+                    ExitShortLimit(0, true, Position.Quantity, todayShortStoploss, "ManualSL", currentSignalName);
+                    DebugPrint($"❌ SL hit manually at {todayShortStoploss}");
+                }
+                // --- Take Profit SECOND ---
+                else if (Low[0] <= todayShortProfit)
+                {
+                    ExitShortLimit(0, true, Position.Quantity, todayShortProfit, "ManualTP", currentSignalName);
+                    tpWasHit = true;
+                    DebugPrint($"✅ TP hit manually at {todayShortProfit}");
+                }
+            }
+        }
 
         // 🔁 Breakout reset should always be checked per tick or every 5m based on setting
         bool noOpenOrders = !HasOpenOrders();
@@ -727,6 +769,15 @@ public class ORBOTesting : Strategy
         if (execution.Quantity <= 0 || execution.Order == null)
             return;
 
+        if (execution.Order != null && (execution.Order.Name.Contains("Long") || execution.Order.Name.Contains("Short")))
+        {
+            entryPrice = execution.Price;
+            entryBar = CurrentBar; // remember bar index of the fill
+            tpWasHit = false;
+            beTriggerActive = false;
+            beFlattenTriggered = false;
+        }
+
         // Entry
         if (execution.Order.Name.Contains("Long") || execution.Order.Name.Contains("Short"))
         {
@@ -901,8 +952,8 @@ public class ORBOTesting : Strategy
 
     private void PlaceEntryIfTriggered()
     {
-        SetProfitTarget(CalculationMode.Ticks, 0);
-        SetStopLoss(CalculationMode.Ticks, 0);
+        //SetProfitTarget(CalculationMode.Ticks, 0);
+        //SetStopLoss(CalculationMode.Ticks, 0);
 
         bool isLong = Close[1] > todayLongLimit;
         double rawLimitPrice = isLong ? todayLongLimit : todayShortLimit;
@@ -938,8 +989,8 @@ public class ORBOTesting : Strategy
             DebugPrint("📣 New breakout phase started.");
         }
 
-        SetProfitTarget(signalName, CalculationMode.Price, takeProfit);
-        SetStopLoss(signalName, CalculationMode.Price, stopLoss, false);
+        //SetProfitTarget(signalName, CalculationMode.Price, takeProfit);
+        //SetStopLoss(signalName, CalculationMode.Price, stopLoss, false);
         string otherSymbol = GetOtherInstrument();
 
         if (isLong) {
