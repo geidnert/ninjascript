@@ -78,9 +78,9 @@ public class ORBO : Strategy
     // [Display(Name = "Entry %", Description = "Entry price for limit order from 15 min OR", Order = 3, GroupName = "B. Entry Conditions")]
     internal double EntryPercent { get; set; }
 
-    // [NinjaScriptProperty]
-    // [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
-    internal double TakeProfitPercent { get; set; }
+    [NinjaScriptProperty]
+    [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
+    public double TakeProfitPercent { get; set; }
 
     // [NinjaScriptProperty]
     // [Display(Name = "Soft SL %", Description = "Soft SL level from entry", Order = 5, GroupName = "B. Entry Conditions")]
@@ -283,7 +283,7 @@ public class ORBO : Strategy
         RequireEntryConfirmation = false;
         BiasDuration = 15;
         EntryPercent = 14.0;
-        TakeProfitPercent = 32.4;
+        TakeProfitPercent = 40;
         SoftStopLossPercent = 39;
         HardStopLossPercent = 47.7;
         VarianceInTicks = 0;
@@ -463,10 +463,12 @@ public class ORBO : Strategy
         if (IsFirstTickOfBar && Times[0][0] >= nextEvaluationTime)
         {
             TryEntrySignal();
-            TryClosePosition();
-
             nextEvaluationTime = nextEvaluationTime.AddMinutes(5);
         }
+
+        // ✅ Check soft SL every bar close (like ORBOTesting)
+        if (IsFirstTickOfBar)
+            TryClosePosition();
     }
 	
     private bool TimeInSkip(DateTime time)
@@ -1187,7 +1189,7 @@ public class ORBO : Strategy
         {
         case StrategyPreset.NQ_MNQ_1:            
             EntryPercent = 14.0;
-            TakeProfitPercent = 32.4;
+            //TakeProfitPercent = 32.4;
             SoftStopLossPercent = 39;
             HardStopLossPercent = 47.7;
             SLBETrigger = 0;
@@ -1195,7 +1197,7 @@ public class ORBO : Strategy
 
         case StrategyPreset.NQ_MNQ_2:
             EntryPercent = 11.25;
-            TakeProfitPercent = 34;
+            //TakeProfitPercent = 34;
             SoftStopLossPercent = 37.25;
             HardStopLossPercent = 50;
             SLBETrigger = 0;
