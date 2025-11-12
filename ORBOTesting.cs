@@ -274,7 +274,7 @@ public class ORBOTesting : Strategy
     private void SetDefaults()
     {
         Name = "ORBOTesting";
-        Calculate = Calculate.OnEachTick;
+        Calculate = Calculate.OnBarClose;
         IsOverlay = true;
         IsInstantiatedOnEachOptimizationIteration = false;
         IsUnmanaged = false;
@@ -308,6 +308,46 @@ public class ORBOTesting : Strategy
 #region OnBarUpdate
     protected override void OnBarUpdate()
     {
+
+        if (CurrentBar != entryBar)
+        {
+            // === LONG side exits ===
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                // --- Stop Loss FIRST for realism ---
+                if (Low[0] <= todayLongStoploss)
+                {
+                    ExitLongLimit(0, true, Position.Quantity, todayLongStoploss, "ManualSL", currentSignalName);
+                    DebugPrint($"❌ SL hit manually at {todayLongStoploss}");
+                }
+                // --- Take Profit SECOND ---
+                else if (High[0] >= todayLongProfit)
+                {
+                    ExitLongLimit(0, true, Position.Quantity, todayLongProfit, "ManualTP", currentSignalName);
+                    tpWasHit = true;
+                    DebugPrint($"✅ TP hit manually at {todayLongProfit}");
+                }
+            }
+
+            // === SHORT side exits ===
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                // --- Stop Loss FIRST ---
+                if (High[0] >= todayShortStoploss)
+                {
+                    ExitShortLimit(0, true, Position.Quantity, todayShortStoploss, "ManualSL", currentSignalName);
+                    DebugPrint($"❌ SL hit manually at {todayShortStoploss}");
+                }
+                // --- Take Profit SECOND ---
+                else if (Low[0] <= todayShortProfit)
+                {
+                    ExitShortLimit(0, true, Position.Quantity, todayShortProfit, "ManualTP", currentSignalName);
+                    tpWasHit = true;
+                    DebugPrint($"✅ TP hit manually at {todayShortProfit}");
+                }
+            }
+        }
+
         ResetDailyStateIfNeeded();
 	
 		// === Skip window cross detection === 
@@ -362,10 +402,14 @@ public class ORBOTesting : Strategy
             return;
 
         TimeSpan now = Times[0][0].TimeOfDay;
-        TimeSpan biasStart = new TimeSpan(SessionStart.Hours, SessionStart.Minutes + 1, 0);
+        TimeSpan biasStart = SessionStart.Add(TimeSpan.FromMinutes(1));
         TimeSpan biasEnd = biasStart.Add(TimeSpan.FromMinutes(BiasDuration));
+        int primaryBarMinutes = (BarsPeriod.BarsPeriodType == BarsPeriodType.Minute)
+            ? Math.Max(1, BarsPeriod.Value)
+            : 1;
+        TimeSpan biasResetWindow = TimeSpan.FromMinutes(primaryBarMinutes);
 
-        if (now >= biasStart && now < biasStart.Add(TimeSpan.FromMinutes(1)))
+        if (now >= biasStart && now < biasStart.Add(biasResetWindow))
         {
             // Reset range tracking at 9:31
             sessionHigh = High[0];
@@ -392,45 +436,6 @@ public class ORBOTesting : Strategy
         ExitIfSessionEnded();
         CancelEntryIfAfterNoTrades();
         CancelOrphanOrdersIfSessionOver();
-
-        if (CurrentBar != entryBar)
-        {
-            // === LONG side exits ===
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                // --- Stop Loss FIRST for realism ---
-                if (Low[0] <= todayLongStoploss)
-                {
-                    ExitLongLimit(0, true, Position.Quantity, todayLongStoploss, "ManualSL", currentSignalName);
-                    DebugPrint($"❌ SL hit manually at {todayLongStoploss}");
-                }
-                // --- Take Profit SECOND ---
-                else if (High[0] >= todayLongProfit)
-                {
-                    ExitLongLimit(0, true, Position.Quantity, todayLongProfit, "ManualTP", currentSignalName);
-                    tpWasHit = true;
-                    DebugPrint($"✅ TP hit manually at {todayLongProfit}");
-                }
-            }
-
-            // === SHORT side exits ===
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                // --- Stop Loss FIRST ---
-                if (High[0] >= todayShortStoploss)
-                {
-                    ExitShortLimit(0, true, Position.Quantity, todayShortStoploss, "ManualSL", currentSignalName);
-                    DebugPrint($"❌ SL hit manually at {todayShortStoploss}");
-                }
-                // --- Take Profit SECOND ---
-                else if (Low[0] <= todayShortProfit)
-                {
-                    ExitShortLimit(0, true, Position.Quantity, todayShortProfit, "ManualTP", currentSignalName);
-                    tpWasHit = true;
-                    DebugPrint($"✅ TP hit manually at {todayShortProfit}");
-                }
-            }
-        }
 
         // 🔁 Breakout reset should always be checked per tick or every 5m based on setting
         bool noOpenOrders = !HasOpenOrders();
@@ -505,10 +510,15 @@ public class ORBOTesting : Strategy
         if (IsFirstTickOfBar && Times[0][0] >= nextEvaluationTime)
         {
             TryEntrySignal();
-            TryClosePosition();
-
             nextEvaluationTime = nextEvaluationTime.AddMinutes(5);
         }
+
+        // 🟢 Always check soft SL every bar
+        if (Position.MarketPosition != MarketPosition.Flat && wickLinesDrawn && orderPlaced)
+        {
+            LookForClose();
+        }
+
     }
 	
     private bool TimeInSkip(DateTime time)
@@ -599,7 +609,7 @@ public class ORBOTesting : Strategy
 
     private void TryClosePosition()
     {
-        if (IsFirstTickOfBar && wickLinesDrawn && orderPlaced)
+        if (wickLinesDrawn && orderPlaced)
             LookForClose();
     }
 
@@ -926,7 +936,7 @@ public class ORBOTesting : Strategy
                             ? sessionHigh - (sessionHigh - sessionLow) * SoftStopLossPercent / 100.0
                             : sessionLow + (sessionHigh - sessionLow) * SoftStopLossPercent / 100.0;
 
-        DebugPrint($"[LookForClose] Checking soft SL: Close[1]={close}, SoftSL={softSL}");
+        //DebugPrint($"[LookForClose] Checking soft SL: Close[0]={close}, SoftSL={softSL}, Position={Position.MarketPosition}");
 
         bool shouldExit = (Position.MarketPosition == MarketPosition.Long && close < softSL) ||
                           (Position.MarketPosition == MarketPosition.Short && close > softSL);
@@ -1211,10 +1221,13 @@ public class ORBOTesting : Strategy
 
         bool hasReturned = false;
 
+        // ✅ Add tolerance to handle small discrepancies between tick/backtest prices
+        double tolerance = 2 * TickSize; // adjust to 1 tick if you want stricter matching
+
         if (lastTradeWasLong)
-            hasReturned = priceToCheck <= todayLongLimit;
+            hasReturned = priceToCheck <= todayLongLimit - tolerance;
         else
-            hasReturned = priceToCheck >= todayShortLimit;
+            hasReturned = priceToCheck >= todayShortLimit + tolerance;
 
         if (hasReturned)
             DebugPrint($"[ResetCheck] Mode={(RequireCloseBelowReturn ? "Close" : "Touch")}, " +
