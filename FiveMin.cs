@@ -171,12 +171,14 @@ public class FiveMin : Strategy
 	// Track sequence progress
 	private int rule2Bar = -1;    // bar index when breakout + FVG detected
 	private int retraceBar = -1;  // bar index of most recent retrace into FVG
-    private double initialSLDistance = 0;  // initial distance between entry and SL
-    private double lastTrailTriggerPrice = 0;  // last price that triggered SL move
 
+    private double trailingTarget = double.NaN;   // price level to monitor for trailing activation
     private int tpCountToday = 0;
     private int lossCountToday = 0;
     private bool dailyLimitReached = false;
+
+    private bool trailingActivated = false;
+    private double entryTakeProfitPrice = double.NaN;
 
 #endregion
 
@@ -261,45 +263,29 @@ public class FiveMin : Strategy
             DebugPrint($"[Bias] Completed range {sessionLow:F2}–{sessionHigh:F2}");
         }
 
-        // --- Trailing Stop Logic ---
-        if (Trailing && Position.MarketPosition != MarketPosition.Flat && initialSLDistance > 0)
-        {
-            double currentPrice = Close[0];
-            double newStop = double.NaN;
-
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                // Has price moved another "SL distance" above last trigger?
-                if (currentPrice >= lastTrailTriggerPrice + initialSLDistance)
-                {
-                    newStop = lastTrailTriggerPrice + initialSLDistance;
-                    newStop = Math.Min(newStop, currentPrice - TickSize); // ensure valid
-                    CancelOrder(hardStopOrder); // cancel old SL before placing a new one
-                    hardStopOrder = ExitLongStopMarket(0, true, Position.Quantity, newStop, "TrailSL", currentSignalName);
-
-                    lastTrailTriggerPrice = currentPrice;
-                    DebugPrint($"[Trailing] Long moved SL to {newStop:F2}");
-                }
-            }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                // Has price moved another "SL distance" below last trigger?
-                if (currentPrice <= lastTrailTriggerPrice - initialSLDistance)
-                {
-                    newStop = lastTrailTriggerPrice - initialSLDistance;
-                    newStop = Math.Max(newStop, currentPrice + TickSize); // ensure valid
-                    CancelOrder(hardStopOrder); // cancel old SL before placing a new one
-                    hardStopOrder = ExitShortStopMarket(0, true, Position.Quantity, newStop, "TrailSL", currentSignalName);
-
-                    lastTrailTriggerPrice = currentPrice;
-                    DebugPrint($"[Trailing] Short moved SL to {newStop:F2}");
-                }
-            }
-        }
-
         ExitIfSessionEnded();
         CancelEntryIfAfterNoTrades();
         CancelOrphanOrdersIfSessionOver();
+
+        // ---------------------------------------------
+        // STEP 1: Detect FIRST TP touch to activate trailing
+        // ---------------------------------------------
+        if (Trailing && !trailingActivated && Position.MarketPosition != MarketPosition.Flat)
+        {
+            // LONG TP touch
+            if (Position.MarketPosition == MarketPosition.Long && High[0] >= entryTakeProfitPrice)
+            {
+                trailingActivated = true;
+                DebugPrint("[TRAIL] TP touched → Trailing ACTIVATED.");
+            }
+
+            // SHORT TP touch
+            if (Position.MarketPosition == MarketPosition.Short && Low[0] <= entryTakeProfitPrice)
+            {
+                trailingActivated = true;
+                DebugPrint("[TRAIL] TP touched → Trailing ACTIVATED.");
+            }
+        }
 
         // 🔁 Breakout reset should always be checked per tick or every 5m based on setting
         bool noOpenOrders = !HasOpenOrders();
@@ -308,6 +294,46 @@ public class FiveMin : Strategy
 		// --- Rule 2 + Rule 4 only at first tick of bar (open/close checks)
 		if (IsFirstTickOfBar)
 		{
+            // -------------------------------
+            // Continuous Wick Trailing System
+            // -------------------------------
+            if (Trailing && trailingActivated && Position.MarketPosition != MarketPosition.Flat && IsFirstTickOfBar)
+            {
+                // LONG TRAILING
+                if (Position.MarketPosition == MarketPosition.Long)
+                {
+                    double newSL = Instrument.MasterInstrument.RoundToTickSize(Low[1]);
+
+                    // SL can ONLY move UP
+                    if (double.IsNaN(trailingTarget) || newSL > trailingTarget)
+                    {
+                        CancelOrder(hardStopOrder);
+                        hardStopOrder = ExitLongStopMarket(0, true, Position.Quantity, newSL, "TrailSL", currentSignalName);
+
+                        trailingTarget = newSL;
+
+                        DebugPrint($"[TRAIL] Long trailing SL moved to Low[1] = {newSL:F2}");
+                    }
+                }
+
+                // SHORT TRAILING
+                else if (Position.MarketPosition == MarketPosition.Short)
+                {
+                    double newSL = Instrument.MasterInstrument.RoundToTickSize(High[1]);
+
+                    // SL can ONLY move DOWN
+                    if (double.IsNaN(trailingTarget) || newSL < trailingTarget)
+                    {
+                        CancelOrder(hardStopOrder);
+                        hardStopOrder = ExitShortStopMarket(0, true, Position.Quantity, newSL, "TrailSL", currentSignalName);
+
+                        trailingTarget = newSL;
+
+                        DebugPrint($"[TRAIL] Short trailing SL moved to High[1] = {newSL:F2}");
+                    }
+                }
+            }
+
 			TryEntrySignal(false);  // breakout & engulfing
 			//TryClosePosition();
 			nextEvaluationTime = nextEvaluationTime.AddMinutes(5);
@@ -315,6 +341,12 @@ public class FiveMin : Strategy
 
 		// --- Rule 3 retrace runs on *every* tick
 		TryEntrySignal(true);
+
+        // --- Draw trailing line ---
+        if (Trailing && Position.MarketPosition != MarketPosition.Flat && !double.IsNaN(trailingTarget))
+        {
+            Draw.HorizontalLine(this, "trailingLine", trailingTarget, Brushes.Goldenrod);
+        }
     }
 
 	// Use [1],[2],[3] so the 3-bar FVG is confirmed on closed bars
@@ -663,6 +695,20 @@ public class FiveMin : Strategy
                                           double averageFillPrice, OrderState orderState, DateTime time,
                                           ErrorCode error, string comment)
     {
+        if (Trailing && order != null && order.Name == "StopLoss" &&
+            (order.OrderState == OrderState.Accepted || order.OrderState == OrderState.Working))
+        {
+            hardStopOrder = order;                 // <<< REQUIRED
+            trailingTarget = order.StopPrice;
+
+            double entryPrice = entryOrder != null && entryOrder.AverageFillPrice > 0
+                ? entryOrder.AverageFillPrice
+                : Close[0];
+
+            DebugPrint($"[TRAIL] Initial SL working. trailingTarget={trailingTarget:F2}");
+        }
+
+
         if (BarsInProgress == 1 && CurrentBars[1] < 1)
             return;
         if (BarsInProgress == 0 && CurrentBar < 20)
@@ -696,19 +742,6 @@ public class FiveMin : Strategy
         {
             lastEntryTime = Times[0][0];
             lastProtectionTime = DateTime.Now;
-
-            if (Trailing)
-            {
-                // Store initial SL distance
-                double entryPrice = execution.Price;
-                double stopPrice = Position.MarketPosition == MarketPosition.Long
-                    ? GetStopLossPrice() // helper method below
-                    : GetStopLossPrice();
-
-                initialSLDistance = Math.Abs(entryPrice - stopPrice);
-                lastTrailTriggerPrice = entryPrice;
-                DebugPrint($"[Trailing] Initialized. Entry={entryPrice:F2}, SL={stopPrice:F2}, Distance={initialSLDistance:F2}");
-            }
         }
 
         // Exit
@@ -877,6 +910,8 @@ public class FiveMin : Strategy
             );
         }
 
+        entryTakeProfitPrice = takePx;   // <<< REQUIRED FOR TRAILING ACTIVATION
+
         printTradeDevider();
 
         if (RequireEntryConfirmation)
@@ -891,19 +926,27 @@ public class FiveMin : Strategy
         // SetProfitTarget(signalName, CalculationMode.Price, takePx);
         // SetStopLoss(signalName, CalculationMode.Price, stopPx, false);
         double entryStopPrice = stopPx;
-        double entryTakeProfitPrice = takePx;
+        entryTakeProfitPrice = takePx;
 
         if (isLong)
         {
             EnterLong(NumberOfContracts, signalName);
             ExitLongStopMarket(0, true, NumberOfContracts, entryStopPrice, "StopLoss", signalName);
-            ExitLongLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
+            if (!Trailing)
+            {
+                // Only place TP if trailing mode OFF
+                ExitLongLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
+            }
+
         }
         else
         {
             EnterShort(NumberOfContracts, signalName);
             ExitShortStopMarket(0, true, NumberOfContracts, entryStopPrice, "StopLoss", signalName);
-            ExitShortLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
+            if (!Trailing)
+            {
+                ExitShortLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
+            }
         }
 
         orderPlaced = true;
@@ -980,6 +1023,8 @@ public class FiveMin : Strategy
         profitOrders.Clear();
         orderPlaced = false;
         lastProtectionTime = DateTime.MinValue;
+        trailingActivated = false;
+        entryTakeProfitPrice = double.NaN;
     }
 
     private bool IsInSession()
