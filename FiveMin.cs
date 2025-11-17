@@ -54,6 +54,38 @@ public class FiveMin : Strategy
     public int BiasDuration { get; set; }
 
     [NinjaScriptProperty]
+    [Display(
+        Name = "Enter On FVG Breakout",
+        Description = "If true, enter as soon as an FVG is detected on breakout outside the range, without waiting for retrace + engulfing.",
+        Order = 2,
+        GroupName = "B. Entry Conditions")]
+    public bool EnterOnFvgBreakout { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Risk Reward Ratio",
+        Description = "Example: 3 = risk 1 to make 3",
+        Order = 3,
+        GroupName = "B. Entry Conditions")]
+    public double RiskRewardRatio { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Max TPs Per Day",
+        Description = "How many take-profit wins are allowed per day before stopping trading.",
+        Order = 4,
+        GroupName = "A. Config")]
+    public int MaxTPsPerDay { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Max Losses Per Day",
+        Description = "How many losing trades are allowed per day before stopping all trading.",
+        Order = 5,
+        GroupName = "A. Config")]
+    public int MaxLossesPerDay { get; set; }
+
+    [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
              GroupName = "C. Session Time")]
     public TimeSpan SessionStart
@@ -142,6 +174,10 @@ public class FiveMin : Strategy
     private double initialSLDistance = 0;  // initial distance between entry and SL
     private double lastTrailTriggerPrice = 0;  // last price that triggered SL move
 
+    private int tpCountToday = 0;
+    private int lossCountToday = 0;
+    private bool dailyLimitReached = false;
+
 #endregion
 
 #region State Management
@@ -170,6 +206,10 @@ public class FiveMin : Strategy
         BiasDuration = 5;
         MaxAccountBalance = 0; 
         DebugMode = true;
+        EnterOnFvgBreakout = true;
+        RiskRewardRatio = 2.0;
+        MaxTPsPerDay = 1;
+        MaxLossesPerDay = 2;
     }
 #endregion
 
@@ -420,17 +460,22 @@ public class FiveMin : Strategy
             CancelAllOrders();
     }
 
-	private void InvalidateSetup(string reason)
-	{
-		if (rule2Passed || rule3Passed)
-			DebugPrint($"[Setup] ❌ Invalidated: {reason}");
-		rule2Passed = false;
-		rule3Passed = false;
-		lastFvgType = FVGType.None;
-		fvgHigh = fvgLow = Double.NaN;
-		rule2Bar = -1;
-		retraceBar = -1;
-	}
+    private void InvalidateSetup(string reason)
+    {
+        if (rule2Passed || rule3Passed)
+            DebugPrint($"[Setup] ❌ Invalidated: {reason}");
+
+        // Prevent Rule 2 from firing again on direct entry
+        if (!EnterOnFvgBreakout)
+            rule2Passed = false;
+
+        rule3Passed = false;
+
+        lastFvgType = FVGType.None;
+        fvgHigh = fvgLow = Double.NaN;
+        rule2Bar = -1;
+        retraceBar = -1;
+    }
 
 	private bool BarOverlapsFVG(int barsAgo = 0)
 	{
@@ -442,9 +487,10 @@ public class FiveMin : Strategy
 		return lo <= fvgHigh && hi >= fvgLow;
 	}
 
-	
     private void TryEntrySignal(bool isIntrabar)
     {
+        if (dailyLimitReached)
+            return;
         if (Times[0][0].TimeOfDay >= NoTradesAfter)
             return;
 
@@ -453,11 +499,20 @@ public class FiveMin : Strategy
         if (!isIntrabar)
         {
             DetectBreakoutAndFVG();  // Rule 2
-            ConfirmEngulfing();      // Rule 4
+
+            // If we are in "wait for retrace + engulf" mode (old behavior)
+            if (!EnterOnFvgBreakout)
+            {
+                ConfirmEngulfing();  // Rule 4
+            }
         }
         else
         {
-            DetectRetrace();         // Rule 3
+            // Intrabar retrace (Rule 3) ONLY used in old behavior
+            if (!EnterOnFvgBreakout)
+            {
+                DetectRetrace();     // Rule 3
+            }
         }
     }
 
@@ -551,9 +606,18 @@ public class FiveMin : Strategy
                 retraceBar = -1;
                 rule3Passed = false;
 
-                DebugPrint($"✅ Rule 2 passed (closed). FVG [{fvgLow:F2},{fvgHigh:F2}] Dir={lastFvgType}, rule2Bar={rule2Bar}");
+                DebugPrint(
+                    $"✅ Rule 2 passed (closed). FVG [{fvgLow:F2},{fvgHigh:F2}] Dir={lastFvgType}, rule2Bar={rule2Bar}");
 
                 DrawFVGZone();
+
+                // 🔹 NEW: direct entry mode
+                if (EnterOnFvgBreakout)
+                {
+                    DebugPrint("[Rule2] EnterOnFvgBreakout = true → placing entry immediately on FVG breakout.");
+                    PlaceEntryIfTriggered();
+                    InvalidateSetup("Direct FVG breakout entry taken");
+                }
             }
         }
     }
@@ -667,18 +731,40 @@ public class FiveMin : Strategy
             CleanupPosition();
         }
 
-       if (Position.MarketPosition == MarketPosition.Flat)
+        if (Position.MarketPosition == MarketPosition.Flat)
         {
             double tradePnL = 0;
 
             if (execution.Order.OrderAction == OrderAction.Sell && lastTradeWasLong)
                 tradePnL = (price - execution.Price) * execution.Quantity * Instrument.MasterInstrument.PointValue;
             else if (execution.Order.OrderAction == OrderAction.BuyToCover && !lastTradeWasLong)
-                    tradePnL = (execution.Price - price) * execution.Quantity * Instrument.MasterInstrument.PointValue;
+                tradePnL = (execution.Price - price) * execution.Quantity * Instrument.MasterInstrument.PointValue;
 
             bool wasWin = tradePnL > 0;
-        }
 
+            if (wasWin)
+            {
+                tpCountToday++;
+                DebugPrint($"🎯 Take Profit hit. TP Today = {tpCountToday}/{MaxTPsPerDay}");
+
+                if (tpCountToday >= MaxTPsPerDay)
+                {
+                    dailyLimitReached = true;
+                    DebugPrint("⛔ Max TPs reached, no more trades today.");
+                }
+            }
+            else
+            {
+                lossCountToday++;
+                DebugPrint($"❌ Loss recorded. Losses Today = {lossCountToday}/{MaxLossesPerDay}");
+
+                if (lossCountToday >= MaxLossesPerDay)
+                {
+                    dailyLimitReached = true;
+                    DebugPrint("⛔ Max losses reached, no more trades today.");
+                }
+            }
+        }
     }
 #endregion
 
@@ -747,6 +833,9 @@ public class FiveMin : Strategy
 		rule2Passed = false;
 		rule3Passed = false;
 		fvgHigh = fvgLow = Double.NaN;
+        tpCountToday = 0;
+        lossCountToday = 0;
+        dailyLimitReached = false;
 
         if (isStrategyAnalyzer)
             lastExitBarAnalyzer = -1;
@@ -772,14 +861,20 @@ public class FiveMin : Strategy
             // SL = 1 tick below the *first candle low*
             stopPx = Instrument.MasterInstrument.RoundToTickSize(fvgFirstCandleLow - TickSize);
             double risk = entryPx - stopPx;
-            takePx = Instrument.MasterInstrument.RoundToTickSize(entryPx + (3 * risk));
+
+            takePx = Instrument.MasterInstrument.RoundToTickSize(
+                entryPx + (RiskRewardRatio * risk)
+            );
         }
         else if (isShort)
         {
             // SL = 1 tick above the *first candle high*
             stopPx = Instrument.MasterInstrument.RoundToTickSize(fvgFirstCandleHigh + TickSize);
             double risk = stopPx - entryPx;
-            takePx = Instrument.MasterInstrument.RoundToTickSize(entryPx - (3 * risk));
+
+            takePx = Instrument.MasterInstrument.RoundToTickSize(
+                entryPx - (RiskRewardRatio * risk)
+            );
         }
 
         printTradeDevider();
