@@ -18,7 +18,7 @@ public class FiveMin : Strategy
     public FiveMin()
     {
         // Old vendor licensing
-        //VendorLicense("AutoEdge", "ORBO", "www.autoedge.io", "support@autoedge.io", null);
+        //VendorLicense("AutoEdge", "FiveMin", "www.autoedge.io", "support@autoedge.io", null);
     }
 
 #region Settings
@@ -411,7 +411,7 @@ public class FiveMin : Strategy
         return false;
     }
 
-    private string GetDebugText() => "\nORBO v" + GetAddOnVersion();
+    private string GetDebugText() => "FiveMin v" + GetAddOnVersion();
 
     private bool ShouldAccountBalanceExit()
     {
