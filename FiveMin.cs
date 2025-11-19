@@ -299,40 +299,26 @@ public class FiveMin : Strategy
             // -------------------------------
             if (Trailing && trailingActivated && Position.MarketPosition != MarketPosition.Flat && IsFirstTickOfBar)
             {
-                // LONG TRAILING
+                double newSL = double.NaN;
+
                 if (Position.MarketPosition == MarketPosition.Long)
-                {
-                    double newSL = Instrument.MasterInstrument.RoundToTickSize(Low[1]);
+                    newSL = Instrument.MasterInstrument.RoundToTickSize(Low[1]);
 
-                    // SL can ONLY move UP
-                    if (double.IsNaN(trailingTarget) || newSL > trailingTarget)
-                    {
-                        CancelOrder(hardStopOrder);
-                        hardStopOrder = ExitLongStopMarket(0, true, Position.Quantity, newSL, "TrailSL", currentSignalName);
-
-                        trailingTarget = newSL;
-
-                        DebugPrint($"[TRAIL] Long trailing SL moved to Low[1] = {newSL:F2}");
-                    }
-                }
-
-                // SHORT TRAILING
                 else if (Position.MarketPosition == MarketPosition.Short)
+                    newSL = Instrument.MasterInstrument.RoundToTickSize(High[1]);
+
+                if (!double.IsNaN(newSL))
                 {
-                    double newSL = Instrument.MasterInstrument.RoundToTickSize(High[1]);
+                    bool canMove =
+                        (Position.MarketPosition == MarketPosition.Long && (double.IsNaN(trailingTarget) || newSL > trailingTarget))
+                        ||
+                        (Position.MarketPosition == MarketPosition.Short && (double.IsNaN(trailingTarget) || newSL < trailingTarget));
 
-                    // SL can ONLY move DOWN
-                    if (double.IsNaN(trailingTarget) || newSL < trailingTarget)
-                    {
-                        CancelOrder(hardStopOrder);
-                        hardStopOrder = ExitShortStopMarket(0, true, Position.Quantity, newSL, "TrailSL", currentSignalName);
-
-                        trailingTarget = newSL;
-
-                        DebugPrint($"[TRAIL] Short trailing SL moved to High[1] = {newSL:F2}");
-                    }
+                    if (canMove)
+                        UpdateTrailingSL(newSL);
                 }
             }
+
 
 			TryEntrySignal(false);  // breakout & engulfing
 			//TryClosePosition();
@@ -695,7 +681,8 @@ public class FiveMin : Strategy
                                           double averageFillPrice, OrderState orderState, DateTime time,
                                           ErrorCode error, string comment)
     {
-        if (Trailing && order != null && order.Name == "StopLoss" &&
+        if (Trailing && order != null &&
+            (order.Name == "StopLoss" || order.Name == "TrailSL") &&
             (order.OrderState == OrderState.Accepted || order.OrderState == OrderState.Working))
         {
             hardStopOrder = order;                 // <<< REQUIRED
@@ -971,6 +958,21 @@ public class FiveMin : Strategy
         CancelAllOrders();
     }
 
+    private void UpdateTrailingSL(double newSL)
+    {
+        if (hardStopOrder == null)
+            return;
+
+        // Only modify if order is active
+        if (hardStopOrder.OrderState == OrderState.Accepted ||
+            hardStopOrder.OrderState == OrderState.Working)
+        {
+            ChangeOrder(hardStopOrder, hardStopOrder.Quantity, hardStopOrder.LimitPrice, newSL);
+            trailingTarget = newSL;
+            DebugPrint($"[TRAIL] SL Updated to {newSL}");
+        }
+    }
+
     private void CancelAllOrders()
     {
         DebugPrint("CancelAllOrders called. EntryOrder=" + (entryOrder?.Name ?? "null") +
@@ -1025,6 +1027,7 @@ public class FiveMin : Strategy
         lastProtectionTime = DateTime.MinValue;
         trailingActivated = false;
         entryTakeProfitPrice = double.NaN;
+        trailingTarget = double.NaN;
     }
 
     private bool IsInSession()
