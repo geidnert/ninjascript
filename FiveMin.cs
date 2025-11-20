@@ -235,9 +235,10 @@ public class FiveMin : Strategy
 
         // Align biasStart to the first bar that begins *after* SessionStart
         int barSize = BarsPeriod.Value;                 // e.g. 5 for 5-minute chart
-        int startMinute = ((SessionStart.Minutes / barSize) + 1) * barSize;
+        int startMinute = ((SessionStart.Minutes / barSize)) * barSize;
         TimeSpan biasStart = new TimeSpan(SessionStart.Hours, startMinute, 0);
         TimeSpan biasEnd = biasStart.Add(TimeSpan.FromMinutes(BiasDuration));
+        biasEnd = biasEnd.Add(TimeSpan.FromMinutes(1));
 
         // Enter bias window
         if (!isInBiasWindow && now >= biasStart && now < biasEnd)
