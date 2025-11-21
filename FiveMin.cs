@@ -212,6 +212,7 @@ public class FiveMin : Strategy
         RiskRewardRatio = 2.0;
         MaxTPsPerDay = 1;
         MaxLossesPerDay = 2;
+        Trailing = true;
     }
 #endregion
 
@@ -316,10 +317,9 @@ public class FiveMin : Strategy
                         (Position.MarketPosition == MarketPosition.Short && (double.IsNaN(trailingTarget) || newSL < trailingTarget));
 
                     if (canMove)
-                        UpdateTrailingSL(newSL);
+                        ReplaceStopOrder(newSL);
                 }
             }
-
 
 			TryEntrySignal(false);  // breakout & engulfing
 			//TryClosePosition();
@@ -484,10 +484,8 @@ public class FiveMin : Strategy
         if (rule2Passed || rule3Passed)
             DebugPrint($"[Setup] ❌ Invalidated: {reason}");
 
-        // Prevent Rule 2 from firing again on direct entry
-        if (!EnterOnFvgBreakout)
-            rule2Passed = false;
-
+        // Always reset after a completed entry or invalidation
+        rule2Passed = false;
         rule3Passed = false;
 
         lastFvgType = FVGType.None;
@@ -682,20 +680,17 @@ public class FiveMin : Strategy
                                           double averageFillPrice, OrderState orderState, DateTime time,
                                           ErrorCode error, string comment)
     {
-        if (Trailing && order != null &&
-            (order.Name == "StopLoss" || order.Name == "TrailSL") &&
-            (order.OrderState == OrderState.Accepted || order.OrderState == OrderState.Working))
+       if (Trailing
+            && order != null
+            && order.OrderType == OrderType.StopMarket               // ✅ only real stop orders
+            && order.Instrument.FullName == Instrument.FullName       // ✅ only this instrument
+            && (order.OrderState == OrderState.Accepted || order.OrderState == OrderState.Working))
         {
-            hardStopOrder = order;                 // <<< REQUIRED
-            trailingTarget = order.StopPrice;
+            hardStopOrder   = order;
+            trailingTarget  = order.StopPrice;
 
-            double entryPrice = entryOrder != null && entryOrder.AverageFillPrice > 0
-                ? entryOrder.AverageFillPrice
-                : Close[0];
-
-            DebugPrint($"[TRAIL] Initial SL working. trailingTarget={trailingTarget:F2}");
+            DebugPrint($"[TRAIL] Initial SL working. trailingTarget={trailingTarget:F2}, name={order.Name}, action={order.OrderAction}");
         }
-
 
         if (BarsInProgress == 1 && CurrentBars[1] < 1)
             return;
@@ -864,9 +859,6 @@ public class FiveMin : Strategy
 
     private void PlaceEntryIfTriggered()
     {
-        // SetProfitTarget(CalculationMode.Ticks, 0);
-        // SetStopLoss(CalculationMode.Ticks, 0);
-
         bool isLong  = lastFvgType == FVGType.Bullish;
         bool isShort = lastFvgType == FVGType.Bearish;
 
@@ -911,30 +903,33 @@ public class FiveMin : Strategy
             }
         }
 
-        // SetProfitTarget(signalName, CalculationMode.Price, takePx);
-        // SetStopLoss(signalName, CalculationMode.Price, stopPx, false);
+        if (!Trailing) {
+            SetProfitTarget(signalName, CalculationMode.Price, takePx);
+            SetStopLoss(signalName, CalculationMode.Price, stopPx, false);
+        }
         double entryStopPrice = stopPx;
         entryTakeProfitPrice = takePx;
 
         if (isLong)
         {
             EnterLong(NumberOfContracts, signalName);
-            ExitLongStopMarket(0, true, NumberOfContracts, entryStopPrice, "StopLoss", signalName);
-            if (!Trailing)
-            {
-                // Only place TP if trailing mode OFF
-                ExitLongLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
-            }
-
+            if (Trailing)
+                ExitLongStopMarket(0, true, NumberOfContracts, entryStopPrice, "StopLoss", signalName);
+            // if (!Trailing)
+            // {
+            //     // Only place TP if trailing mode OFF
+            //     ExitLongLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
+            // }
         }
         else
         {
             EnterShort(NumberOfContracts, signalName);
-            ExitShortStopMarket(0, true, NumberOfContracts, entryStopPrice, "StopLoss", signalName);
-            if (!Trailing)
-            {
-                ExitShortLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
-            }
+            if (Trailing)
+                ExitShortStopMarket(0, true, NumberOfContracts, entryStopPrice, "StopLoss", signalName);
+            // if (!Trailing)
+            // {
+            //     ExitShortLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
+            // }
         }
 
         orderPlaced = true;
@@ -973,6 +968,28 @@ public class FiveMin : Strategy
             DebugPrint($"[TRAIL] SL Updated to {newSL}");
         }
     }
+
+    private void ReplaceStopOrder(double newSL)
+    {
+        if (hardStopOrder != null && 
+            (hardStopOrder.OrderState == OrderState.Working || hardStopOrder.OrderState == OrderState.Accepted))
+        {
+            CancelOrder(hardStopOrder);
+        }
+
+        if (Position.MarketPosition == MarketPosition.Long)
+        {
+            hardStopOrder = ExitLongStopMarket(0, true, NumberOfContracts, newSL, "StopLoss", currentSignalName);
+        }
+        else if (Position.MarketPosition == MarketPosition.Short)
+        {
+            hardStopOrder = ExitShortStopMarket(0, true, NumberOfContracts, newSL, "StopLoss", currentSignalName);
+        }
+
+        trailingTarget = newSL;
+        DebugPrint($"[TRAIL] Stop replaced → {newSL}");
+    }
+
 
     private void CancelAllOrders()
     {
