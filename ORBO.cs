@@ -98,6 +98,11 @@ public class ORBO : Strategy
     //     Order = 10, GroupName = "B. Entry Conditions")]
     internal double SLBETrigger { get; set; }
 
+    // [NinjaScriptProperty]
+    // [Display(Name = "Max Bars In Trade", Description = "Exit trade after this many bars since entry", 
+    //         Order = 20, GroupName = "B. Entry Conditions")]
+    internal int MaxBarsInTrade { get; set; }
+
     [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
              GroupName = "C. Session Time")]
@@ -229,6 +234,7 @@ public class ORBO : Strategy
 
     private bool hasReturnedOnce = false;     // becomes true after price has returned inside the zone
     private bool tpWasHit = false;            // true right after TP hit
+    private int entryBar = -1;
 
 #endregion
 
@@ -283,6 +289,7 @@ public class ORBO : Strategy
         HardStopLossPercent = 47.7;
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
+        MaxBarsInTrade = 0;
         RangeBoxBrush = Brushes.Gold;
         RequireCloseBelowReturn = false;
         SLBETrigger = 0;
@@ -302,6 +309,34 @@ public class ORBO : Strategy
     {
         ResetDailyStateIfNeeded();
 	
+    // ======================================================
+    // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
+    // ======================================================
+    if (MaxBarsInTrade > 0 &&
+        Position.MarketPosition != MarketPosition.Flat &&
+        entryBar >= 0)
+    {
+        // Safety for tick-based processing
+        if (CurrentBar <= entryBar)
+            return;
+
+        int barsInTrade = CurrentBar - entryBar;
+
+        if (barsInTrade >= MaxBarsInTrade)
+        {
+            DebugPrint($"⏱ ORBO: Time-based exit triggered after {barsInTrade} bars (limit {MaxBarsInTrade}).");
+
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong("TimeSL", currentSignalName);
+            else
+                ExitShort("TimeSL", currentSignalName);
+
+            SendWebhook("exit");
+
+            return; // Prevent double exits
+        }
+    }
+
 		// === Skip window cross detection === 
 		if (CurrentBar < 2) // need at least 2 bars for Time[1], Close[1], etc.
         	return;
@@ -721,6 +756,7 @@ public class ORBO : Strategy
             lastFilledEntryPrice = execution.Price;
             lastEntryTime = Times[0][0];
             lastProtectionTime = DateTime.Now;
+            entryBar = CurrentBar;
 			
 			// reset BE state
     		beTriggerActive = false;
@@ -1134,6 +1170,7 @@ public class ORBO : Strategy
             TakeProfitPercent = 40.6;
             HardStopLossPercent = 53.7;
             SLBETrigger = 0;
+            MaxBarsInTrade = 90;
             break;
 
         case StrategyPreset.NQ_MNQ_2:
@@ -1141,6 +1178,7 @@ public class ORBO : Strategy
             TakeProfitPercent = 84;            
             HardStopLossPercent = 55.6;
             SLBETrigger = 0;
+            MaxBarsInTrade = 90;
             break;
         }
 

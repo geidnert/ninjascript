@@ -99,6 +99,11 @@ public class ORBOTesting : Strategy
     public double SLBETrigger { get; set; }
 
     [NinjaScriptProperty]
+    [Display(Name = "Max Bars In Trade", Description = "Exit trade after this many bars since entry", 
+            Order = 11, GroupName = "B. Entry Conditions")]
+    public int MaxBarsInTrade { get; set; }
+
+    [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
              GroupName = "C. Session Time")]
     public TimeSpan SessionStart
@@ -286,6 +291,7 @@ public class ORBOTesting : Strategy
         HardStopLossPercent = 47.7;
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
+        MaxBarsInTrade = 0;
         RangeBoxBrush = Brushes.Gold;
         RequireCloseBelowReturn = false;
         SLBETrigger = 0;
@@ -340,6 +346,29 @@ public class ORBOTesting : Strategy
                     tpWasHit = true;
                     DebugPrint($"✅ TP hit manually at {todayShortProfit}");
                 }
+            }
+        }
+
+        // ======================================================
+        // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
+        // ======================================================
+        if (MaxBarsInTrade > 0 &&
+            Position.MarketPosition != MarketPosition.Flat &&
+            entryBar >= 0)
+        {
+            int barsInTrade = CurrentBar - entryBar;
+
+            if (barsInTrade >= MaxBarsInTrade)
+            {
+                DebugPrint($"⏱ Time-based exit after {barsInTrade} bars (limit {MaxBarsInTrade}).");
+
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("TimeSL", currentSignalName);
+                else
+                    ExitShort("TimeSL", currentSignalName);
+
+                SendWebhook("exit");
+                return;
             }
         }
 
@@ -1193,6 +1222,7 @@ public class ORBOTesting : Strategy
             TakeProfitPercent = 32.4;
             HardStopLossPercent = 47.7;
             SLBETrigger = 0;
+            MaxBarsInTrade = 90;
             break;
 
         case StrategyPreset.NQ_MNQ_2:
@@ -1200,6 +1230,7 @@ public class ORBOTesting : Strategy
             TakeProfitPercent = 34;
             HardStopLossPercent = 50;
             SLBETrigger = 0;
+            MaxBarsInTrade = 90;
             break;
         }
 
