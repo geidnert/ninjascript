@@ -185,8 +185,8 @@ public class ORBOTesting : Strategy
     private string displayText = "Waiting...";
     private bool isStrategyAnalyzer = false;
     private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
-    private TimeSpan sessionEnd = new TimeSpan(16, 06, 0);
-    private TimeSpan noTradesAfter = new TimeSpan(15, 26, 0);
+    private TimeSpan sessionEnd = new TimeSpan(15, 05, 0);
+    private TimeSpan noTradesAfter = new TimeSpan(15, 01, 0);
     private TimeSpan skipStart = new TimeSpan(00, 00, 0);
     private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
     private static readonly Random Random = new Random();
