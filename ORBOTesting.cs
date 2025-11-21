@@ -104,9 +104,11 @@ public class ORBOTesting : Strategy
     public int MaxBarsInTrade { get; set; }
 
     [NinjaScriptProperty]
-    [Display(Name = "Max Points From Entry", Description = "Cancel pending entry order if price moves this many points away",
+    [Range(0, 200, ErrorMessage = "Cancel Order % must be between 0 and 200")]
+    [Display(Name = "Cancel Order %", Description = "Cancel pending entry if price moves this % of session range away", 
             Order = 12, GroupName = "B. Entry Conditions")]
-    public double MaxPointsFromEntry { get; set; }
+    public double CancelOrderPercent { get; set; }
+
 
     [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
@@ -238,6 +240,7 @@ public class ORBOTesting : Strategy
     private bool tpWasHit = false;            // true right after TP hit
     private int entryBar = -1;
     private double pendingEntryPrice = double.NaN;
+    private double cancelOrderDistanceAbs = 0;
 
 #endregion
 
@@ -293,6 +296,7 @@ public class ORBOTesting : Strategy
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
         MaxBarsInTrade = 0;
+        CancelOrderPercent = 0;
         RangeBoxBrush = Brushes.Gold;
         RequireCloseBelowReturn = false;
         SLBETrigger = 0;
@@ -376,35 +380,36 @@ public class ORBOTesting : Strategy
         // ======================================================
         // 🚫 CANCEL PENDING ENTRY IF PRICE RUNS AWAY
         // ======================================================
-        if (MaxPointsFromEntry > 0 &&
+       if (CancelOrderPercent > 0 &&
+            cancelOrderDistanceAbs > 0 &&
             entryOrder != null &&
             entryOrder.OrderState == OrderState.Working &&
             Position.MarketPosition == MarketPosition.Flat)
         {
-            // Read current midprice for accuracy
             double bid = GetCurrentBid();
             double ask = GetCurrentAsk();
+
             double mid;
-            if (bid > 0 && ask > 0)
-                mid = (bid + ask) / 2.0;   // MUST divide by 2
+            if (bid > 0 && ask > 0 && Math.Abs(ask - bid) < 50 * TickSize)
+                mid = (bid + ask) / 2.0;
             else
-                mid = Close[0];
+                mid = Close[0];  
 
             double distance = Math.Abs(mid - pendingEntryPrice);
 
-            if (distance >= MaxPointsFromEntry)
+            if (distance >= cancelOrderDistanceAbs)
             {
-                DebugPrint($"❌ Pending entry canceled — price moved away {distance:F2} points (limit {MaxPointsFromEntry})");
+                DebugPrint($"❌ Pending entry canceled — price moved {distance:F2} (limit {cancelOrderDistanceAbs:F2}, {CancelOrderPercent}%)");
 
                 CancelOrder(entryOrder);
                 entryOrder = null;
 
-                // Treat this SAME AS TP hit → must return to the zone
                 tpWasHit = true;
                 hasReturnedOnce = false;
 
-                breakoutActive = false;                 // reset breakout
+                breakoutActive = false;
                 breakoutRearmPending = UseBreakoutRearmDelay;
+
                 if (breakoutRearmPending)
                     breakoutRearmTime = Times[0][0].AddMinutes(5);
 
@@ -412,6 +417,7 @@ public class ORBOTesting : Strategy
                 return;
             }
         }
+
 
         ResetDailyStateIfNeeded();
 	
@@ -1347,6 +1353,9 @@ public class ORBOTesting : Strategy
         double roundedHigh = Instrument.MasterInstrument.RoundToTickSize(sessionHigh);
         double roundedLow  = Instrument.MasterInstrument.RoundToTickSize(sessionLow);
         double rng = roundedHigh - roundedLow;
+
+        double cancelOffset = rng * CancelOrderPercent / 100.0;
+        cancelOrderDistanceAbs = Instrument.MasterInstrument.RoundToTickSize(cancelOffset);
 
         double entryOffset  = rng * EntryPercent / 100.0;
         double tpOffset     = rng * TakeProfitPercent / 100.0;
