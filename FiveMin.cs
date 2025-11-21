@@ -171,14 +171,20 @@ public class FiveMin : Strategy
 	// Track sequence progress
 	private int rule2Bar = -1;    // bar index when breakout + FVG detected
 	private int retraceBar = -1;  // bar index of most recent retrace into FVG
-
     private double trailingTarget = double.NaN;   // price level to monitor for trailing activation
     private int tpCountToday = 0;
     private int lossCountToday = 0;
     private bool dailyLimitReached = false;
-
     private bool trailingActivated = false;
     private double entryTakeProfitPrice = double.NaN;
+    private double entryPrice = double.NaN;
+    // --- Trailing stop state machine ---
+    private bool  trailCancelPending   = false;      // true while we wait for old SL to be fully cancelled
+    private double pendingTrailStopPrice = double.NaN; // new SL price to submit after cancel
+    private double activationWickLow  = double.NaN; // for longs
+    private double activationWickHigh = double.NaN; // for shorts
+
+
 
 #endregion
 
@@ -223,6 +229,8 @@ public class FiveMin : Strategy
 
         // Main series (BarsInProgress == 0)
         if (ShouldSkipBarUpdate())
+            return;
+        if (dailyLimitReached)
             return;
 
         if (DebugMode)
@@ -278,6 +286,7 @@ public class FiveMin : Strategy
             if (Position.MarketPosition == MarketPosition.Long && High[0] >= entryTakeProfitPrice)
             {
                 trailingActivated = true;
+                activationWickLow = Low[0];
                 DebugPrint("[TRAIL] TP touched → Trailing ACTIVATED.");
             }
 
@@ -285,7 +294,32 @@ public class FiveMin : Strategy
             if (Position.MarketPosition == MarketPosition.Short && Low[0] <= entryTakeProfitPrice)
             {
                 trailingActivated = true;
+                activationWickHigh = High[0];
                 DebugPrint("[TRAIL] TP touched → Trailing ACTIVATED.");
+            }
+        }
+
+        // Bar-close validation, using wick-reference
+        if (IsFirstTickOfBar && trailingActivated)
+        {
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                if (Close[0] < activationWickLow)
+                {
+                    DebugPrint("❌ TRAIL INVALIDATED - close < activationWickLow. Exiting.");
+                    TryExitAll(GetCurrentBid(), "TrailInvalidation");
+                    return;
+                }
+            }
+
+            if (Position.MarketPosition == MarketPosition.Short)
+            {
+                if (Close[0] > activationWickHigh)
+                {
+                    DebugPrint("❌ TRAIL INVALIDATED - close > activationWickHigh. Exiting.");
+                    TryExitAll(GetCurrentAsk(), "TrailInvalidation");
+                    return;
+                }
             }
         }
 
@@ -329,63 +363,77 @@ public class FiveMin : Strategy
 		// --- Rule 3 retrace runs on *every* tick
 		TryEntrySignal(true);
 
-        // --- Draw trailing line ---
-        if (Trailing && Position.MarketPosition != MarketPosition.Flat && !double.IsNaN(trailingTarget))
+        // --- Draw trailing activation + trailing line ---
+        if (Trailing && Position.MarketPosition != MarketPosition.Flat)
         {
-            Draw.HorizontalLine(this, "trailingLine", trailingTarget, Brushes.Goldenrod);
+            // 1. Draw trailing stop line only when trailing is active
+            if (trailingActivated)
+            {
+                Draw.HorizontalLine(this, "trailingLine", trailingTarget, Brushes.Goldenrod);
+            }
+            else
+            {
+                // Remove old trailing line when not active yet
+                RemoveDrawObject("trailingLine");
+            }
+
+            // 2. Draw the activation threshold line (green)
+            if (!double.IsNaN(entryTakeProfitPrice))
+            {
+                Draw.HorizontalLine(this, "trailingActivationLine", entryTakeProfitPrice, Brushes.LimeGreen);
+            }
+        }
+        else
+        {
+            // Clean up when position is flat
+            RemoveDrawObject("trailingLine");
+            RemoveDrawObject("trailingActivationLine");
         }
     }
 
-	// Use [1],[2],[3] so the 3-bar FVG is confirmed on closed bars
 	private bool TryFindFVG_Closed(out double high, out double low)
-	{
-		high = double.NaN; low = double.NaN;
+    {
+        high = double.NaN;
+        low  = double.NaN;
 
-		if (CurrentBar < 3) { DebugPrint("[FVG] Not enough bars."); return false; }
+        if (CurrentBar < 3)
+            return false;
 
-		// Debug shows closed bars [3],[2],[1]
-		DebugPrint($"[FVG] (closed) Bars: " +
-			$"[3] O={Open[3]:F2}, H={High[3]:F2}, L={Low[3]:F2}, C={Close[3]:F2} | " +
-			$"[2] O={Open[2]:F2}, H={High[2]:F2}, L={Low[2]:F2}, C={Close[2]:F2} | " +
-			$"[1] O={Open[1]:F2}, H={High[1]:F2}, L={Low[1]:F2}, C={Close[1]:F2}");
+        bool bullishFVG = Low[1] > High[3];
+        bool bearishFVG = High[1] < Low[3];
 
-		// 3-bar gap using CLOSED bars
-		bool bullishFVG = Low[1] > High[3];
-		bool bearishFVG = High[1] < Low[3];
+        bool body3Inside = Open[3] <= sessionHigh && Close[3] <= sessionHigh && Open[3] >= sessionLow && Close[3] >= sessionLow;
+        bool body2Inside = Open[2] <= sessionHigh && Close[2] <= sessionHigh && Open[2] >= sessionLow && Close[2] >= sessionLow;
+        bool body1Inside = Open[1] <= sessionHigh && Close[1] <= sessionHigh && Open[1] >= sessionLow && Close[1] >= sessionLow;
 
-		// At least one full body inside bias range (also CLOSED bars)
-		bool body3Inside = Open[3] <= sessionHigh && Close[3] <= sessionHigh && Open[3] >= sessionLow && Close[3] >= sessionLow;
-		bool body2Inside = Open[2] <= sessionHigh && Close[2] <= sessionHigh && Open[2] >= sessionLow && Close[2] >= sessionLow;
-		bool body1Inside = Open[1] <= sessionHigh && Close[1] <= sessionHigh && Open[1] >= sessionLow && Close[1] >= sessionLow;
-		bool insideRange = body3Inside || body2Inside || body1Inside;
+        bool insideRange = body3Inside || body2Inside || body1Inside;
 
-		DebugPrint($"[FVG] (closed) InsideRange → [3]={body3Inside}, [2]={body2Inside}, [1]={body1Inside}");
+        if (bullishFVG && insideRange)
+        {
+            low  = High[3];
+            high = Low[1];
+            lastFvgType = FVGType.Bullish;
+            fvgFirstCandleHigh = High[3];
+            fvgFirstCandleLow  = Low[3];
+            DebugPrint($"[FVG] ✅ Bullish (closed). Zone=[{low:F2},{high:F2}]");
+            return true;
+        }
 
-		if (bullishFVG && insideRange)
-		{
-			low  = High[3];
-			high = Low[1];
-			lastFvgType = FVGType.Bullish;
-			fvgFirstCandleHigh = High[3];
-			fvgFirstCandleLow  = Low[3];
-			DebugPrint($"[FVG] ✅ Bullish (closed). Zone=[{low:F2},{high:F2}]");
-			return true;
-		}
-		if (bearishFVG && insideRange)
-		{
-			low  = High[1];
-			high = Low[3];
-			lastFvgType = FVGType.Bearish;
-			fvgFirstCandleHigh = High[3];
-			fvgFirstCandleLow  = Low[3];
-			DebugPrint($"[FVG] ✅ Bearish (closed). Zone=[{low:F2},{high:F2}]");
-			return true;
-		}
+        if (bearishFVG && insideRange)
+        {
+            low  = High[1];
+            high = Low[3];
+            lastFvgType = FVGType.Bearish;
+            fvgFirstCandleHigh = High[3];
+            fvgFirstCandleLow  = Low[3];
+            DebugPrint($"[FVG] ✅ Bearish (closed). Zone=[{low:F2},{high:F2}]");
+            return true;
+        }
 
-		lastFvgType = FVGType.None;
-		DebugPrint("[FVG] ❌ No valid closed-bar FVG");
-		return false;
-	}
+        // No log for invalid FVG → reduces spam
+        lastFvgType = FVGType.None;
+        return false;
+    }
 
     private bool ShouldSkipBarUpdate()
     {
@@ -508,6 +556,7 @@ public class FiveMin : Strategy
     {
         if (dailyLimitReached)
             return;
+
         if (Times[0][0].TimeOfDay >= NoTradesAfter)
             return;
 
@@ -677,13 +726,61 @@ public class FiveMin : Strategy
 
 #region NinjaTrader Event Routing
     protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
-                                          double averageFillPrice, OrderState orderState, DateTime time,
-                                          ErrorCode error, string comment)
+                                      double averageFillPrice, OrderState orderState, DateTime time,
+                                      ErrorCode error, string comment)
     {
-       if (Trailing
+        if (order == null)
+            return;
+
+        // ============================================================
+        // 🔥 TRAILING STOP STATE MACHINE
+        // ------------------------------------------------------------
+        // When a StopLoss cancel FINISHES for a trailing move, submit
+        // the new SL at pendingTrailStopPrice.
+        // ============================================================
+        if (Trailing
+            && trailingActivated
+            && trailCancelPending
+            && order.Name == "StopLoss"
+            && order.Instrument.FullName == Instrument.FullName
+            && orderState == OrderState.Cancelled)
+        {
+            DebugPrint("[TRAIL] Confirmed old SL CANCELLED – submitting new SL now.");
+
+            trailCancelPending = false;
+
+            if (!double.IsNaN(pendingTrailStopPrice) &&
+                Position.MarketPosition != MarketPosition.Flat)
+            {
+                if (Position.MarketPosition == MarketPosition.Long)
+                {
+                    hardStopOrder = ExitLongStopMarket(
+                        0, true, NumberOfContracts, pendingTrailStopPrice,
+                        "StopLoss", currentSignalName);
+                }
+                else if (Position.MarketPosition == MarketPosition.Short)
+                {
+                    hardStopOrder = ExitShortStopMarket(
+                        0, true, NumberOfContracts, pendingTrailStopPrice,
+                        "StopLoss", currentSignalName);
+                }
+
+                trailingTarget = pendingTrailStopPrice;
+                DebugPrint($"[TRAIL] New SL submitted → {pendingTrailStopPrice:F2}");
+            }
+
+            pendingTrailStopPrice = double.NaN;
+            // (Do not return — let rest of OnOrderUpdate continue)
+        }
+
+        // ============================================================
+        // ORIGINAL LOGIC — DO NOT TOUCH
+        // ============================================================
+
+        if (Trailing
             && order != null
-            && order.OrderType == OrderType.StopMarket               // ✅ only real stop orders
-            && order.Instrument.FullName == Instrument.FullName       // ✅ only this instrument
+            && order.OrderType == OrderType.StopMarket               // only real stop orders
+            && order.Instrument.FullName == Instrument.FullName       // only this instrument
             && (order.OrderState == OrderState.Accepted || order.OrderState == OrderState.Working))
         {
             hardStopOrder   = order;
@@ -714,6 +811,7 @@ public class FiveMin : Strategy
         }
     }
 
+
     protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
                                               MarketPosition marketPosition, string orderId, DateTime time)
     {
@@ -723,8 +821,44 @@ public class FiveMin : Strategy
         // Entry
         if (execution.Order.Name.Contains("Long") || execution.Order.Name.Contains("Short"))
         {
-            lastEntryTime = Times[0][0];
-            lastProtectionTime = DateTime.Now;
+            entryPrice = execution.Price;
+
+            double stopPx;
+            double takePx;
+
+            double firstHigh = fvgFirstCandleHigh;
+            double firstLow  = fvgFirstCandleLow;
+
+            // Fallback if FVG candle data is invalid
+            if (double.IsNaN(firstHigh) || double.IsNaN(firstLow))
+            {
+                firstHigh = High[0];
+                firstLow  = Low[0];
+                DebugPrint("⚠ Using current bar high/low for SL because FVG reference was invalid.");
+            }
+
+            if (execution.Order.Name.Contains("Long"))
+            {
+                stopPx = Instrument.MasterInstrument.RoundToTickSize(firstLow - TickSize);
+                double risk = entryPrice - stopPx;
+                takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + (RiskRewardRatio * risk));
+            }
+            else
+            {
+                stopPx = Instrument.MasterInstrument.RoundToTickSize(firstHigh + TickSize);
+                double risk = stopPx - entryPrice;
+                takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - (RiskRewardRatio * risk));
+            }
+
+            entryTakeProfitPrice = takePx;
+
+            // Now place stop order
+            if (execution.Order.Name.Contains("Long"))
+                hardStopOrder = ExitLongStopMarket(0, true, NumberOfContracts, stopPx, "StopLoss", currentSignalName);
+            else
+                hardStopOrder = ExitShortStopMarket(0, true, NumberOfContracts, stopPx, "StopLoss", currentSignalName);
+
+            DebugPrint($"📌 REAL entry={entryPrice:F2}, SL={stopPx:F2}, TP={takePx:F2}, Risk={(Math.Abs(entryPrice - stopPx)):F2}");
         }
 
         // Exit
@@ -853,90 +987,61 @@ public class FiveMin : Strategy
         lossCountToday = 0;
         dailyLimitReached = false;
 
+        // 🔄 reset trailing state
+        trailingActivated      = false;
+        trailingTarget         = double.NaN;
+        pendingTrailStopPrice  = double.NaN;
+        trailCancelPending     = false;
+
         if (isStrategyAnalyzer)
             lastExitBarAnalyzer = -1;
     }
 
     private void PlaceEntryIfTriggered()
     {
+        if (dailyLimitReached)
+        {
+            DebugPrint("⛔ Max TPs reached — blocking entry.");
+            return;
+        }
+        
         bool isLong  = lastFvgType == FVGType.Bullish;
         bool isShort = lastFvgType == FVGType.Bearish;
 
         string signalName = isLong ? "Long" : "Short";
         currentSignalName = signalName;
 
-        double entryPx = Close[0];  // using bar close at entry
-        double stopPx  = double.NaN;
-        double takePx  = double.NaN;
-
-        if (isLong)
-        {
-            // SL = 1 tick below the *first candle low*
-            stopPx = Instrument.MasterInstrument.RoundToTickSize(fvgFirstCandleLow - TickSize);
-            double risk = entryPx - stopPx;
-
-            takePx = Instrument.MasterInstrument.RoundToTickSize(
-                entryPx + (RiskRewardRatio * risk)
-            );
-        }
-        else if (isShort)
-        {
-            // SL = 1 tick above the *first candle high*
-            stopPx = Instrument.MasterInstrument.RoundToTickSize(fvgFirstCandleHigh + TickSize);
-            double risk = stopPx - entryPx;
-
-            takePx = Instrument.MasterInstrument.RoundToTickSize(
-                entryPx - (RiskRewardRatio * risk)
-            );
-        }
-
-        entryTakeProfitPrice = takePx;   // <<< REQUIRED FOR TRAILING ACTIVATION
-
         printTradeDevider();
 
+        // ---- ENTRY CONFIRMATION (optional) ----
         if (RequireEntryConfirmation)
         {
-            if (!ShowEntryConfirmation(signalName, entryPx, NumberOfContracts))
+            double previewPrice = Close[0]; // only for UI confirmation, not used for TP/SL
+            if (!ShowEntryConfirmation(signalName, previewPrice, NumberOfContracts))
             {
                 DebugPrint($"User declined {signalName} entry via confirmation dialog.");
                 return;
             }
         }
 
-        if (!Trailing) {
-            SetProfitTarget(signalName, CalculationMode.Price, takePx);
-            SetStopLoss(signalName, CalculationMode.Price, stopPx, false);
-        }
-        double entryStopPrice = stopPx;
-        entryTakeProfitPrice = takePx;
-
+        // ---- ENTRY ORDER ----
         if (isLong)
         {
-            EnterLong(NumberOfContracts, signalName);
-            if (Trailing)
-                ExitLongStopMarket(0, true, NumberOfContracts, entryStopPrice, "StopLoss", signalName);
-            // if (!Trailing)
-            // {
-            //     // Only place TP if trailing mode OFF
-            //     ExitLongLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
-            // }
+            DebugPrint("Submitting LONG entry order...");
+            entryOrder = EnterLong(NumberOfContracts, signalName);
         }
         else
         {
-            EnterShort(NumberOfContracts, signalName);
-            if (Trailing)
-                ExitShortStopMarket(0, true, NumberOfContracts, entryStopPrice, "StopLoss", signalName);
-            // if (!Trailing)
-            // {
-            //     ExitShortLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "TakeProfit", signalName);
-            // }
+            DebugPrint("Submitting SHORT entry order...");
+            entryOrder = EnterShort(NumberOfContracts, signalName);
         }
 
-        orderPlaced = true;
         lastTradeWasLong = isLong;
+        orderPlaced = true;
 
-        DebugPrint($"📌 Market {signalName} entry={entryPx:F2}, SL={stopPx:F2}, TP={takePx:F2}, Risk={(Math.Abs(entryPx - stopPx)):F2}");
+        DebugPrint($"📌 Entry submitted ({signalName}). Waiting for fill to calculate SL/TP...");
     }
+
 
     private bool IsEntryOrder(Order o) =>
         o == entryOrder || o.Name == "Long" || o.Name == "Short" || o.Name == "LongMid" || o.Name == "ShortMid";
@@ -944,6 +1049,10 @@ public class FiveMin : Strategy
 
     private void ExitAtSessionEnd()
     {
+        // Session end is a "hard exit" – not a trailing move
+        trailCancelPending    = false;
+        pendingTrailStopPrice = double.NaN;
+        
         DebugPrint(
             $"Session ended, closing position. MarketPosition={Position.MarketPosition}, Qty={Position.Quantity}");
         if (isStrategyAnalyzer)
@@ -971,30 +1080,34 @@ public class FiveMin : Strategy
 
     private void ReplaceStopOrder(double newSL)
     {
-        if (hardStopOrder != null && 
-            (hardStopOrder.OrderState == OrderState.Working || hardStopOrder.OrderState == OrderState.Accepted))
+        if (!Trailing || !trailingActivated)
+            return;  // ✅ only trail when logic is active
+
+        // We must have an existing stop order to replace
+        if (hardStopOrder == null)
+            return;
+
+        // Only cancel if the current SL is active
+        if (hardStopOrder.OrderState == OrderState.Working ||
+            hardStopOrder.OrderState == OrderState.Accepted)
         {
+            pendingTrailStopPrice = newSL;
+            trailCancelPending    = true;
+
+            DebugPrint($"[TRAIL] Requesting cancel of old SL at {hardStopOrder.StopPrice:F2} to move to {newSL:F2}");
             CancelOrder(hardStopOrder);
         }
-
-        if (Position.MarketPosition == MarketPosition.Long)
-        {
-            hardStopOrder = ExitLongStopMarket(0, true, NumberOfContracts, newSL, "StopLoss", currentSignalName);
-        }
-        else if (Position.MarketPosition == MarketPosition.Short)
-        {
-            hardStopOrder = ExitShortStopMarket(0, true, NumberOfContracts, newSL, "StopLoss", currentSignalName);
-        }
-
-        trailingTarget = newSL;
-        DebugPrint($"[TRAIL] Stop replaced → {newSL}");
     }
-
 
     private void CancelAllOrders()
     {
         DebugPrint("CancelAllOrders called. EntryOrder=" + (entryOrder?.Name ?? "null") +
                    ", HardStopOrder=" + (hardStopOrder?.Name ?? "null") + ", ProfitOrders=" + profitOrders.Count);
+
+
+        // ❌ Any bulk cancel is *not* a trailing move
+        trailCancelPending    = false;
+        pendingTrailStopPrice = double.NaN;
 
         if (entryOrder != null)
         {
@@ -1043,9 +1156,14 @@ public class FiveMin : Strategy
         profitOrders.Clear();
         orderPlaced = false;
         lastProtectionTime = DateTime.MinValue;
-        trailingActivated = false;
-        entryTakeProfitPrice = double.NaN;
-        trailingTarget = double.NaN;
+
+        // Reset all trailing-related state in one place
+        trailingActivated      = false;
+        trailingTarget         = double.NaN;
+        entryTakeProfitPrice   = double.NaN;
+        entryPrice             = double.NaN;
+        pendingTrailStopPrice  = double.NaN;
+        trailCancelPending     = false;
     }
 
     private bool IsInSession()
