@@ -109,6 +109,12 @@ public class ORBO : Strategy
     //         Order = 12, GroupName = "B. Entry Conditions")]
     internal double CancelOrderPercent { get; set; }
 
+    // [NinjaScriptProperty]
+    // [Display(Name = "Cancel Order After X Bars", 
+    //         Description = "Cancel unfilled entry if it has not filled after this many bars",
+    //         Order = 13, GroupName = "B. Entry Conditions")]
+    internal int CancelOrderBars { get; set; }
+
 
     [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
@@ -244,6 +250,7 @@ public class ORBO : Strategy
     private int entryBar = -1;
     private double pendingEntryPrice = double.NaN;
     private double cancelOrderDistanceAbs = 0;
+    private int entryOrderBar = -1;
 
 #endregion
 
@@ -388,6 +395,37 @@ public class ORBO : Strategy
             }
         }
 
+        //-------------------------------------------------------------
+        // 🕒 CANCEL UNFILLED ENTRY IF TOO MANY BARS HAVE PASSED
+        //-------------------------------------------------------------
+        if (CancelOrderBars > 0 &&
+            entryOrder != null &&
+            entryOrder.OrderState == OrderState.Working &&
+            Position.MarketPosition == MarketPosition.Flat &&
+            entryOrderBar >= 0)
+        {
+            int barsWaiting = CurrentBar - entryOrderBar;
+
+            if (barsWaiting >= CancelOrderBars)
+            {
+                DebugPrint($"❌ Pending entry canceled — waited {barsWaiting} bars (limit {CancelOrderBars})");
+
+                CancelOrder(entryOrder);
+                entryOrder = null;
+
+                // Same reset logic as CancelOrderPercent
+                tpWasHit = true;
+                hasReturnedOnce = false;
+                breakoutActive = false;
+
+                breakoutRearmPending = UseBreakoutRearmDelay;
+                if (breakoutRearmPending)
+                    breakoutRearmTime = Times[0][0].AddMinutes(5);
+
+                SendWebhook("cancel");
+                return;
+            }
+        }
 
 		// === Skip window cross detection === 
 		if (CurrentBar < 2) // need at least 2 bars for Time[1], Close[1], etc.
@@ -1000,6 +1038,7 @@ public class ORBO : Strategy
 
             EnterLongLimit(0, true, NumberOfContracts, limitPrice, signalName);
             pendingEntryPrice = limitPrice;
+            entryOrderBar = CurrentBar;
             SendWebhook("buy", limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         } else {
@@ -1028,6 +1067,7 @@ public class ORBO : Strategy
 
             EnterShortLimit(0, true, NumberOfContracts, limitPrice, signalName);
             pendingEntryPrice = limitPrice;
+            entryOrderBar = CurrentBar;
             SendWebhook("sell", limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         }
