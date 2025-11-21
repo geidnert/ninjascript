@@ -26,10 +26,10 @@ public class ORBO : Strategy
     }
 
 #region Settings
-    // [NinjaScriptProperty]
-    // [Display(Name = "Instrument", Description = "Select the instrument you want to trade", Order = 0,
-    //          GroupName = "A. Config")]
-    internal StrategyPreset PresetSetting { get; set; }
+    [NinjaScriptProperty]
+    [Display(Name = "Instrument", Description = "Select the instrument you want to trade", Order = 0,
+             GroupName = "A. Config")]
+    public StrategyPreset PresetSetting { get; set; }
 
     [NinjaScriptProperty]
     [Display(Name = "Contracts", Description = "Number of contracts to take", Order = 1, GroupName = "A. Config")]
@@ -78,13 +78,9 @@ public class ORBO : Strategy
     // [Display(Name = "Entry %", Description = "Entry price for limit order from 15 min OR", Order = 3, GroupName = "B. Entry Conditions")]
     internal double EntryPercent { get; set; }
 
-    [NinjaScriptProperty]
-    [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
-    public double TakeProfitPercent { get; set; }
-
     // [NinjaScriptProperty]
-    // [Display(Name = "Soft SL %", Description = "Soft SL level from entry", Order = 5, GroupName = "B. Entry Conditions")]
-    internal double SoftStopLossPercent { get; set; }
+    // [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
+    internal double TakeProfitPercent { get; set; }
 
     // [NinjaScriptProperty]
     // [Display(Name = "Hard SL %", Description = "Hard SL level", Order = 6, GroupName = "B. Entry Conditions")]
@@ -189,8 +185,8 @@ public class ORBO : Strategy
     private string displayText = "Waiting...";
     private bool isStrategyAnalyzer = false;
     private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
-    private TimeSpan sessionEnd = new TimeSpan(16, 06, 0);
-    private TimeSpan noTradesAfter = new TimeSpan(15, 26, 0);
+    private TimeSpan sessionEnd = new TimeSpan(15, 05, 0);
+    private TimeSpan noTradesAfter = new TimeSpan(15, 01, 0);
     private TimeSpan skipStart = new TimeSpan(00, 00, 0);
     private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
     private static readonly Random Random = new Random();
@@ -277,14 +273,13 @@ public class ORBO : Strategy
         IsUnmanaged = false;
 
         // 🟢 Default preset:
-        PresetSetting = StrategyPreset.NQ_MNQ_1;
+        //PresetSetting = StrategyPreset.NQ_MNQ_1;
 
         NumberOfContracts = 1;
         RequireEntryConfirmation = false;
         BiasDuration = 15;
         EntryPercent = 14.0;
         TakeProfitPercent = 40;
-        SoftStopLossPercent = 39;
         HardStopLossPercent = 47.7;
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
@@ -465,10 +460,6 @@ public class ORBO : Strategy
             TryEntrySignal();
             nextEvaluationTime = nextEvaluationTime.AddMinutes(5);
         }
-
-        // ✅ Check soft SL every bar close (like ORBOTesting)
-        if (IsFirstTickOfBar)
-            TryClosePosition();
     }
 	
     private bool TimeInSkip(DateTime time)
@@ -555,12 +546,6 @@ public class ORBO : Strategy
             TryExitAll(exitPrice, "MaxProfitExit");
             CleanupPosition();
         }
-    }
-
-    private void TryClosePosition()
-    {
-        if (IsFirstTickOfBar && wickLinesDrawn && orderPlaced)
-            LookForClose();
     }
 
     private void ExitIfSessionEnded()
@@ -742,15 +727,6 @@ public class ORBO : Strategy
    			beFlattenTriggered = false;
         }
 
-        // Exit
-        if (execution.Order.OrderAction == OrderAction.Sell || execution.Order.OrderAction == OrderAction.BuyToCover)
-        {
-            if (execution.Order.Name == "SoftSL")
-            {
-                DebugPrint($"✅ Soft stop exit executed at {price}");
-            }
-        }
-
         // Reset state
         if (Position.MarketPosition == MarketPosition.Flat)
         {
@@ -865,40 +841,6 @@ public class ORBO : Strategy
 
         if (isStrategyAnalyzer)
             lastExitBarAnalyzer = -1;
-    }
-
-    private void LookForClose()
-    {
-        if (Position.MarketPosition == MarketPosition.Flat)
-            return;
-
-        double close = Close[1]; // Use previous candle close
-        double softSL = Position.MarketPosition == MarketPosition.Long
-                            ? sessionHigh - (sessionHigh - sessionLow) * SoftStopLossPercent / 100.0
-                            : sessionLow + (sessionHigh - sessionLow) * SoftStopLossPercent / 100.0;
-
-        DebugPrint($"[LookForClose] Checking soft SL: Close[1]={close}, SoftSL={softSL}");
-
-        bool shouldExit = (Position.MarketPosition == MarketPosition.Long && close < softSL) ||
-                          (Position.MarketPosition == MarketPosition.Short && close > softSL);
-
-        if (shouldExit)
-        {
-            DebugPrint("[LookForClose] Body close has crossed soft SL. Attempting to exit...");
-
-            // ✅ Immediately exit with market order
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                ExitLong("Soft SL", currentSignalName);
-            }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                ExitShort("Soft SL", currentSignalName);
-            }
-            
-            // 🔔 Tell TradersPost we’re out
-            SendWebhook("exit");
-        }
     }
 
     private void PlaceEntryIfTriggered()
@@ -1188,18 +1130,16 @@ public class ORBO : Strategy
         switch (preset)
         {
         case StrategyPreset.NQ_MNQ_1:            
-            EntryPercent = 14.0;
-            //TakeProfitPercent = 32.4;
-            SoftStopLossPercent = 39;
-            HardStopLossPercent = 47.7;
+            EntryPercent = 13.5;
+            TakeProfitPercent = 40.6;
+            HardStopLossPercent = 53.7;
             SLBETrigger = 0;
             break;
 
         case StrategyPreset.NQ_MNQ_2:
-            EntryPercent = 11.25;
-            //TakeProfitPercent = 34;
-            SoftStopLossPercent = 37.25;
-            HardStopLossPercent = 50;
+            EntryPercent = 13.3;
+            TakeProfitPercent = 84;            
+            HardStopLossPercent = 55.6;
             SLBETrigger = 0;
             break;
         }
@@ -1209,7 +1149,6 @@ public class ORBO : Strategy
         // DebugPrint("Contracts: " + NumberOfContracts);
         // DebugPrint("Entry %: " + EntryPercent);
         // DebugPrint("TP %: " + TakeProfitPercent);
-        // DebugPrint("Soft SL %: " + SoftStopLossPercent);
         // DebugPrint("Hard SL %: " + HardStopLossPercent);
         // DebugPrint("Variance ticks: " + VarianceInTicks);
         // DebugPrint("Session Start: " + SessionStart);
@@ -1302,8 +1241,6 @@ public class ORBO : Strategy
         Draw.Line(this, tgH, false, s, sessionHigh, s - off, sessionHigh, lineBrush, style, width).ZOrder = -1;
         Draw.Line(this, tgmH + "maxLoss", false, s, todayLongStoploss, s - off, todayLongStoploss, r, DashStyleHelper.Solid, width).ZOrder = -1;
         Draw.Line(this, tgmL + "maxLoss", false, s, todayShortStoploss, s - off, todayShortStoploss, r, DashStyleHelper.Solid, width).ZOrder = -1;
-        Draw.Line(this, tgH + "sl", false, s, sessionHigh - rng * SoftStopLossPercent / 100.0, s - off, sessionHigh - rng * SoftStopLossPercent / 100.0, o, DashStyleHelper.DashDotDot, width).ZOrder = -1;
-        Draw.Line(this, tgL + "sl", false, s, sessionLow + rng * SoftStopLossPercent / 100.0, s - off, sessionLow + rng * SoftStopLossPercent / 100.0, o, DashStyleHelper.DashDotDot, width).ZOrder = -1;
         Draw.Line(this, tgL, false, s, sessionLow, s - off, sessionLow, lineBrush, style, width).ZOrder = -1;
         Draw.Line(this, tgL + "entry", false, s, todayShortLimit, s - off, todayShortLimit, y, style, width).ZOrder = -1;
 
