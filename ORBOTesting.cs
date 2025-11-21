@@ -104,6 +104,11 @@ public class ORBOTesting : Strategy
     public int MaxBarsInTrade { get; set; }
 
     [NinjaScriptProperty]
+    [Display(Name = "Max Points From Entry", Description = "Cancel pending entry order if price moves this many points away",
+            Order = 12, GroupName = "B. Entry Conditions")]
+    public double MaxPointsFromEntry { get; set; }
+
+    [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
              GroupName = "C. Session Time")]
     public TimeSpan SessionStart
@@ -225,18 +230,14 @@ public class ORBOTesting : Strategy
     // === Shared Anti-Hedge Lock System ===
     private static readonly object hedgeLockSync = new object();
     private static readonly string hedgeLockFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "AntiHedgeLock.csv");
-	
 	private bool beTriggerActive = false;
 	private bool beFlattenTriggered = false;
-
     private double beTriggerLongPrice  = double.NaN;
     private double beTriggerShortPrice = double.NaN;
-
     private bool hasReturnedOnce = false;     // becomes true after price has returned inside the zone
     private bool tpWasHit = false;            // true right after TP hit
-
     private int entryBar = -1;
-
+    private double pendingEntryPrice = double.NaN;
 
 #endregion
 
@@ -368,6 +369,46 @@ public class ORBOTesting : Strategy
                     ExitShort("TimeSL", currentSignalName);
 
                 SendWebhook("exit");
+                return;
+            }
+        }
+
+        // ======================================================
+        // 🚫 CANCEL PENDING ENTRY IF PRICE RUNS AWAY
+        // ======================================================
+        if (MaxPointsFromEntry > 0 &&
+            entryOrder != null &&
+            entryOrder.OrderState == OrderState.Working &&
+            Position.MarketPosition == MarketPosition.Flat)
+        {
+            // Read current midprice for accuracy
+            double bid = GetCurrentBid();
+            double ask = GetCurrentAsk();
+            double mid;
+            if (bid > 0 && ask > 0)
+                mid = (bid + ask) / 2.0;   // MUST divide by 2
+            else
+                mid = Close[0];
+
+            double distance = Math.Abs(mid - pendingEntryPrice);
+
+            if (distance >= MaxPointsFromEntry)
+            {
+                DebugPrint($"❌ Pending entry canceled — price moved away {distance:F2} points (limit {MaxPointsFromEntry})");
+
+                CancelOrder(entryOrder);
+                entryOrder = null;
+
+                // Treat this SAME AS TP hit → must return to the zone
+                tpWasHit = true;
+                hasReturnedOnce = false;
+
+                breakoutActive = false;                 // reset breakout
+                breakoutRearmPending = UseBreakoutRearmDelay;
+                if (breakoutRearmPending)
+                    breakoutRearmTime = Times[0][0].AddMinutes(5);
+
+                SendWebhook("cancel");
                 return;
             }
         }
@@ -996,6 +1037,7 @@ public class ORBOTesting : Strategy
             }
 
             EnterLongLimit(0, true, NumberOfContracts, limitPrice, signalName);
+            pendingEntryPrice = limitPrice;
             SendWebhook("buy", limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         } else {
@@ -1023,6 +1065,7 @@ public class ORBOTesting : Strategy
             }
 
             EnterShortLimit(0, true, NumberOfContracts, limitPrice, signalName);
+            pendingEntryPrice = limitPrice;
             SendWebhook("sell", limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         }

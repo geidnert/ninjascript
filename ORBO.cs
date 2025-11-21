@@ -100,8 +100,13 @@ public class ORBO : Strategy
 
     // [NinjaScriptProperty]
     // [Display(Name = "Max Bars In Trade", Description = "Exit trade after this many bars since entry", 
-    //         Order = 20, GroupName = "B. Entry Conditions")]
+    //         Order = 11, GroupName = "B. Entry Conditions")]
     internal int MaxBarsInTrade { get; set; }
+
+    // [NinjaScriptProperty]
+    // [Display(Name = "Max Points From Entry", Description = "Cancel pending entry order if price moves this many points away",
+    //         Order = 12, GroupName = "B. Entry Conditions")]
+    internal double MaxPointsFromEntry { get; set; }
 
     [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
@@ -235,6 +240,7 @@ public class ORBO : Strategy
     private bool hasReturnedOnce = false;     // becomes true after price has returned inside the zone
     private bool tpWasHit = false;            // true right after TP hit
     private int entryBar = -1;
+    private double pendingEntryPrice = double.NaN;
 
 #endregion
 
@@ -290,6 +296,7 @@ public class ORBO : Strategy
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
         MaxBarsInTrade = 0;
+        MaxPointsFromEntry = 0;
         RangeBoxBrush = Brushes.Gold;
         RequireCloseBelowReturn = false;
         SLBETrigger = 0;
@@ -309,33 +316,73 @@ public class ORBO : Strategy
     {
         ResetDailyStateIfNeeded();
 	
-    // ======================================================
-    // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
-    // ======================================================
-    if (MaxBarsInTrade > 0 &&
-        Position.MarketPosition != MarketPosition.Flat &&
-        entryBar >= 0)
-    {
-        // Safety for tick-based processing
-        if (CurrentBar <= entryBar)
-            return;
-
-        int barsInTrade = CurrentBar - entryBar;
-
-        if (barsInTrade >= MaxBarsInTrade)
+        // ======================================================
+        // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
+        // ======================================================
+        if (MaxBarsInTrade > 0 &&
+            Position.MarketPosition != MarketPosition.Flat &&
+            entryBar >= 0)
         {
-            DebugPrint($"⏱ ORBO: Time-based exit triggered after {barsInTrade} bars (limit {MaxBarsInTrade}).");
+            // Safety for tick-based processing
+            if (CurrentBar <= entryBar)
+                return;
 
-            if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong("TimeSL", currentSignalName);
-            else
-                ExitShort("TimeSL", currentSignalName);
+            int barsInTrade = CurrentBar - entryBar;
 
-            SendWebhook("exit");
+            if (barsInTrade >= MaxBarsInTrade)
+            {
+                DebugPrint($"⏱ ORBO: Time-based exit triggered after {barsInTrade} bars (limit {MaxBarsInTrade}).");
 
-            return; // Prevent double exits
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("TimeSL", currentSignalName);
+                else
+                    ExitShort("TimeSL", currentSignalName);
+
+                SendWebhook("exit");
+
+                return; // Prevent double exits
+            }
         }
-    }
+
+        // ======================================================
+        // 🚫 CANCEL PENDING ENTRY IF PRICE RUNS AWAY
+        // ======================================================
+        if (MaxPointsFromEntry > 0 &&
+            entryOrder != null &&
+            entryOrder.OrderState == OrderState.Working &&
+            Position.MarketPosition == MarketPosition.Flat)
+        {
+            double bid = GetCurrentBid();
+            double ask = GetCurrentAsk();
+
+            double mid;
+            if (bid > 0 && ask > 0 && Math.Abs(ask - bid) < 50 * TickSize)
+                mid = (bid + ask) / 2.0;
+            else
+                mid = Close[0];
+
+            double distance = Math.Abs(mid - pendingEntryPrice);
+
+            if (distance >= MaxPointsFromEntry)
+            {
+                DebugPrint($"❌ Pending entry canceled — price moved away {distance:F2} points (limit {MaxPointsFromEntry})");
+
+                CancelOrder(entryOrder);
+                entryOrder = null;
+
+                // Treat the SAME AS TP HIT
+                tpWasHit = true;
+                hasReturnedOnce = false;
+
+                breakoutActive = false;
+                breakoutRearmPending = UseBreakoutRearmDelay;
+                if (breakoutRearmPending)
+                    breakoutRearmTime = Times[0][0].AddMinutes(5);
+
+                SendWebhook("cancel");
+                return;
+            }
+        }
 
 		// === Skip window cross detection === 
 		if (CurrentBar < 2) // need at least 2 bars for Time[1], Close[1], etc.
@@ -947,6 +994,7 @@ public class ORBO : Strategy
             }
 
             EnterLongLimit(0, true, NumberOfContracts, limitPrice, signalName);
+            pendingEntryPrice = limitPrice;
             SendWebhook("buy", limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         } else {
@@ -974,6 +1022,7 @@ public class ORBO : Strategy
             }
 
             EnterShortLimit(0, true, NumberOfContracts, limitPrice, signalName);
+            pendingEntryPrice = limitPrice;
             SendWebhook("sell", limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         }
