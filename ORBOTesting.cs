@@ -85,6 +85,10 @@ public class ORBOTesting : Strategy
     public double MaxRangePoints { get; set; }
 
     [NinjaScriptProperty]
+    [Display(Name = "Range Duration (sec)", Description = "Overrides Range Duration when > 0; set to 0 to use Range Duration minutes", Order = 2, GroupName = "B. Entry Conditions")]
+    public int RangeDurationSeconds { get; set; }
+
+    [NinjaScriptProperty]
     [Range(1, 100, ErrorMessage = "EntryPercent must be between 1 and 100 ticks")]
     [Display(Name = "Entry %", Description = "Entry price for limit order from 15 min OR", Order = 3, GroupName = "B. Entry Conditions")]
     public double EntryPercent { get; set; }
@@ -100,6 +104,10 @@ public class ORBOTesting : Strategy
     [NinjaScriptProperty]
     [Display(Name = "Min RR % (Market)", Description = "Minimum reward/risk (as percent, e.g. 25 = 0.25 RR) for market entries; 0 disables", Order = 7, GroupName = "B. Entry Conditions")]
     public double MinMarketRRPercent { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(Name = "Evaluation Interval (sec)", Description = "Time between entry evaluations; default 300 sec (5m). 0 = use 300", Order = 8, GroupName = "B. Entry Conditions")]
+    public int EvaluationIntervalSeconds { get; set; }
 
     [NinjaScriptProperty]
     [Display(Name = "Require 5m Close Below Return%", Description = "Require 5-minute candle close for return reset", Order = 9, GroupName = "B. Entry Conditions")]
@@ -246,6 +254,7 @@ public class ORBOTesting : Strategy
     private DateTime breakoutRearmTime = DateTime.MinValue;
     private bool rangeTooWide = false;
     private bool rangeTooWideLogged = false;
+    private int cachedPrimaryBarSeconds = 0;
     // --- Heartbeat reporting ---
     private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
     private System.Timers.Timer heartbeatTimer;
@@ -320,6 +329,8 @@ public class ORBOTesting : Strategy
         MarketEntry = false;
         BiasDuration = 15;
         MaxRangePoints = 0;
+        RangeDurationSeconds = 0;
+        EvaluationIntervalSeconds = 300;
         EntryPercent = 14.0;
         TakeProfitPercent = 32.4;
         HardStopLossPercent = 47.7;
@@ -536,11 +547,8 @@ public class ORBOTesting : Strategy
 
         TimeSpan now = Times[0][0].TimeOfDay;
         TimeSpan biasStart = SessionStart.Add(TimeSpan.FromMinutes(1));
-        TimeSpan biasEnd = biasStart.Add(TimeSpan.FromMinutes(BiasDuration));
-        int primaryBarMinutes = (BarsPeriod.BarsPeriodType == BarsPeriodType.Minute)
-            ? Math.Max(1, BarsPeriod.Value)
-            : 1;
-        TimeSpan biasResetWindow = TimeSpan.FromMinutes(primaryBarMinutes);
+        TimeSpan biasEnd = biasStart.Add(TimeSpan.FromSeconds(GetRangeDurationSeconds()));
+        TimeSpan biasResetWindow = TimeSpan.FromSeconds(GetPrimaryBarSeconds());
 
         if (now >= biasStart && now < biasStart.Add(biasResetWindow))
         {
@@ -662,10 +670,20 @@ public class ORBOTesting : Strategy
             }
         }
 
-        if (IsFirstTickOfBar && Times[0][0] >= nextEvaluationTime)
+        if (IsFirstTickOfBar)
         {
-            TryEntrySignal();
-            nextEvaluationTime = nextEvaluationTime.AddMinutes(5);
+            if (nextEvaluationTime == DateTime.MinValue)
+                nextEvaluationTime = ComputeFirstEvalTime(Times[0][0].Date);
+
+            if (Times[0][0] >= nextEvaluationTime)
+            {
+                TryEntrySignal();
+                do
+                {
+                    nextEvaluationTime = nextEvaluationTime.AddSeconds(GetEvaluationIntervalSeconds());
+                }
+                while (Times[0][0] >= nextEvaluationTime);
+            }
         }
     }
 	
@@ -1096,6 +1114,7 @@ public class ORBOTesting : Strategy
         trailingTarget      = double.NaN;
         rangeTooWide = false;
         rangeTooWideLogged = false;
+        cachedPrimaryBarSeconds = 0;
 
         if (isStrategyAnalyzer)
             lastExitBarAnalyzer = -1;
@@ -1564,7 +1583,7 @@ public class ORBOTesting : Strategy
     private void DrawSessionWickRangePersistent(TimeSpan startTime, TimeSpan endTime, string tagPrefix, Brush lineColor,
                                                 DashStyleHelper style, int width)
     {
-        if (wickLinesDrawn || Times[0][0].TimeOfDay < endTime || CurrentBar < BiasDuration)
+        if (wickLinesDrawn || Times[0][0].TimeOfDay < endTime || CurrentBar < GetMinBarsForRange())
             return;
 
         int s = -1, e = -1;
@@ -1581,7 +1600,7 @@ public class ORBOTesting : Strategy
                 s = i;
             }
         }
-        if (s < 0 || e < 0 || s <= e)
+        if (s < 0 || e < 0)
             return;
         sessionHigh = High[e];
         sessionLow = Low[e];
@@ -1591,10 +1610,9 @@ public class ORBOTesting : Strategy
             sessionLow = Math.Min(sessionLow, Low[i]);
         }
 
-        BarsPeriodType barType = BarsPeriod.BarsPeriodType;
-        int barValue = BarsPeriod.Value;
-        int totalMinutes = (int)(SessionEnd - SessionStart).TotalMinutes - barValue;
-        int off = (totalMinutes / barValue);
+        int barSeconds = GetPrimaryBarSeconds();
+        int totalSeconds = (int)(SessionEnd - SessionStart).TotalSeconds;
+        int off = Math.Max(1, totalSeconds / barSeconds);
         var tgH = $"{tagPrefix}_High_{Times[0][0]:yyyyMMdd}";
         var tgbH = $"{tagPrefix}_bHigh_{Times[0][0]:yyyyMMdd}";
         var tgmH = $"{tagPrefix}_mHLoss_{Times[0][0]:yyyyMMdd}";
@@ -1703,14 +1721,11 @@ public class ORBOTesting : Strategy
 
         wickLinesDrawn = true;
 
-        // Set first allowed evaluation time at the next 5-minute mark after 9:45
-        int biasEndMinute = SessionStart.Minutes + BiasDuration;
-        int rounded = ((biasEndMinute + 4) / 5) * 5; // round to next 5-min boundary
-        DateTime firstEval = Times[0][0].Date.AddHours(SessionStart.Hours).AddMinutes(rounded + 1);
-        nextEvaluationTime = firstEval;
+        // Set first allowed evaluation time dynamically based on settings
+        nextEvaluationTime = ComputeFirstEvalTime(Times[0][0].Date);
 
-        int noTradesAfter = (int)(NoTradesAfter - SessionStart).TotalMinutes - barValue;
-        Draw.VerticalLine(this, $"NoTradesAfter_{Times[0][0]:yyyyMMdd}", s - (noTradesAfter / barValue), r,
+        int noTradesAfterSeconds = (int)(NoTradesAfter - SessionStart).TotalSeconds;
+        Draw.VerticalLine(this, $"NoTradesAfter_{Times[0][0]:yyyyMMdd}", s - (noTradesAfterSeconds / barSeconds), r,
                           DashStyleHelper.Solid, 2);
     }
 
@@ -1763,6 +1778,51 @@ public class ORBOTesting : Strategy
         double slDollars = slTicks * tickValue * NumberOfContracts;
 
         return $"TP: ${tpDollars:0}\nSL: ${slDollars:0}";
+    }
+
+    private int GetRangeDurationSeconds()
+    {
+        int seconds = RangeDurationSeconds > 0 ? RangeDurationSeconds : BiasDuration * 60;
+        return Math.Max(1, seconds);
+    }
+
+    private int GetEvaluationIntervalSeconds()
+    {
+        int seconds = EvaluationIntervalSeconds > 0 ? EvaluationIntervalSeconds : 300;
+        return Math.Max(1, seconds);
+    }
+
+    private int GetPrimaryBarSeconds()
+    {
+        if (cachedPrimaryBarSeconds > 0)
+            return cachedPrimaryBarSeconds;
+
+        int seconds;
+        switch (BarsPeriod.BarsPeriodType)
+        {
+        case BarsPeriodType.Second:
+            seconds = BarsPeriod.Value;
+            break;
+        case BarsPeriodType.Minute:
+            seconds = BarsPeriod.Value * 60;
+            break;
+        default:
+            seconds = 60;
+            break;
+        }
+
+        cachedPrimaryBarSeconds = Math.Max(1, seconds);
+        return cachedPrimaryBarSeconds;
+    }
+
+    private int GetMinBarsForRange() =>
+        Math.Max(1, (int)Math.Ceiling((double)GetRangeDurationSeconds() / GetPrimaryBarSeconds()));
+
+    private DateTime ComputeFirstEvalTime(DateTime sessionDate)
+    {
+        TimeSpan biasStart = SessionStart.Add(TimeSpan.FromMinutes(1));
+        TimeSpan biasEnd   = biasStart.Add(TimeSpan.FromSeconds(GetRangeDurationSeconds()));
+        return sessionDate.Add(biasEnd).AddSeconds(GetEvaluationIntervalSeconds());
     }
     
     private void WriteHeartbeat()
