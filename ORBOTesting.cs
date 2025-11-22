@@ -1179,6 +1179,14 @@ public class ORBOTesting : Strategy
                 if (marketEntryPrice <= 0 || double.IsNaN(marketEntryPrice))
                     marketEntryPrice = Close[0];
 
+                // Skip if price already beyond TP
+                if (marketEntryPrice >= takeProfit)
+                {
+                    if (DebugMode)
+                        DebugPrint($"⛔ Market entry skipped: price {marketEntryPrice:F2} already beyond TP {takeProfit:F2}.");
+                    return;
+                }
+
                 // RR filter for market entries
                 if (MinMarketRRPercent > 0)
                 {
@@ -1237,6 +1245,14 @@ public class ORBOTesting : Strategy
                 marketEntryPrice = GetCurrentBid();
                 if (marketEntryPrice <= 0 || double.IsNaN(marketEntryPrice))
                     marketEntryPrice = Close[0];
+
+                // Skip if price already beyond TP
+                if (marketEntryPrice <= takeProfit)
+                {
+                    if (DebugMode)
+                        DebugPrint($"⛔ Market entry skipped: price {marketEntryPrice:F2} already beyond TP {takeProfit:F2}.");
+                    return;
+                }
 
                 // RR filter for market entries
                 if (MinMarketRRPercent > 0)
