@@ -45,6 +45,13 @@ public class ORBOTesting : Strategy
     }
 
     [NinjaScriptProperty]
+    [Display(Name = "Market Entry", Description = "If true, enter at market on bar close trigger instead of placing limit orders", Order = 3,
+             GroupName = "A. Config")]
+    public bool MarketEntry {
+        get; set;
+    }
+
+    [NinjaScriptProperty]
     [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3,
              GroupName = "A. Config")]
     public bool AntiHedge {
@@ -300,6 +307,7 @@ public class ORBOTesting : Strategy
 
         NumberOfContracts = 1;
         RequireEntryConfirmation = false;
+        MarketEntry = false;
         BiasDuration = 15;
         EntryPercent = 14.0;
         TakeProfitPercent = 32.4;
@@ -1078,6 +1086,7 @@ public class ORBOTesting : Strategy
         bool isLong = Close[1] > todayLongLimit;
         double rawLimitPrice = isLong ? todayLongLimit : todayShortLimit;
         double limitPrice = rawLimitPrice; // Start with default
+        double marketEntryPrice = double.NaN;
 
         double takeProfit = isLong ? todayLongProfit : todayShortProfit;
         double stopLoss   = isLong ? todayLongStoploss : todayShortStoploss;
@@ -1137,10 +1146,25 @@ public class ORBOTesting : Strategy
                 }
             }
 
-            EnterLongLimit(0, true, NumberOfContracts, limitPrice, signalName);
-            pendingEntryPrice = limitPrice;
-            entryOrderBar = CurrentBar;
-            SendWebhook("buy", limitPrice, takeProfit, stopLoss);
+            if (MarketEntry)
+            {
+                // Enter at market on the bar that closes above the entry line
+                marketEntryPrice = GetCurrentAsk();
+                if (marketEntryPrice <= 0 || double.IsNaN(marketEntryPrice))
+                    marketEntryPrice = Close[0];
+
+                EnterLong(NumberOfContracts, signalName);
+                pendingEntryPrice = marketEntryPrice;
+                entryOrderBar = CurrentBar;
+            }
+            else
+            {
+                EnterLongLimit(0, true, NumberOfContracts, limitPrice, signalName);
+                pendingEntryPrice = limitPrice;
+                entryOrderBar = CurrentBar;
+            }
+
+            SendWebhook("buy", MarketEntry ? marketEntryPrice : limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         } else {
             if (AntiHedge && (HasOppositePosition(otherSymbol, MarketPosition.Short) || HasOppositeOrder(otherSymbol, MarketPosition.Short)))
@@ -1166,10 +1190,24 @@ public class ORBOTesting : Strategy
                 }
             }
 
-            EnterShortLimit(0, true, NumberOfContracts, limitPrice, signalName);
-            pendingEntryPrice = limitPrice;
-            entryOrderBar = CurrentBar;
-            SendWebhook("sell", limitPrice, takeProfit, stopLoss);
+            if (MarketEntry)
+            {
+                marketEntryPrice = GetCurrentBid();
+                if (marketEntryPrice <= 0 || double.IsNaN(marketEntryPrice))
+                    marketEntryPrice = Close[0];
+
+                EnterShort(NumberOfContracts, signalName);
+                pendingEntryPrice = marketEntryPrice;
+                entryOrderBar = CurrentBar;
+            }
+            else
+            {
+                EnterShortLimit(0, true, NumberOfContracts, limitPrice, signalName);
+                pendingEntryPrice = limitPrice;
+                entryOrderBar = CurrentBar;
+            }
+
+            SendWebhook("sell", MarketEntry ? marketEntryPrice : limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         }
 
