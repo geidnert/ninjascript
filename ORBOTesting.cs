@@ -98,6 +98,10 @@ public class ORBOTesting : Strategy
     public double HardStopLossPercent { get; set; }
 
     [NinjaScriptProperty]
+    [Display(Name = "Min RR % (Market)", Description = "Minimum reward/risk (as percent, e.g. 25 = 0.25 RR) for market entries; 0 disables", Order = 7, GroupName = "B. Entry Conditions")]
+    public double MinMarketRRPercent { get; set; }
+
+    [NinjaScriptProperty]
     [Display(Name = "Require 5m Close Below Return%", Description = "Require 5-minute candle close for return reset", Order = 9, GroupName = "B. Entry Conditions")]
     public bool RequireCloseBelowReturn { get; set; }
 
@@ -319,6 +323,7 @@ public class ORBOTesting : Strategy
         EntryPercent = 14.0;
         TakeProfitPercent = 32.4;
         HardStopLossPercent = 47.7;
+        MinMarketRRPercent = 0;
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
         MaxBarsInTrade = 0;
@@ -1174,6 +1179,22 @@ public class ORBOTesting : Strategy
                 if (marketEntryPrice <= 0 || double.IsNaN(marketEntryPrice))
                     marketEntryPrice = Close[0];
 
+                // RR filter for market entries
+                if (MinMarketRRPercent > 0)
+                {
+                    double risk = marketEntryPrice - stopLoss;
+                    double reward = takeProfit - marketEntryPrice;
+                    double rr = (risk != 0) ? (reward / risk) : double.NaN;
+                    double minRR = MinMarketRRPercent / 100.0;
+
+                    if (double.IsNaN(rr) || rr < minRR)
+                    {
+                        if (DebugMode)
+                            DebugPrint($"⛔ Market entry blocked: RR {rr:F2} < min {minRR:F2}. Reward={reward:F2}, Risk={risk:F2}");
+                        return;
+                    }
+                }
+
                 EnterLong(NumberOfContracts, signalName);
                 pendingEntryPrice = marketEntryPrice;
                 entryOrderBar = CurrentBar;
@@ -1216,6 +1237,22 @@ public class ORBOTesting : Strategy
                 marketEntryPrice = GetCurrentBid();
                 if (marketEntryPrice <= 0 || double.IsNaN(marketEntryPrice))
                     marketEntryPrice = Close[0];
+
+                // RR filter for market entries
+                if (MinMarketRRPercent > 0)
+                {
+                    double risk = stopLoss - marketEntryPrice;
+                    double reward = marketEntryPrice - takeProfit;
+                    double rr = (risk != 0) ? (reward / risk) : double.NaN;
+                    double minRR = MinMarketRRPercent / 100.0;
+
+                    if (double.IsNaN(rr) || rr < minRR)
+                    {
+                        if (DebugMode)
+                            DebugPrint($"⛔ Market entry blocked: RR {rr:F2} < min {minRR:F2}. Reward={reward:F2}, Risk={risk:F2}");
+                        return;
+                    }
+                }
 
                 EnterShort(NumberOfContracts, signalName);
                 pendingEntryPrice = marketEntryPrice;
