@@ -247,6 +247,11 @@ public class ORBOTesting : Strategy
     private double pendingEntryPrice = double.NaN;
     private double cancelOrderDistanceAbs = 0;
     private int entryOrderBar = -1;
+    // --- Trailing stop state (break-even management) ---
+    private bool trailCancelPending   = false;
+    private double pendingTrailStopPrice = double.NaN;
+    private double trailingTarget     = double.NaN;
+    private bool beStopMoveRequested  = false;
 
 #endregion
 
@@ -549,7 +554,7 @@ public class ORBOTesting : Strategy
         bool noOpenOrders = !HasOpenOrders();
         bool isFlat = Position.MarketPosition == MarketPosition.Flat;
 		
-		if (SLBETrigger > 0 && Position.MarketPosition != MarketPosition.Flat)
+        if (SLBETrigger > 0 && Position.MarketPosition != MarketPosition.Flat)
         {
             // Choose a stable intrabar price for comparison
             double bid = GetCurrentBid();
@@ -562,11 +567,13 @@ public class ORBOTesting : Strategy
                 if (Position.MarketPosition == MarketPosition.Long && !double.IsNaN(beTriggerLongPrice) && mid >= beTriggerLongPrice)
                 {
                     beTriggerActive = true;
+                    beStopMoveRequested = false;
                     DebugPrint($"🟢 BE trigger ARMED at {beTriggerLongPrice:F2} ({SLBETrigger:0.#}% of range)");
                 }
                 else if (Position.MarketPosition == MarketPosition.Short && !double.IsNaN(beTriggerShortPrice) && mid <= beTriggerShortPrice)
                 {
                     beTriggerActive = true;
+                    beStopMoveRequested = false;
                     DebugPrint($"🟢 BE trigger ARMED at {beTriggerShortPrice:F2} ({SLBETrigger:0.#}% of range)");
                 }
             }
@@ -576,11 +583,25 @@ public class ORBOTesting : Strategy
             {
                 // Use entry price for pure BE, or keep your PnL<=0 guard — both are fine.
                 double entry = lastFilledEntryPrice > 0 ? lastFilledEntryPrice : entryPrice; // fallback
+
+                // Move the hard stop to BE once per activation (Strategy Analyzer safe)
+                if (!beStopMoveRequested && entry > 0 && !double.IsNaN(entry))
+                {
+                    double beStop = Instrument.MasterInstrument.RoundToTickSize(entry);
+                    ReplaceStopOrder(beStop);
+                }
+
+                bool stopManagingBE =
+                    beStopMoveRequested ||
+                    trailCancelPending ||
+                    (hardStopOrder != null &&
+                        (hardStopOrder.OrderState == OrderState.Accepted || hardStopOrder.OrderState == OrderState.Working));
+
                 bool retracedToBE =
                     (Position.MarketPosition == MarketPosition.Long  && mid <= entry) ||
                     (Position.MarketPosition == MarketPosition.Short && mid >= entry);
 
-                if (retracedToBE)
+                if (!stopManagingBE && retracedToBE)
                 {
                     beFlattenTriggered = true;
                     DebugPrint("🔻 Retraced to BE or worse — flattening position.");
@@ -842,6 +863,38 @@ public class ORBOTesting : Strategy
                                           double averageFillPrice, OrderState orderState, DateTime time,
                                           ErrorCode error, string comment)
     {
+        // Trailing stop state machine: when an old SL cancel finishes, submit the replacement
+        if (trailCancelPending
+            && order != null
+            && order.Name == "StopLoss"
+            && order.Instrument.FullName == Instrument.FullName
+            && orderState == OrderState.Cancelled)
+        {
+            DebugPrint("[TRAIL] Confirmed old SL CANCELLED – submitting new SL now.");
+
+            trailCancelPending = false;
+
+            if (!double.IsNaN(pendingTrailStopPrice) &&
+                Position.MarketPosition != MarketPosition.Flat)
+            {
+                SubmitStopLoss(pendingTrailStopPrice);
+            }
+
+            pendingTrailStopPrice = double.NaN;
+            // fall through to other handlers
+        }
+
+        // Track any working/accepted SL for trailing updates
+        if (order != null
+            && order.OrderType == OrderType.StopMarket
+            && order.Instrument.FullName == Instrument.FullName
+            && (order.OrderState == OrderState.Accepted || order.OrderState == OrderState.Working))
+        {
+            hardStopOrder  = order;
+            trailingTarget = order.StopPrice;
+            DebugPrint($"[TRAIL] SL working. trailingTarget={trailingTarget:F2}, name={order.Name}, action={order.OrderAction}");
+        }
+
         if (BarsInProgress == 1 && CurrentBars[1] < 1)
             return;
         if (BarsInProgress == 0 && CurrentBar < 20)
@@ -876,24 +929,25 @@ public class ORBOTesting : Strategy
 
         if (execution.Order != null && (execution.Order.Name.Contains("Long") || execution.Order.Name.Contains("Short")))
         {
+            bool isLongEntry = execution.Order.Name.Contains("Long");
+
             entryPrice = execution.Price;
+            lastFilledEntryPrice = execution.Price;
             entryBar = CurrentBar; // remember bar index of the fill
             tpWasHit = false;
             beTriggerActive = false;
             beFlattenTriggered = false;
-        }
+            beStopMoveRequested = false;
+            trailCancelPending = false;
+            pendingTrailStopPrice = double.NaN;
 
-        // Entry
-        if (execution.Order.Name.Contains("Long") || execution.Order.Name.Contains("Short"))
-        {
-            entryPrice = execution.Price;
-            lastFilledEntryPrice = execution.Price;
             lastEntryTime = Times[0][0];
             lastProtectionTime = DateTime.Now;
 			
-			// reset BE state
-    		beTriggerActive = false;
-   			beFlattenTriggered = false;
+            // Submit protective SL so trailing moves are represented in Strategy Analyzer
+            double stopPx = isLongEntry ? todayLongStoploss : todayShortStoploss;
+            if (!double.IsNaN(stopPx))
+                SubmitStopLoss(stopPx);
         }
 
         // Reset state
@@ -1007,6 +1061,10 @@ public class ORBOTesting : Strategy
         beFlattenTriggered = false;
         tpWasHit = false;
         hasReturnedOnce = false;
+        beStopMoveRequested = false;
+        trailCancelPending  = false;
+        pendingTrailStopPrice = double.NaN;
+        trailingTarget      = double.NaN;
 
         if (isStrategyAnalyzer)
             lastExitBarAnalyzer = -1;
@@ -1140,6 +1198,55 @@ public class ORBOTesting : Strategy
         TryExitAll(dummyExitP, "SessionEnd");
     }
 
+    private void SubmitStopLoss(double stopPrice)
+    {
+        if (Position.MarketPosition == MarketPosition.Flat)
+            return;
+
+        int qty = Position.Quantity;
+        if (qty <= 0)
+            return;
+
+        double roundedStop = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+
+        if (Position.MarketPosition == MarketPosition.Long)
+            hardStopOrder = ExitLongStopMarket(0, true, qty, roundedStop, "StopLoss", currentSignalName);
+        else
+            hardStopOrder = ExitShortStopMarket(0, true, qty, roundedStop, "StopLoss", currentSignalName);
+
+        trailingTarget = roundedStop;
+        DebugPrint($"[TRAIL] Stop submitted at {roundedStop:F2} (qty={qty})");
+    }
+
+    private void ReplaceStopOrder(double newSL)
+    {
+        if (double.IsNaN(newSL))
+            return;
+
+        double roundedSL = Instrument.MasterInstrument.RoundToTickSize(newSL);
+
+        if (hardStopOrder == null ||
+            hardStopOrder.OrderState == OrderState.Cancelled ||
+            hardStopOrder.OrderState == OrderState.Filled ||
+            hardStopOrder.OrderState == OrderState.Rejected)
+        {
+            SubmitStopLoss(roundedSL);
+            beStopMoveRequested = true;
+            return;
+        }
+
+        if (hardStopOrder.OrderState == OrderState.Working ||
+            hardStopOrder.OrderState == OrderState.Accepted)
+        {
+            pendingTrailStopPrice = roundedSL;
+            trailCancelPending    = true;
+            beStopMoveRequested   = true;
+
+            DebugPrint($"[TRAIL] Requesting cancel of old SL at {hardStopOrder.StopPrice:F2} to move to {roundedSL:F2}");
+            CancelOrder(hardStopOrder);
+        }
+    }
+
     private void CancelAllOrders()
     {
         DebugPrint("CancelAllOrders called. EntryOrder=" + (entryOrder?.Name ?? "null") +
@@ -1157,6 +1264,10 @@ public class ORBOTesting : Strategy
             CancelOrder(hardStopOrder);
             hardStopOrder = null;
         }
+        trailCancelPending    = false;
+        pendingTrailStopPrice = double.NaN;
+        trailingTarget        = double.NaN;
+        beStopMoveRequested   = false;
         foreach (var o in profitOrders)
             CancelOrder(o);
         profitOrders.Clear();
@@ -1176,6 +1287,10 @@ public class ORBOTesting : Strategy
         profitOrders.Clear();
         orderPlaced = false;
         lastProtectionTime = DateTime.MinValue;
+        beStopMoveRequested = false;
+        trailCancelPending  = false;
+        pendingTrailStopPrice = double.NaN;
+        trailingTarget      = double.NaN;
     }
 
     private bool IsInSession()
