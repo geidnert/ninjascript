@@ -52,7 +52,7 @@ public class ORBOTesting : Strategy
     }
 
     [NinjaScriptProperty]
-    [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3,
+    [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 4,
              GroupName = "A. Config")]
     public bool AntiHedge {
         get; set;
@@ -63,7 +63,7 @@ public class ORBOTesting : Strategy
         Name = "Max Account Balance",
         Description =
             "When account reach this amount, ongoing orders and positions will close, no more trades will be taken",
-        Order = 4, GroupName = "A. Config")]
+        Order = 5, GroupName = "A. Config")]
     public double MaxAccountBalance {
         get; set;
     }
@@ -79,6 +79,10 @@ public class ORBOTesting : Strategy
     [NinjaScriptProperty]
     [Display(Name = "Range Duration", Order = 1, GroupName = "B. Entry Conditions")]
     public int BiasDuration { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(Name = "Max Range (pts)", Description = "If session range exceeds this size, block trading for the day (0 = disabled)", Order = 2, GroupName = "B. Entry Conditions")]
+    public double MaxRangePoints { get; set; }
 
     [NinjaScriptProperty]
     [Range(1, 100, ErrorMessage = "EntryPercent must be between 1 and 100 ticks")]
@@ -236,6 +240,8 @@ public class ORBOTesting : Strategy
     private bool hasCapturedRange = false;
     private bool breakoutRearmPending = false;
     private DateTime breakoutRearmTime = DateTime.MinValue;
+    private bool rangeTooWide = false;
+    private bool rangeTooWideLogged = false;
     // --- Heartbeat reporting ---
     private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
     private System.Timers.Timer heartbeatTimer;
@@ -309,6 +315,7 @@ public class ORBOTesting : Strategy
         RequireEntryConfirmation = false;
         MarketEntry = false;
         BiasDuration = 15;
+        MaxRangePoints = 0;
         EntryPercent = 14.0;
         TakeProfitPercent = 32.4;
         HardStopLossPercent = 47.7;
@@ -561,8 +568,14 @@ public class ORBOTesting : Strategy
         // 🔁 Breakout reset should always be checked per tick or every 5m based on setting
         bool noOpenOrders = !HasOpenOrders();
         bool isFlat = Position.MarketPosition == MarketPosition.Flat;
+
+        // Block trading on oversized ranges (resets each day)
+        if (rangeTooWide && isFlat)
+        {
+            return;
+        }
 		
-        if (SLBETrigger > 0 && Position.MarketPosition != MarketPosition.Flat)
+		if (SLBETrigger > 0 && Position.MarketPosition != MarketPosition.Flat)
         {
             // Choose a stable intrabar price for comparison
             double bid = GetCurrentBid();
@@ -769,6 +782,9 @@ public class ORBOTesting : Strategy
 
     private void TryEntrySignal()
     {
+        if (rangeTooWide)
+            return;
+
         // 💡 Reset breakout state if price is back inside range
         bool noOpenOrders = !HasOpenOrders();
         bool isFlat = Position.MarketPosition == MarketPosition.Flat;
@@ -1073,6 +1089,8 @@ public class ORBOTesting : Strategy
         trailCancelPending  = false;
         pendingTrailStopPrice = double.NaN;
         trailingTarget      = double.NaN;
+        rangeTooWide = false;
+        rangeTooWideLogged = false;
 
         if (isStrategyAnalyzer)
             lastExitBarAnalyzer = -1;
@@ -1080,6 +1098,9 @@ public class ORBOTesting : Strategy
 
     private void PlaceEntryIfTriggered()
     {
+        if (rangeTooWide)
+            return;
+
         //SetProfitTarget(CalculationMode.Ticks, 0);
         //SetStopLoss(CalculationMode.Ticks, 0);
 
@@ -1545,6 +1566,17 @@ public class ORBOTesting : Strategy
         double roundedHigh = Instrument.MasterInstrument.RoundToTickSize(sessionHigh);
         double roundedLow  = Instrument.MasterInstrument.RoundToTickSize(sessionLow);
         double rng = roundedHigh - roundedLow;
+
+        if (MaxRangePoints > 0 && rng > MaxRangePoints)
+        {
+            rangeTooWide = true;
+            if (!rangeTooWideLogged && DebugMode)
+            {
+                DebugPrint($"⛔ Range too wide: {rng:F2} pts > MaxRangePoints {MaxRangePoints:F2}. Trades blocked today.");
+                rangeTooWideLogged = true;
+            }
+            CancelAllOrders();
+        }
 
         double cancelOffset = rng * CancelOrderPercent / 100.0;
         cancelOrderDistanceAbs = Instrument.MasterInstrument.RoundToTickSize(cancelOffset);
