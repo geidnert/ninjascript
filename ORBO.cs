@@ -203,8 +203,8 @@ public class ORBO : Strategy
     private string displayText = "Waiting...";
     private bool isStrategyAnalyzer = false;
     private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
-    private TimeSpan sessionEnd = new TimeSpan(15, 05, 0);
-    private TimeSpan noTradesAfter = new TimeSpan(15, 01, 0);
+    private TimeSpan sessionEnd = new TimeSpan(16, 06, 0);
+    private TimeSpan noTradesAfter = new TimeSpan(15, 26, 0);
     private TimeSpan skipStart = new TimeSpan(00, 00, 0);
     private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
     private static readonly Random Random = new Random();
@@ -380,6 +380,9 @@ public class ORBO : Strategy
 
                 CancelOrder(entryOrder);
                 entryOrder = null;
+                orderPlaced = false;
+                entryOrderBar = -1;
+                pendingEntryPrice = double.NaN;
 
                 tpWasHit = true;
                 hasReturnedOnce = false;
@@ -412,6 +415,9 @@ public class ORBO : Strategy
 
                 CancelOrder(entryOrder);
                 entryOrder = null;
+                orderPlaced = false;
+                entryOrderBar = -1;
+                pendingEntryPrice = double.NaN;
 
                 // Same reset logic as CancelOrderPercent
                 tpWasHit = true;
@@ -1261,18 +1267,16 @@ public class ORBO : Strategy
         {
         case StrategyPreset.NQ_MNQ_1:            
             EntryPercent = 13.5;
-            TakeProfitPercent = 40.6;
-            HardStopLossPercent = 53.7;
-            SLBETrigger = 0;
-            MaxBarsInTrade = 90;
+            TakeProfitPercent = 40;
+            HardStopLossPercent = 53;
+            CancelOrderBars = 52;
             break;
 
         case StrategyPreset.NQ_MNQ_2:
-            EntryPercent = 13.3;
-            TakeProfitPercent = 84;            
-            HardStopLossPercent = 55.6;
-            SLBETrigger = 0;
-            MaxBarsInTrade = 90;
+            EntryPercent = 13.5;
+            TakeProfitPercent = 48.5;            
+            HardStopLossPercent = 53;
+            CancelOrderBars = 52;
             break;
         }
 
