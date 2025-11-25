@@ -1210,50 +1210,35 @@ public class ORBO : Strategy
 
     private bool HasReturnedToBreakoutResetZone()
     {
-        double priceToCheck;
+        bool returned = false;
 
+        // 1️⃣ CLOSE-BASED MODE
         if (RequireCloseBelowReturn)
         {
-            // Close-based mode: bar close confirmation
-            priceToCheck = Close[1];
+            if (lastTradeWasLong)
+                returned = Close[1] <= todayLongLimit;      // close must be back inside
+            else
+                returned = Close[1] >= todayShortLimit;
         }
+
+        // 2️⃣ WICK-BASED MODE
         else
         {
-            double bid = GetCurrentBid();
-            double ask = GetCurrentAsk();
-
-            // ✅ Defensive filter for live mode
-            bool bidAskValid = bid > 0 && ask > 0 && Math.Abs(ask - bid) < (5 * TickSize);
-            bool feedStable = DateTime.Now - lastEntryTime > TimeSpan.FromSeconds(1);
-
-            if (!bidAskValid || !feedStable)
-            {
-                // Fallback to last trade price intrabar instead of bad bid/ask
-                priceToCheck = GetCurrentAsk() == 0 ? GetCurrentBid() : Close[0];
-            }
+            if (lastTradeWasLong)
+                returned = Low[1] <= todayLongLimit;        // wick touches entry line
             else
-            {
-                // Live + playback consistent midprice
-                priceToCheck = (bid + ask) / 2.0;
-            }
+                returned = High[1] >= todayShortLimit;
         }
 
-        bool hasReturned = false;
+        if (returned)
+        {
+            DebugPrint($"[ReturnCheck] Mode={(RequireCloseBelowReturn ? "CLOSE" : "WICK")}, " +
+                    $"lastTradeWasLong={lastTradeWasLong}, Result=TRUE");
+        }
 
-        if (lastTradeWasLong)
-            hasReturned = priceToCheck <= todayLongLimit;
-        else
-            hasReturned = priceToCheck >= todayShortLimit;
-
-        if (hasReturned)
-            DebugPrint($"[ResetCheck] Mode={(RequireCloseBelowReturn ? "Close" : "Touch")}, " +
-                    $"lastTradeWasLong={lastTradeWasLong}, " +
-                    $"PriceChecked={priceToCheck:F2}, " +
-                    $"ReturnLimit={(lastTradeWasLong ? todayLongLimit : todayShortLimit):F2}, " +
-                    $"Result={hasReturned}");
-
-        return hasReturned;
+        return returned;
     }
+
 
     public enum StrategyPreset
     {
