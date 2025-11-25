@@ -1212,33 +1212,37 @@ public class ORBO : Strategy
     {
         bool returned = false;
 
-        // 1️⃣ CLOSE-BASED MODE
+        // 1️⃣ CLOSE-BASED RETURN
         if (RequireCloseBelowReturn)
         {
+            // Using the previous CLOSE only
             if (lastTradeWasLong)
-                returned = Close[1] <= todayLongLimit;      // close must be back inside
+                returned = Close[1] <= todayLongLimit;
             else
                 returned = Close[1] >= todayShortLimit;
         }
 
-        // 2️⃣ WICK-BASED MODE
+        // 2️⃣ WICK-BASED RETURN — INTRABAR SAFE
         else
         {
+            // Intra-bar detection using wick (updates during bar)
             if (lastTradeWasLong)
-                returned = Low[1] <= todayLongLimit;        // wick touches entry line
+                returned = Low[0] <= todayLongLimit;
             else
-                returned = High[1] >= todayShortLimit;
+                returned = High[0] >= todayShortLimit;
         }
 
         if (returned)
         {
             DebugPrint($"[ReturnCheck] Mode={(RequireCloseBelowReturn ? "CLOSE" : "WICK")}, " +
-                    $"lastTradeWasLong={lastTradeWasLong}, Result=TRUE");
+                    $"lastTradeWasLong={lastTradeWasLong}, " +
+                    $"PriceChecked={(lastTradeWasLong ? Low[0] : High[0]):F2}, " +
+                    $"ReturnLimit={(lastTradeWasLong ? todayLongLimit : todayShortLimit):F2}, " +
+                    $"Result=TRUE");
         }
 
         return returned;
     }
-
 
     public enum StrategyPreset
     {
