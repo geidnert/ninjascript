@@ -219,6 +219,7 @@ public class ORBOTesting : Strategy
     private double entryPrice;
     private double sessionHigh, sessionLow;
     private string lastDate = string.Empty;
+    private const int TickSeriesIndex = 1;
     private Order entryOrder;
     private Order hardStopOrder;
     private List<Order> profitOrders = new List<Order>();
@@ -292,6 +293,11 @@ public class ORBOTesting : Strategy
             isRealTime = true;
         else if (State == State.Historical)
             isStrategyAnalyzer = (Account == null || Account.Name == "Backtest");
+        else if (State == State.Configure)
+        {
+            // 1-tick series for intrabar fill accuracy
+            AddDataSeries(BarsPeriodType.Tick, 1);
+        }
         else if (State == State.DataLoaded) {
             // --- Heartbeat timer setup ---
             heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
@@ -316,7 +322,7 @@ public class ORBOTesting : Strategy
     private void SetDefaults()
     {
         Name = "ORBOTesting";
-        Calculate = Calculate.OnBarClose;
+        Calculate = Calculate.OnEachTick;
         IsOverlay = true;
         IsInstantiatedOnEachOptimizationIteration = false;
         IsUnmanaged = false;
@@ -356,45 +362,21 @@ public class ORBOTesting : Strategy
 #region OnBarUpdate
     protected override void OnBarUpdate()
     {
-
-        if (CurrentBar != entryBar)
+        // Tick series (BIP=1) for intrabar exit detection
+        if (BarsInProgress == TickSeriesIndex)
         {
-            // === LONG side exits ===
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                // --- Stop Loss FIRST for realism ---
-                if (Low[0] <= todayLongStoploss)
-                {
-                    ExitLongLimit(0, true, Position.Quantity, todayLongStoploss, "ManualSL", currentSignalName);
-                    DebugPrint($"❌ SL hit manually at {todayLongStoploss}");
-                }
-                // --- Take Profit SECOND ---
-                else if (High[0] >= todayLongProfit)
-                {
-                    ExitLongLimit(0, true, Position.Quantity, todayLongProfit, "ManualTP", currentSignalName);
-                    tpWasHit = true;
-                    DebugPrint($"✅ TP hit manually at {todayLongProfit}");
-                }
-            }
+            if (CurrentBars[TickSeriesIndex] < 1 || Position.MarketPosition == MarketPosition.Flat)
+                return;
 
-            // === SHORT side exits ===
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                // --- Stop Loss FIRST ---
-                if (High[0] >= todayShortStoploss)
-                {
-                    ExitShortLimit(0, true, Position.Quantity, todayShortStoploss, "ManualSL", currentSignalName);
-                    DebugPrint($"❌ SL hit manually at {todayShortStoploss}");
-                }
-                // --- Take Profit SECOND ---
-                else if (Low[0] <= todayShortProfit)
-                {
-                    ExitShortLimit(0, true, Position.Quantity, todayShortProfit, "ManualTP", currentSignalName);
-                    tpWasHit = true;
-                    DebugPrint($"✅ TP hit manually at {todayShortProfit}");
-                }
-            }
+            double lastPrice = Closes[TickSeriesIndex][0];
+            EvaluateManualExits(lastPrice, lastPrice, false);
+            return;
         }
+
+        if (BarsInProgress != 0)
+            return;
+
+        EvaluateManualExits(High[0], Low[0], CurrentBar == entryBar);
 
         // ======================================================
         // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
@@ -445,6 +427,9 @@ public class ORBOTesting : Strategy
 
                 CancelOrder(entryOrder);
                 entryOrder = null;
+                orderPlaced = false;
+                entryOrderBar = -1;
+                pendingEntryPrice = double.NaN;
 
                 tpWasHit = true;
                 hasReturnedOnce = false;
@@ -477,6 +462,9 @@ public class ORBOTesting : Strategy
 
                 CancelOrder(entryOrder);
                 entryOrder = null;
+                orderPlaced = false;
+                entryOrderBar = -1;
+                pendingEntryPrice = double.NaN;
 
                 // Same reset logic as CancelOrderPercent
                 tpWasHit = true;
@@ -957,14 +945,27 @@ public class ORBOTesting : Strategy
             entryOrder = order;
         }
 
-        if (order != null && orderState == OrderState.Filled && order.Name.Contains("Profit target"))
+        if (order != null && IsProfitOrder(order))
         {
-            tpWasHit = true;
-            hasReturnedOnce = false;  // must return before new entry allowed
-            DebugPrint("💰 TP hit — waiting for price to return to breakout zone before new entry.");
+            if (orderState == OrderState.Accepted || orderState == OrderState.Working)
+            {
+                profitOrders.Clear();
+                profitOrders.Add(order);
+            }
+            else if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected || orderState == OrderState.Filled)
+            {
+                profitOrders.RemoveAll(o => o == order);
+            }
 
-            if (isStrategyAnalyzer)
-                lastExitBarAnalyzer = CurrentBar;
+            if (orderState == OrderState.Filled)
+            {
+                tpWasHit = true;
+                hasReturnedOnce = false;  // must return before new entry allowed
+                DebugPrint("💰 TP hit — waiting for price to return to breakout zone before new entry.");
+
+                if (isStrategyAnalyzer)
+                    lastExitBarAnalyzer = CurrentBar;
+            }
         }
     }
 
@@ -974,7 +975,7 @@ public class ORBOTesting : Strategy
         if (execution.Quantity <= 0 || execution.Order == null)
             return;
 
-        if (execution.Order != null && (execution.Order.Name.Contains("Long") || execution.Order.Name.Contains("Short")))
+        if (execution.Order != null && IsEntryOrder(execution.Order))
         {
             bool isLongEntry = execution.Order.Name.Contains("Long");
 
@@ -995,6 +996,18 @@ public class ORBOTesting : Strategy
             double stopPx = isLongEntry ? todayLongStoploss : todayShortStoploss;
             if (!double.IsNaN(stopPx))
                 SubmitStopLoss(stopPx);
+
+            if (!isStrategyAnalyzer)
+            {
+                double targetPx = isLongEntry ? todayLongProfit : todayShortProfit;
+                if (!double.IsNaN(targetPx))
+                {
+                    profitOrders.Clear();
+                    var tpOrder = SubmitProfitTarget(targetPx);
+                    if (tpOrder != null)
+                        profitOrders.Add(tpOrder);
+                }
+            }
         }
 
         // Reset state
@@ -1034,9 +1047,12 @@ public class ORBOTesting : Strategy
 
     private bool HasOpenOrders()
     {
-        return (entryOrder != null && entryOrder.OrderState == OrderState.Working) ||
-               (hardStopOrder != null && hardStopOrder.OrderState == OrderState.Working) ||
-               profitOrders.Exists(o => o != null && o.OrderState == OrderState.Working);
+        return (entryOrder != null &&
+                (entryOrder.OrderState == OrderState.Working || entryOrder.OrderState == OrderState.Accepted)) ||
+               (hardStopOrder != null &&
+                (hardStopOrder.OrderState == OrderState.Working || hardStopOrder.OrderState == OrderState.Accepted)) ||
+               profitOrders.Exists(o =>
+                   o != null && (o.OrderState == OrderState.Working || o.OrderState == OrderState.Accepted));
     }
 
     private bool ShowEntryConfirmation(string orderType, double price, int quantity)
@@ -1222,13 +1238,13 @@ public class ORBOTesting : Strategy
                     }
                 }
 
-                EnterLong(NumberOfContracts, signalName);
+                EnterLong(TickSeriesIndex, NumberOfContracts, signalName);
                 pendingEntryPrice = marketEntryPrice;
                 entryOrderBar = CurrentBar;
             }
             else
             {
-                EnterLongLimit(0, true, NumberOfContracts, limitPrice, signalName);
+                EnterLongLimit(TickSeriesIndex, true, NumberOfContracts, limitPrice, signalName);
                 pendingEntryPrice = limitPrice;
                 entryOrderBar = CurrentBar;
             }
@@ -1289,13 +1305,13 @@ public class ORBOTesting : Strategy
                     }
                 }
 
-                EnterShort(NumberOfContracts, signalName);
+                EnterShort(TickSeriesIndex, NumberOfContracts, signalName);
                 pendingEntryPrice = marketEntryPrice;
                 entryOrderBar = CurrentBar;
             }
             else
             {
-                EnterShortLimit(0, true, NumberOfContracts, limitPrice, signalName);
+                EnterShortLimit(TickSeriesIndex, true, NumberOfContracts, limitPrice, signalName);
                 pendingEntryPrice = limitPrice;
                 entryOrderBar = CurrentBar;
             }
@@ -1341,12 +1357,133 @@ public class ORBOTesting : Strategy
         double roundedStop = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
 
         if (Position.MarketPosition == MarketPosition.Long)
-            hardStopOrder = ExitLongStopMarket(0, true, qty, roundedStop, "StopLoss", currentSignalName);
+            hardStopOrder = ExitLongStopMarket(TickSeriesIndex, true, qty, roundedStop, "StopLoss", currentSignalName);
         else
-            hardStopOrder = ExitShortStopMarket(0, true, qty, roundedStop, "StopLoss", currentSignalName);
+            hardStopOrder = ExitShortStopMarket(TickSeriesIndex, true, qty, roundedStop, "StopLoss", currentSignalName);
 
         trailingTarget = roundedStop;
         DebugPrint($"[TRAIL] Stop submitted at {roundedStop:F2} (qty={qty})");
+    }
+
+    private void EvaluateManualExits(double barHigh, double barLow, bool isEntryBar)
+    {
+        if (Position.MarketPosition == MarketPosition.Flat)
+            return;
+
+        bool stopWorking = HasActiveStopOrder();
+        bool tpWorking   = !isStrategyAnalyzer && HasActiveProfitTarget();
+
+        // === LONG side exits ===
+        if (Position.MarketPosition == MarketPosition.Long)
+        {
+            bool bothTouched = barHigh >= todayLongProfit && barLow <= todayLongStoploss;
+
+            // If both TP and SL are touched on the bar, assume SL hits first for conservative backtest
+            if (bothTouched)
+            {
+                TryExitAll(todayLongStoploss, "SameBarSL");
+                DebugPrint($"🚨 TP+SL touched — assuming SL hit first at {todayLongStoploss}");
+                return;
+            }
+
+            // --- Stop Loss FIRST for realism ---
+            if (!stopWorking && barLow <= todayLongStoploss)
+            {
+                SubmitStopLoss(todayLongStoploss);
+                DebugPrint($"❌ SL submitted at {todayLongStoploss}");
+            }
+            // --- Take Profit SECOND ---
+            else if (!tpWorking && barHigh >= todayLongProfit)
+            {
+                if (isStrategyAnalyzer)
+                {
+                    ExitLongLimit(TickSeriesIndex, true, Position.Quantity, todayLongProfit, "ManualTP", currentSignalName);
+                    tpWasHit = true;
+                    hasReturnedOnce = false;
+                    DebugPrint($"✅ TP filled manually at {todayLongProfit}");
+                }
+                else
+                {
+                    profitOrders.Clear();
+                    var tpOrder = SubmitProfitTarget(todayLongProfit);
+                    if (tpOrder != null)
+                        profitOrders.Add(tpOrder);
+                    DebugPrint($"✅ TP submitted at {todayLongProfit}");
+                }
+            }
+        }
+        // === SHORT side exits ===
+        else if (Position.MarketPosition == MarketPosition.Short)
+        {
+            bool bothTouched = barHigh >= todayShortStoploss && barLow <= todayShortProfit;
+
+            // If both TP and SL are touched on the bar, assume SL hits first for conservative backtest
+            if (bothTouched)
+            {
+                TryExitAll(todayShortStoploss, "SameBarSL");
+                DebugPrint($"🚨 TP+SL touched — assuming SL hit first at {todayShortStoploss}");
+                return;
+            }
+
+            // --- Stop Loss FIRST ---
+            if (!stopWorking && barHigh >= todayShortStoploss)
+            {
+                SubmitStopLoss(todayShortStoploss);
+                DebugPrint($"❌ SL submitted at {todayShortStoploss}");
+            }
+            // --- Take Profit SECOND ---
+            else if (!tpWorking && barLow <= todayShortProfit)
+            {
+                if (isStrategyAnalyzer)
+                {
+                    ExitShortLimit(TickSeriesIndex, true, Position.Quantity, todayShortProfit, "ManualTP", currentSignalName);
+                    tpWasHit = true;
+                    hasReturnedOnce = false;
+                    DebugPrint($"✅ TP filled manually at {todayShortProfit}");
+                }
+                else
+                {
+                    profitOrders.Clear();
+                    var tpOrder = SubmitProfitTarget(todayShortProfit);
+                    if (tpOrder != null)
+                        profitOrders.Add(tpOrder);
+                    DebugPrint($"✅ TP submitted at {todayShortProfit}");
+                }
+            }
+        }
+    }
+
+    private bool HasActiveStopOrder() =>
+        hardStopOrder != null &&
+        (hardStopOrder.OrderState == OrderState.Working || hardStopOrder.OrderState == OrderState.Accepted);
+
+    private bool HasActiveProfitTarget() =>
+        profitOrders.Any(o =>
+            o != null && (o.OrderState == OrderState.Working || o.OrderState == OrderState.Accepted));
+
+    private Order SubmitProfitTarget(double targetPrice)
+    {
+        if (isStrategyAnalyzer)
+            return null;
+        if (Position.MarketPosition == MarketPosition.Flat)
+            return null;
+        if (double.IsNaN(targetPrice))
+            return null;
+
+        int qty = Position.Quantity;
+        if (qty <= 0)
+            return null;
+
+        double roundedTarget = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
+        Order tpOrder;
+
+        if (Position.MarketPosition == MarketPosition.Long)
+            tpOrder = ExitLongLimit(TickSeriesIndex, true, qty, roundedTarget, "ProfitLong", currentSignalName);
+        else
+            tpOrder = ExitShortLimit(TickSeriesIndex, true, qty, roundedTarget, "ProfitShort", currentSignalName);
+
+        DebugPrint($"[TP] Target submitted at {roundedTarget:F2} (qty={qty})");
+        return tpOrder;
     }
 
     private void ReplaceStopOrder(double newSL)
