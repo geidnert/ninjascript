@@ -26,10 +26,10 @@ public class ORBO : Strategy
     }
 
 #region Settings
-    [NinjaScriptProperty]
-    [Display(Name = "Instrument", Description = "Select the instrument you want to trade", Order = 0,
-             GroupName = "A. Config")]
-    public StrategyPreset PresetSetting { get; set; }
+    // [NinjaScriptProperty]
+    // [Display(Name = "Instrument", Description = "Select the instrument you want to trade", Order = 0,
+    //          GroupName = "A. Config")]
+    //public StrategyPreset PresetSetting { get; set; }
 
     [NinjaScriptProperty]
     [Display(Name = "Contracts", Description = "Number of contracts to take", Order = 1, GroupName = "A. Config")]
@@ -78,9 +78,9 @@ public class ORBO : Strategy
     // [Display(Name = "Entry %", Description = "Entry price for limit order from 15 min OR", Order = 3, GroupName = "B. Entry Conditions")]
     internal double EntryPercent { get; set; }
 
-    // [NinjaScriptProperty]
-    // [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
-    internal double TakeProfitPercent { get; set; }
+    [NinjaScriptProperty]
+    [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
+    public double TakeProfitPercent { get; set; }
 
     // [NinjaScriptProperty]
     // [Display(Name = "Hard SL %", Description = "Hard SL level", Order = 6, GroupName = "B. Entry Conditions")]
@@ -272,7 +272,7 @@ public class ORBO : Strategy
             heartbeatTimer.AutoReset = true;
             heartbeatTimer.Start();
 
-            ApplyPreset(PresetSetting);
+            //ApplyPreset(PresetSetting);
         }
         else if (State == State.Terminated)
         {
@@ -300,9 +300,10 @@ public class ORBO : Strategy
         NumberOfContracts = 1;
         RequireEntryConfirmation = false;
         BiasDuration = 15;
-        EntryPercent = 14.0;
+        EntryPercent = 13.5;
         TakeProfitPercent = 40;
-        HardStopLossPercent = 47.7;
+        HardStopLossPercent = 53;
+        CancelOrderBars = 52;
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
         MaxBarsInTrade = 0;
@@ -1256,14 +1257,14 @@ public class ORBO : Strategy
         {
         case StrategyPreset.NQ_MNQ_1:            
             EntryPercent = 13.5;
-            TakeProfitPercent = 40;
+            //TakeProfitPercent = 40;
             HardStopLossPercent = 53;
             CancelOrderBars = 52;
             break;
 
         case StrategyPreset.NQ_MNQ_2:
             EntryPercent = 13.5;
-            TakeProfitPercent = 48.5;            
+            //TakeProfitPercent = 48.5;            
             HardStopLossPercent = 53;
             CancelOrderBars = 52;
             break;
