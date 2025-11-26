@@ -44,6 +44,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime lastSavedWeekStart = DateTime.MinValue;
         private bool workingOrderActive = false;
         private string workingOrderSide = "";
+        private double monthlyTotal = 0;
+        private string currentMonth = "";
+        // Internal toggle: when true, skip Discord posts and log the full message for debugging.
+        private bool debugMode = false;
 
         protected override void OnStateChange()
         {
@@ -66,6 +70,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Account.ExecutionUpdate += OnAccountExecutionUpdate;
                 Account.OrderUpdate += OnAccountOrderUpdate;
                 LogToOutput2("🧹 Preparing DiscordNotifier state...");
+                if (debugMode)
+                    LogToOutput2("🐞 Debug mode is ON — Discord messages will be logged locally instead of posted.");
 
                 // Load saved message ID
                 if (File.Exists(messageIdFilePath))
@@ -246,6 +252,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime localDate = filltime.Date;
             DateTime weekStart = localDate.AddDays(-(int)localDate.DayOfWeek + (int)DayOfWeek.Monday);
 
+            string monthKey = filltime.ToString("yyyy-MM");
+
+            if (currentMonth == "")
+            {
+                // First load or fresh install
+                currentMonth = monthKey;
+                monthlyTotal = 0;
+                SavePnLStats();
+            }
+            else if (monthKey != currentMonth)
+            {
+                // NEW MONTH
+                LogToOutput2($"📆 New month detected! {currentMonth} → {monthKey}");
+
+                currentMonth = monthKey;
+                monthlyTotal = 0;
+                SavePnLStats();
+            }
+
              // 🧠 Check if we've moved into a new week
             if (lastSavedWeekStart != DateTime.MinValue && weekStart > lastSavedWeekStart)
             {
@@ -270,29 +295,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentWeekStart = weekStart;
                 lastSavedWeekStart = weekStart;
             }
-
-            // ✅ force the stored week to match the event week
-            // currentWeekStart = weekStart;
-            // lastSavedWeekStart = weekStart;
-
-            // if (weekStart > lastSavedWeekStart)
-            // {
-            //     currentWeekStart = weekStart;
-            //     lastSavedWeekStart = weekStart;
-            //     SavePnLStats();
-            //     dailyPnls.Clear();
-            //     lastMessageId = "";
-            //     SaveMessageId();
-            //     LogToOutput2($"📅 Detected new week: {currentWeekStart:MMMM dd, yyyy}");
-
-            //     sendOrUpdateDiscordMessage(
-            //         $"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 **New Week — {currentWeekStart:MMMM dd, yyyy}**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            //     );
-            // }
-            // else
-            // {
-            //     currentWeekStart = lastSavedWeekStart;
-            // }
 
             if (!dailyPnls.ContainsKey(localDate))
                 dailyPnls[localDate] = new Dictionary<string, double>();
@@ -355,6 +357,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sb.AppendLine("---");
             sb.AppendLine($"**Weekly Total: {FormatPnl(weeklyTotal)}**");
 
+            // DAILY AVERAGE
+            int daysCount = dailyPnls.Count;
+            double dailyAverage = daysCount > 0 ? weeklyTotal / daysCount : 0;
+            sb.AppendLine($"**Daily Average: {FormatPnl(dailyAverage)}**");
+
+            // MONTHLY TOTAL
+            sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
+
             sendOrUpdateDiscordMessage(sb.ToString());
         }
 
@@ -362,6 +372,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             DateTime localDate = filltime.Date;
             DateTime weekStart = localDate.AddDays(-(int)localDate.DayOfWeek + (int)DayOfWeek.Monday);
+
+            string monthKey = filltime.ToString("yyyy-MM");
+
+            if (currentMonth == "")
+            {
+                // First load or fresh install
+                currentMonth = monthKey;
+                monthlyTotal = 0;
+                SavePnLStats();
+            }
+            else if (monthKey != currentMonth)
+            {
+                // NEW MONTH
+                LogToOutput2($"📆 New month detected! {currentMonth} → {monthKey}");
+
+                currentMonth = monthKey;
+                monthlyTotal = 0;
+                SavePnLStats();
+            }
 
             if (weekStart > lastSavedWeekStart)
             {
@@ -385,6 +414,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             dailyPnls[localDate][tradeKey] = tradePnl;
+            monthlyTotal += tradePnl;
+
             SavePnLStats();
             PostWeeklySummary(filltime);
         }
@@ -422,6 +453,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             sb.AppendLine("---");
             sb.AppendLine($"**Weekly Total: {FormatPnl(weeklyTotal)}**");
+            int daysCount = dailyPnls.Count;
+            double dailyAverage = daysCount > 0 ? weeklyTotal / daysCount : 0;
+            sb.AppendLine($"**Daily Average: {FormatPnl(dailyAverage)}**");
+            sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
+
             sendOrUpdateDiscordMessage(sb.ToString());
         }
 
@@ -440,6 +476,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             LogToOutput2($"🧭 sendOrUpdateDiscordMessage: currentWeekStart={currentWeekStart:yyyy-MM-dd}, lastSavedWeekStart={lastSavedWeekStart:yyyy-MM-dd}, lastMessageId='{lastMessageId}'");
             if (currentWeekStart == DateTime.MinValue && lastSavedWeekStart != DateTime.MinValue)
                 currentWeekStart = lastSavedWeekStart;
+
+            if (debugMode)
+            {
+                LogToOutput2("🐞 Debug mode enabled — skipping Discord post. Message preview:");
+                LogToOutput2(content);
+                return;
+            }
 
             if (string.IsNullOrWhiteSpace(DiscordBotToken) || string.IsNullOrWhiteSpace(DiscordChannelId))
             {
@@ -521,7 +564,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         serializableDict[kvp.Key.ToString("yyyy-MM-dd")] = new Dictionary<string, double>(kvp.Value);
 
                     var serializer = new JavaScriptSerializer();
-                    var jsonObj = new { LastWeekStart = lastSavedWeekStart.ToString("yyyy-MM-dd"), DailyPnLs = serializableDict };
+                    var jsonObj = new 
+                    {
+                        LastWeekStart = lastSavedWeekStart.ToString("yyyy-MM-dd"),
+                        CurrentMonth = currentMonth,
+                        MonthlyTotal = monthlyTotal,
+                        DailyPnLs = serializableDict
+                    };
                     string json = serializer.Serialize(jsonObj);
                     File.WriteAllText(statsFilePath, json, Encoding.UTF8);
                 }
@@ -558,6 +607,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         }
                     }
                 }
+
+                if (data.ContainsKey("CurrentMonth"))
+                    currentMonth = data["CurrentMonth"].ToString();
+
+                if (data.ContainsKey("MonthlyTotal"))
+                    monthlyTotal = Convert.ToDouble(data["MonthlyTotal"]);
+                else
+                    monthlyTotal = 0;
 
                 LogToOutput2($"✅ Loaded PnL stats from {statsFilePath} (LastWeekStart={lastSavedWeekStart:MMMM dd})");
             }
