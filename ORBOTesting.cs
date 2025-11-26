@@ -139,6 +139,11 @@ public class ORBOTesting : Strategy
     public int CancelOrderBars { get; set; }
 
     [NinjaScriptProperty]
+    [Display(Name = "Max VIX", Description = "0 = disable VIX filter; block trades if VIX > this value", Order = 14, GroupName = "B. Entry Conditions")]
+    public double MaxVix { get; set; }
+
+
+    [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
              GroupName = "C. Session Time")]
     public TimeSpan SessionStart
@@ -282,6 +287,7 @@ public class ORBOTesting : Strategy
     private double pendingTrailStopPrice = double.NaN;
     private double trailingTarget     = double.NaN;
     private bool beStopMoveRequested  = false;
+    private int vixIndex = 2;
 
 #endregion
 
@@ -294,6 +300,7 @@ public class ORBOTesting : Strategy
         {
             // Use a consistent 1-second drive series so logic is independent of the chart's timeframe
             AddDataSeries(BarsPeriodType.Second, 1);
+            AddDataSeries("^VIX", BarsPeriodType.Minute, 1);
         }
         else if (State == State.Transition)
             isRealTime = false;
@@ -349,6 +356,7 @@ public class ORBOTesting : Strategy
         MaxBarsInTrade = 0;
         CancelOrderPercent = 0;
         RangeBoxBrush = Brushes.Gold;
+        MaxVix = 0;
         RequireCloseBelowReturn = false;
         SLBETrigger = 0;
         WebhookUrl = "";
@@ -847,6 +855,20 @@ public class ORBOTesting : Strategy
     {
         if (rangeTooWide)
             return;
+
+        // 🚫 VIX filter — disabled if MaxVix == 0
+        if (MaxVix > 0 && VixReady())
+        {
+            double curVix = GetVix(0);
+
+            if (curVix > MaxVix)
+            {
+                if (DebugMode)
+                    DebugPrint($"⛔ Entry blocked: VIX {curVix:F2} > MaxVix {MaxVix}");
+
+                return; // block entries only
+            }
+        }
 
         // 💡 Reset breakout state if price is back inside range
         bool noOpenOrders = !HasOpenOrders();
@@ -2126,6 +2148,16 @@ public class ORBOTesting : Strategy
 
         // Otherwise OK (session checks already handled elsewhere)
         return true;
+    }
+
+    private bool VixReady(int barsAgo = 0)
+    {
+        return CurrentBars.Length > vixIndex && CurrentBars[vixIndex] > barsAgo;
+    }
+
+    private double GetVix(int barsAgo = 0)
+    {
+        return Closes[vixIndex][barsAgo];
     }
 
     #endregion
