@@ -26,23 +26,27 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "Minute", Description = "Minute of entry", Order = 2, GroupName = "Time Management")]
         public int EntryMinute { get; set; }
 
-		[NinjaScriptProperty]
+        [NinjaScriptProperty]
         [Display(Name = "Contracts", Description = "Number of contracts to take", Order = 1, GroupName = "Trade Management")]
         public int NumberOfContracts { get; set; }
 
         // [Display(Name = "TP points", Description = "Number of points for TP", Order = 3, GroupName = "Trade Management")]
         internal int ProfitPoints { get; set; }
 
-		[NinjaScriptProperty]
+        [NinjaScriptProperty]
         [Display(Name = "Dollar target", Description = "How many dollars do you need, add a little more to be sure", Order = 4, GroupName = "Trade Management")]
         public int DollarTarget { get; set; }
 
-		[NinjaScriptProperty]
+        [NinjaScriptProperty]
+        [Display(Name = "Dollar stop", Description = "Risk per trade in dollars (behind entry)", Order = 5, GroupName = "Trade Management")]
+        public int DollarStop { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Long trade", Description = "A Long trade will take place ich checked otherwise a Short", Order = 4, GroupName = "Trade Management")]
         public bool LongTrade { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Limit Order", Description = "Place limit order instead of market", Order = 5, GroupName = "Trade Management")]
+		[Display(Name = "Limit Order", Description = "Place limit order instead of market", Order = 6, GroupName = "Trade Management")]
         public bool LimitOrder { get; set; }
 
         private bool ordersPlaced = false;
@@ -62,6 +66,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EntryMinute = 29;
                 ProfitPoints = 0;
                 DollarTarget = 3050;
+                DollarStop = 1000;
                 LongTrade = true;
             }
         }
@@ -86,6 +91,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 double dollarPerPoint = GetDollarPerPoint();
                 double profitPoints = ProfitPoints;
+                double stopPoints = double.NaN;
+                bool useStop = DollarStop > 0;
 
                 int numberOfContracts = NumberOfContracts;//GetSafeContractCount();
                 Print($"Number of contracts to trade: {numberOfContracts}");
@@ -94,6 +101,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     profitPoints = DollarTarget / (dollarPerPoint * numberOfContracts);
                     Print($"Calculated profit points from dollar target: {profitPoints}");
+                }
+
+                if (useStop)
+                {
+                    stopPoints = DollarStop / (dollarPerPoint * numberOfContracts);
+                    Print($"Calculated stop points from dollar stop: {stopPoints}");
                 }
 
                 double longEntry = Instrument.MasterInstrument.RoundToTickSize(bid);
@@ -106,6 +119,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double target = Instrument.MasterInstrument.RoundToTickSize(longEntry + profitPoints);
                     Print($"Submitting Long Entry at {longEntry} with target {target}");
                     SetProfitTarget("LongEntry", CalculationMode.Price, target);
+                    if (useStop && !double.IsNaN(stopPoints))
+                    {
+                        double stop = Instrument.MasterInstrument.RoundToTickSize(longEntry - stopPoints);
+                        SetStopLoss("LongEntry", CalculationMode.Price, stop, false);
+                        Print($"Long stop set at {stop}");
+                    }
 					
 					if (LimitOrder)
                     	EnterLongLimit(0, true, numberOfContracts, longEntry, "LongEntry");
@@ -120,6 +139,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double target = Instrument.MasterInstrument.RoundToTickSize(shortEntry - profitPoints);
                     Print($"Submitting Short Entry at {shortEntry} with target {target}");
                     SetProfitTarget("ShortEntry", CalculationMode.Price, target);
+                    if (useStop && !double.IsNaN(stopPoints))
+                    {
+                        double stop = Instrument.MasterInstrument.RoundToTickSize(shortEntry + stopPoints);
+                        SetStopLoss("ShortEntry", CalculationMode.Price, stop, false);
+                        Print($"Short stop set at {stop}");
+                    }
 					if (LimitOrder)
                     	EnterShortLimit(0, true, numberOfContracts, shortEntry, "ShortEntry");
 					else
@@ -148,8 +173,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private string GetDebugText() => "Entry time: " + EntryHour + ":" + EntryMinute +  
 										"\nContract: " + NumberOfContracts + 
 										"\nDirection: " + (LongTrade ? "Long" : "Short") +
-										"\nOrder Type: " + (LimitOrder ? "Linit" : "Market") +
+										"\nOrder Type: " + (LimitOrder ? "Limit" : "Market") +
 										"\nDollar target: " + DollarTarget + 
+                                        "\nDollar stop: " + DollarStop +
 										"\nPassChallenge v" + GetAddOnVersion();
 
 		protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
