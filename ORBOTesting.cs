@@ -133,6 +133,18 @@ public class ORBOTesting : Strategy
     public double CancelOrderPercent { get; set; }
 
     [NinjaScriptProperty]
+    [Display(Name = "Max VIX",
+             Description = "Block trading for the day if first 1-minute ^VIX open exceeds this value (0 = disabled)",
+             Order = 14, GroupName = "B. Entry Conditions")]
+    public double MaxVix { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(Name = "VIX Instrument",
+             Description = "Instrument name for the VIX data series (e.g., ^VIX or VX 12-25)",
+             Order = 15, GroupName = "B. Entry Conditions")]
+    public string VixInstrument { get; set; }
+
+    [NinjaScriptProperty]
     [Display(Name = "Cancel Order After X Bars", 
             Description = "Cancel unfilled entry if it has not filled after this many bars",
             Order = 13, GroupName = "B. Entry Conditions")]
@@ -220,6 +232,7 @@ public class ORBOTesting : Strategy
     private double sessionHigh, sessionLow;
     private string lastDate = string.Empty;
     private const int TickSeriesIndex = 1;
+    private const int VixSeriesIndex  = 2;
     private Order entryOrder;
     private Order hardStopOrder;
     private List<Order> profitOrders = new List<Order>();
@@ -256,6 +269,15 @@ public class ORBOTesting : Strategy
     private bool rangeTooWide = false;
     private bool rangeTooWideLogged = false;
     private int cachedPrimaryBarSeconds = 0;
+    // --- VIX filter ---
+    private bool vixSampledToday = false;
+    private bool vixBlockedToday = false;
+    private double vixFirstOpen = double.NaN;
+    private bool vixPendingLoggedToday = false;
+    private bool vixBlockLoggedToday = false;
+    private bool vixNoDataAllowToday = false;
+    private bool vixDebugLoggedToday   = false;
+    private bool vixFallbackUsedToday  = false;
     // --- Heartbeat reporting ---
     private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
     private System.Timers.Timer heartbeatTimer;
@@ -270,6 +292,9 @@ public class ORBOTesting : Strategy
     private double beTriggerShortPrice = double.NaN;
     private bool hasReturnedOnce = false;     // becomes true after price has returned inside the zone
     private bool tpWasHit = false;            // true right after TP hit
+    private bool tpHoldLogged = false;        // avoid spamming TP hold logs
+    private bool tpManualLogged = false;      // guard duplicate manual TP logs
+    private bool tpManualExitSent = false;    // guard duplicate manual TP exits (SA)
     private int entryBar = -1;
     private double pendingEntryPrice = double.NaN;
     private double cancelOrderDistanceAbs = 0;
@@ -297,6 +322,9 @@ public class ORBOTesting : Strategy
         {
             // 1-tick series for intrabar fill accuracy
             AddDataSeries(BarsPeriodType.Tick, 1);
+            // VIX 1-minute series for daily volatility filter
+            string vixInstr = string.IsNullOrWhiteSpace(VixInstrument) ? "^VIX" : VixInstrument.Trim();
+            AddDataSeries(vixInstr, new BarsPeriod { BarsPeriodType = BarsPeriodType.Minute, Value = 1 });
         }
         else if (State == State.DataLoaded) {
             // --- Heartbeat timer setup ---
@@ -340,11 +368,14 @@ public class ORBOTesting : Strategy
         EntryPercent = 14.0;
         TakeProfitPercent = 32.4;
         HardStopLossPercent = 47.7;
+        MaxVix = 0;
+        VixInstrument = "^VIX";
         MinMarketRRPercent = 0;
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
         MaxBarsInTrade = 0;
         CancelOrderPercent = 0;
+        MaxVix = 0;
         RangeBoxBrush = Brushes.Gold;
         RequireCloseBelowReturn = false;
         SLBETrigger = 0;
@@ -370,6 +401,69 @@ public class ORBOTesting : Strategy
 
             double lastPrice = Closes[TickSeriesIndex][0];
             EvaluateManualExits(lastPrice, lastPrice, false);
+            return;
+        }
+
+        // VIX series (BIP=2) for daily filter sampling
+        if (BarsInProgress == VixSeriesIndex)
+        {
+            if (MaxVix <= 0)
+                return;
+
+            // Align to primary trading date; ignore other dates
+            if (Times[VixSeriesIndex][0].Date != Times[0][0].Date)
+                return;
+
+            TimeSpan vixStart = SessionStart.Add(TimeSpan.FromMinutes(1));
+
+            if (!vixSampledToday)
+            {
+                // Try a backfill: earliest bar today at or after vixStart
+                double candidateOpen = double.NaN;
+                for (int i = CurrentBars[VixSeriesIndex]; i >= 0; i--)
+                {
+                    var t = Times[VixSeriesIndex][i];
+                    if (t.Date != Times[0][0].Date)
+                        continue;
+                    if (t.TimeOfDay >= vixStart)
+                    {
+                        candidateOpen = Opens[VixSeriesIndex][i];
+                        break;
+                    }
+                }
+
+                if (!double.IsNaN(candidateOpen))
+                {
+                    vixFirstOpen = candidateOpen;
+                    vixSampledToday = true;
+                    vixBlockedToday = vixFirstOpen > MaxVix;
+                    vixPendingLoggedToday = false;
+                    vixBlockLoggedToday = false;
+                    vixNoDataAllowToday = false;
+                    vixFallbackUsedToday = true;
+
+                    if (vixBlockedToday)
+                        LogToOutput2($"⛔ VIX filter active (backfilled). Open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. Trades blocked today.");
+                    else
+                        LogToOutput2($"✅ VIX filter passed (backfilled). Open={vixFirstOpen:F2}, MaxVix={MaxVix:F2}");
+                }
+            }
+
+            // If still not sampled and this bar is at/after vixStart, sample current
+            if (!vixSampledToday && Times[VixSeriesIndex][0].TimeOfDay >= vixStart)
+            {
+                vixFirstOpen = Opens[VixSeriesIndex][0];
+                vixSampledToday = true;
+                vixBlockedToday = vixFirstOpen > MaxVix;
+                vixPendingLoggedToday = false;
+                vixBlockLoggedToday = false;
+                vixNoDataAllowToday = false;
+
+                if (vixBlockedToday)
+                    LogToOutput2($"⛔ VIX filter active. First 1m open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. Trades blocked today.");
+                else
+                    LogToOutput2($"✅ VIX filter passed. First 1m open={vixFirstOpen:F2}, MaxVix={MaxVix:F2}");
+            }
             return;
         }
 
@@ -574,6 +668,64 @@ public class ORBOTesting : Strategy
         if (rangeTooWide && isFlat)
         {
             return;
+        }
+
+        // 🚫 Daily VIX filter: block new entries if VIX exceeds threshold or not yet sampled
+        if (MaxVix > 0 && isFlat)
+        {
+            if (Times[0][0].TimeOfDay < SessionStart)
+                return;
+
+            TimeSpan vixStart = SessionStart.Add(TimeSpan.FromMinutes(1));
+            TimeSpan vixGrace = SessionStart.Add(TimeSpan.FromMinutes(5));
+            bool pastGrace = Times[0][0].TimeOfDay >= vixGrace;
+
+            bool hasTodayVixBar =
+                CurrentBars.Length > VixSeriesIndex &&
+                CurrentBars[VixSeriesIndex] >= 0 &&
+                Times[VixSeriesIndex][0].Date == Times[0][0].Date &&
+                Times[VixSeriesIndex][0].TimeOfDay >= vixStart &&
+                Times[VixSeriesIndex][0].TimeOfDay <= Times[0][0].TimeOfDay;
+
+            if (!vixSampledToday)
+            {
+                string lastVixStamp = "none";
+                if (CurrentBars.Length > VixSeriesIndex && CurrentBars[VixSeriesIndex] >= 0)
+                {
+                    var t = Times[VixSeriesIndex][0];
+                    lastVixStamp = $"{t:yyyy-MM-dd HH:mm:ss}";
+                    hasTodayVixBar =
+                        t.Date == Times[0][0].Date &&
+                        t.TimeOfDay >= vixStart &&
+                        t.TimeOfDay <= Times[0][0].TimeOfDay;
+                }
+
+                if (pastGrace && !hasTodayVixBar)
+                {
+                    vixNoDataAllowToday = true;
+                    //LogToOutput2($"ℹ️ VIX data missing after grace period; allowing trades. Current time {Times[0][0]:HH:mm:ss}, lastVixStamp={lastVixStamp}");
+                }
+                else
+                {
+                    if (!vixPendingLoggedToday)
+                    {
+                        LogToOutput2($"⏳ VIX waiting for first 1m bar after {vixStart:hh\\:mm}. Now {Times[0][0]:HH:mm:ss}, hasTodayVixBar={hasTodayVixBar}, lastVixStamp={lastVixStamp}. Trades on hold.");
+                        vixPendingLoggedToday = true;
+                    }
+                    if (!pastGrace && !vixNoDataAllowToday)
+                        return; // block entries until grace
+                }
+            }
+
+            if (vixBlockedToday)
+            {
+                if (!vixBlockLoggedToday)
+                {
+                    LogToOutput2($"⛔ VIX block in effect. First open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. No trades today.");
+                    vixBlockLoggedToday = true;
+                }
+                return;
+            }
         }
 		
 		if (SLBETrigger > 0 && Position.MarketPosition != MarketPosition.Flat)
@@ -983,6 +1135,9 @@ public class ORBOTesting : Strategy
             lastFilledEntryPrice = execution.Price;
             entryBar = CurrentBar; // remember bar index of the fill
             tpWasHit = false;
+            tpHoldLogged = false;
+            tpManualLogged = false;
+            tpManualExitSent = false;
             beTriggerActive = false;
             beFlattenTriggered = false;
             beStopMoveRequested = false;
@@ -1118,6 +1273,16 @@ public class ORBOTesting : Strategy
         lastProtectionTime = DateTime.MinValue;
         nextEvaluationTime = DateTime.MinValue;
         breakoutActive = false;
+        vixSampledToday = false;
+        vixBlockedToday = false;
+        vixFirstOpen = double.NaN;
+        vixPendingLoggedToday = false;
+        vixBlockLoggedToday = false;
+        vixNoDataAllowToday = false;
+        vixDebugLoggedToday = false;
+        tpHoldLogged = false;
+        tpManualLogged = false;
+        tpManualExitSent = false;
         beTriggerLongPrice  = double.NaN;
         beTriggerShortPrice = double.NaN;
         beTriggerActive = false;
@@ -1397,10 +1562,18 @@ public class ORBOTesting : Strategy
             {
                 if (isStrategyAnalyzer)
                 {
-                    ExitLongLimit(TickSeriesIndex, true, Position.Quantity, todayLongProfit, "ManualTP", currentSignalName);
-                    tpWasHit = true;
-                    hasReturnedOnce = false;
-                    DebugPrint($"✅ TP filled manually at {todayLongProfit}");
+                    if (!tpManualExitSent)
+                    {
+                        ExitLongLimit(TickSeriesIndex, true, Position.Quantity, todayLongProfit, "ManualTP", currentSignalName);
+                        tpManualExitSent = true;
+                        tpWasHit = true;
+                        hasReturnedOnce = false;
+                        if (!tpManualLogged)
+                        {
+                            DebugPrint($"✅ TP filled manually at {todayLongProfit}");
+                            tpManualLogged = true;
+                        }
+                    }
                 }
                 else
                 {
@@ -1436,10 +1609,18 @@ public class ORBOTesting : Strategy
             {
                 if (isStrategyAnalyzer)
                 {
-                    ExitShortLimit(TickSeriesIndex, true, Position.Quantity, todayShortProfit, "ManualTP", currentSignalName);
-                    tpWasHit = true;
-                    hasReturnedOnce = false;
-                    DebugPrint($"✅ TP filled manually at {todayShortProfit}");
+                    if (!tpManualExitSent)
+                    {
+                        ExitShortLimit(TickSeriesIndex, true, Position.Quantity, todayShortProfit, "ManualTP", currentSignalName);
+                        tpManualExitSent = true;
+                        tpWasHit = true;
+                        hasReturnedOnce = false;
+                        if (!tpManualLogged)
+                        {
+                            DebugPrint($"✅ TP filled manually at {todayShortProfit}");
+                            tpManualLogged = true;
+                        }
+                    }
                 }
                 else
                 {
@@ -1559,6 +1740,8 @@ public class ORBOTesting : Strategy
         trailCancelPending  = false;
         pendingTrailStopPrice = double.NaN;
         trailingTarget      = double.NaN;
+        tpManualLogged = false;
+        tpManualExitSent = false;
     }
 
     private bool IsInSession()
