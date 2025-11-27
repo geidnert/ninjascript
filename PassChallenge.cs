@@ -42,15 +42,23 @@ namespace NinjaTrader.NinjaScript.Strategies
         public int DollarStop { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Trailing", Description = "Trail stop in profit", Order = 6, GroupName = "Trade Management")]
+        public bool Trailing { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Long trade", Description = "A Long trade will take place ich checked otherwise a Short", Order = 4, GroupName = "Trade Management")]
         public bool LongTrade { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Limit Order", Description = "Place limit order instead of market", Order = 6, GroupName = "Trade Management")]
+		[Display(Name = "Limit Order", Description = "Place limit order instead of market", Order = 7, GroupName = "Trade Management")]
         public bool LimitOrder { get; set; }
 
         private bool ordersPlaced = false;
 		private string displayText = "Waiting...";
+        private double trailingStopDistance = double.NaN;
+        private double currentStopPrice = double.NaN;
+        private double highSinceEntry = double.NaN;
+        private double lowSinceEntry = double.NaN;
 
         protected override void OnStateChange()
         {
@@ -67,6 +75,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProfitPoints = 0;
                 DollarTarget = 3050;
                 DollarStop = 1000;
+                Trailing = false;
                 LongTrade = true;
             }
         }
@@ -74,6 +83,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         protected override void OnBarUpdate()
         {
 			UpdateInfoText(GetDebugText());
+            ManageTrailingStop();
             
 			if (ordersPlaced || State != State.Realtime)
                 return;
@@ -93,6 +103,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double profitPoints = ProfitPoints;
                 double stopPoints = double.NaN;
                 bool useStop = DollarStop > 0;
+                if (!useStop)
+                {
+                    trailingStopDistance = double.NaN;
+                    currentStopPrice = double.NaN;
+                }
 
                 int numberOfContracts = NumberOfContracts;//GetSafeContractCount();
                 Print($"Number of contracts to trade: {numberOfContracts}");
@@ -107,6 +122,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     stopPoints = DollarStop / (dollarPerPoint * numberOfContracts);
                     Print($"Calculated stop points from dollar stop: {stopPoints}");
+                    trailingStopDistance = stopPoints;
                 }
 
                 double longEntry = Instrument.MasterInstrument.RoundToTickSize(bid);
@@ -123,6 +139,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         double stop = Instrument.MasterInstrument.RoundToTickSize(longEntry - stopPoints);
                         SetStopLoss("LongEntry", CalculationMode.Price, stop, false);
+                        currentStopPrice = stop;
+                        highSinceEntry = longEntry;
                         Print($"Long stop set at {stop}");
                     }
 					
@@ -143,6 +161,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         double stop = Instrument.MasterInstrument.RoundToTickSize(shortEntry + stopPoints);
                         SetStopLoss("ShortEntry", CalculationMode.Price, stop, false);
+                        currentStopPrice = stop;
+                        lowSinceEntry = shortEntry;
                         Print($"Short stop set at {stop}");
                     }
 					if (LimitOrder)
@@ -176,6 +196,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 										"\nOrder Type: " + (LimitOrder ? "Limit" : "Market") +
 										"\nDollar target: " + DollarTarget + 
                                         "\nDollar stop: " + DollarStop +
+                                        "\nTrailing: " + Trailing +
 										"\nPassChallenge v" + GetAddOnVersion();
 
 		protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
@@ -220,12 +241,47 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
 		public void UpdateInfoText(string newText)
-		{
-			displayText = newText;
+        {
+            displayText = newText;
 
-			Draw.TextFixed(owner: this, tag: "myStatusLabel", text: displayText, textPosition: TextPosition.BottomRight,
+            Draw.TextFixed(owner: this, tag: "myStatusLabel", text: displayText, textPosition: TextPosition.BottomRight,
 						textBrush: Brushes.DarkGray, font: new SimpleFont("Segoe UI", 9), outlineBrush: null,
 						areaBrush: Brushes.Gray, areaOpacity: 20);
-		}
+        }
+
+        private void ManageTrailingStop()
+        {
+            if (!Trailing || Position.MarketPosition == MarketPosition.Flat || double.IsNaN(trailingStopDistance) || trailingStopDistance <= 0)
+                return;
+
+            // Seed anchors with average price if not set yet
+            if (double.IsNaN(highSinceEntry))
+                highSinceEntry = Position.AveragePrice;
+            if (double.IsNaN(lowSinceEntry))
+                lowSinceEntry = Position.AveragePrice;
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                highSinceEntry = Math.Max(highSinceEntry, Close[0]);
+                double newStop = Instrument.MasterInstrument.RoundToTickSize(highSinceEntry - trailingStopDistance);
+                if (double.IsNaN(currentStopPrice) || newStop > currentStopPrice)
+                {
+                    currentStopPrice = newStop;
+                    SetStopLoss("LongEntry", CalculationMode.Price, currentStopPrice, false);
+                    Print($"[TRAIL] Long stop moved to {currentStopPrice:F2} (highSinceEntry={highSinceEntry:F2})");
+                }
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                lowSinceEntry = Math.Min(lowSinceEntry, Close[0]);
+                double newStop = Instrument.MasterInstrument.RoundToTickSize(lowSinceEntry + trailingStopDistance);
+                if (double.IsNaN(currentStopPrice) || newStop < currentStopPrice)
+                {
+                    currentStopPrice = newStop;
+                    SetStopLoss("ShortEntry", CalculationMode.Price, currentStopPrice, false);
+                    Print($"[TRAIL] Short stop moved to {currentStopPrice:F2} (lowSinceEntry={lowSinceEntry:F2})");
+                }
+            }
+        }
     }
 }
