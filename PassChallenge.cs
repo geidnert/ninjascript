@@ -63,6 +63,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double currentStopPrice = double.NaN;
         private double highSinceEntry = double.NaN;
         private double lowSinceEntry = double.NaN;
+		private DateTime lastSessionDate = DateTime.MinValue;
 
         protected override void OnStateChange()
         {
@@ -97,6 +98,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentStopPrice = double.NaN;
                 highSinceEntry = double.NaN;
                 lowSinceEntry = double.NaN;
+				lastSessionDate = DateTime.MinValue;
             }
         }
 
@@ -105,6 +107,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Ensure both series have data before proceeding
             if (CurrentBars[0] < BarsRequiredToTrade || CurrentBars[1] < BarsRequiredToTrade)
                 return;
+
+			ResetSessionState(Times[BarsInProgress][0].Date);
 
             // Tick series drives intrabar management
             if (BarsInProgress == 1)
@@ -339,6 +343,21 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
         }
+
+		private void ResetSessionState(DateTime currentSessionDate)
+		{
+			if (currentSessionDate == lastSessionDate)
+				return;
+
+			ordersPlaced = false;
+			trailingStopDistance = double.NaN;
+			currentStopPrice = double.NaN;
+			highSinceEntry = double.NaN;
+			lowSinceEntry = double.NaN;
+			lastSessionDate = currentSessionDate;
+
+			Log($"Session reset for {currentSessionDate:yyyy-MM-dd}");
+		}
 
 		private void Log(string message)
 		{
