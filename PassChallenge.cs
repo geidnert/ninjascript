@@ -53,6 +53,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Display(Name = "Limit Order", Description = "Place limit order instead of market", Order = 7, GroupName = "Trade Management")]
         public bool LimitOrder { get; set; }
 
+		[NinjaScriptProperty]
+		[Display(Name = "Debug", Description = "Enable verbose logging", Order = 1, GroupName = "Debugging")]
+		public bool Debug { get; set; }
+
         private bool ordersPlaced = false;
 		private string displayText = "Waiting...";
         private double trailingStopDistance = double.NaN;
@@ -78,6 +82,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DollarStop = 2500;
                 Trailing = false;
                 LongTrade = true;
+				Debug = false;
             }
             else if (State == State.Configure)
             {
@@ -133,7 +138,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double bid = GetBidPrice();
                 double tick = TickSize;
 
-                Print($"[{State}] Bid: {bid}, Ask: {ask}, TickSize: {tick}");
+                Log($"[{State}] Bid: {bid}, Ask: {ask}, TickSize: {tick}");
 
                 double dollarPerPoint = GetDollarPerPoint();
                 double profitPoints = ProfitPoints;
@@ -146,30 +151,30 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
 
                 int numberOfContracts = NumberOfContracts;//GetSafeContractCount();
-                Print($"Number of contracts to trade: {numberOfContracts}");
+                Log($"Number of contracts to trade: {numberOfContracts}");
 
                 if (profitPoints == 0 && DollarTarget > 0)
                 {
                     profitPoints = DollarTarget / (dollarPerPoint * numberOfContracts);
-                    Print($"Calculated profit points from dollar target: {profitPoints}");
+                    Log($"Calculated profit points from dollar target: {profitPoints}");
                 }
 
                 if (useStop)
                 {
                     stopPoints = DollarStop / (dollarPerPoint * numberOfContracts);
-                    Print($"Calculated stop points from dollar stop: {stopPoints}");
+                    Log($"Calculated stop points from dollar stop: {stopPoints}");
                     trailingStopDistance = stopPoints;
                 }
 
                 double longEntry = Instrument.MasterInstrument.RoundToTickSize(bid);
                 double shortEntry = Instrument.MasterInstrument.RoundToTickSize(ask);
 
-                Print($"Calculated longEntry: {longEntry}, shortEntry: {shortEntry}");
+                Log($"Calculated longEntry: {longEntry}, shortEntry: {shortEntry}");
 
                 if (LongTrade && !double.IsNaN(longEntry))
                 {
                     double target = Instrument.MasterInstrument.RoundToTickSize(longEntry + profitPoints);
-                    Print($"Submitting Long Entry at {longEntry} with target {target}");
+                    Log($"Submitting Long Entry at {longEntry} with target {target}");
                     SetProfitTarget("LongEntry", CalculationMode.Price, target);
                     if (useStop && !double.IsNaN(stopPoints))
                     {
@@ -177,7 +182,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         SetStopLoss("LongEntry", CalculationMode.Price, stop, false);
                         currentStopPrice = stop;
                         highSinceEntry = longEntry;
-                        Print($"Long stop set at {stop}");
+                        Log($"Long stop set at {stop}");
                     }
 					
 					if (LimitOrder)
@@ -185,13 +190,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 					else
 						EnterLong(1, numberOfContracts, "LongEntry");
 
-                    Print("Long order submitted at: " + now.ToString("HH:mm:ss"));
+                    Log("Long order submitted at: " + now.ToString("HH:mm:ss"));
                 }
 
                 if (!LongTrade && !double.IsNaN(shortEntry))
                 {
                     double target = Instrument.MasterInstrument.RoundToTickSize(shortEntry - profitPoints);
-                    Print($"Submitting Short Entry at {shortEntry} with target {target}");
+                    Log($"Submitting Short Entry at {shortEntry} with target {target}");
                     SetProfitTarget("ShortEntry", CalculationMode.Price, target);
                     if (useStop && !double.IsNaN(stopPoints))
                     {
@@ -199,21 +204,21 @@ namespace NinjaTrader.NinjaScript.Strategies
                         SetStopLoss("ShortEntry", CalculationMode.Price, stop, false);
                         currentStopPrice = stop;
                         lowSinceEntry = shortEntry;
-                        Print($"Short stop set at {stop}");
+                        Log($"Short stop set at {stop}");
                     }
 					if (LimitOrder)
                     	EnterShortLimit(1, true, numberOfContracts, shortEntry, "ShortEntry");
 					else
 						EnterShort(1, numberOfContracts, "ShortEntry");
                     
-					Print("Short order submitted at: " + now.ToString("HH:mm:ss"));
+					Log("Short order submitted at: " + now.ToString("HH:mm:ss"));
                 }
 
                 if (LongTrade && double.IsNaN(longEntry))
-                    Print("No long order submitted due to invalid entry price.");
+                    Log("No long order submitted due to invalid entry price.");
 
                 if (!LongTrade && double.IsNaN(shortEntry))
-                    Print("No short order submitted due to invalid entry price.");
+                    Log("No short order submitted due to invalid entry price.");
 
                 ordersPlaced = true;
             }
@@ -239,7 +244,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 											double averageFillPrice, OrderState orderState, DateTime time,
 											ErrorCode error, string comment)
 		{
-			Print($"[OnOrderUpdate] {time:HH:mm:ss} | Name: {order.Name}, State: {orderState}, Limit: {limitPrice}, Fill: {filled}, AvgPrice: {averageFillPrice}");
+			Log($"[OnOrderUpdate] {time:HH:mm:ss} | Name: {order.Name}, State: {orderState}, Limit: {limitPrice}, Fill: {filled}, AvgPrice: {averageFillPrice}");
 		}
 
 
@@ -281,8 +286,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             double equityUsed = maxEquity - netEquity;
             double remainingDrawdown = maxDrawdown - equityUsed;
 
-            Print($"Account Cash: {cash}, Unrealized: {unrealized}, NetEquity: {netEquity}");
-            Print($"Equity used: {equityUsed}, Remaining Drawdown: {remainingDrawdown}");
+            Log($"Account Cash: {cash}, Unrealized: {unrealized}, NetEquity: {netEquity}");
+            Log($"Equity used: {equityUsed}, Remaining Drawdown: {remainingDrawdown}");
 
             if (remainingDrawdown <= 0)
                 return 0;
@@ -319,7 +324,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     currentStopPrice = newStop;
                     SetStopLoss("LongEntry", CalculationMode.Price, currentStopPrice, false);
-                    Print($"[TRAIL] Long stop moved to {currentStopPrice:F2} (highSinceEntry={highSinceEntry:F2})");
+                    Log($"[TRAIL] Long stop moved to {currentStopPrice:F2} (highSinceEntry={highSinceEntry:F2})");
                 }
             }
             else if (Position.MarketPosition == MarketPosition.Short)
@@ -330,9 +335,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     currentStopPrice = newStop;
                     SetStopLoss("ShortEntry", CalculationMode.Price, currentStopPrice, false);
-                    Print($"[TRAIL] Short stop moved to {currentStopPrice:F2} (lowSinceEntry={lowSinceEntry:F2})");
+                    Log($"[TRAIL] Short stop moved to {currentStopPrice:F2} (lowSinceEntry={lowSinceEntry:F2})");
                 }
             }
         }
+
+		private void Log(string message)
+		{
+			if (Debug)
+				Print(message);
+		}
     }
 }
