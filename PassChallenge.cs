@@ -68,36 +68,72 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Calculate = Calculate.OnEachTick;
                 IsUnmanaged = false;
                 IsInstantiatedOnEachOptimizationIteration = false;
+                BarsRequiredToTrade = 1;
 
                 NumberOfContracts = 4;
                 EntryHour = 9;
                 EntryMinute = 29;
                 ProfitPoints = 0;
                 DollarTarget = 3050;
-                DollarStop = 1000;
+                DollarStop = 2500;
                 Trailing = false;
                 LongTrade = true;
+            }
+            else if (State == State.Configure)
+            {
+                // Add 1 tick series so historical/backtest runs use intrabar data for fills and trailing logic
+                AddDataSeries(BarsPeriodType.Tick, 1);
+            }
+            else if (State == State.Realtime)
+            {
+                // Reset runtime state when transitioning from historical to real-time/playback
+                ordersPlaced = false;
+                trailingStopDistance = double.NaN;
+                currentStopPrice = double.NaN;
+                highSinceEntry = double.NaN;
+                lowSinceEntry = double.NaN;
             }
         }
 
         protected override void OnBarUpdate()
         {
+            // Ensure both series have data before proceeding
+            if (CurrentBars[0] < BarsRequiredToTrade || CurrentBars[1] < BarsRequiredToTrade)
+                return;
+
+            // Tick series drives intrabar management
+            if (BarsInProgress == 1)
+            {
+                ManageTrailingStop();
+                return;
+            }
+
+            // Only run trade logic on the primary series
+            if (BarsInProgress != 0)
+                return;
+
 			UpdateInfoText(GetDebugText());
-            ManageTrailingStop();
-            
-			if (ordersPlaced || State != State.Realtime)
+
+            if (ordersPlaced)
                 return;
 
             DateTime now = Times[0][0];
-
-            if (now.Hour == EntryHour &&
-                now.Minute == EntryMinute + 1)
+            int entryMinuteTarget = EntryMinute + 1;
+            int entryHourTarget = EntryHour;
+            if (entryMinuteTarget >= 60)
             {
-                double ask = GetCurrentAsk();
-                double bid = GetCurrentBid();
+                entryMinuteTarget -= 60;
+                entryHourTarget = (entryHourTarget + 1) % 24;
+            }
+
+            if (now.Hour == entryHourTarget &&
+                now.Minute == entryMinuteTarget)
+            {
+                double ask = GetAskPrice();
+                double bid = GetBidPrice();
                 double tick = TickSize;
 
-                Print($"Bid: {bid}, Ask: {ask}, TickSize: {tick}");
+                Print($"[{State}] Bid: {bid}, Ask: {ask}, TickSize: {tick}");
 
                 double dollarPerPoint = GetDollarPerPoint();
                 double profitPoints = ProfitPoints;
@@ -145,9 +181,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 					
 					if (LimitOrder)
-                    	EnterLongLimit(0, true, numberOfContracts, longEntry, "LongEntry");
+                    	EnterLongLimit(1, true, numberOfContracts, longEntry, "LongEntry");
 					else
-						EnterLong(numberOfContracts, "LongEntry");
+						EnterLong(1, numberOfContracts, "LongEntry");
 
                     Print("Long order submitted at: " + now.ToString("HH:mm:ss"));
                 }
@@ -166,9 +202,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print($"Short stop set at {stop}");
                     }
 					if (LimitOrder)
-                    	EnterShortLimit(0, true, numberOfContracts, shortEntry, "ShortEntry");
+                    	EnterShortLimit(1, true, numberOfContracts, shortEntry, "ShortEntry");
 					else
-						EnterShort(numberOfContracts, "ShortEntry");
+						EnterShort(1, numberOfContracts, "ShortEntry");
                     
 					Print("Short order submitted at: " + now.ToString("HH:mm:ss"));
                 }
@@ -207,14 +243,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 
+        private double GetBidPrice()
+        {
+            double price = GetCurrentBid();
+            if (price <= 0 || double.IsNaN(price))
+                price = Closes[1][0];
+            if (price <= 0 || double.IsNaN(price))
+                price = Closes[0][0];
+            return price;
+        }
+
+        private double GetAskPrice()
+        {
+            double price = GetCurrentAsk();
+            if (price <= 0 || double.IsNaN(price))
+                price = Closes[1][0];
+            if (price <= 0 || double.IsNaN(price))
+                price = Closes[0][0];
+            return price;
+        }
+
         private double GetDollarPerPoint()
         {
-            if (Instrument.FullName.StartsWith("MNQ"))
-                return 2.0;
-            else if (Instrument.FullName.StartsWith("NQ"))
-                return 20.0;
-            else
-                return 1.0; // fallback/default
+            return Instrument.MasterInstrument.PointValue;
         }
 
         private int GetSafeContractCount()
