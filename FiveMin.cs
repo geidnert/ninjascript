@@ -883,30 +883,32 @@ public class FiveMin : Strategy
 
         if (Position.MarketPosition == MarketPosition.Flat)
         {
+            // Calculate PnL based on entry and exit prices
             double tradePnL = 0;
 
-            if (execution.Order.OrderAction == OrderAction.Sell && lastTradeWasLong)
-                tradePnL = (price - execution.Price) * execution.Quantity * Instrument.MasterInstrument.PointValue;
-            else if (execution.Order.OrderAction == OrderAction.BuyToCover && !lastTradeWasLong)
-                tradePnL = (execution.Price - price) * execution.Quantity * Instrument.MasterInstrument.PointValue;
+            if (lastTradeWasLong)
+                tradePnL = (price - entryPrice) * execution.Quantity * Instrument.MasterInstrument.PointValue;
+            else
+                tradePnL = (entryPrice - price) * execution.Quantity * Instrument.MasterInstrument.PointValue;
 
+            // A trade is a win if exit price is better than entry, regardless of how it exited
             bool wasWin = tradePnL > 0;
 
             if (wasWin)
             {
                 tpCountToday++;
-                DebugPrint($"🎯 Take Profit hit. TP Today = {tpCountToday}/{MaxTPsPerDay}");
+                DebugPrint($"🎯 Win recorded (PnL: ${tradePnL:F2}). Wins Today = {tpCountToday}/{MaxTPsPerDay}");
 
                 if (tpCountToday >= MaxTPsPerDay)
                 {
                     dailyLimitReached = true;
-                    DebugPrint("⛔ Max TPs reached, no more trades today.");
+                    DebugPrint("⛔ Max wins reached, no more trades today.");
                 }
             }
             else
             {
                 lossCountToday++;
-                DebugPrint($"❌ Loss recorded. Losses Today = {lossCountToday}/{MaxLossesPerDay}");
+                DebugPrint($"❌ Loss recorded (PnL: ${tradePnL:F2}). Losses Today = {lossCountToday}/{MaxLossesPerDay}");
 
                 if (lossCountToday >= MaxLossesPerDay)
                 {
