@@ -86,17 +86,17 @@ public class ORBO : Strategy
     [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
     public double TakeProfitPercent { get; set; }
 
-    [NinjaScriptProperty]
-    [Display(Name = "Max VIX",
-             Description = "Block trading for the day if first 1-minute ^VIX open exceeds this value (0 = disabled)",
-             Order = 14, GroupName = "B. Entry Conditions")]
-    public double MaxVix { get; set; }
+    // [NinjaScriptProperty]
+    // [Display(Name = "Max VIX",
+    //          Description = "Block trading for the day if first 1-minute ^VIX open exceeds this value (0 = disabled)",
+    //          Order = 14, GroupName = "B. Entry Conditions")]
+    internal double MaxVix { get; set; }
 
-    [NinjaScriptProperty]
-    [Display(Name = "VIX Instrument",
-             Description = "Instrument name for the VIX data series (e.g., ^VIX or VX 12-25)",
-             Order = 15, GroupName = "B. Entry Conditions")]
-    public string VixInstrument { get; set; }
+    // [NinjaScriptProperty]
+    // [Display(Name = "VIX Instrument",
+    //          Description = "Instrument name for the VIX data series (e.g., ^VIX or VX 12-25)",
+    //          Order = 15, GroupName = "B. Entry Conditions")]
+    internal string VixInstrument { get; set; }
 
     // [NinjaScriptProperty]
     // [Display(Name = "Hard SL %", Description = "Hard SL level", Order = 6, GroupName = "B. Entry Conditions")]
@@ -340,7 +340,7 @@ public class ORBO : Strategy
         MaxRangePoints = 200;
         EntryPercent = 13.5;
         TakeProfitPercent = 40;
-        MaxVix = 0;
+        MaxVix = 20;
         VixInstrument = "^VIX";
         HardStopLossPercent = 53;
         CancelOrderBars = 52;
