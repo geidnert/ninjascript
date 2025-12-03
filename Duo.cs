@@ -214,6 +214,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private System.Timers.Timer heartbeatTimer;
         private DateTime lastHeartbeatWrite = DateTime.MinValue;
         private int heartbeatIntervalSeconds = 10; // send heartbeat every 10 seconds
+        private static readonly object heartbeatFileLock = new object();
+        private string heartbeatId;
 
         // === Shared Anti-Hedge Lock System ===
         private static readonly object hedgeLockSync = new object();
@@ -263,6 +265,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
+                heartbeatId = BuildHeartbeatId();
                 // --- Heartbeat timer setup ---
                 heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
                 heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
@@ -1296,58 +1299,76 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return false;
         }
 
+        private string BuildHeartbeatId()
+        {
+            string baseName = Name ?? GetType().Name;
+            string instrumentName = Instrument != null ? Instrument.FullName : "UnknownInstrument";
+            string accountName = Account != null ? Account.Name : "UnknownAccount";
+            string barsInfo = BarsPeriod != null
+                ? $"{BarsPeriod.BarsPeriodType}-{BarsPeriod.Value}"
+                : "NoBars";
+
+            string configKey = $"{Contracts}-{OffsetPerc}-{TpPerc}-{CancelPerc}-{DeviationPerc}-{SLPadding}-{SLPresetSetting}";
+
+            string raw = $"{baseName}-{instrumentName}-{barsInfo}-{accountName}-{configKey}";
+            return raw.Replace(",", "_").Replace(Environment.NewLine, " ").Trim();
+        }
+
         private void WriteHeartbeat()
         {
             try
             {
-                string name = this.Name ?? GetType().Name;
+                string name = heartbeatId ?? this.Name ?? GetType().Name;
                 string line = $"{name},{DateTime.Now:O}";
                 List<string> lines = new List<string>();
 
-                // --- Load existing lines (if any) ---
-                if (System.IO.File.Exists(heartbeatFile))
+                bool success = false;
+                lock (heartbeatFileLock)
                 {
-                    for (int i = 0; i < 3; i++) // retry on read conflict
+                    // --- Load existing lines (if any) ---
+                    if (System.IO.File.Exists(heartbeatFile))
+                    {
+                        for (int i = 0; i < 3; i++) // retry on read conflict
+                        {
+                            try
+                            {
+                                lines.AddRange(System.IO.File.ReadAllLines(heartbeatFile));
+                                break;
+                            }
+                            catch (IOException)
+                            {
+                                System.Threading.Thread.Sleep(100);
+                            }
+                        }
+                    }
+
+                    // --- Update or add this strategy’s line ---
+                    bool updated = false;
+                    for (int i = 0; i < lines.Count; i++)
+                    {
+                        if (lines[i].StartsWith(name + ",", StringComparison.OrdinalIgnoreCase))
+                        {
+                            lines[i] = line;
+                            updated = true;
+                            break;
+                        }
+                    }
+                    if (!updated)
+                        lines.Add(line);
+
+                    // --- Write back with retry ---
+                    for (int i = 0; i < 3; i++)
                     {
                         try
                         {
-                            lines.AddRange(System.IO.File.ReadAllLines(heartbeatFile));
+                            System.IO.File.WriteAllLines(heartbeatFile, lines.ToArray());
+                            success = true;
                             break;
                         }
                         catch (IOException)
                         {
                             System.Threading.Thread.Sleep(100);
                         }
-                    }
-                }
-
-                // --- Update or add this strategy’s line ---
-                bool updated = false;
-                for (int i = 0; i < lines.Count; i++)
-                {
-                    if (lines[i].StartsWith(name + ",", StringComparison.OrdinalIgnoreCase))
-                    {
-                        lines[i] = line;
-                        updated = true;
-                        break;
-                    }
-                }
-                if (!updated)
-                    lines.Add(line);
-
-                // --- Write back with retry ---
-                bool success = false;
-                for (int i = 0; i < 3; i++)
-                {
-                    try
-                    {
-                        System.IO.File.WriteAllLines(heartbeatFile, lines.ToArray());
-                        success = true;
-                        break;
-                    }
-                    catch (IOException)
-                    {
-                        System.Threading.Thread.Sleep(100);
                     }
                 }
 
