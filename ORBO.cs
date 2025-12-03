@@ -73,9 +73,9 @@ public class ORBO : Strategy
     // [Display(Name = "Range Duration", Order = 1, GroupName = "B. Entry Conditions")]
     internal int BiasDuration { get; set; }
 
-    // [NinjaScriptProperty]
-    // [Display(Name = "Max Range (pts)", Description = "If session range exceeds this size, block trading for the day (0 = disabled)", Order = 2, GroupName = "B. Entry Conditions")]
-    internal double MaxRangePoints { get; set; }
+    [NinjaScriptProperty]
+    [Display(Name = "Max Range (pts)", Description = "If session range exceeds this size, block trading for the day (0 = disabled)", Order = 2, GroupName = "B. Entry Conditions")]
+    public double MaxRangePoints { get; set; }
 
     // [NinjaScriptProperty]
     // [Range(1, 100, ErrorMessage = "EntryPercent must be between 1 and 100 ticks")]
