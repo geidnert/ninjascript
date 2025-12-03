@@ -798,14 +798,15 @@ public class ORBO : Strategy
 	private string GetDebugText() =>
 		GetPnLInfo() +
 		"\nContracts: " + NumberOfContracts +
-	    "\nAnti Hedge: " + (AntiHedge ? "✅" : "⛔") +
-	    // "\nSL to BE: " + (
-		//     beTriggerActive ? "✅" :
-		//     SLBETrigger > 0 ? "⛔" :
-		//     "⛔"
-		// ) +
+        "\nAnti Hedge: " + (AntiHedge ? "✅" : "⛔") +
+        // "\nSL to BE: " + (
+        //     beTriggerActive ? "✅" :
+        //     SLBETrigger > 0 ? "⛔" :
+        //     "⛔"
+        // ) +
         "\nArmed: " + (IsReadyForNewOrder() ? "✅" : "⛔") +
-	    "\nORBO v" + GetAddOnVersion();
+        "\n" + GetVixStatus() +
+        "\nORBO v" + GetAddOnVersion();
 	
     private bool ShouldAccountBalanceExit()
     {
@@ -1669,6 +1670,27 @@ public class ORBO : Strategy
         double slDollars = slTicks * tickValue * NumberOfContracts;
 
         return $"TP: ${tpDollars:0}\nSL: ${slDollars:0}";
+    }
+    
+    private string GetVixStatus()
+    {
+        if (MaxVix <= 0)
+            return "VIX: off";
+
+        if (vixBlockedToday)
+        {
+            string val = double.IsNaN(vixFirstOpen) ? "n/a" : vixFirstOpen.ToString("F2");
+            return $"VIX: BLOCKED ({val} > {MaxVix:F2})";
+        }
+
+        if (!vixSampledToday && !vixNoDataAllowToday)
+            return "VIX: waiting for 1m open";
+
+        if (!vixSampledToday && vixNoDataAllowToday)
+            return "VIX: no data (grace passed; trading allowed)";
+
+        string openVal = double.IsNaN(vixFirstOpen) ? "n/a" : vixFirstOpen.ToString("F2");
+        return $"VIX: {openVal} ≤ {MaxVix:F2}";
     }
     
     private string BuildHeartbeatId()
