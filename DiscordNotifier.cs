@@ -47,7 +47,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double monthlyTotal = 0;
         private string currentMonth = "";
         // Internal toggle: when true, skip Discord posts and log the full message for debugging.
-        private bool debugMode = true;
+        private bool debugMode = false;
 
         protected override void OnStateChange()
         {
