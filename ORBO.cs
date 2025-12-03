@@ -340,7 +340,7 @@ public class ORBO : Strategy
         MaxRangePoints = 200;
         EntryPercent = 13.5;
         TakeProfitPercent = 40;
-        MaxVix = 20;
+        MaxVix = 30;
         VixInstrument = "^VIX";
         HardStopLossPercent = 53;
         CancelOrderBars = 52;
@@ -624,7 +624,7 @@ public class ORBO : Strategy
             {
                 if (!vixBlockLoggedToday)
                 {
-                    LogToOutput2($"⛔ VIX block in effect. First open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. No trades today.");
+                    LogToOutput2($"⛔ VIX block in effect. First open={vixFirstOpen:F2} >= MaxVix {MaxVix:F2}. No trades today.");
                     vixBlockLoggedToday = true;
                 }
                 return;
@@ -738,14 +738,14 @@ public class ORBO : Strategy
             {
                 vixFirstOpen = candidateOpen;
                 vixSampledToday = true;
-                vixBlockedToday = vixFirstOpen > MaxVix;
+                vixBlockedToday = vixFirstOpen >= MaxVix;
                 vixPendingLoggedToday = false;
                 vixBlockLoggedToday = false;
                 vixNoDataAllowToday = false;
                 vixFallbackUsedToday = true;
 
                 if (vixBlockedToday)
-                    LogToOutput2($"⛔ VIX filter active (backfilled). Open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. Trades blocked today.");
+                    LogToOutput2($"⛔ VIX filter active (backfilled). Open={vixFirstOpen:F2} >= MaxVix {MaxVix:F2}. Trades blocked today.");
                 else
                     LogToOutput2($"✅ VIX filter passed (backfilled). Open={vixFirstOpen:F2}, MaxVix={MaxVix:F2}");
             }
@@ -755,13 +755,13 @@ public class ORBO : Strategy
         {
             vixFirstOpen = Opens[VixSeriesIndex][0];
             vixSampledToday = true;
-            vixBlockedToday = vixFirstOpen > MaxVix;
+            vixBlockedToday = vixFirstOpen >= MaxVix;
             vixPendingLoggedToday = false;
             vixBlockLoggedToday = false;
             vixNoDataAllowToday = false;
 
             if (vixBlockedToday)
-                LogToOutput2($"⛔ VIX filter active. First 1m open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. Trades blocked today.");
+                LogToOutput2($"⛔ VIX filter active. First 1m open={vixFirstOpen:F2} >= MaxVix {MaxVix:F2}. Trades blocked today.");
             else
                 LogToOutput2($"✅ VIX filter passed. First 1m open={vixFirstOpen:F2}, MaxVix={MaxVix:F2}");
         }
@@ -1675,22 +1675,15 @@ public class ORBO : Strategy
     private string GetVixStatus()
     {
         if (MaxVix <= 0)
-            return "VIX: off";
+            return "VIX: ✅";
 
         if (vixBlockedToday)
-        {
-            string val = double.IsNaN(vixFirstOpen) ? "n/a" : vixFirstOpen.ToString("F2");
-            return $"VIX: BLOCKED ({val} > {MaxVix:F2})";
-        }
+            return "VIX: ⛔";
 
         if (!vixSampledToday && !vixNoDataAllowToday)
-            return "VIX: waiting for 1m open";
+            return "VIX: ⛔";
 
-        if (!vixSampledToday && vixNoDataAllowToday)
-            return "VIX: no data (grace passed; trading allowed)";
-
-        string openVal = double.IsNaN(vixFirstOpen) ? "n/a" : vixFirstOpen.ToString("F2");
-        return $"VIX: {openVal} ≤ {MaxVix:F2}";
+        return "VIX: ✅";
     }
     
     private string BuildHeartbeatId()
