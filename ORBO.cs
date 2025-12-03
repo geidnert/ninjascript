@@ -74,6 +74,10 @@ public class ORBO : Strategy
     internal int BiasDuration { get; set; }
 
     // [NinjaScriptProperty]
+    // [Display(Name = "Max Range (pts)", Description = "If session range exceeds this size, block trading for the day (0 = disabled)", Order = 2, GroupName = "B. Entry Conditions")]
+    internal double MaxRangePoints { get; set; }
+
+    // [NinjaScriptProperty]
     // [Range(1, 100, ErrorMessage = "EntryPercent must be between 1 and 100 ticks")]
     // [Display(Name = "Entry %", Description = "Entry price for limit order from 15 min OR", Order = 3, GroupName = "B. Entry Conditions")]
     internal double EntryPercent { get; set; }
@@ -228,6 +232,8 @@ public class ORBO : Strategy
     private double lastFilledEntryPrice = 0;
     private bool isInBiasWindow = false;
     private bool hasCapturedRange = false;
+    private bool rangeTooWide = false;
+    private bool rangeTooWideLogged = false;
     private bool breakoutRearmPending = false;
     private DateTime breakoutRearmTime = DateTime.MinValue;
     // --- Heartbeat reporting ---
@@ -235,6 +241,8 @@ public class ORBO : Strategy
     private System.Timers.Timer heartbeatTimer;
     private DateTime lastHeartbeatWrite = DateTime.MinValue;
     private int heartbeatIntervalSeconds = 10; // send heartbeat every 10 seconds
+    private static readonly object heartbeatFileLock = new object();
+    private string heartbeatId;
     // === Shared Anti-Hedge Lock System ===
     private static readonly object hedgeLockSync = new object();
     private static readonly string hedgeLockFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "AntiHedgeLock.csv");
@@ -266,6 +274,7 @@ public class ORBO : Strategy
         else if (State == State.Historical)
             isStrategyAnalyzer = (Account == null || Account.Name == "Backtest");
         else if (State == State.DataLoaded) {
+            heartbeatId = BuildHeartbeatId();
             // --- Heartbeat timer setup ---
             heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
             heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
@@ -300,6 +309,7 @@ public class ORBO : Strategy
         NumberOfContracts = 1;
         RequireEntryConfirmation = false;
         BiasDuration = 15;
+        MaxRangePoints = 200;
         EntryPercent = 13.5;
         TakeProfitPercent = 40;
         HardStopLossPercent = 53;
@@ -520,6 +530,10 @@ public class ORBO : Strategy
         // 🔁 Breakout reset should always be checked per tick or every 5m based on setting
         bool noOpenOrders = !HasOpenOrders();
         bool isFlat = Position.MarketPosition == MarketPosition.Flat;
+
+        // Block trading on oversized ranges (resets each day)
+        if (rangeTooWide && isFlat)
+            return;
 		
 		if (SLBETrigger > 0 && Position.MarketPosition != MarketPosition.Flat)
         {
@@ -971,6 +985,8 @@ public class ORBO : Strategy
         beFlattenTriggered = false;
         tpWasHit = false;
         hasReturnedOnce = false;
+        rangeTooWide = false;
+        rangeTooWideLogged = false;
 
         if (isStrategyAnalyzer)
             lastExitBarAnalyzer = -1;
@@ -978,6 +994,9 @@ public class ORBO : Strategy
 
     private void PlaceEntryIfTriggered()
     {
+        if (rangeTooWide)
+            return;
+
         SetProfitTarget(CalculationMode.Ticks, 0);
         SetStopLoss(CalculationMode.Ticks, 0);
 
@@ -1341,6 +1360,17 @@ public class ORBO : Strategy
         double roundedLow  = Instrument.MasterInstrument.RoundToTickSize(sessionLow);
         double rng = roundedHigh - roundedLow;
 
+        if (MaxRangePoints > 0 && rng > MaxRangePoints)
+        {
+            rangeTooWide = true;
+            if (!rangeTooWideLogged && DebugMode)
+            {
+                DebugPrint($"⛔ Range too wide: {rng:F2} pts > MaxRangePoints {MaxRangePoints:F2}. Trades blocked today.");
+                rangeTooWideLogged = true;
+            }
+            CancelAllOrders();
+        }
+
         double cancelOffset = rng * CancelOrderPercent / 100.0;
         cancelOrderDistanceAbs = Instrument.MasterInstrument.RoundToTickSize(cancelOffset);
 
@@ -1475,58 +1505,77 @@ public class ORBO : Strategy
         return $"TP: ${tpDollars:0}\nSL: ${slDollars:0}";
     }
     
+    private string BuildHeartbeatId()
+    {
+        string baseName = Name ?? GetType().Name;
+        string instrumentName = Instrument != null ? Instrument.FullName : "UnknownInstrument";
+        string accountName = Account != null ? Account.Name : "UnknownAccount";
+        string barsInfo = BarsPeriod != null
+            ? $"{BarsPeriod.BarsPeriodType}-{BarsPeriod.Value}"
+            : "NoBars";
+
+        // include key risk params so multiple configs don't collide
+        string configKey = $"{EntryPercent}-{TakeProfitPercent}-{HardStopLossPercent}-{NumberOfContracts}";
+
+        string raw = $"{baseName}-{instrumentName}-{barsInfo}-{accountName}-{configKey}";
+        return raw.Replace(",", "_").Replace(Environment.NewLine, " ").Trim();
+    }
+    
     private void WriteHeartbeat()
     {
         try
         {
-            string name = this.Name ?? GetType().Name;
+            string name = heartbeatId ?? this.Name ?? GetType().Name;
             string line = $"{name},{DateTime.Now:O}";
             List<string> lines = new List<string>();
 
-            // --- Load existing lines (if any) ---
-            if (System.IO.File.Exists(heartbeatFile))
+            bool success = false;
+            lock (heartbeatFileLock)
             {
-                for (int i = 0; i < 3; i++) // retry on read conflict
+                // --- Load existing lines (if any) ---
+                if (System.IO.File.Exists(heartbeatFile))
+                {
+                    for (int i = 0; i < 3; i++) // retry on read conflict
+                    {
+                        try
+                        {
+                            lines.AddRange(System.IO.File.ReadAllLines(heartbeatFile));
+                            break;
+                        }
+                        catch (IOException)
+                        {
+                            System.Threading.Thread.Sleep(100);
+                        }
+                    }
+                }
+
+                // --- Update or add this strategy’s line ---
+                bool updated = false;
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    if (lines[i].StartsWith(name + ",", StringComparison.OrdinalIgnoreCase))
+                    {
+                        lines[i] = line;
+                        updated = true;
+                        break;
+                    }
+                }
+                if (!updated)
+                    lines.Add(line);
+
+                // --- Write back with retry ---
+                for (int i = 0; i < 3; i++)
                 {
                     try
                     {
-                        lines.AddRange(System.IO.File.ReadAllLines(heartbeatFile));
+                        System.IO.File.WriteAllLines(heartbeatFile, lines.ToArray());
+                        success = true;
                         break;
                     }
                     catch (IOException)
                     {
                         System.Threading.Thread.Sleep(100);
                     }
-                }
-            }
-
-            // --- Update or add this strategy’s line ---
-            bool updated = false;
-            for (int i = 0; i < lines.Count; i++)
-            {
-                if (lines[i].StartsWith(name + ",", StringComparison.OrdinalIgnoreCase))
-                {
-                    lines[i] = line;
-                    updated = true;
-                    break;
-                }
-            }
-            if (!updated)
-                lines.Add(line);
-
-            // --- Write back with retry ---
-            bool success = false;
-            for (int i = 0; i < 3; i++)
-            {
-                try
-                {
-                    System.IO.File.WriteAllLines(heartbeatFile, lines.ToArray());
-                    success = true;
-                    break;
-                }
-                catch (IOException)
-                {
-                    System.Threading.Thread.Sleep(100);
                 }
             }
 
