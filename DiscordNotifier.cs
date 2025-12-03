@@ -47,7 +47,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double monthlyTotal = 0;
         private string currentMonth = "";
         // Internal toggle: when true, skip Discord posts and log the full message for debugging.
-        private bool debugMode = false;
+        private bool debugMode = true;
 
         protected override void OnStateChange()
         {
@@ -69,6 +69,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Account.ExecutionUpdate += OnAccountExecutionUpdate;
                 Account.OrderUpdate += OnAccountOrderUpdate;
+
+                // If we start while already in a position, seed the entry info so the first exit isn't mis-priced.
+                var pos = Position;
+                if (pos != null && pos.MarketPosition != MarketPosition.Flat)
+                {
+                    entryPrice = pos.AveragePrice;
+                    entryIsShort = pos.MarketPosition == MarketPosition.Short;
+                    positionActive = true;
+                    currentPositionStatus = entryIsShort ? "Currently Short" : "Currently Long";
+                    LogToOutput2($"ℹ️ Resuming with existing {pos.MarketPosition} position from {entryPrice}.");
+                }
+
                 LogToOutput2("🧹 Preparing DiscordNotifier state...");
                 if (debugMode)
                     LogToOutput2("🐞 Debug mode is ON — Discord messages will be logged locally instead of posted.");
@@ -193,6 +205,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     case OrderAction.Sell:
                     case OrderAction.BuyToCover:
+                        if (!positionActive)
+                        {
+                            LogToOutput2("⚠️ Ignoring exit fill because no entry was tracked (likely pre-existing position).");
+                            return;
+                        }
+
                         double exitPrice = exec.Price;
                         double qty = exec.Quantity;
                         double points = entryIsShort ? entryPrice - exitPrice : exitPrice - entryPrice;
