@@ -324,7 +324,7 @@ public class ORBO : Strategy
         MaxRangePoints = 200;
         EntryPercent = 13.5;
         TakeProfitPercent = 40;
-        VixThreshold = 30;
+        VixThreshold = 20;
         HardStopLossPercent = 53;
         CancelOrderBars = 52;
         VarianceInTicks = 0;
