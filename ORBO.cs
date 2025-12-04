@@ -87,16 +87,8 @@ public class ORBO : Strategy
     public double TakeProfitPercent { get; set; }
 
     [NinjaScriptProperty]
-    [Display(Name = "Use WVF Filter", Description = "Block trading for the day if Williams VIX Fix exceeds threshold", Order = 14, GroupName = "B. Entry Conditions")]
-    public bool UseWvfFilter { get; set; }
-
-    [NinjaScriptProperty]
-    [Display(Name = "WVF Lookback (days)", Description = "Number of prior daily closes used for Williams VIX Fix", Order = 15, GroupName = "B. Entry Conditions")]
-    public int WvfLookbackDays { get; set; }
-
-    [NinjaScriptProperty]
-    [Display(Name = "WVF Threshold", Description = "Block trading for the day if WVF is at or above this value (0 = disabled)", Order = 16, GroupName = "B. Entry Conditions")]
-    public double WvfThreshold { get; set; }
+    [Display(Name = "VIX Threshold", Description = "Block trading for the day if VIX is at or above this value (0 = disabled)", Order = 15, GroupName = "B. Entry Conditions")]
+    internal double VixThreshold { get; set; }
 
     // [NinjaScriptProperty]
     // [Display(Name = "Hard SL %", Description = "Hard SL level", Order = 6, GroupName = "B. Entry Conditions")]
@@ -213,7 +205,6 @@ public class ORBO : Strategy
     private double entryPrice;
     private double sessionHigh, sessionLow;
     private string lastDate = string.Empty;
-    private const int DailySeriesIndex = 1;
     private Order entryOrder;
     private Order hardStopOrder;
     private List<Order> profitOrders = new List<Order>();
@@ -247,14 +238,13 @@ public class ORBO : Strategy
     private bool hasCapturedRange = false;
     private bool rangeTooWide = false;
     private bool rangeTooWideLogged = false;
-    private bool wvfComputedToday = false;
-    private bool wvfBlockedToday = false;
-    private double wvfValue = double.NaN;
-    private bool wvfPendingLoggedToday = false;
-    private bool wvfBlockLoggedToday = false;
-    private double todaysLow = double.MaxValue;
-    private DateTime wvfCalcDate = DateTime.MinValue;
-    private bool wvfHeaderLoggedToday = false;
+    private bool vixFetchedToday = false;
+    private bool vixBlockedToday = false;
+    private bool vixFetchFailedToday = false;
+    private double vixValue = double.NaN;
+    private bool vixPendingLoggedToday = false;
+    private bool vixBlockLoggedToday = false;
+    private DateTime vixFetchDate = DateTime.MinValue;
     private bool breakoutRearmPending = false;
     private DateTime breakoutRearmTime = DateTime.MinValue;
     // --- Heartbeat reporting ---
@@ -294,11 +284,7 @@ public class ORBO : Strategy
             isRealTime = true;
         else if (State == State.Historical)
             isStrategyAnalyzer = (Account == null || Account.Name == "Backtest");
-        else if (State == State.Configure)
-        {
-            // Daily series for Williams VIX Fix (BIP=1)
-            AddDataSeries(BarsPeriodType.Day, 1);
-        }
+        // no secondary series needed for HTTP-based VIX fetch
         else if (State == State.DataLoaded) {
             heartbeatId = BuildHeartbeatId();
             // --- Heartbeat timer setup ---
@@ -334,13 +320,11 @@ public class ORBO : Strategy
 
         NumberOfContracts = 1;
         RequireEntryConfirmation = false;
-        BiasDuration = 3;
+        BiasDuration = 15;
         MaxRangePoints = 200;
         EntryPercent = 13.5;
         TakeProfitPercent = 40;
-        UseWvfFilter = true;
-        WvfLookbackDays = 22;
-        WvfThreshold = 50;
+        VixThreshold = 30;
         HardStopLossPercent = 53;
         CancelOrderBars = 52;
         VarianceInTicks = 0;
@@ -368,7 +352,6 @@ public class ORBO : Strategy
             return;
 
         ResetDailyStateIfNeeded();
-        UpdateTodaysLow();
 	
         // ======================================================
         // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
@@ -568,18 +551,18 @@ public class ORBO : Strategy
         if (rangeTooWide && isFlat)
             return;
 
-        // 🚫 Daily Williams VIX Fix filter: synthetic volatility using price only
-        if (UseWvfFilter && WvfThreshold > 0 && isFlat)
+        // 🚫 Daily VIX filter via HTTP fetch at/after session start
+        if (VixThreshold > 0 && isFlat)
         {
-            if (!EnsureWvfComputed())
+            if (!EnsureVixFetched())
                 return;
 
-            if (wvfBlockedToday)
+            if (vixBlockedToday)
             {
-                if (!wvfBlockLoggedToday)
+                if (!vixBlockLoggedToday)
                 {
-                    LogToOutput2($"⛔ WVF filter active. WVF={wvfValue:F2} >= threshold {WvfThreshold:F2}. No trades today.");
-                    wvfBlockLoggedToday = true;
+                    LogToOutput2($"⛔ VIX filter active. VIX={vixValue:F2} >= threshold {VixThreshold:F2}. No trades today.");
+                    vixBlockLoggedToday = true;
                 }
                 return;
             }
@@ -674,14 +657,6 @@ public class ORBO : Strategy
         }
 		
         return inSkip1;
-    }
-
-    private void UpdateTodaysLow()
-    {
-        if (CurrentBars[0] < 0)
-            return;
-
-        todaysLow = Math.Min(todaysLow, Low[0]);
     }
 
     private bool ShouldSkipBarUpdate()
@@ -1037,14 +1012,13 @@ public class ORBO : Strategy
         hasReturnedOnce = false;
         rangeTooWide = false;
         rangeTooWideLogged = false;
-        wvfComputedToday = false;
-        wvfBlockedToday = false;
-        wvfValue = double.NaN;
-        wvfPendingLoggedToday = false;
-        wvfBlockLoggedToday = false;
-        todaysLow = double.MaxValue;
-        wvfCalcDate = CurrentBars[0] >= 0 ? Times[0][0].Date : DateTime.MinValue;
-        wvfHeaderLoggedToday = false;
+        vixFetchedToday = false;
+        vixBlockedToday = false;
+        vixFetchFailedToday = false;
+        vixValue = double.NaN;
+        vixPendingLoggedToday = false;
+        vixBlockLoggedToday = false;
+        vixFetchDate = CurrentBars[0] >= 0 ? Times[0][0].Date : DateTime.MinValue;
 
 
         if (isStrategyAnalyzer)
@@ -1323,113 +1297,117 @@ public class ORBO : Strategy
         return returned;
     }
 
-    // Computes Williams VIX Fix once per day and sets block flags.
-    private bool EnsureWvfComputed()
+    // Fetches VIX from Yahoo Finance once per day after session start.
+    private bool EnsureVixFetched()
     {
         DateTime tradeDate = Times[0][0].Date;
 
-        // Extra guard: if day changed outside ResetDailyState, clear WVF state
-        if (wvfCalcDate != tradeDate)
+        if (vixFetchDate != tradeDate)
         {
-            wvfCalcDate = tradeDate;
-            wvfComputedToday = false;
-            wvfBlockedToday = false;
-            wvfBlockLoggedToday = false;
-            wvfPendingLoggedToday = false;
-            wvfValue = double.NaN;
-            todaysLow = Low[0];
-            wvfHeaderLoggedToday = false;
+            vixFetchDate = tradeDate;
+            vixFetchedToday = false;
+            vixBlockedToday = false;
+            vixFetchFailedToday = false;
+            vixPendingLoggedToday = false;
+            vixBlockLoggedToday = false;
+            vixValue = double.NaN;
         }
 
-        if (wvfBlockedToday)
+        if (vixBlockedToday || vixFetchedToday)
             return true;
 
-        // Only compute after session start to reflect current day’s trading conditions
-        if (Times[0][0].TimeOfDay < SessionStart)
+        TimeSpan fetchEarliest = SessionStart.Add(TimeSpan.FromMinutes(BiasDuration));
+
+        if (Times[0][0].TimeOfDay < fetchEarliest)
         {
-            if (!wvfPendingLoggedToday)
+            if (!vixPendingLoggedToday)
             {
-                EnsureWvfHeader(tradeDate);
-                LogToOutput2($"⏳ WVF waiting for session start {SessionStart:hh\\:mm}. Trades on hold.");
-                wvfPendingLoggedToday = true;
+                LogToOutput2($"⏳ VIX waiting for fetch time {fetchEarliest:hh\\:mm}. Trades on hold.");
+                vixPendingLoggedToday = true;
             }
             return false;
         }
 
-        int lookback = Math.Max(1, WvfLookbackDays);
-
-        // Need lookback daily bars before today for highest close
-        if (CurrentBars.Length <= DailySeriesIndex || CurrentBars[DailySeriesIndex] < lookback)
+        // Try once right after session start
+        try
         {
-            int availableDaily = CurrentBars.Length > DailySeriesIndex ? Math.Max(0, CurrentBars[DailySeriesIndex] + 1) : 0;
-            if (!wvfPendingLoggedToday)
+            double fetched = FetchVixFromYahoo();
+            if (!double.IsNaN(fetched) && fetched > 0)
             {
-                EnsureWvfHeader(tradeDate);
-                LogToOutput2($"⏳ WVF waiting for {lookback} daily closes (have {availableDaily}). Trades on hold.");
-                wvfPendingLoggedToday = true;
+                vixValue = fetched;
+                vixFetchedToday = true;
+                vixBlockedToday = fetched >= VixThreshold;
+                vixPendingLoggedToday = false;
+                vixBlockLoggedToday = false;
+
+                if (vixBlockedToday)
+                    LogToOutput2($"⛔ VIX filter active. VIX={vixValue:F2} >= threshold {VixThreshold:F2}. Trades blocked today.");
+                else
+                    LogToOutput2($"✅ VIX filter passed. VIX={vixValue:F2} < threshold {VixThreshold:F2}.");
+                return true;
             }
-            return false;
         }
-
-        // Need at least one intraday low for today
-        if (todaysLow == double.MaxValue)
+        catch (Exception ex)
         {
-            if (!wvfPendingLoggedToday)
-            {
-                EnsureWvfHeader(tradeDate);
-                LogToOutput2("⏳ WVF waiting for first intraday bar to set today’s low. Trades on hold.");
-                wvfPendingLoggedToday = true;
-            }
-            return false;
-        }
-
-        double highestClose = MAX(Closes[DailySeriesIndex], lookback)[1]; // exclude current day
-        if (double.IsNaN(highestClose) || highestClose <= 0)
-            return false;
-
-        double currentWvf = ((highestClose - todaysLow) / highestClose) * 100.0;
-        wvfValue = currentWvf;
-        wvfPendingLoggedToday = false;
-
-        if (!wvfComputedToday)
-        {
-            wvfComputedToday = true;
-            if (currentWvf >= WvfThreshold)
-            {
-                wvfBlockedToday = true;
-                EnsureWvfHeader(tradeDate);
-                LogToOutput2($"⛔ WVF filter active ({tradeDate:yyyy-MM-dd}). WVF={currentWvf:F2} >= threshold {WvfThreshold:F2}. Trades blocked today.");
-                wvfBlockLoggedToday = true;
-            }
-            else
-            {
-                EnsureWvfHeader(tradeDate);
-                LogToOutput2($"✅ WVF filter passed ({tradeDate:yyyy-MM-dd}). WVF={currentWvf:F2} < threshold {WvfThreshold:F2}.");
-            }
+            LogToOutput2($"⚠️ VIX fetch error: {ex.Message}. Allowing trades today without VIX.");
+            vixFetchFailedToday = true;
+            vixFetchedToday = true;
+            vixBlockedToday = false;
             return true;
         }
 
-        if (currentWvf >= WvfThreshold)
+        if (!vixPendingLoggedToday)
         {
-            wvfBlockedToday = true;
-            if (!wvfBlockLoggedToday)
-            {
-                EnsureWvfHeader(tradeDate);
-                LogToOutput2($"⛔ WVF filter active ({tradeDate:yyyy-MM-dd}). WVF={currentWvf:F2} >= threshold {WvfThreshold:F2}. Trades blocked today.");
-                wvfBlockLoggedToday = true;
-            }
+            LogToOutput2("⚠️ VIX fetch failed. Allowing trades today without VIX.");
+            vixPendingLoggedToday = true;
         }
-
+        vixFetchFailedToday = true;
+        vixFetchedToday = true;
+        vixBlockedToday = false;
         return true;
     }
 
-    private void EnsureWvfHeader(DateTime tradeDate)
+    // Minimal JSON parsing to extract regularMarketPrice from Yahoo Finance chart endpoint.
+    private double FetchVixFromYahoo()
     {
-        if (wvfHeaderLoggedToday)
-            return;
+        const string url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range=1m&interval=1m";
 
-        LogToOutput2($"-------------- WVF {tradeDate:yyyy-MM-dd} --------------");
-        wvfHeaderLoggedToday = true;
+        LogToOutput2($"🌐 Fetching VIX from {url}");
+
+        using (var client = new System.Net.WebClient())
+        {
+            client.Headers[System.Net.HttpRequestHeader.UserAgent] = "Mozilla/5.0";
+            string json = client.DownloadString(url);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                LogToOutput2("⚠️ VIX fetch returned empty response.");
+                return double.NaN;
+            }
+
+            // Look for "regularMarketPrice": value
+            string marker = "\"regularMarketPrice\":";
+            int idx = json.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+            {
+                LogToOutput2("⚠️ VIX fetch missing regularMarketPrice.");
+                return double.NaN;
+            }
+            idx += marker.Length;
+
+            int end = idx;
+            while (end < json.Length && "0123456789.+-eE".IndexOf(json[end]) >= 0)
+                end++;
+
+            string num = json.Substring(idx, end - idx).Trim();
+            if (double.TryParse(num, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val))
+            {
+                LogToOutput2($"✅ VIX fetch OK. regularMarketPrice={val}");
+                return val;
+            }
+
+            LogToOutput2("⚠️ VIX fetch parse failed.");
+            return double.NaN;
+        }
     }
 
     public enum StrategyPreset
@@ -1622,7 +1600,7 @@ public class ORBO : Strategy
                           DashStyleHelper.Solid, 2);
     }
 
-    public void UpdateInfoText()
+   public void UpdateInfoText()
     {
         var lines = BuildInfoLines();
         var font  = new SimpleFont("Consolas", 14); // monospaced
@@ -1630,8 +1608,9 @@ public class ORBO : Strategy
         int maxLabel = lines.Max(l => l.label.Length);
         int maxValue = Math.Max(1, lines.Max(l => l.value.Length));
 
-        // --- 1) BACKGROUND BLOCK (labels + dummy value width, invisible text) ---
-        string valuePlaceholder = new string('0', maxValue); // just to force width
+        // 1) BACKGROUND BLOCK – uses visible chars but transparent text so
+        //    NinjaTrader allocates full width (labels + values).
+        string valuePlaceholder = new string('0', maxValue); // dummy width
         var bgLines = lines
             .Select(l => l.label.PadRight(maxLabel + 1) + valuePlaceholder)
             .ToArray();
@@ -1643,15 +1622,15 @@ public class ORBO : Strategy
             tag: "myStatusLabel_bg",
             text: bgText,
             textPosition: TextPosition.BottomLeft,
-            textBrush: Brushes.Transparent,   // text not visible
+            textBrush: Brushes.Transparent,  // text invisible
             font: font,
             outlineBrush: null,
-            areaBrush: Brushes.Black,         // full-width background
+            areaBrush: Brushes.Black,        // 🟦 full background for whole block
             areaOpacity: 85);
 
-        // --- 2) LABEL BLOCK (labels only, no background) ---
+        // 2) LABEL BLOCK – labels only, no background
         var labelLines = lines
-            .Select(l => l.label.PadRight(maxLabel + 1))
+            .Select(l => l.label)
             .ToArray();
 
         string labelText = string.Join(Environment.NewLine, labelLines);
@@ -1667,7 +1646,7 @@ public class ORBO : Strategy
             areaBrush: null,
             areaOpacity: 0);
 
-        // --- 3) PER-LINE VALUE OVERLAYS (colored) ---
+        // 3) VALUE OVERLAYS – one block per line, only that line has a value
         string spacesBeforeValue = new string(' ', maxLabel + 1);
 
         for (int i = 0; i < lines.Count; i++)
@@ -1678,7 +1657,7 @@ public class ORBO : Strategy
             for (int j = 0; j < lines.Count; j++)
             {
                 overlayLines[j] = (j == i)
-                    ? spacesBeforeValue + lines[i].value   // value for this line
+                    ? spacesBeforeValue + lines[i].value   // value at value column
                     : string.Empty;                        // blank line
             }
 
@@ -1698,6 +1677,8 @@ public class ORBO : Strategy
     }
 
 
+
+
     private List<(string label, string value, Brush brush)> BuildInfoLines()
     {
         var lines = new List<(string label, string value, Brush brush)>();
@@ -1712,8 +1693,7 @@ public class ORBO : Strategy
         lines.Add((BoolLabel("Anti Hedge"), BoolIcon(AntiHedge), BoolBrush(AntiHedge)));
         lines.Add((BoolLabel("Armed"), BoolIcon(IsReadyForNewOrder()), BoolBrush(IsReadyForNewOrder())));
 
-        bool wvfOk = !UseWvfFilter || WvfThreshold <= 0 || (!wvfBlockedToday && wvfComputedToday);
-        lines.Add((BoolLabel("WVF"), BoolIcon(wvfOk), BoolBrush(wvfOk)));
+        lines.Add((BoolLabel("VIX"), VixIcon(), VixBrush()));
 
         var version = $"v{GetAddOnVersion()}";
 
@@ -1772,19 +1752,31 @@ public class ORBO : Strategy
     private string BoolLabel(string label) => $"{label}:";
 
     private string BoolIcon(bool value) => value ? "✅" : "⛔";
-    
-    private string GetWvfStatus()
+
+    private string VixIcon()
     {
-        if (!UseWvfFilter || WvfThreshold <= 0)
-            return "WVF: ✅";
+        if (VixThreshold <= 0)
+            return "✅";
+        if (vixBlockedToday)
+            return "⛔";
+        if (vixFetchFailedToday)
+            return "⚠️";
+        if (!vixFetchedToday)
+            return "⛔";
+        return "✅";
+    }
 
-        if (wvfBlockedToday)
-            return "WVF: ⛔";
-
-        if (!wvfComputedToday)
-            return "WVF: ⛔";
-
-        return "WVF: ✅";
+    private Brush VixBrush()
+    {
+        if (VixThreshold <= 0)
+            return Brushes.LimeGreen;
+        if (vixBlockedToday)
+            return Brushes.IndianRed;
+        if (vixFetchFailedToday)
+            return Brushes.DarkOrange;
+        if (!vixFetchedToday)
+            return Brushes.IndianRed;
+        return Brushes.LimeGreen;
     }
     
     private string BuildHeartbeatId()
