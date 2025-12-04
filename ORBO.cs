@@ -523,7 +523,7 @@ public class ORBO : Strategy
             return;
 
         if (DebugMode)
-            UpdateInfoText(GetDebugText());
+            UpdateInfoText();
 
         if (ShouldAccountBalanceExit())
             return;
@@ -695,19 +695,6 @@ public class ORBO : Strategy
         return false;
     }
 
-	private string GetDebugText() =>
-		GetPnLInfo() +
-		"\nContracts: " + NumberOfContracts +
-        "\nAnti Hedge: " + (AntiHedge ? "✅" : "⛔") +
-        // "\nSL to BE: " + (
-        //     beTriggerActive ? "✅" :
-        //     SLBETrigger > 0 ? "⛔" :
-        //     "⛔"
-        // ) +
-        "\nArmed: " + (IsReadyForNewOrder() ? "✅" : "⛔") +
-        "\n" + GetWvfStatus() +
-        "\nORBO v" + GetAddOnVersion();
-	
     private bool ShouldAccountBalanceExit()
     {
         if (MaxAccountBalance <= 0 || maxAccountLimitHit)
@@ -1635,13 +1622,105 @@ public class ORBO : Strategy
                           DashStyleHelper.Solid, 2);
     }
 
-    public void UpdateInfoText(string newText)
+    public void UpdateInfoText()
     {
-        displayText = newText;
+        var lines = BuildInfoLines();
+        var font  = new SimpleFont("Consolas", 14); // monospaced
 
-        Draw.TextFixed(owner: this, tag: "myStatusLabel", text: displayText, textPosition: TextPosition.BottomLeft,
-                       textBrush: Brushes.DarkGray, font: new SimpleFont("Segoe UI", 14), outlineBrush: null,
-                       areaBrush: Brushes.Black, areaOpacity: 85);
+        int maxLabel = lines.Max(l => l.label.Length);
+        int maxValue = Math.Max(1, lines.Max(l => l.value.Length));
+
+        // --- 1) BACKGROUND BLOCK (labels + dummy value width, invisible text) ---
+        string valuePlaceholder = new string('0', maxValue); // just to force width
+        var bgLines = lines
+            .Select(l => l.label.PadRight(maxLabel + 1) + valuePlaceholder)
+            .ToArray();
+
+        string bgText = string.Join(Environment.NewLine, bgLines);
+
+        Draw.TextFixed(
+            owner: this,
+            tag: "myStatusLabel_bg",
+            text: bgText,
+            textPosition: TextPosition.BottomLeft,
+            textBrush: Brushes.Transparent,   // text not visible
+            font: font,
+            outlineBrush: null,
+            areaBrush: Brushes.Black,         // full-width background
+            areaOpacity: 85);
+
+        // --- 2) LABEL BLOCK (labels only, no background) ---
+        var labelLines = lines
+            .Select(l => l.label.PadRight(maxLabel + 1))
+            .ToArray();
+
+        string labelText = string.Join(Environment.NewLine, labelLines);
+
+        Draw.TextFixed(
+            owner: this,
+            tag: "myStatusLabel_labels",
+            text: labelText,
+            textPosition: TextPosition.BottomLeft,
+            textBrush: Brushes.LightGray,
+            font: font,
+            outlineBrush: null,
+            areaBrush: null,
+            areaOpacity: 0);
+
+        // --- 3) PER-LINE VALUE OVERLAYS (colored) ---
+        string spacesBeforeValue = new string(' ', maxLabel + 1);
+
+        for (int i = 0; i < lines.Count; i++)
+        {
+            string tag = $"myStatusLabel_val_{i}";
+
+            var overlayLines = new string[lines.Count];
+            for (int j = 0; j < lines.Count; j++)
+            {
+                overlayLines[j] = (j == i)
+                    ? spacesBeforeValue + lines[i].value   // value for this line
+                    : string.Empty;                        // blank line
+            }
+
+            string overlayText = string.Join(Environment.NewLine, overlayLines);
+
+            Draw.TextFixed(
+                owner: this,
+                tag: tag,
+                text: overlayText,
+                textPosition: TextPosition.BottomLeft,
+                textBrush: lines[i].brush,
+                font: font,
+                outlineBrush: null,
+                areaBrush: null,
+                areaOpacity: 0);
+        }
+    }
+
+
+    private List<(string label, string value, Brush brush)> BuildInfoLines()
+    {
+        var lines = new List<(string label, string value, Brush brush)>();
+
+        string tpLine, slLine;
+        GetPnLLines(out tpLine, out slLine);
+
+        lines.Add(("TP:        ", $"{tpLine}", Brushes.LimeGreen));
+        lines.Add(("SL:        ", $"{slLine}", Brushes.IndianRed));
+        lines.Add(("Contracts: ", $"{NumberOfContracts}", Brushes.LightGray));
+
+        lines.Add((BoolLabel("Anti Hedge"), BoolIcon(AntiHedge), BoolBrush(AntiHedge)));
+        lines.Add((BoolLabel("Armed"), BoolIcon(IsReadyForNewOrder()), BoolBrush(IsReadyForNewOrder())));
+
+        bool wvfOk = !UseWvfFilter || WvfThreshold <= 0 || (!wvfBlockedToday && wvfComputedToday);
+        lines.Add((BoolLabel("WVF"), BoolIcon(wvfOk), BoolBrush(wvfOk)));
+
+        var version = $"v{GetAddOnVersion()}";
+
+        // Put version directly in the label, leave value empty
+        lines.Add(($"{version}", string.Empty, Brushes.LightGray));
+
+        return lines;
     }
 
     string GetAddOnVersion()
@@ -1651,15 +1730,16 @@ public class ORBO : Strategy
         return version.ToString();
     }
 
-    private string GetPnLInfo()
+    private void GetPnLLines(out string tpLine, out string slLine)
     {
         // If contracts not configured, no info
-        if (NumberOfContracts <= 0)
-            return "TP: $0\nSL: $0";
-
-        // Guard: if values not set yet, show placeholder
-        if (double.IsNaN(todayLongLimit) || double.IsNaN(todayLongProfit) || double.IsNaN(todayLongStoploss))
-            return "TP: $0\nSL: $0";
+        if (NumberOfContracts <= 0 ||
+            double.IsNaN(todayLongLimit) || double.IsNaN(todayLongProfit) || double.IsNaN(todayLongStoploss))
+        {
+            tpLine = "$0";
+            slLine = "$0";
+            return;
+        }
 
         // Tick value based on instrument
         double tickValue;
@@ -1683,8 +1763,15 @@ public class ORBO : Strategy
         double tpDollars = tpTicks * tickValue * NumberOfContracts;
         double slDollars = slTicks * tickValue * NumberOfContracts;
 
-        return $"TP: ${tpDollars:0}\nSL: ${slDollars:0}";
+        tpLine = $"${tpDollars:0}";
+        slLine = $"${slDollars:0}";
     }
+
+    private Brush BoolBrush(bool value) => value ? Brushes.LimeGreen : Brushes.IndianRed;
+
+    private string BoolLabel(string label) => $"{label}:";
+
+    private string BoolIcon(bool value) => value ? "✅" : "⛔";
     
     private string GetWvfStatus()
     {
