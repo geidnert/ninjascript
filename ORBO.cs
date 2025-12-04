@@ -86,17 +86,17 @@ public class ORBO : Strategy
     [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
     public double TakeProfitPercent { get; set; }
 
-    // [NinjaScriptProperty]
-    // [Display(Name = "Max VIX",
-    //          Description = "Block trading for the day if first 1-minute ^VIX open exceeds this value (0 = disabled)",
-    //          Order = 14, GroupName = "B. Entry Conditions")]
-    internal double MaxVix { get; set; }
+    [NinjaScriptProperty]
+    [Display(Name = "Use WVF Filter", Description = "Block trading for the day if Williams VIX Fix exceeds threshold", Order = 14, GroupName = "B. Entry Conditions")]
+    public bool UseWvfFilter { get; set; }
 
-    // [NinjaScriptProperty]
-    // [Display(Name = "VIX Instrument",
-    //          Description = "Instrument name for the VIX data series (e.g., ^VIX or VX 12-25)",
-    //          Order = 15, GroupName = "B. Entry Conditions")]
-    internal string VixInstrument { get; set; }
+    [NinjaScriptProperty]
+    [Display(Name = "WVF Lookback (days)", Description = "Number of prior daily closes used for Williams VIX Fix", Order = 15, GroupName = "B. Entry Conditions")]
+    public int WvfLookbackDays { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(Name = "WVF Threshold", Description = "Block trading for the day if WVF is at or above this value (0 = disabled)", Order = 16, GroupName = "B. Entry Conditions")]
+    public double WvfThreshold { get; set; }
 
     // [NinjaScriptProperty]
     // [Display(Name = "Hard SL %", Description = "Hard SL level", Order = 6, GroupName = "B. Entry Conditions")]
@@ -213,7 +213,7 @@ public class ORBO : Strategy
     private double entryPrice;
     private double sessionHigh, sessionLow;
     private string lastDate = string.Empty;
-    private const int VixSeriesIndex = 1;
+    private const int DailySeriesIndex = 1;
     private Order entryOrder;
     private Order hardStopOrder;
     private List<Order> profitOrders = new List<Order>();
@@ -247,13 +247,14 @@ public class ORBO : Strategy
     private bool hasCapturedRange = false;
     private bool rangeTooWide = false;
     private bool rangeTooWideLogged = false;
-    private bool vixSampledToday = false;
-    private bool vixBlockedToday = false;
-    private double vixFirstOpen = double.NaN;
-    private bool vixPendingLoggedToday = false;
-    private bool vixBlockLoggedToday = false;
-    private bool vixNoDataAllowToday = false;
-    private bool vixFallbackUsedToday = false;
+    private bool wvfComputedToday = false;
+    private bool wvfBlockedToday = false;
+    private double wvfValue = double.NaN;
+    private bool wvfPendingLoggedToday = false;
+    private bool wvfBlockLoggedToday = false;
+    private double todaysLow = double.MaxValue;
+    private DateTime wvfCalcDate = DateTime.MinValue;
+    private bool wvfHeaderLoggedToday = false;
     private bool breakoutRearmPending = false;
     private DateTime breakoutRearmTime = DateTime.MinValue;
     // --- Heartbeat reporting ---
@@ -295,11 +296,8 @@ public class ORBO : Strategy
             isStrategyAnalyzer = (Account == null || Account.Name == "Backtest");
         else if (State == State.Configure)
         {
-            if (MaxVix > 0)
-            {
-                string vixInstr = string.IsNullOrWhiteSpace(VixInstrument) ? "^VIX" : VixInstrument.Trim();
-                AddDataSeries(vixInstr, new BarsPeriod { BarsPeriodType = BarsPeriodType.Minute, Value = 1 });
-            }
+            // Daily series for Williams VIX Fix (BIP=1)
+            AddDataSeries(BarsPeriodType.Day, 1);
         }
         else if (State == State.DataLoaded) {
             heartbeatId = BuildHeartbeatId();
@@ -340,8 +338,9 @@ public class ORBO : Strategy
         MaxRangePoints = 200;
         EntryPercent = 13.5;
         TakeProfitPercent = 40;
-        MaxVix = 30;
-        VixInstrument = "VX 12-25";
+        UseWvfFilter = true;
+        WvfLookbackDays = 22;
+        WvfThreshold = 50;
         HardStopLossPercent = 53;
         CancelOrderBars = 52;
         VarianceInTicks = 0;
@@ -365,16 +364,11 @@ public class ORBO : Strategy
 #region OnBarUpdate
     protected override void OnBarUpdate()
     {
-        if (BarsInProgress == VixSeriesIndex)
-        {
-            HandleVixBar();
-            return;
-        }
-
         if (BarsInProgress != 0)
             return;
 
         ResetDailyStateIfNeeded();
+        UpdateTodaysLow();
 	
         // ======================================================
         // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
@@ -574,32 +568,21 @@ public class ORBO : Strategy
         if (rangeTooWide && isFlat)
             return;
 
-        // 🚫 Daily VIX filter: use a single 1m sample near the open
-        if (MaxVix > 0 && isFlat)
+        // 🚫 Daily Williams VIX Fix filter: synthetic volatility using price only
+        if (UseWvfFilter && WvfThreshold > 0 && isFlat)
         {
-            // While we are still waiting for the first sample, hold off on new trades
-            if (!vixSampledToday && !vixNoDataAllowToday && !vixBlockedToday)
+            if (!EnsureWvfComputed())
+                return;
+
+            if (wvfBlockedToday)
             {
-                if (!vixPendingLoggedToday)
+                if (!wvfBlockLoggedToday)
                 {
-                    LogToOutput2($"⏳ Waiting for first 1m VIX bar at {SessionStart.Add(TimeSpan.FromMinutes(1)):hh\\:mm}. Trades on hold.");
-                    vixPendingLoggedToday = true;
+                    LogToOutput2($"⛔ WVF filter active. WVF={wvfValue:F2} >= threshold {WvfThreshold:F2}. No trades today.");
+                    wvfBlockLoggedToday = true;
                 }
                 return;
             }
-
-            // If VIX is above the threshold, block trading for the day
-            if (vixBlockedToday)
-            {
-                if (!vixBlockLoggedToday)
-                {
-                    LogToOutput2($"⛔ VIX block in effect. First open={vixFirstOpen:F2} >= MaxVix {MaxVix:F2}. No trades today.");
-                    vixBlockLoggedToday = true;
-                }
-                return;
-            }
-
-            // If vixNoDataAllowToday == true we simply fall through and trade as normal
         }
 
 		if (SLBETrigger > 0 && Position.MarketPosition != MarketPosition.Flat)
@@ -675,47 +658,6 @@ public class ORBO : Strategy
         }
     }
 
-    private void HandleVixBar()
-    {
-        if (MaxVix <= 0)
-            return;
-
-        // Guard against early bars
-        if (CurrentBars.Length <= VixSeriesIndex || CurrentBars[VixSeriesIndex] < 0)
-            return;
-        if (CurrentBars[0] < 0)
-            return;
-
-        // Only care about the same calendar day as the primary series
-        if (Times[VixSeriesIndex][0].Date != Times[0][0].Date)
-            return;
-
-        // We want the first 1m bar after SessionStart + 1 minute (e.g. 09:31)
-        TimeSpan sampleTime = SessionStart.Add(TimeSpan.FromMinutes(1));
-
-        // Already decided today? Do nothing
-        if (vixSampledToday || vixBlockedToday || vixNoDataAllowToday)
-            return;
-
-        // Wait until the first VIX bar at or after the sample time
-        if (Times[VixSeriesIndex][0].TimeOfDay < sampleTime)
-            return;
-
-        // Take the open of this bar as the daily sample
-        vixFirstOpen        = Opens[VixSeriesIndex][0];
-        vixSampledToday     = true;
-        vixBlockedToday     = vixFirstOpen >= MaxVix;
-        vixPendingLoggedToday = false;
-        vixBlockLoggedToday   = false;
-        vixNoDataAllowToday   = false;
-        // vixFallbackUsedToday = true; // only keep if you still need this flag
-
-        if (vixBlockedToday)
-            LogToOutput2($"⛔ VIX filter active. First 1m open={vixFirstOpen:F2} >= MaxVix {MaxVix:F2}. Trades blocked today.");
-        else
-            LogToOutput2($"✅ VIX filter passed. First 1m open={vixFirstOpen:F2}, MaxVix={MaxVix:F2}");
-    }
-
 		
     private bool TimeInSkip(DateTime time)
     {
@@ -732,6 +674,14 @@ public class ORBO : Strategy
         }
 		
         return inSkip1;
+    }
+
+    private void UpdateTodaysLow()
+    {
+        if (CurrentBars[0] < 0)
+            return;
+
+        todaysLow = Math.Min(todaysLow, Low[0]);
     }
 
     private bool ShouldSkipBarUpdate()
@@ -755,7 +705,7 @@ public class ORBO : Strategy
         //     "⛔"
         // ) +
         "\nArmed: " + (IsReadyForNewOrder() ? "✅" : "⛔") +
-        "\n" + GetVixStatus() +
+        "\n" + GetWvfStatus() +
         "\nORBO v" + GetAddOnVersion();
 	
     private bool ShouldAccountBalanceExit()
@@ -1100,13 +1050,14 @@ public class ORBO : Strategy
         hasReturnedOnce = false;
         rangeTooWide = false;
         rangeTooWideLogged = false;
-        vixSampledToday = false;
-        vixBlockedToday = false;
-        vixFirstOpen = double.NaN;
-        vixPendingLoggedToday = false;
-        vixBlockLoggedToday = false;
-        vixNoDataAllowToday = false;
-        vixFallbackUsedToday = false;
+        wvfComputedToday = false;
+        wvfBlockedToday = false;
+        wvfValue = double.NaN;
+        wvfPendingLoggedToday = false;
+        wvfBlockLoggedToday = false;
+        todaysLow = double.MaxValue;
+        wvfCalcDate = CurrentBars[0] >= 0 ? Times[0][0].Date : DateTime.MinValue;
+        wvfHeaderLoggedToday = false;
 
 
         if (isStrategyAnalyzer)
@@ -1385,6 +1336,115 @@ public class ORBO : Strategy
         return returned;
     }
 
+    // Computes Williams VIX Fix once per day and sets block flags.
+    private bool EnsureWvfComputed()
+    {
+        DateTime tradeDate = Times[0][0].Date;
+
+        // Extra guard: if day changed outside ResetDailyState, clear WVF state
+        if (wvfCalcDate != tradeDate)
+        {
+            wvfCalcDate = tradeDate;
+            wvfComputedToday = false;
+            wvfBlockedToday = false;
+            wvfBlockLoggedToday = false;
+            wvfPendingLoggedToday = false;
+            wvfValue = double.NaN;
+            todaysLow = Low[0];
+            wvfHeaderLoggedToday = false;
+        }
+
+        if (wvfBlockedToday)
+            return true;
+
+        // Only compute after session start to reflect current day’s trading conditions
+        if (Times[0][0].TimeOfDay < SessionStart)
+        {
+            if (!wvfPendingLoggedToday)
+            {
+                EnsureWvfHeader(tradeDate);
+                LogToOutput2($"⏳ WVF waiting for session start {SessionStart:hh\\:mm}. Trades on hold.");
+                wvfPendingLoggedToday = true;
+            }
+            return false;
+        }
+
+        int lookback = Math.Max(1, WvfLookbackDays);
+
+        // Need lookback daily bars before today for highest close
+        if (CurrentBars.Length <= DailySeriesIndex || CurrentBars[DailySeriesIndex] < lookback)
+        {
+            int availableDaily = CurrentBars.Length > DailySeriesIndex ? Math.Max(0, CurrentBars[DailySeriesIndex] + 1) : 0;
+            if (!wvfPendingLoggedToday)
+            {
+                EnsureWvfHeader(tradeDate);
+                LogToOutput2($"⏳ WVF waiting for {lookback} daily closes (have {availableDaily}). Trades on hold.");
+                wvfPendingLoggedToday = true;
+            }
+            return false;
+        }
+
+        // Need at least one intraday low for today
+        if (todaysLow == double.MaxValue)
+        {
+            if (!wvfPendingLoggedToday)
+            {
+                EnsureWvfHeader(tradeDate);
+                LogToOutput2("⏳ WVF waiting for first intraday bar to set today’s low. Trades on hold.");
+                wvfPendingLoggedToday = true;
+            }
+            return false;
+        }
+
+        double highestClose = MAX(Closes[DailySeriesIndex], lookback)[1]; // exclude current day
+        if (double.IsNaN(highestClose) || highestClose <= 0)
+            return false;
+
+        double currentWvf = ((highestClose - todaysLow) / highestClose) * 100.0;
+        wvfValue = currentWvf;
+        wvfPendingLoggedToday = false;
+
+        if (!wvfComputedToday)
+        {
+            wvfComputedToday = true;
+            if (currentWvf >= WvfThreshold)
+            {
+                wvfBlockedToday = true;
+                EnsureWvfHeader(tradeDate);
+                LogToOutput2($"⛔ WVF filter active ({tradeDate:yyyy-MM-dd}). WVF={currentWvf:F2} >= threshold {WvfThreshold:F2}. Trades blocked today.");
+                wvfBlockLoggedToday = true;
+            }
+            else
+            {
+                EnsureWvfHeader(tradeDate);
+                LogToOutput2($"✅ WVF filter passed ({tradeDate:yyyy-MM-dd}). WVF={currentWvf:F2} < threshold {WvfThreshold:F2}.");
+            }
+            return true;
+        }
+
+        if (currentWvf >= WvfThreshold)
+        {
+            wvfBlockedToday = true;
+            if (!wvfBlockLoggedToday)
+            {
+                EnsureWvfHeader(tradeDate);
+                LogToOutput2($"⛔ WVF filter active ({tradeDate:yyyy-MM-dd}). WVF={currentWvf:F2} >= threshold {WvfThreshold:F2}. Trades blocked today.");
+                wvfBlockLoggedToday = true;
+            }
+        }
+
+        return true;
+    }
+
+    private void EnsureWvfHeader(DateTime tradeDate)
+    {
+        if (wvfHeaderLoggedToday)
+            return;
+
+        LogToOutput2($"-------------- WVF {tradeDate:yyyy-MM-dd} --------------");
+        wvfHeaderLoggedToday = true;
+    }
+
     public enum StrategyPreset
     {
         NQ_MNQ_1,
@@ -1626,18 +1686,18 @@ public class ORBO : Strategy
         return $"TP: ${tpDollars:0}\nSL: ${slDollars:0}";
     }
     
-    private string GetVixStatus()
+    private string GetWvfStatus()
     {
-        if (MaxVix <= 0)
-            return "VIX: ✅";
+        if (!UseWvfFilter || WvfThreshold <= 0)
+            return "WVF: ✅";
 
-        if (vixBlockedToday)
-            return "VIX: ⛔";
+        if (wvfBlockedToday)
+            return "WVF: ⛔";
 
-        if (!vixSampledToday && !vixNoDataAllowToday)
-            return "VIX: ⛔";
+        if (!wvfComputedToday)
+            return "WVF: ⛔";
 
-        return "VIX: ✅";
+        return "WVF: ✅";
     }
     
     private string BuildHeartbeatId()
