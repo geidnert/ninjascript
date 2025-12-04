@@ -1141,19 +1141,105 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         public void UpdateInfo() {
-            UpdateInfoText(GetPnLInfo() + "\n" + PresetSetting + "\nContracts: " + Contracts + "\nAnti Hedge: " + AntiHedge + "\nDuo v" +GetAddOnVersion());
+            UpdateInfoText();
         }
 
-        public void UpdateInfoText(string newText)
+        public void UpdateInfoText()
         {
-            displayText = newText;
+            var lines = BuildInfoLines();
+            var font  = new SimpleFont("Consolas", 14); // monospaced
 
-            Draw.TextFixed(owner: this, tag: "myStatusLabel", text: displayText, textPosition: TextPosition.BottomLeft,
-                        textBrush: Brushes.DarkGray, font: new SimpleFont("Segoe UI", 14), outlineBrush: null,
-                        areaBrush: Brushes.Black, areaOpacity: 85);
+            int maxLabel = lines.Max(l => l.label.Length);
+            int maxValue = Math.Max(1, lines.Max(l => l.value.Length));
+
+            // 1) BACKGROUND BLOCK – uses visible chars but transparent text so
+            //    NinjaTrader allocates full width (labels + values).
+            string valuePlaceholder = new string('0', maxValue); // dummy width
+            var bgLines = lines
+                .Select(l => l.label.PadRight(maxLabel + 1) + valuePlaceholder)
+                .ToArray();
+
+            string bgText = string.Join(Environment.NewLine, bgLines);
+
+            Draw.TextFixed(
+                owner: this,
+                tag: "myStatusLabel_bg",
+                text: bgText,
+                textPosition: TextPosition.BottomLeft,
+                textBrush: Brushes.Transparent,  // text invisible
+                font: font,
+                outlineBrush: null,
+                areaBrush: Brushes.Black,        // full background for whole block
+                areaOpacity: 85);
+
+            // 2) LABEL BLOCK – labels only, no background
+            var labelLines = lines
+                .Select(l => l.label)
+                .ToArray();
+
+            string labelText = string.Join(Environment.NewLine, labelLines);
+
+            Draw.TextFixed(
+                owner: this,
+                tag: "myStatusLabel_labels",
+                text: labelText,
+                textPosition: TextPosition.BottomLeft,
+                textBrush: Brushes.LightGray,
+                font: font,
+                outlineBrush: null,
+                areaBrush: null,
+                areaOpacity: 0);
+
+            // 3) VALUE OVERLAYS – one block per line, only that line has a value
+            string spacesBeforeValue = new string(' ', maxLabel + 1);
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string tag = $"myStatusLabel_val_{i}";
+
+                var overlayLines = new string[lines.Count];
+                for (int j = 0; j < lines.Count; j++)
+                {
+                    overlayLines[j] = (j == i)
+                        ? spacesBeforeValue + lines[i].value   // value at value column
+                        : string.Empty;                        // blank line
+                }
+
+                string overlayText = string.Join(Environment.NewLine, overlayLines);
+
+                Draw.TextFixed(
+                    owner: this,
+                    tag: tag,
+                    text: overlayText,
+                    textPosition: TextPosition.BottomLeft,
+                    textBrush: lines[i].brush,
+                    font: font,
+                    outlineBrush: null,
+                    areaBrush: null,
+                    areaOpacity: 0);
+            }
         }
 
-        private string GetPnLInfo()
+        private List<(string label, string value, Brush brush)> BuildInfoLines()
+        {
+            var lines = new List<(string label, string value, Brush brush)>();
+
+            string tpLine, slLine;
+            GetPnLLines(out tpLine, out slLine);
+
+            lines.Add(("TP:        ", $"{tpLine}", Brushes.LimeGreen));
+            lines.Add(("SL:        ", $"{slLine}", Brushes.IndianRed));
+            lines.Add(("Contracts: ", $"{Contracts}", Brushes.LightGray));
+            lines.Add(("Anti Hedge:", AntiHedge ? "✅" : "⛔", AntiHedge ? Brushes.LimeGreen : Brushes.IndianRed));
+            lines.Add(($"{PresetSetting}", string.Empty, Brushes.LightGray));
+
+            var version = $"v{GetAddOnVersion()}";
+            lines.Add(($"{version}", string.Empty, Brushes.LightGray));
+
+            return lines;
+        }
+
+        private void GetPnLLines(out string tpLine, out string slLine)
         {
             // --- Detect state ---
             bool hasPosition = Position.MarketPosition != MarketPosition.Flat;
@@ -1176,9 +1262,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool hasPendingLong  = longOrderPlaced && !hasPosition;
             bool hasPendingShort = shortOrderPlaced && !hasPosition;
 
-            // 🧠 Show $0 only if no position and nothing pending
+            // Show $0 only if no position and nothing pending
             if (!hasPosition && !hasLongOrder && !hasShortOrder && !hasPendingLong && !hasPendingShort)
-                return "TP: $0\nSL: $0";
+            {
+                tpLine = "$0";
+                slLine = "$0";
+                return;
+            }
 
             // --- Tick value per instrument ---
             double tickValue = Instrument.MasterInstrument.PointValue * TickSize;
@@ -1220,7 +1310,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // Guard: if anything not set, show zero
             if (entry == 0 || tp == 0 || sl == 0)
-                return "TP: $0\nSL: $0";
+            {
+                tpLine = "$0";
+                slLine = "$0";
+                return;
+            }
 
             // --- Compute TP/SL distances ---
             double tpTicks = Math.Abs(tp - entry) / TickSize;
@@ -1229,7 +1323,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double tpDollars = tpTicks * tickValue * Contracts;
             double slDollars = slTicks * tickValue * Contracts;
 
-            return $"TP: ${tpDollars:0}\nSL: ${slDollars:0}";
+            tpLine = $"${tpDollars:0}";
+            slLine = $"${slDollars:0}";
         }
 
         string GetAddOnVersion()
