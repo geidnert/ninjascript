@@ -271,6 +271,11 @@ public class ORBO : Strategy
     private double cancelOrderDistanceAbs = 0;
     private int entryOrderBar = -1;
 
+    // === Order Placement Vertical Lines ===
+    private string currentOrderLineTag = string.Empty;
+    private int orderPlacementBar = -1;
+    private int orderCancelBar = -1;
+
 #endregion
 
 #region State Management
@@ -863,6 +868,19 @@ public class ORBO : Strategy
         if (order != null && (order.Name == "Long" || order.Name == "Short"))
         {
             entryOrder = order;
+
+            // Remove the orange line when order is filled
+            if (orderState == OrderState.Filled)
+            {
+                RemoveOrderPlacementLine();
+                DebugPrint("🟢 Order filled - removing orange line");
+            }
+            // Remove the orange line when order is canceled
+            else if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
+            {
+                RemoveOrderPlacementLine();
+                DebugPrint("🔴 Order canceled/rejected - removing orange line");
+            }
         }
 
         if (order != null && orderState == OrderState.Filled && order.Name.Contains("Profit target"))
@@ -1098,6 +1116,10 @@ public class ORBO : Strategy
             EnterLongLimit(0, true, NumberOfContracts, limitPrice, signalName);
             pendingEntryPrice = limitPrice;
             entryOrderBar = CurrentBar;
+
+            // Draw orange vertical line at order placement bar
+            DrawOrderPlacementLine();
+
             SendWebhook("buy", limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         } else {
@@ -1127,6 +1149,10 @@ public class ORBO : Strategy
             EnterShortLimit(0, true, NumberOfContracts, limitPrice, signalName);
             pendingEntryPrice = limitPrice;
             entryOrderBar = CurrentBar;
+
+            // Draw orange vertical line at order placement bar
+            DrawOrderPlacementLine();
+
             SendWebhook("sell", limitPrice, takeProfit, stopLoss);
             SetHedgeLock(instrument, desiredDirection);
         }
@@ -2024,6 +2050,39 @@ public class ORBO : Strategy
 
         // Otherwise OK (session checks already handled elsewhere)
         return true;
+    }
+
+    // Draws an orange vertical line at the future bar where order will be canceled
+    private void DrawOrderPlacementLine()
+    {
+        if (CancelOrderBars <= 0)
+            return; // Only draw if CancelOrderBars is active
+
+        orderPlacementBar = CurrentBar;
+        orderCancelBar = CurrentBar + CancelOrderBars;
+
+        // Create unique tag for this order line
+        currentOrderLineTag = $"OrderPlacement_{Times[0][0]:yyyyMMddHHmmss}_{CurrentBar}";
+
+        // Draw orange vertical line at the FUTURE bar where cancellation will occur
+        // Negative value means bars into the future from current bar
+        var orangeBrush = new SolidColorBrush(Color.FromArgb(64, 255, 140, 0)); // Orange with 75% transparency (25% opacity)
+        Draw.VerticalLine(this, currentOrderLineTag, -CancelOrderBars, orangeBrush, DashStyleHelper.Solid, 2);
+
+        DebugPrint($"🟠 Drew orange line {CancelOrderBars} bars into future - order will cancel at bar {orderCancelBar}");
+    }
+
+    // Removes the orange vertical line when order is filled or canceled
+    private void RemoveOrderPlacementLine()
+    {
+        if (!string.IsNullOrEmpty(currentOrderLineTag))
+        {
+            RemoveDrawObject(currentOrderLineTag);
+            DebugPrint($"🗑️ Removed orange order line: {currentOrderLineTag}");
+            currentOrderLineTag = string.Empty;
+            orderPlacementBar = -1;
+            orderCancelBar = -1;
+        }
     }
 
     #endregion
