@@ -114,7 +114,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 // Default parameter values
                 LegSwingLookback = 10;
-                SwingStrength = 2;
+                SwingStrength = 1;
                 BoxOpacity = 15;
                 LineWidth = 1;
                 DebugLogging = false;
@@ -248,39 +248,42 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             DebugPrint(string.Format("Starting bullish breakout DR creation. Looking back {0} bars.", LegSwingLookback));
 
-            // Step 1: Find the leg low within the last LegSwingLookback bars
-            double legLow = double.MaxValue;
-            int legLowIndex = 0;
+            double epsilon = TickSize * 0.5;
+            double legLow = double.NaN;
+            int legLowIndex = -1;
 
-            for (int i = 0; i <= Math.Min(LegSwingLookback, CurrentBar); i++)
+            // Find the closest internal swing low within the lookback
+            for (int i = 1; i <= Math.Min(LegSwingLookback, CurrentBar); i++)
             {
-                if (Low[i] < legLow)
+                if (IsSwingLow(i))
                 {
                     legLow = Low[i];
                     legLowIndex = i;
+                    break; // first (closest) swing low wins
                 }
             }
 
-            double newDrLow = legLow;
-            int lowBarIndex = CurrentBar - legLowIndex;
-
-            DebugPrint(string.Format("Found leg LOW: price={0:F2}, at {1} bars ago (bar index {2})",
-                newDrLow, legLowIndex, lowBarIndex));
-
-            // Step 2: Determine if this is a new internal leg
-            double epsilon = TickSize * 0.5;
-            bool hasNewInternalLegLow = newDrLow > currentDrLow + epsilon;
-
-            if (!hasNewInternalLegLow)
+            if (legLowIndex == -1)
             {
-                DebugPrint("No new internal leg LOW found. Extending current DR with breakout wick high.");
-                currentDrHigh = Math.Max(currentDrHigh, High[0]); // breakout wick high
+                DebugPrint("No internal swing LOW found. Extending current DR with breakout wick high.");
+                currentDrHigh = Math.Max(currentDrHigh, High[0]);
                 ExtendCurrentDR();
                 return;
             }
 
-            // Create the new DR using the breakout wick high
+            bool isNewInternalLegLow = legLow > currentDrLow + epsilon;
+
+            if (!isNewInternalLegLow)
+            {
+                DebugPrint("Closest swing LOW is at or below current DR low. Extending current DR with breakout wick high.");
+                currentDrHigh = Math.Max(currentDrHigh, High[0]);
+                ExtendCurrentDR();
+                return;
+            }
+
+            double newDrLow = legLow;
             double newDrHigh = High[0];
+            int lowBarIndex = CurrentBar - legLowIndex;
 
             DebugPrint(string.Format("Creating NEW DR from bullish breakout. Low={0:F2}, High={1:F2}, StartBar={2}",
                 newDrLow, newDrHigh, lowBarIndex));
@@ -294,39 +297,42 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             DebugPrint(string.Format("Starting bearish breakout DR creation. Looking back {0} bars.", LegSwingLookback));
 
-            // Step 1: Find the leg high within the last LegSwingLookback bars
-            double legHigh = double.MinValue;
-            int legHighIndex = 0;
+            double epsilon = TickSize * 0.5;
+            double legHigh = double.NaN;
+            int legHighIndex = -1;
 
-            for (int i = 0; i <= Math.Min(LegSwingLookback, CurrentBar); i++)
+            // Find the closest internal swing high within the lookback
+            for (int i = 1; i <= Math.Min(LegSwingLookback, CurrentBar); i++)
             {
-                if (High[i] > legHigh)
+                if (IsSwingHigh(i))
                 {
                     legHigh = High[i];
                     legHighIndex = i;
+                    break; // first (closest) swing high wins
                 }
             }
 
-            double newDrHigh = legHigh;
-            int highBarIndex = CurrentBar - legHighIndex;
-
-            DebugPrint(string.Format("Found leg HIGH: price={0:F2}, at {1} bars ago (bar index {2})",
-                newDrHigh, legHighIndex, highBarIndex));
-
-            // Step 2: Determine if this is a new internal leg
-            double epsilon = TickSize * 0.5;
-            bool hasNewInternalLegHigh = newDrHigh < currentDrHigh - epsilon;
-
-            if (!hasNewInternalLegHigh)
+            if (legHighIndex == -1)
             {
-                DebugPrint("No new internal leg HIGH found. Extending current DR with breakout wick low.");
-                currentDrLow = Math.Min(currentDrLow, Low[0]); // breakout wick low
+                DebugPrint("No internal swing HIGH found. Extending current DR with breakout wick low.");
+                currentDrLow = Math.Min(currentDrLow, Low[0]);
                 ExtendCurrentDR();
                 return;
             }
 
-            // Create the new DR using the breakout wick low
+            bool isNewInternalLegHigh = legHigh < currentDrHigh - epsilon;
+
+            if (!isNewInternalLegHigh)
+            {
+                DebugPrint("Closest swing HIGH is at or above current DR high. Extending current DR with breakout wick low.");
+                currentDrLow = Math.Min(currentDrLow, Low[0]);
+                ExtendCurrentDR();
+                return;
+            }
+
+            double newDrHigh = legHigh;
             double newDrLow = Low[0];
+            int highBarIndex = CurrentBar - legHighIndex;
 
             DebugPrint(string.Format("Creating NEW DR from bearish breakout. Low={0:F2}, High={1:F2}, StartBar={2}",
                 newDrLow, newDrHigh, highBarIndex));
