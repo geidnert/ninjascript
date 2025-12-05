@@ -80,6 +80,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int currentDrEndBar;
         private string currentDrBoxTag;
         private string currentDrMidLineTag;
+        private string currentDrTopLineTag;
+        private string currentDrBottomLineTag;
 
         // DR counter for unique tags
         private int drCounter;
@@ -137,6 +139,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrEndBar = -1;
                 currentDrBoxTag = string.Empty;
                 currentDrMidLineTag = string.Empty;
+                currentDrTopLineTag = string.Empty;
+                currentDrBottomLineTag = string.Empty;
 
                 // Freeze brushes for performance
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
@@ -373,6 +377,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             drCounter++;
             currentDrBoxTag = "DRBox_" + drCounter;
             currentDrMidLineTag = "DRMid_" + drCounter;
+            currentDrTopLineTag = "DRTop_" + drCounter;
+            currentDrBottomLineTag = "DRBot_" + drCounter;
 
             hasActiveDR = true;
 
@@ -453,7 +459,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrLow,
                 endBarsAgo,
                 currentDrHigh,
-                DrOutlineBrush,
+                Brushes.Transparent,
                 DrBoxBrush,
                 BoxOpacity
             );
@@ -468,6 +474,33 @@ namespace NinjaTrader.NinjaScript.Strategies
                 endBarsAgo,
                 currentDrMid,
                 DrMidLineBrush,
+                DashStyleHelper.Solid,
+                LineWidth
+            );
+
+            // Draw top and bottom borders only
+            Draw.Line(
+                this,
+                currentDrTopLineTag,
+                false,
+                startBarsAgo,
+                currentDrHigh,
+                endBarsAgo,
+                currentDrHigh,
+                DrOutlineBrush,
+                DashStyleHelper.Solid,
+                LineWidth
+            );
+
+            Draw.Line(
+                this,
+                currentDrBottomLineTag,
+                false,
+                startBarsAgo,
+                currentDrLow,
+                endBarsAgo,
+                currentDrLow,
+                DrOutlineBrush,
                 DashStyleHelper.Solid,
                 LineWidth
             );
