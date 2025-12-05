@@ -82,6 +82,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private string currentDrMidLineTag;
         private string currentDrTopLineTag;
         private string currentDrBottomLineTag;
+        // -1 = last breakout was bearish, +1 = bullish, 0 = none yet
+        private int lastBreakoutDirection;
 
         // DR counter for unique tags
         private int drCounter;
@@ -141,6 +143,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrMidLineTag = string.Empty;
                 currentDrTopLineTag = string.Empty;
                 currentDrBottomLineTag = string.Empty;
+                lastBreakoutDirection = 0;
 
                 // Freeze brushes for performance
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
@@ -182,15 +185,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                 bool bullishBreakout = Close[0] > currentDrHigh;
                 bool bearishBreakout = Close[0] < currentDrLow;
 
+                int currentBreakoutDirection = 0;
                 if (bullishBreakout)
-                {
-                    DebugPrint(string.Format("BULLISH BREAKOUT detected! Close={0:F2} > DR High={1:F2}", Close[0], currentDrHigh));
-                    CreateNewDRFromBullishBreakout();
-                }
+                    currentBreakoutDirection = 1;
                 else if (bearishBreakout)
+                    currentBreakoutDirection = -1;
+
+                if (currentBreakoutDirection != 0)
                 {
-                    DebugPrint(string.Format("BEARISH BREAKOUT detected! Close={0:F2} < DR Low={1:F2}", Close[0], currentDrLow));
-                    CreateNewDRFromBearishBreakout();
+                    bool isContinuation = currentBreakoutDirection == lastBreakoutDirection;
+
+                    if (currentBreakoutDirection == 1)
+                    {
+                        DebugPrint(string.Format("BULLISH BREAKOUT detected! Close={0:F2} > DR High={1:F2}", Close[0], currentDrHigh));
+                        CreateNewDRFromBullishBreakout(isContinuation);
+                    }
+                    else if (currentBreakoutDirection == -1)
+                    {
+                        DebugPrint(string.Format("BEARISH BREAKOUT detected! Close={0:F2} < DR Low={1:F2}", Close[0], currentDrLow));
+                        CreateNewDRFromBearishBreakout(isContinuation);
+                    }
+
+                    lastBreakoutDirection = currentBreakoutDirection;
                 }
             }
         }
@@ -241,7 +257,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             CreateNewDR(swingLow, swingHigh, startBar);
         }
 
-        private void CreateNewDRFromBullishBreakout()
+        private void CreateNewDRFromBullishBreakout(bool isContinuation)
         {
             // Bullish breakout: Close[0] > currentDrHigh
             // Find the leg low that led to this breakout
@@ -265,32 +281,48 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (legLowIndex == -1)
             {
-                DebugPrint("No internal swing LOW found. Extending current DR with breakout wick high.");
-                currentDrHigh = Math.Max(currentDrHigh, High[0]);
-                ExtendCurrentDR();
-                return;
+                if (isContinuation)
+                {
+                    DebugPrint("No internal swing LOW found (continuation). Extending current DR with breakout wick high.");
+                    currentDrHigh = Math.Max(currentDrHigh, High[0]);
+                    ExtendCurrentDR();
+                    return;
+                }
+                else
+                {
+                    double newDrLow = Low[0];
+                    double newDrHigh = High[0];
+                    int startBar = CurrentBar;
+                    DebugPrint(string.Format("No swing LOW found on reversal. Creating NEW DR from breakout candle only. Low={0:F2}, High={1:F2}, StartBar={2}",
+                        newDrLow, newDrHigh, startBar));
+                    CreateNewDR(newDrLow, newDrHigh, startBar);
+                    return;
+                }
             }
 
             bool isNewInternalLegLow = legLow > currentDrLow + epsilon;
 
-            if (!isNewInternalLegLow)
+            if (isContinuation)
             {
-                DebugPrint("Closest swing LOW is at or below current DR low. Extending current DR with breakout wick high.");
-                currentDrHigh = Math.Max(currentDrHigh, High[0]);
-                ExtendCurrentDR();
-                return;
+                if (!isNewInternalLegLow)
+                {
+                    DebugPrint("Closest swing LOW is at or below current DR low (continuation). Extending current DR with breakout wick high.");
+                    currentDrHigh = Math.Max(currentDrHigh, High[0]);
+                    ExtendCurrentDR();
+                    return;
+                }
             }
 
-            double newDrLow = legLow;
-            double newDrHigh = High[0];
+            double finalDrLow = legLow;
+            double finalDrHigh = High[0];
             int lowBarIndex = CurrentBar - legLowIndex;
 
-            DebugPrint(string.Format("Creating NEW DR from bullish breakout. Low={0:F2}, High={1:F2}, StartBar={2}",
-                newDrLow, newDrHigh, lowBarIndex));
-            CreateNewDR(newDrLow, newDrHigh, lowBarIndex);
+            DebugPrint(string.Format("Creating NEW DR from bullish breakout. Low={0:F2}, High={1:F2}, StartBar={2} (isContinuation={3})",
+                finalDrLow, finalDrHigh, lowBarIndex, isContinuation));
+            CreateNewDR(finalDrLow, finalDrHigh, lowBarIndex);
         }
 
-        private void CreateNewDRFromBearishBreakout()
+        private void CreateNewDRFromBearishBreakout(bool isContinuation)
         {
             // Bearish breakout: Close[0] < currentDrLow
             // Find the leg high that led to this breakout
@@ -314,29 +346,45 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (legHighIndex == -1)
             {
-                DebugPrint("No internal swing HIGH found. Extending current DR with breakout wick low.");
-                currentDrLow = Math.Min(currentDrLow, Low[0]);
-                ExtendCurrentDR();
-                return;
+                if (isContinuation)
+                {
+                    DebugPrint("No internal swing HIGH found (continuation). Extending current DR with breakout wick low.");
+                    currentDrLow = Math.Min(currentDrLow, Low[0]);
+                    ExtendCurrentDR();
+                    return;
+                }
+                else
+                {
+                    double newDrHigh = High[0];
+                    double newDrLow = Low[0];
+                    int startBar = CurrentBar;
+                    DebugPrint(string.Format("No swing HIGH found on reversal. Creating NEW DR from breakout candle only. Low={0:F2}, High={1:F2}, StartBar={2}",
+                        newDrLow, newDrHigh, startBar));
+                    CreateNewDR(newDrLow, newDrHigh, startBar);
+                    return;
+                }
             }
 
             bool isNewInternalLegHigh = legHigh < currentDrHigh - epsilon;
 
-            if (!isNewInternalLegHigh)
+            if (isContinuation)
             {
-                DebugPrint("Closest swing HIGH is at or above current DR high. Extending current DR with breakout wick low.");
-                currentDrLow = Math.Min(currentDrLow, Low[0]);
-                ExtendCurrentDR();
-                return;
+                if (!isNewInternalLegHigh)
+                {
+                    DebugPrint("Closest swing HIGH is at or above current DR high (continuation). Extending current DR with breakout wick low.");
+                    currentDrLow = Math.Min(currentDrLow, Low[0]);
+                    ExtendCurrentDR();
+                    return;
+                }
             }
 
-            double newDrHigh = legHigh;
-            double newDrLow = Low[0];
+            double finalDrHigh = legHigh;
+            double finalDrLow = Low[0];
             int highBarIndex = CurrentBar - legHighIndex;
 
-            DebugPrint(string.Format("Creating NEW DR from bearish breakout. Low={0:F2}, High={1:F2}, StartBar={2}",
-                newDrLow, newDrHigh, highBarIndex));
-            CreateNewDR(newDrLow, newDrHigh, highBarIndex);
+            DebugPrint(string.Format("Creating NEW DR from bearish breakout. Low={0:F2}, High={1:F2}, StartBar={2} (isContinuation={3})",
+                finalDrLow, finalDrHigh, highBarIndex, isContinuation));
+            CreateNewDR(finalDrLow, finalDrHigh, highBarIndex);
         }
 
         private void CreateNewDR(double drLow, double drHigh, int startBar)
