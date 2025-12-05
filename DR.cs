@@ -267,33 +267,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             DebugPrint(string.Format("Found leg LOW: price={0:F2}, at {1} bars ago (bar index {2})",
                 newDrLow, legLowIndex, lowBarIndex));
 
-            // Step 2: Find the first swing high between legLowIndex and current bar
-            double newDrHigh = double.MinValue;
-            bool foundSwingHigh = false;
+            // Step 2: Determine if this is a new internal leg
+            double epsilon = TickSize * 0.5;
+            bool hasNewInternalLegLow = newDrLow > currentDrLow + epsilon;
 
-            for (int i = legLowIndex; i >= SwingStrength; i--)
+            if (!hasNewInternalLegLow)
             {
-                if (IsSwingHigh(i))
-                {
-                    newDrHigh = High[i];
-                    foundSwingHigh = true;
-                    DebugPrint(string.Format("Found swing HIGH in leg: price={0:F2}, at {1} bars ago", newDrHigh, i));
-                    break;
-                }
+                DebugPrint("No new internal leg LOW found. Extending current DR with breakout wick high.");
+                currentDrHigh = Math.Max(currentDrHigh, High[0]); // breakout wick high
+                ExtendCurrentDR();
+                return;
             }
 
-            // If no swing high found, use the highest high in the range
-            if (!foundSwingHigh)
-            {
-                for (int i = legLowIndex; i >= 0; i--)
-                {
-                    if (High[i] > newDrHigh)
-                        newDrHigh = High[i];
-                }
-                DebugPrint(string.Format("No swing high found, using highest HIGH in range: price={0:F2}", newDrHigh));
-            }
+            // Create the new DR using the breakout wick high
+            double newDrHigh = High[0];
 
-            // Create the new DR
             DebugPrint(string.Format("Creating NEW DR from bullish breakout. Low={0:F2}, High={1:F2}, StartBar={2}",
                 newDrLow, newDrHigh, lowBarIndex));
             CreateNewDR(newDrLow, newDrHigh, lowBarIndex);
@@ -325,33 +313,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             DebugPrint(string.Format("Found leg HIGH: price={0:F2}, at {1} bars ago (bar index {2})",
                 newDrHigh, legHighIndex, highBarIndex));
 
-            // Step 2: Find the first swing low between legHighIndex and current bar
-            double newDrLow = double.MaxValue;
-            bool foundSwingLow = false;
+            // Step 2: Determine if this is a new internal leg
+            double epsilon = TickSize * 0.5;
+            bool hasNewInternalLegHigh = newDrHigh < currentDrHigh - epsilon;
 
-            for (int i = legHighIndex; i >= SwingStrength; i--)
+            if (!hasNewInternalLegHigh)
             {
-                if (IsSwingLow(i))
-                {
-                    newDrLow = Low[i];
-                    foundSwingLow = true;
-                    DebugPrint(string.Format("Found swing LOW in leg: price={0:F2}, at {1} bars ago", newDrLow, i));
-                    break;
-                }
+                DebugPrint("No new internal leg HIGH found. Extending current DR with breakout wick low.");
+                currentDrLow = Math.Min(currentDrLow, Low[0]); // breakout wick low
+                ExtendCurrentDR();
+                return;
             }
 
-            // If no swing low found, use the lowest low in the range
-            if (!foundSwingLow)
-            {
-                for (int i = legHighIndex; i >= 0; i--)
-                {
-                    if (Low[i] < newDrLow)
-                        newDrLow = Low[i];
-                }
-                DebugPrint(string.Format("No swing low found, using lowest LOW in range: price={0:F2}", newDrLow));
-            }
+            // Create the new DR using the breakout wick low
+            double newDrLow = Low[0];
 
-            // Create the new DR
             DebugPrint(string.Format("Creating NEW DR from bearish breakout. Low={0:F2}, High={1:F2}, StartBar={2}",
                 newDrLow, newDrHigh, highBarIndex));
             CreateNewDR(newDrLow, newDrHigh, highBarIndex);
