@@ -121,7 +121,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Default parameter values
                 LegSwingLookback = 10;
                 SwingStrength = 1;
-                BoxOpacity = 5;
+                BoxOpacity = 10;
                 LineWidth = 1;
                 LineOpacity = 30;
                 DebugLogging = false;
