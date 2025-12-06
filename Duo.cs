@@ -178,16 +178,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "C. Skip Times")]
         public TimeSpan Skip2End { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "C. Skip Times")]
+        public bool ForceCloseAtSkipStart { get; set; }
+
         // State tracking
         private bool longOrderPlaced = false;
         private bool shortOrderPlaced = false;
         private Order longEntryOrder = null;
         private Order shortEntryOrder = null;
         private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
-        private TimeSpan sessionEnd = new TimeSpan(12, 05, 0);  
-		private TimeSpan noTradesAfter = new TimeSpan(11, 40, 0);
-        private TimeSpan skipStart = new TimeSpan(00, 00, 0);
-        private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
+        private TimeSpan sessionEnd = new TimeSpan(14, 50, 0);  
+		private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
+        private TimeSpan skipStart = new TimeSpan(11, 45, 0);
+        private TimeSpan skipEnd = new TimeSpan(13, 20, 0);
         private TimeSpan skip2Start = new TimeSpan(00, 00, 0);
         private TimeSpan skip2End = new TimeSpan(00, 00, 0); 
         private int skipBarUntil = -1;
@@ -254,6 +258,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SkipEnd       = skipEnd;
                 Skip2Start     = skip2Start;
                 Skip2End       = skip2End;
+                ForceCloseAtSkipStart = false;
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 WebhookUrl = "";
@@ -341,16 +346,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (debug)
 					    Print($"{Time[0]} - ⛔ Entered skip window");
 
-					if (Position.MarketPosition != MarketPosition.Flat)
-					{
-						Flatten("SkipWindow");
-					}
-					else
-					{
-						CancelOrder(shortEntryOrder);
-						CancelOrder(longEntryOrder);
-                        SendWebhook("cancel");
-					}
+                    if (ForceCloseAtSkipStart)
+                    {
+					    if (Position.MarketPosition != MarketPosition.Flat)
+					    {
+						    Flatten("SkipWindow");
+					    }
+					    else
+					    {
+						    CancelOrder(shortEntryOrder);
+						    CancelOrder(longEntryOrder);
+                            SendWebhook("cancel");
+					    }
+                    }
 				}
 				else
 				{
