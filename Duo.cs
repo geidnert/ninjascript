@@ -265,8 +265,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // Default session times
                 SessionStart  = new TimeSpan(09, 30, 0);
-                SessionEnd    = new TimeSpan(12, 05, 0);
-				NoTradesAfter = new TimeSpan(11, 40, 0);
+                SessionEnd    = new TimeSpan(14, 50, 0);
+				NoTradesAfter = new TimeSpan(14, 30, 0);
             }
             else if (State == State.DataLoaded)
             {
@@ -1082,6 +1082,55 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			Draw.VerticalLine(this, $"NoTradesAfter_{Time[0]:yyyyMMdd}", noTradesAfterTime, r,
 							DashStyleHelper.Solid, 2);
 
+            DrawSkipWindow("Skip1", SkipStart, SkipEnd);
+            DrawSkipWindow("Skip2", Skip2Start, Skip2End);
+        }
+
+        private void DrawSkipWindow(string tagPrefix, TimeSpan start, TimeSpan end)
+        {
+            // Only draw when both ends are configured
+            if (start == TimeSpan.Zero || end == TimeSpan.Zero)
+                return;
+
+            DateTime barDate = Time[0].Date;
+
+            DateTime windowStart = barDate + start;
+            DateTime windowEnd = barDate + end;
+
+            if (start > end)
+                windowEnd = windowEnd.AddDays(1); // overnight skip window support
+
+            int startBarsAgo = Bars.GetBar(windowStart);
+            int endBarsAgo = Bars.GetBar(windowEnd);
+
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            // Higher opacity fill, light dash-dot outlines
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));   // fill (~78% opaque)
+            areaBrush.Freeze();
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 255, 0, 0));    // lines (~35% opaque)
+            lineBrush.Freeze();
+
+            string rectTag = $"DUO_{tagPrefix}_Rect_{windowStart:yyyyMMdd}";
+            Draw.Rectangle(
+                this,
+                rectTag,
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,   // outline
+                areaBrush,   // fill
+                2
+            ).ZOrder = -1;
+
+            string startTag = $"DUO_{tagPrefix}_Start_{windowStart:yyyyMMdd}";
+            Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+
+            string endTag = $"DUO_{tagPrefix}_End_{windowEnd:yyyyMMdd}";
+            Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
         }
 
         private double GetSLForLong()
