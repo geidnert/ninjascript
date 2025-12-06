@@ -586,10 +586,45 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             // Redraw to extend to the right
             DrawCurrentDR();
+
+            // Keep Method 1 targets synced to the current DR dimensions
+            UpdateMethod1TargetsForExtendedDr();
         }
         #endregion
 
         #region Trading Logic
+        private bool TryCalculateMethod1Prices(out double entry, out double stop, out double tp)
+        {
+            entry = stop = tp = 0;
+
+            if (currentDrDirection == 0)
+                return false;
+
+            double drHeight = currentDrHigh - currentDrLow;
+            if (drHeight <= 0)
+                return false;
+
+            double slFrac = M1StopPercentOfDr / 100.0;
+            double tpFrac = M1TpPercentOfDr / 100.0;
+
+            if (currentDrDirection == 1)
+            {
+                // Bullish DR → long from the low
+                entry = currentDrLow;
+                stop = entry - drHeight * slFrac;          // SL below DR
+                tp = currentDrLow + drHeight * tpFrac;     // TP inside DR from low up
+            }
+            else // currentDrDirection == -1
+            {
+                // Bearish DR → short from the high
+                entry = currentDrHigh;
+                stop = entry + drHeight * slFrac;          // SL above DR
+                tp = currentDrHigh - drHeight * tpFrac;    // TP inside DR from high down
+            }
+
+            return true;
+        }
+
         private void EvaluateMethod1Setup()
         {
             if (EntryMethod != DREntryMethod.Method1_PullbackLimit)
@@ -601,30 +636,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (Position.MarketPosition != MarketPosition.Flat)
                 return;
 
-            double drHeight = currentDrHigh - currentDrLow;
-            double entry = 0;
-            double stop = 0;
-            double tp = 0;
-
-            if (currentDrDirection == -1)
-            {
-                entry = currentDrHigh;
-                stop = entry + drHeight * (M1StopPercentOfDr / 100.0);
-                tp = currentDrLow + drHeight * (M1TpPercentOfDr / 100.0);
-            }
-            else if (currentDrDirection == 1)
-            {
-                entry = currentDrLow;
-                stop = entry - drHeight * (M1StopPercentOfDr / 100.0);
-                tp = currentDrLow + drHeight * (M1TpPercentOfDr / 100.0);
-            }
-            else
-            {
+            double entry, stop, tp;
+            if (!TryCalculateMethod1Prices(out entry, out stop, out tp))
                 return;
-            }
 
-            double risk = currentDrDirection == 1 ? entry - stop : stop - entry;
-            double reward = currentDrDirection == 1 ? tp - entry : entry - tp;
+            double risk = Math.Abs(entry - stop);
+            double reward = Math.Abs(tp - entry);
 
             if (risk <= 0 || reward <= 0 || reward / risk < MinRiskReward)
                 return;
@@ -644,6 +661,51 @@ namespace NinjaTrader.NinjaScript.Strategies
             pendingStopPrice = stop;
             pendingTargetPrice = tp;
             lastTradedDrId = drCounter;
+        }
+
+        private void UpdateMethod1TargetsForExtendedDr()
+        {
+            // Only relevant when Method 1 is selected
+            if (EntryMethod != DREntryMethod.Method1_PullbackLimit)
+                return;
+
+            // Need a valid, tradable DR for which Method 1 has been prepared
+            if (!hasActiveDR || !currentDrTradable || currentDrDirection == 0)
+                return;
+
+            if (lastTradedDrId != drCounter)
+                return; // no Method 1 trade planned for this DR
+
+            double entry, stop, tp;
+            if (!TryCalculateMethod1Prices(out entry, out stop, out tp))
+                return;
+
+            // Keep pending signal levels in sync with the DR size
+            if (pendingLongSignal || pendingShortSignal)
+            {
+                pendingEntryPrice = entry;
+                pendingStopPrice = stop;
+                pendingTargetPrice = tp;
+            }
+
+            // Also update the managed targets for any current/future positions
+            const string longSignalName = "DR_M1_Long";
+            const string shortSignalName = "DR_M1_Short";
+
+            if (currentDrDirection == 1)
+            {
+                SetStopLoss(longSignalName, CalculationMode.Price, stop, false);
+                SetProfitTarget(longSignalName, CalculationMode.Price, tp);
+            }
+            else if (currentDrDirection == -1)
+            {
+                SetStopLoss(shortSignalName, CalculationMode.Price, stop, false);
+                SetProfitTarget(shortSignalName, CalculationMode.Price, tp);
+            }
+
+            DebugPrint(string.Format(
+                "M1 DR extended → updated prices: entry={0:F2}, stop={1:F2}, tp={2:F2}, drLow={3:F2}, drHigh={4:F2}",
+                entry, stop, tp, currentDrLow, currentDrHigh));
         }
 
         private void ProcessMethod2Signals()
