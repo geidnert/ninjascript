@@ -66,6 +66,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "Line Width", Description = "Width of mid-line", GroupName = "02. Visual Settings", Order = 5)]
         public int LineWidth { get; set; }
 
+        [Range(0, 100)]
+        [Display(Name = "Line Opacity", Description = "Transparency of DR lines (0-100)", GroupName = "02. Visual Settings", Order = 6)]
+        public int LineOpacity { get; set; }
+
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Enable detailed debug logging to Output window", GroupName = "03. Debug", Order = 1)]
         public bool DebugLogging { get; set; }
@@ -117,8 +121,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Default parameter values
                 LegSwingLookback = 10;
                 SwingStrength = 1;
-                BoxOpacity = 15;
+                BoxOpacity = 5;
                 LineWidth = 1;
+                LineOpacity = 30;
                 DebugLogging = false;
 
                 // Default colors
@@ -285,6 +290,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     DebugPrint("No internal swing LOW found (continuation). Extending current DR with breakout wick high.");
                     currentDrHigh = Math.Max(currentDrHigh, High[0]);
+                    currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
                     ExtendCurrentDR();
                     return;
                 }
@@ -308,6 +314,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     DebugPrint("Closest swing LOW is at or below current DR low (continuation). Extending current DR with breakout wick high.");
                     currentDrHigh = Math.Max(currentDrHigh, High[0]);
+                    currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
                     ExtendCurrentDR();
                     return;
                 }
@@ -350,6 +357,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     DebugPrint("No internal swing HIGH found (continuation). Extending current DR with breakout wick low.");
                     currentDrLow = Math.Min(currentDrLow, Low[0]);
+                    currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
                     ExtendCurrentDR();
                     return;
                 }
@@ -373,6 +381,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     DebugPrint("Closest swing HIGH is at or above current DR high (continuation). Extending current DR with breakout wick low.");
                     currentDrLow = Math.Min(currentDrLow, Low[0]);
+                    currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
                     ExtendCurrentDR();
                     return;
                 }
@@ -495,6 +504,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             );
 
             // Draw the mid-line
+            Brush midLineBrush = GetLineBrush(DrMidLineBrush);
             Draw.Line(
                 this,
                 currentDrMidLineTag,
@@ -503,12 +513,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrMid,
                 endBarsAgo,
                 currentDrMid,
-                DrMidLineBrush,
+                midLineBrush,
                 DashStyleHelper.Solid,
                 LineWidth
             );
 
             // Draw top and bottom borders only
+            Brush outlineLineBrush = GetLineBrush(DrOutlineBrush);
             Draw.Line(
                 this,
                 currentDrTopLineTag,
@@ -517,7 +528,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrHigh,
                 endBarsAgo,
                 currentDrHigh,
-                DrOutlineBrush,
+                outlineLineBrush,
                 DashStyleHelper.Solid,
                 LineWidth
             );
@@ -530,12 +541,32 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrLow,
                 endBarsAgo,
                 currentDrLow,
-                DrOutlineBrush,
+                outlineLineBrush,
                 DashStyleHelper.Solid,
                 LineWidth
             );
         }
         #endregion
+
+        private Brush GetLineBrush(Brush baseBrush)
+        {
+            if (baseBrush == null)
+                return Brushes.Transparent;
+
+            try
+            {
+                Brush clone = baseBrush.Clone();
+                clone.Opacity = Math.Max(0, Math.Min(100, LineOpacity)) / 100.0;
+                if (clone.CanFreeze)
+                    clone.Freeze();
+                return clone;
+            }
+            catch
+            {
+                // Fallback to transparent if cloning fails
+                return Brushes.Transparent;
+            }
+        }
 
         #region Debug Logging
         private void DebugPrint(string message)
