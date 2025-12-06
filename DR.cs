@@ -422,7 +422,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             hasActiveDR = true;
 
             double drHeight = drHigh - drLow;
-            DebugPrint(string.Format("\n\n=== DR #{0} CREATED === Low={1:F2}, High={2:F2}, Mid={3:F2}, Height={4:F2}, StartBar={5}, Tags: {6}, {7}",
+            // Separator line before logging the new DR creation
+            DebugPrint(string.Empty);
+            DebugPrint(string.Format("=== DR #{0} CREATED === Low={1:F2}, High={2:F2}, Mid={3:F2}, Height={4:F2}, StartBar={5}, Tags: {6}, {7}",
                 drCounter, currentDrLow, currentDrHigh, currentDrMid, drHeight, currentDrStartBar, currentDrBoxTag, currentDrMidLineTag));
 
             // Draw the new DR
@@ -574,7 +576,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!DebugLogging)
                 return;
 
-            Print(string.Format("[{0:yyyy-MM-dd HH:mm:ss}] DR: {1}", Time[0], message));
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                // Print a blank line as a visual separator when no message is provided
+                Print(string.Empty);
+                return;
+            }
+
+            Print(string.Format("[{0:yyyy-MM-dd HH:mm:ss}] - {1}", Time[0], message));
         }
         #endregion
     }
