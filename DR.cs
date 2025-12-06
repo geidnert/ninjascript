@@ -88,6 +88,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private string currentDrBottomLineTag;
         // -1 = last breakout was bearish, +1 = bullish, 0 = none yet
         private int lastBreakoutDirection;
+        // True while we are in a breakout "strike" where wicks can extend the DR
+        private bool inBreakoutStrike;
 
         // DR counter for unique tags
         private int drCounter;
@@ -149,6 +151,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrTopLineTag = string.Empty;
                 currentDrBottomLineTag = string.Empty;
                 lastBreakoutDirection = 0;
+                inBreakoutStrike = false;
 
                 // Freeze brushes for performance
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
@@ -172,6 +175,40 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DebugPrint(string.Format("No active DR. Attempting to create initial DR. Close={0:F2}", Close[0]));
                 TryCreateInitialDR();
                 return;
+            }
+
+            if (hasActiveDR && inBreakoutStrike)
+            {
+                if (lastBreakoutDirection == 1)
+                {
+                    if (High[0] > currentDrHigh)
+                    {
+                        currentDrHigh = High[0];
+                        currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
+                        ExtendCurrentDR();
+                        DebugPrint("Bullish strike wick extension. New DR High=" + currentDrHigh);
+                    }
+                    else
+                    {
+                        inBreakoutStrike = false;
+                        DebugPrint("Bullish strike ended (no new high). Waiting for next close outside for new DR.");
+                    }
+                }
+                else if (lastBreakoutDirection == -1)
+                {
+                    if (Low[0] < currentDrLow)
+                    {
+                        currentDrLow = Low[0];
+                        currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
+                        ExtendCurrentDR();
+                        DebugPrint("Bearish strike wick extension. New DR Low=" + currentDrLow);
+                    }
+                    else
+                    {
+                        inBreakoutStrike = false;
+                        DebugPrint("Bearish strike ended (no new low). Waiting for next close outside for new DR.");
+                    }
+                }
             }
 
             // Check if current bar is still inside the DR
@@ -198,7 +235,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (currentBreakoutDirection != 0)
                 {
-                    bool isContinuation = currentBreakoutDirection == lastBreakoutDirection;
+                    bool isContinuation = currentBreakoutDirection == lastBreakoutDirection && inBreakoutStrike;
 
                     if (currentBreakoutDirection == 1)
                     {
@@ -212,6 +249,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 
                     lastBreakoutDirection = currentBreakoutDirection;
+                    inBreakoutStrike = true;
                 }
             }
         }
@@ -260,6 +298,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             int startBar = Math.Min(swingHighBar, swingLowBar);
             DebugPrint(string.Format("Creating INITIAL DR from swings. StartBar={0}", startBar));
             CreateNewDR(swingLow, swingHigh, startBar);
+            lastBreakoutDirection = 0;
+            inBreakoutStrike = false;
         }
 
         private void CreateNewDRFromBullishBreakout(bool isContinuation)
