@@ -5,6 +5,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using NinjaTrader.Gui;
+using NinjaTrader.Cbi;
+using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.NinjaScript.Strategies;
@@ -12,9 +14,55 @@ using NinjaTrader.NinjaScript.Strategies;
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
+    public enum DREntryMethod
+    {
+        Method1_PullbackLimit,
+        Method2_OppositeCandle
+    }
+
     public class DR : Strategy
     {
         #region User Inputs
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Method", GroupName = "01. DR Parameters", Order = 0)]
+        public DREntryMethod EntryMethod { get; set; }
+
+        // Min DR size in points (height / TickSize) – skip trading too small DRs
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Min DR Size (points)", GroupName = "01. DR Parameters", Order = 3)]
+        public double MinDrSizePoints { get; set; }
+
+        // Global minimum Risk/Reward filter (applied at least to Method 2 and safe to reuse for Method 1)
+        [NinjaScriptProperty]
+        [Range(1.0, 10.0)]
+        [Display(Name = "Min Risk/Reward", GroupName = "01. DR Parameters", Order = 4)]
+        public double MinRiskReward { get; set; }
+
+        // Stop loss distance in % of DR height for Method 1
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "M1 SL % of DR", GroupName = "01. DR Parameters", Order = 5)]
+        public double M1StopPercentOfDr { get; set; }
+
+        // Take profit level in % of DR height for Method 1 (50% ~ mid)
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "M1 TP % of DR", GroupName = "01. DR Parameters", Order = 6)]
+        public double M1TpPercentOfDr { get; set; }
+
+        // Price level % of DR that must be touched before looking for opposite candle
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "M2 Price Touch %", GroupName = "01. DR Parameters", Order = 7)]
+        public double M2PriceTouchPercent { get; set; }
+
+        // Take profit level in % of DR height for Method 2 (usually 50-62%)
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "M2 TP % of DR", GroupName = "01. DR Parameters", Order = 8)]
+        public double M2TpPercentOfDr { get; set; }
+
         // [NinjaScriptProperty]
         // [Range(1, 50)]
         // [Display(Name = "Leg Swing Lookback", Description = "Maximum bars to look back for leg low/high around breakout", GroupName = "01. DR Parameters", Order = 1)]
@@ -96,6 +144,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         // Flag to track if we have an active DR
         private bool hasActiveDR;
+
+        // Trade & DR direction
+        private int currentDrDirection;   // +1 bullish DR (breakout up), -1 bearish DR (breakout down)
+        private bool currentDrTradable;   // DR is large enough to trade (>= MinDrSizePoints)
+        private int lastTradedDrId;       // to allow at most one trade per DR
+
+        // Pending signal state for intrabar execution (used by both methods)
+        private bool pendingLongSignal;
+        private bool pendingShortSignal;
+        private double pendingEntryPrice;
+        private double pendingStopPrice;
+        private double pendingTargetPrice;
+
+        // Method 2 specific
+        private bool m2PriceTouched;     // true once price has touched the M2PriceTouchPercent level
         #endregion
 
         #region NinjaScript Lifecycle
@@ -121,6 +184,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 IsInstantiatedOnEachOptimizationIteration = true;
 
                 // Default parameter values
+                EntryMethod = DREntryMethod.Method1_PullbackLimit;
+                MinDrSizePoints = 4;
+                MinRiskReward = 1.0;
+                M1StopPercentOfDr = 10;
+                M1TpPercentOfDr = 50;
+                M2PriceTouchPercent = 88;
+                M2TpPercentOfDr = 55;
                 LegSwingLookback = 10;
                 SwingStrength = 1;
                 BoxOpacity = 10;
@@ -135,6 +205,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.Configure)
             {
+                AddDataSeries(BarsPeriodType.Tick, 1);
             }
             else if (State == State.DataLoaded)
             {
@@ -152,6 +223,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrBottomLineTag = string.Empty;
                 lastBreakoutDirection = 0;
                 inBreakoutStrike = false;
+                currentDrDirection = 0;
+                currentDrTradable = true;
+                lastTradedDrId = -1;
+                pendingLongSignal = false;
+                pendingShortSignal = false;
+                pendingEntryPrice = 0;
+                pendingStopPrice = 0;
+                pendingTargetPrice = 0;
+                m2PriceTouched = false;
 
                 // Freeze brushes for performance
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
@@ -165,92 +245,111 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         protected override void OnBarUpdate()
         {
-            // Wait for enough bars for swing detection
-            if (CurrentBar < SwingStrength * 2 + LegSwingLookback)
-                return;
-
-            // If we don't have an active DR, try to create the initial one
-            if (!hasActiveDR)
+            if (BarsInProgress == 0)
             {
-                DebugPrint(string.Format("No active DR. Attempting to create initial DR. Close={0:F2}", Close[0]));
-                TryCreateInitialDR();
-                return;
-            }
+                if (CurrentBars[0] < SwingStrength * 2 + LegSwingLookback || CurrentBars[1] < 1)
+                    return;
 
-            if (hasActiveDR && inBreakoutStrike)
-            {
-                if (lastBreakoutDirection == 1)
+                if (!IsFirstTickOfBar)
+                    return;
+
+                // If we don't have an active DR, try to create the initial one
+                if (!hasActiveDR)
                 {
-                    if (High[0] > currentDrHigh)
+                    DebugPrint(string.Format("No active DR. Attempting to create initial DR. Close={0:F2}", Close[0]));
+                    TryCreateInitialDR();
+                    return;
+                }
+
+                if (hasActiveDR && inBreakoutStrike)
+                {
+                    if (lastBreakoutDirection == 1)
                     {
-                        currentDrHigh = High[0];
-                        currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
-                        ExtendCurrentDR();
-                        DebugPrint("Bullish strike wick extension. New DR High=" + currentDrHigh);
+                        if (High[0] > currentDrHigh)
+                        {
+                            currentDrHigh = High[0];
+                            currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
+                            ExtendCurrentDR();
+                            DebugPrint("Bullish strike wick extension. New DR High=" + currentDrHigh);
+                        }
+                        else
+                        {
+                            inBreakoutStrike = false;
+                            DebugPrint("Bullish strike ended (no new high). Waiting for next close outside for new DR.");
+                        }
                     }
-                    else
+                    else if (lastBreakoutDirection == -1)
                     {
-                        inBreakoutStrike = false;
-                        DebugPrint("Bullish strike ended (no new high). Waiting for next close outside for new DR.");
+                        if (Low[0] < currentDrLow)
+                        {
+                            currentDrLow = Low[0];
+                            currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
+                            ExtendCurrentDR();
+                            DebugPrint("Bearish strike wick extension. New DR Low=" + currentDrLow);
+                        }
+                        else
+                        {
+                            inBreakoutStrike = false;
+                            DebugPrint("Bearish strike ended (no new low). Waiting for next close outside for new DR.");
+                        }
                     }
                 }
-                else if (lastBreakoutDirection == -1)
+
+                // Check if current bar is still inside the DR
+                bool insideDR = Close[0] >= currentDrLow && Close[0] <= currentDrHigh;
+
+                if (insideDR)
                 {
-                    if (Low[0] < currentDrLow)
+                    // Extend the current DR to the right
+                    // DebugPrint(string.Format("Price inside DR range. Extending DR box. Close={0:F2}, DR Low={1:F2}, DR High={2:F2}",
+                    //     Close[0], currentDrLow, currentDrHigh));
+                    ExtendCurrentDR();
+                }
+                else
+                {
+                    // Breakout detected - finalize current DR and create new one
+                    bool bullishBreakout = Close[0] > currentDrHigh;
+                    bool bearishBreakout = Close[0] < currentDrLow;
+
+                    int previousBreakoutDirection = lastBreakoutDirection;
+                    int currentBreakoutDirection = 0;
+                    if (bullishBreakout)
+                        currentBreakoutDirection = 1;
+                    else if (bearishBreakout)
+                        currentBreakoutDirection = -1;
+
+                    if (currentBreakoutDirection != 0)
                     {
-                        currentDrLow = Low[0];
-                        currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
-                        ExtendCurrentDR();
-                        DebugPrint("Bearish strike wick extension. New DR Low=" + currentDrLow);
-                    }
-                    else
-                    {
-                        inBreakoutStrike = false;
-                        DebugPrint("Bearish strike ended (no new low). Waiting for next close outside for new DR.");
+                        bool isContinuation = currentBreakoutDirection == lastBreakoutDirection && inBreakoutStrike;
+
+                        if (previousBreakoutDirection != 0 && currentBreakoutDirection != previousBreakoutDirection)
+                            ClearPendingSignals(true);
+
+                        lastBreakoutDirection = currentBreakoutDirection;
+
+                        if (currentBreakoutDirection == 1)
+                        {
+                            DebugPrint(string.Format("BULLISH BREAKOUT detected! Close={0:F2} > DR High={1:F2}", Close[0], currentDrHigh));
+                            CreateNewDRFromBullishBreakout(isContinuation);
+                        }
+                        else if (currentBreakoutDirection == -1)
+                        {
+                            DebugPrint(string.Format("BEARISH BREAKOUT detected! Close={0:F2} < DR Low={1:F2}", Close[0], currentDrLow));
+                            CreateNewDRFromBearishBreakout(isContinuation);
+                        }
+
+                        inBreakoutStrike = true;
                     }
                 }
+
+                ProcessMethod2Signals();
             }
-
-            // Check if current bar is still inside the DR
-            bool insideDR = Close[0] >= currentDrLow && Close[0] <= currentDrHigh;
-
-            if (insideDR)
+            else if (BarsInProgress == 1)
             {
-                // Extend the current DR to the right
-                // DebugPrint(string.Format("Price inside DR range. Extending DR box. Close={0:F2}, DR Low={1:F2}, DR High={2:F2}",
-                //     Close[0], currentDrLow, currentDrHigh));
-                ExtendCurrentDR();
-            }
-            else
-            {
-                // Breakout detected - finalize current DR and create new one
-                bool bullishBreakout = Close[0] > currentDrHigh;
-                bool bearishBreakout = Close[0] < currentDrLow;
+                if (CurrentBars[0] < SwingStrength * 2 + LegSwingLookback || CurrentBars[1] < 1)
+                    return;
 
-                int currentBreakoutDirection = 0;
-                if (bullishBreakout)
-                    currentBreakoutDirection = 1;
-                else if (bearishBreakout)
-                    currentBreakoutDirection = -1;
-
-                if (currentBreakoutDirection != 0)
-                {
-                    bool isContinuation = currentBreakoutDirection == lastBreakoutDirection && inBreakoutStrike;
-
-                    if (currentBreakoutDirection == 1)
-                    {
-                        DebugPrint(string.Format("BULLISH BREAKOUT detected! Close={0:F2} > DR High={1:F2}", Close[0], currentDrHigh));
-                        CreateNewDRFromBullishBreakout(isContinuation);
-                    }
-                    else if (currentBreakoutDirection == -1)
-                    {
-                        DebugPrint(string.Format("BEARISH BREAKOUT detected! Close={0:F2} < DR Low={1:F2}", Close[0], currentDrLow));
-                        CreateNewDRFromBearishBreakout(isContinuation);
-                    }
-
-                    lastBreakoutDirection = currentBreakoutDirection;
-                    inBreakoutStrike = true;
-                }
+                SubmitPendingOrders();
             }
         }
         #endregion
@@ -462,6 +561,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             hasActiveDR = true;
 
             double drHeight = drHigh - drLow;
+            double drSizePoints = drHeight / TickSize;
+            currentDrDirection = lastBreakoutDirection;
+            currentDrTradable = drSizePoints >= MinDrSizePoints;
+            lastTradedDrId = -1;
+            ClearPendingSignals(true);
+
             // Separator line before logging the new DR creation
             DebugPrint(string.Empty);
             DebugPrint(string.Format("=== DR #{0} CREATED === Low={1:F2}, High={2:F2}, Mid={3:F2}, Height={4:F2}, StartBar={5}, Tags: {6}, {7}",
@@ -469,15 +574,192 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             // Draw the new DR
             DrawCurrentDR();
+
+            EvaluateMethod1Setup();
         }
 
         private void ExtendCurrentDR()
         {
             // Update the end bar to current bar
             currentDrEndBar = CurrentBar;
+            currentDrTradable = (currentDrHigh - currentDrLow) / TickSize >= MinDrSizePoints;
 
             // Redraw to extend to the right
             DrawCurrentDR();
+        }
+        #endregion
+
+        #region Trading Logic
+        private void EvaluateMethod1Setup()
+        {
+            if (EntryMethod != DREntryMethod.Method1_PullbackLimit)
+                return;
+
+            if (!currentDrTradable || currentDrDirection == 0 || lastTradedDrId == drCounter)
+                return;
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
+
+            double drHeight = currentDrHigh - currentDrLow;
+            double entry = 0;
+            double stop = 0;
+            double tp = 0;
+
+            if (currentDrDirection == -1)
+            {
+                entry = currentDrHigh;
+                stop = entry + drHeight * (M1StopPercentOfDr / 100.0);
+                tp = currentDrLow + drHeight * (M1TpPercentOfDr / 100.0);
+            }
+            else if (currentDrDirection == 1)
+            {
+                entry = currentDrLow;
+                stop = entry - drHeight * (M1StopPercentOfDr / 100.0);
+                tp = currentDrLow + drHeight * (M1TpPercentOfDr / 100.0);
+            }
+            else
+            {
+                return;
+            }
+
+            double risk = currentDrDirection == 1 ? entry - stop : stop - entry;
+            double reward = currentDrDirection == 1 ? tp - entry : entry - tp;
+
+            if (risk <= 0 || reward <= 0 || reward / risk < MinRiskReward)
+                return;
+
+            ClearPendingSignals(false);
+
+            if (currentDrDirection == 1)
+            {
+                pendingLongSignal = true;
+            }
+            else if (currentDrDirection == -1)
+            {
+                pendingShortSignal = true;
+            }
+
+            pendingEntryPrice = entry;
+            pendingStopPrice = stop;
+            pendingTargetPrice = tp;
+            lastTradedDrId = drCounter;
+        }
+
+        private void ProcessMethod2Signals()
+        {
+            if (EntryMethod != DREntryMethod.Method2_OppositeCandle)
+                return;
+
+            if (!hasActiveDR || !currentDrTradable || currentDrDirection == 0)
+                return;
+
+            if (Position.MarketPosition != MarketPosition.Flat || lastTradedDrId == drCounter)
+                return;
+
+            double drHeight = currentDrHigh - currentDrLow;
+            if (drHeight <= 0)
+                return;
+
+            if (currentDrDirection == -1)
+            {
+                double touchLine = currentDrHigh - drHeight * (M2PriceTouchPercent / 100.0);
+                if (!m2PriceTouched && High[0] >= touchLine)
+                    m2PriceTouched = true;
+
+                bool oppositeBullishCandle = Close[0] > Open[0];
+                if (m2PriceTouched && oppositeBullishCandle)
+                {
+                    double entry = Close[0];
+                    double stop = currentDrLow;
+                    double tp = currentDrLow + drHeight * (M2TpPercentOfDr / 100.0);
+                    double risk = entry - stop;
+                    double reward = tp - entry;
+
+                    if (risk > 0 && reward > 0 && reward / risk >= MinRiskReward)
+                    {
+                        ClearPendingSignals(false);
+                        pendingLongSignal = true;
+                        pendingEntryPrice = entry;
+                        pendingStopPrice = stop;
+                        pendingTargetPrice = tp;
+                        lastTradedDrId = drCounter;
+                        m2PriceTouched = false;
+                    }
+                }
+            }
+            else if (currentDrDirection == 1)
+            {
+                double touchLine = currentDrLow + drHeight * (M2PriceTouchPercent / 100.0);
+                if (!m2PriceTouched && Low[0] <= touchLine)
+                    m2PriceTouched = true;
+
+                bool oppositeBearishCandle = Close[0] < Open[0];
+                if (m2PriceTouched && oppositeBearishCandle)
+                {
+                    double entry = Close[0];
+                    double stop = currentDrHigh;
+                    double tp = currentDrHigh - drHeight * (M2TpPercentOfDr / 100.0);
+                    double risk = stop - entry;
+                    double reward = entry - tp;
+
+                    if (risk > 0 && reward > 0 && reward / risk >= MinRiskReward)
+                    {
+                        ClearPendingSignals(false);
+                        pendingShortSignal = true;
+                        pendingEntryPrice = entry;
+                        pendingStopPrice = stop;
+                        pendingTargetPrice = tp;
+                        lastTradedDrId = drCounter;
+                        m2PriceTouched = false;
+                    }
+                }
+            }
+        }
+
+        private void SubmitPendingOrders()
+        {
+            if (!pendingLongSignal && !pendingShortSignal)
+                return;
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
+
+            if (pendingEntryPrice <= 0 || pendingStopPrice <= 0 || pendingTargetPrice <= 0)
+            {
+                ClearPendingSignals(false);
+                return;
+            }
+
+            string longSignalName = EntryMethod == DREntryMethod.Method1_PullbackLimit ? "DR_M1_Long" : "DR_M2_Long";
+            string shortSignalName = EntryMethod == DREntryMethod.Method1_PullbackLimit ? "DR_M1_Short" : "DR_M2_Short";
+
+            if (pendingLongSignal)
+            {
+                EnterLongLimit(0, true, DefaultQuantity, pendingEntryPrice, longSignalName);
+                SetStopLoss(longSignalName, CalculationMode.Price, pendingStopPrice, false);
+                SetProfitTarget(longSignalName, CalculationMode.Price, pendingTargetPrice);
+            }
+            else if (pendingShortSignal)
+            {
+                EnterShortLimit(0, true, DefaultQuantity, pendingEntryPrice, shortSignalName);
+                SetStopLoss(shortSignalName, CalculationMode.Price, pendingStopPrice, false);
+                SetProfitTarget(shortSignalName, CalculationMode.Price, pendingTargetPrice);
+            }
+
+            ClearPendingSignals(false);
+        }
+
+        private void ClearPendingSignals(bool resetTouch)
+        {
+            pendingLongSignal = false;
+            pendingShortSignal = false;
+            pendingEntryPrice = 0;
+            pendingStopPrice = 0;
+            pendingTargetPrice = 0;
+
+            if (resetTouch)
+                m2PriceTouched = false;
         }
         #endregion
 
