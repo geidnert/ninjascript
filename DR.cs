@@ -15,15 +15,15 @@ namespace NinjaTrader.NinjaScript.Strategies
     public class DR : Strategy
     {
         #region User Inputs
-        [NinjaScriptProperty]
-        [Range(1, 50)]
-        [Display(Name = "Leg Swing Lookback", Description = "Maximum bars to look back for leg low/high around breakout", GroupName = "01. DR Parameters", Order = 1)]
-        public int LegSwingLookback { get; set; }
+        // [NinjaScriptProperty]
+        // [Range(1, 50)]
+        // [Display(Name = "Leg Swing Lookback", Description = "Maximum bars to look back for leg low/high around breakout", GroupName = "01. DR Parameters", Order = 1)]
+        internal int LegSwingLookback { get; set; }
 
-        [NinjaScriptProperty]
-        [Range(1, 10)]
-        [Display(Name = "Swing Strength", Description = "Bars on each side for swing high/low detection", GroupName = "01. DR Parameters", Order = 2)]
-        public int SwingStrength { get; set; }
+        // [NinjaScriptProperty]
+        // [Range(1, 10)]
+        // [Display(Name = "Swing Strength", Description = "Bars on each side for swing high/low detection", GroupName = "01. DR Parameters", Order = 2)]
+        internal int SwingStrength { get; set; }
 
         [XmlIgnore]
         [Display(Name = "DR Box Brush", Description = "Fill color for DR boxes", GroupName = "02. Visual Settings", Order = 1)]
@@ -180,8 +180,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (insideDR)
             {
                 // Extend the current DR to the right
-                DebugPrint(string.Format("Price inside DR range. Extending DR box. Close={0:F2}, DR Low={1:F2}, DR High={2:F2}",
-                    Close[0], currentDrLow, currentDrHigh));
+                // DebugPrint(string.Format("Price inside DR range. Extending DR box. Close={0:F2}, DR Low={1:F2}, DR High={2:F2}",
+                //     Close[0], currentDrLow, currentDrHigh));
                 ExtendCurrentDR();
             }
             else
@@ -422,7 +422,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             hasActiveDR = true;
 
             double drHeight = drHigh - drLow;
-            DebugPrint(string.Format("=== DR #{0} CREATED === Low={1:F2}, High={2:F2}, Mid={3:F2}, Height={4:F2}, StartBar={5}, Tags: {6}, {7}",
+            DebugPrint(string.Format("\n\n=== DR #{0} CREATED === Low={1:F2}, High={2:F2}, Mid={3:F2}, Height={4:F2}, StartBar={5}, Tags: {6}, {7}",
                 drCounter, currentDrLow, currentDrHigh, currentDrMid, drHeight, currentDrStartBar, currentDrBoxTag, currentDrMidLineTag));
 
             // Draw the new DR
