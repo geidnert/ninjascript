@@ -211,10 +211,10 @@ public class ORBO : Strategy
     private string displayText = "Waiting...";
     private bool isStrategyAnalyzer = false;
     private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
-    private TimeSpan sessionEnd = new TimeSpan(16, 06, 0);
-    private TimeSpan noTradesAfter = new TimeSpan(15, 26, 0);
-    private TimeSpan skipStart = new TimeSpan(00, 00, 0);
-    private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
+    private TimeSpan sessionEnd = new TimeSpan(15, 59, 0);
+    private TimeSpan noTradesAfter = new TimeSpan(14, 50, 0);
+    private TimeSpan skipStart = new TimeSpan(11, 30, 0);
+    private TimeSpan skipEnd = new TimeSpan(11, 40, 0);
     private static readonly Random Random = new Random();
     private bool maxAccountLimitHit = false;
     private DateTime positionEntryTime = DateTime.MinValue;
