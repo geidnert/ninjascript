@@ -156,6 +156,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double pendingEntryPrice;
         private double pendingStopPrice;
         private double pendingTargetPrice;
+        private double tradeLineEntryPrice;
+        private double tradeLineStopPrice;
+        private double tradeLineTargetPrice;
+        private bool hasTradeLevelLines;
+        private string tradeEntryTag;
+        private string tradeStopTag;
+        private string tradeTargetTag;
 
         // Method 2 specific
         private bool m2PriceTouched;     // true once price has touched the M2PriceTouchPercent level
@@ -231,6 +238,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 pendingEntryPrice = 0;
                 pendingStopPrice = 0;
                 pendingTargetPrice = 0;
+                tradeLineEntryPrice = 0;
+                tradeLineStopPrice = 0;
+                tradeLineTargetPrice = 0;
+                hasTradeLevelLines = false;
+                tradeEntryTag = string.Empty;
+                tradeStopTag = string.Empty;
+                tradeTargetTag = string.Empty;
                 m2PriceTouched = false;
 
                 // Freeze brushes for performance
@@ -323,7 +337,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         bool isContinuation = currentBreakoutDirection == lastBreakoutDirection && inBreakoutStrike;
 
                         if (previousBreakoutDirection != 0 && currentBreakoutDirection != previousBreakoutDirection)
-                            ClearPendingSignals(true);
+                            ClearPendingSignals(true, "breakout direction flipped", true);
 
                         lastBreakoutDirection = currentBreakoutDirection;
 
@@ -343,6 +357,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
 
                 ProcessMethod2Signals();
+                UpdatePreviewTradeLinesIfNonePending();
             }
             else if (BarsInProgress == 1)
             {
@@ -565,12 +580,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             currentDrDirection = lastBreakoutDirection;
             currentDrTradable = drSizePoints >= MinDrSizePoints;
             lastTradedDrId = -1;
-            ClearPendingSignals(true);
+            // Keep lines visible through DR creation; they will be updated immediately below
+            ClearPendingSignals(true, "new DR created", false);
+            UpdatePreviewTradeLinesIfNonePending();
 
             // Separator line before logging the new DR creation
             DebugPrint(string.Empty);
             DebugPrint(string.Format("=== DR #{0} CREATED === Low={1:F2}, High={2:F2}, Mid={3:F2}, Height={4:F2}, StartBar={5}, Tags: {6}, {7}",
                 drCounter, currentDrLow, currentDrHigh, currentDrMid, drHeight, currentDrStartBar, currentDrBoxTag, currentDrMidLineTag));
+            DebugPrint(string.Format("DR #{0} tradable={1} (height={2:F2}, sizePts={3:F2}, minRequired={4:F2})",
+                drCounter, currentDrTradable, drHeight, drSizePoints, MinDrSizePoints));
 
             // Draw the new DR
             DrawCurrentDR();
@@ -582,10 +601,21 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             // Update the end bar to current bar
             currentDrEndBar = CurrentBar;
+            bool wasTradable = currentDrTradable;
+            double drHeight = currentDrHigh - currentDrLow;
+            double drSizePoints = drHeight / TickSize;
             currentDrTradable = (currentDrHigh - currentDrLow) / TickSize >= MinDrSizePoints;
+
+            if (wasTradable != currentDrTradable)
+            {
+                DebugPrint(string.Format("DR tradable state changed → {0} (height={1:F2}, sizePts={2:F2}, minRequired={3:F2})",
+                    currentDrTradable, drHeight, drSizePoints, MinDrSizePoints));
+            }
 
             // Redraw to extend to the right
             DrawCurrentDR();
+            UpdateTradeLevelLinePositions(); // refresh trade level lines to new DR width
+            UpdatePreviewTradeLinesIfNonePending();
 
             // Keep Method 1 targets synced to the current DR dimensions
             UpdateMethod1TargetsForExtendedDr();
@@ -631,22 +661,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
 
             if (!currentDrTradable || currentDrDirection == 0 || lastTradedDrId == drCounter)
+            {
+                DebugPrint(string.Format("M1 skip: tradable={0}, dir={1}, lastTradedDrId={2}, drId={3}",
+                    currentDrTradable, currentDrDirection, lastTradedDrId, drCounter));
                 return;
+            }
 
             if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                DebugPrint(string.Format("M1 skip: position not flat (pos={0})", Position.MarketPosition));
                 return;
+            }
 
             double entry, stop, tp;
             if (!TryCalculateMethod1Prices(out entry, out stop, out tp))
+            {
+                DebugPrint("M1 skip: failed to calculate prices");
                 return;
+            }
 
             double risk = Math.Abs(entry - stop);
             double reward = Math.Abs(tp - entry);
+            double rr = risk > 0 ? reward / risk : 0;
 
             if (risk <= 0 || reward <= 0 || reward / risk < MinRiskReward)
+            {
+                DebugPrint(string.Format("M1 skip: risk/reward invalid (entry={0:F2}, stop={1:F2}, tp={2:F2}, risk={3:F2}, reward={4:F2}, rr={5:F2}, minRR={6:F2})",
+                    entry, stop, tp, risk, reward, rr, MinRiskReward));
                 return;
+            }
 
-            ClearPendingSignals(false);
+            ClearPendingSignals(false, "prepare M1 pending", true);
 
             if (currentDrDirection == 1)
             {
@@ -661,6 +706,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             pendingStopPrice = stop;
             pendingTargetPrice = tp;
             lastTradedDrId = drCounter;
+
+            DebugPrint(string.Format("M1 pending {0}: entry={1:F2}, stop={2:F2}, tp={3:F2}, risk={4:F2}, reward={5:F2}, rr={6:F2}, drId={7}",
+                currentDrDirection == 1 ? "LONG" : "SHORT",
+                entry, stop, tp, risk, reward, rr, drCounter));
+
+            UpdateTradeLevelLines(entry, stop, tp);
         }
 
         private void UpdateMethod1TargetsForExtendedDr()
@@ -706,6 +757,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             DebugPrint(string.Format(
                 "M1 DR extended → updated prices: entry={0:F2}, stop={1:F2}, tp={2:F2}, drLow={3:F2}, drHigh={4:F2}",
                 entry, stop, tp, currentDrLow, currentDrHigh));
+
+            // Keep visual levels in sync
+            UpdateTradeLevelLines(entry, stop, tp);
         }
 
         private void ProcessMethod2Signals()
@@ -714,66 +768,147 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
 
             if (!hasActiveDR || !currentDrTradable || currentDrDirection == 0)
+            {
+                DebugPrint(string.Format("M2 skip: invalid DR state (hasActiveDR={0}, tradable={1}, dir={2}, drId={3})",
+                    hasActiveDR, currentDrTradable, currentDrDirection, drCounter));
                 return;
+            }
 
             if (Position.MarketPosition != MarketPosition.Flat || lastTradedDrId == drCounter)
+            {
+                DebugPrint(string.Format("M2 skip: position not flat or already traded (pos={0}, lastTradedDrId={1}, drId={2})",
+                    Position.MarketPosition, lastTradedDrId, drCounter));
                 return;
+            }
 
             double drHeight = currentDrHigh - currentDrLow;
             if (drHeight <= 0)
-                return;
-
-            if (currentDrDirection == -1)
             {
-                double touchLine = currentDrHigh - drHeight * (M2PriceTouchPercent / 100.0);
-                if (!m2PriceTouched && High[0] >= touchLine)
-                    m2PriceTouched = true;
+                DebugPrint(string.Format("M2 skip: invalid DR height (drHeight={0:F2})", drHeight));
+                return;
+            }
 
-                bool oppositeBullishCandle = Close[0] > Open[0];
-                if (m2PriceTouched && oppositeBullishCandle)
+            // -------------------------------------------------------------
+            // Bullish DR (breakout up) -> long in direction of breakout
+            // -------------------------------------------------------------
+            if (currentDrDirection == 1)
+            {
+                // % measured from DR high down (0% = high, 100% = low)
+                double touchLine = currentDrHigh - drHeight * (M2PriceTouchPercent / 100.0);
+
+                // Step 2: price must reach the 88–100% discount zone
+                if (!m2PriceTouched && Low[0] <= touchLine)
+                {
+                    m2PriceTouched = true;
+                    DebugPrint(string.Format("M2 touch (bullish DR): touchLine={0:F2}, Low={1:F2}", touchLine, Low[0]));
+                }
+
+                // Step 3: after touch, wait for opposite candle (bullish) and enter on its close
+                if (m2PriceTouched && Close[0] > Open[0])
                 {
                     double entry = Close[0];
-                    double stop = currentDrLow;
-                    double tp = currentDrLow + drHeight * (M2TpPercentOfDr / 100.0);
-                    double risk = entry - stop;
-                    double reward = tp - entry;
+                    double stop  = currentDrLow;                                   // SL at low (100% line)
+                    double tp    = currentDrHigh - drHeight * (M2TpPercentOfDr / 100.0); // TP around 50–62%
 
-                    if (risk > 0 && reward > 0 && reward / risk >= MinRiskReward)
+                    // Align to valid price increments to avoid broker rejections
+                    entry = Instrument.MasterInstrument.RoundToTickSize(entry);
+                    stop  = Instrument.MasterInstrument.RoundToTickSize(stop);
+                    tp    = Instrument.MasterInstrument.RoundToTickSize(tp);
+
+                    double risk   = entry - stop;
+                    double reward = tp - entry;
+                    double rr     = risk > 0 ? reward / risk : 0;
+
+                    if (risk <= 0 || reward <= 0)
                     {
-                        ClearPendingSignals(false);
-                        pendingLongSignal = true;
-                        pendingEntryPrice = entry;
-                        pendingStopPrice = stop;
+                        DebugPrint(string.Format("M2 skip (bullish): invalid risk/reward (entry={0:F2}, stop={1:F2}, tp={2:F2}, risk={3:F2}, reward={4:F2})",
+                            entry, stop, tp, risk, reward));
+                        return;
+                    }
+
+                    if (rr < MinRiskReward)
+                    {
+                        DebugPrint(string.Format("M2 skip (bullish): RR {0:F2} < min {1:F2} (entry={2:F2}, stop={3:F2}, tp={4:F2})",
+                            rr, MinRiskReward, entry, stop, tp));
+                        return;
+                    }
+
+                    if (risk > 0 && reward > 0 && rr >= MinRiskReward)
+                    {
+                        ClearPendingSignals(false, "prepare M2 pending long", true);
+                        pendingLongSignal  = true;
+                        pendingEntryPrice  = entry;
+                        pendingStopPrice   = stop;
                         pendingTargetPrice = tp;
-                        lastTradedDrId = drCounter;
-                        m2PriceTouched = false;
+                        lastTradedDrId     = drCounter;
+                        m2PriceTouched     = false;
+
+                        DebugPrint(string.Format("M2 pending LONG: entry={0:F2}, stop={1:F2}, tp={2:F2}, risk={3:F2}, reward={4:F2}, rr={5:F2}, drId={6}",
+                            entry, stop, tp, risk, reward, rr, drCounter));
+
+                        UpdateTradeLevelLines(entry, stop, tp);
                     }
                 }
             }
-            else if (currentDrDirection == 1)
+            // -------------------------------------------------------------
+            // Bearish DR (breakout down) -> short in direction of breakout
+            // -------------------------------------------------------------
+            else if (currentDrDirection == -1)
             {
+                // % measured from DR low up (0% = low, 100% = high)
                 double touchLine = currentDrLow + drHeight * (M2PriceTouchPercent / 100.0);
-                if (!m2PriceTouched && Low[0] <= touchLine)
-                    m2PriceTouched = true;
 
-                bool oppositeBearishCandle = Close[0] < Open[0];
-                if (m2PriceTouched && oppositeBearishCandle)
+                // Step 2: price must reach the 88–100% premium zone
+                if (!m2PriceTouched && High[0] >= touchLine)
+                {
+                    m2PriceTouched = true;
+                    DebugPrint(string.Format("M2 touch (bearish DR): touchLine={0:F2}, High={1:F2}", touchLine, High[0]));
+                }
+
+                // Step 3: after touch, wait for opposite candle (bearish) and enter on its close
+                if (m2PriceTouched && Close[0] < Open[0])
                 {
                     double entry = Close[0];
-                    double stop = currentDrHigh;
-                    double tp = currentDrHigh - drHeight * (M2TpPercentOfDr / 100.0);
-                    double risk = stop - entry;
-                    double reward = entry - tp;
+                    double stop  = currentDrHigh;                                  // SL at high (100% line)
+                    double tp    = currentDrLow + drHeight * (M2TpPercentOfDr / 100.0);
 
-                    if (risk > 0 && reward > 0 && reward / risk >= MinRiskReward)
+                    // Align to valid price increments to avoid broker rejections
+                    entry = Instrument.MasterInstrument.RoundToTickSize(entry);
+                    stop  = Instrument.MasterInstrument.RoundToTickSize(stop);
+                    tp    = Instrument.MasterInstrument.RoundToTickSize(tp);
+
+                    double risk   = stop - entry;
+                    double reward = entry - tp;
+                    double rr     = risk > 0 ? reward / risk : 0;
+
+                    if (risk <= 0 || reward <= 0)
                     {
-                        ClearPendingSignals(false);
+                        DebugPrint(string.Format("M2 skip (bearish): invalid risk/reward (entry={0:F2}, stop={1:F2}, tp={2:F2}, risk={3:F2}, reward={4:F2})",
+                            entry, stop, tp, risk, reward));
+                        return;
+                    }
+
+                    if (rr < MinRiskReward)
+                    {
+                        DebugPrint(string.Format("M2 skip (bearish): RR {0:F2} < min {1:F2} (entry={2:F2}, stop={3:F2}, tp={4:F2})",
+                            rr, MinRiskReward, entry, stop, tp));
+                        return;
+                    }
+
+                    if (risk > 0 && reward > 0 && rr >= MinRiskReward)
+                    {
+                        ClearPendingSignals(false, "prepare M2 pending short", true);
                         pendingShortSignal = true;
-                        pendingEntryPrice = entry;
-                        pendingStopPrice = stop;
+                        pendingEntryPrice  = entry;
+                        pendingStopPrice   = stop;
                         pendingTargetPrice = tp;
-                        lastTradedDrId = drCounter;
-                        m2PriceTouched = false;
+                        lastTradedDrId     = drCounter;
+                        m2PriceTouched     = false;
+
+                        DebugPrint(string.Format("M2 pending SHORT: entry={0:F2}, stop={1:F2}, tp={2:F2}, risk={3:F2}, reward={4:F2}, rr={5:F2}, drId={6}",
+                            entry, stop, tp, risk, reward, rr, drCounter));
+
+                        UpdateTradeLevelLines(entry, stop, tp);
                     }
                 }
             }
@@ -785,35 +920,64 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
 
             if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                DebugPrint(string.Format("SubmitPendingOrders skip: position not flat (pos={0})", Position.MarketPosition));
                 return;
+            }
 
             if (pendingEntryPrice <= 0 || pendingStopPrice <= 0 || pendingTargetPrice <= 0)
             {
-                ClearPendingSignals(false);
+                ClearPendingSignals(false, "pending prices invalid (<= 0)", true);
                 return;
             }
 
             string longSignalName = EntryMethod == DREntryMethod.Method1_PullbackLimit ? "DR_M1_Long" : "DR_M2_Long";
             string shortSignalName = EntryMethod == DREntryMethod.Method1_PullbackLimit ? "DR_M1_Short" : "DR_M2_Short";
 
+            // Extra safety: ensure prices are on valid ticks before sending orders
+            pendingEntryPrice  = Instrument.MasterInstrument.RoundToTickSize(pendingEntryPrice);
+            pendingStopPrice   = Instrument.MasterInstrument.RoundToTickSize(pendingStopPrice);
+            pendingTargetPrice = Instrument.MasterInstrument.RoundToTickSize(pendingTargetPrice);
+
+            bool useMarketOrdersForMethod2 = EntryMethod == DREntryMethod.Method2_OppositeCandle;
+            string orderType = useMarketOrdersForMethod2 ? "MARKET" : "LIMIT";
+
             if (pendingLongSignal)
             {
-                EnterLongLimit(0, true, DefaultQuantity, pendingEntryPrice, longSignalName);
+                // Set targets before entry to avoid broker-side rejections
                 SetStopLoss(longSignalName, CalculationMode.Price, pendingStopPrice, false);
                 SetProfitTarget(longSignalName, CalculationMode.Price, pendingTargetPrice);
+
+                DebugPrint(string.Format("Submitting LONG {0}: entry={1:F2}, stop={2:F2}, tp={3:F2}, drId={4}",
+                    orderType, pendingEntryPrice, pendingStopPrice, pendingTargetPrice, drCounter));
+
+                if (useMarketOrdersForMethod2)
+                    EnterLong(DefaultQuantity, longSignalName);
+                else
+                    EnterLongLimit(0, true, DefaultQuantity, pendingEntryPrice, longSignalName);
             }
             else if (pendingShortSignal)
             {
-                EnterShortLimit(0, true, DefaultQuantity, pendingEntryPrice, shortSignalName);
                 SetStopLoss(shortSignalName, CalculationMode.Price, pendingStopPrice, false);
                 SetProfitTarget(shortSignalName, CalculationMode.Price, pendingTargetPrice);
+
+                DebugPrint(string.Format("Submitting SHORT {0}: entry={1:F2}, stop={2:F2}, tp={3:F2}, drId={4}",
+                    orderType, pendingEntryPrice, pendingStopPrice, pendingTargetPrice, drCounter));
+
+                if (useMarketOrdersForMethod2)
+                    EnterShort(DefaultQuantity, shortSignalName);
+                else
+                    EnterShortLimit(0, true, DefaultQuantity, pendingEntryPrice, shortSignalName);
             }
 
-            ClearPendingSignals(false);
+            ClearPendingSignals(false, "orders submitted");
         }
 
-        private void ClearPendingSignals(bool resetTouch)
+        private void ClearPendingSignals(bool resetTouch, string reason = null, bool clearLines = false)
         {
+            if (!string.IsNullOrEmpty(reason))
+                DebugPrint("Clearing pending signals: " + reason);
+
             pendingLongSignal = false;
             pendingShortSignal = false;
             pendingEntryPrice = 0;
@@ -822,6 +986,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (resetTouch)
                 m2PriceTouched = false;
+
+            if (clearLines)
+                RemoveTradeLevelLines();
         }
         #endregion
 
@@ -953,6 +1120,231 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return Brushes.Transparent;
             }
         }
+
+        #region Trade Level Lines
+        private void UpdateTradeLevelLines(double entry, double stop, double tp)
+        {
+            if (!hasActiveDR)
+                return;
+
+            tradeLineEntryPrice = entry;
+            tradeLineStopPrice = stop;
+            tradeLineTargetPrice = tp;
+            hasTradeLevelLines = true;
+
+            tradeEntryTag = string.Format("DR_{0}_EntryLine", drCounter);
+            tradeStopTag = string.Format("DR_{0}_StopLine", drCounter);
+            tradeTargetTag = string.Format("DR_{0}_TargetLine", drCounter);
+
+            UpdateTradeLevelLinePositions();
+        }
+
+        private void UpdateTradeLevelLinePositions()
+        {
+            if (!hasTradeLevelLines || !hasActiveDR)
+                return;
+
+            int startBarsAgo = CurrentBar - currentDrStartBar;
+            int endBarsAgo = CurrentBar - currentDrEndBar;
+
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            Brush entryBrush = GetLineBrush(Brushes.RoyalBlue);
+            Brush targetBrush = GetLineBrush(Brushes.LimeGreen);
+
+            // Slightly transparent red for stops, and thicker lines for all levels
+            SolidColorBrush stopBrush = new SolidColorBrush(Colors.Red) { Opacity = 0.6 };
+            try
+            {
+                if (stopBrush.CanFreeze)
+                    stopBrush.Freeze();
+            }
+            catch { }
+
+            const int levelLineWidth = 2;
+            const int stopLineWidth = 2;
+            const DashStyleHelper levelDash = DashStyleHelper.DashDotDot;
+
+            if (tradeLineEntryPrice > 0)
+            {
+                Draw.Line(
+                    this,
+                    tradeEntryTag,
+                    false,
+                    startBarsAgo,
+                    tradeLineEntryPrice,
+                    endBarsAgo,
+                    tradeLineEntryPrice,
+                    entryBrush,
+                    levelDash,
+                    levelLineWidth
+                );
+            }
+
+            if (tradeLineStopPrice > 0)
+            {
+                Draw.Line(
+                    this,
+                    tradeStopTag,
+                    false,
+                    startBarsAgo,
+                    tradeLineStopPrice,
+                    endBarsAgo,
+                    tradeLineStopPrice,
+                    stopBrush,
+                    levelDash,
+                    stopLineWidth
+                );
+            }
+
+            if (tradeLineTargetPrice > 0)
+            {
+                Draw.Line(
+                    this,
+                    tradeTargetTag,
+                    false,
+                    startBarsAgo,
+                    tradeLineTargetPrice,
+                    endBarsAgo,
+                    tradeLineTargetPrice,
+                    targetBrush,
+                    levelDash,
+                    levelLineWidth
+                );
+            }
+        }
+
+        private void RemoveTradeLevelLines()
+        {
+            if (!hasTradeLevelLines)
+                return;
+
+            if (!string.IsNullOrEmpty(tradeEntryTag))
+                RemoveDrawObject(tradeEntryTag);
+            if (!string.IsNullOrEmpty(tradeStopTag))
+                RemoveDrawObject(tradeStopTag);
+            if (!string.IsNullOrEmpty(tradeTargetTag))
+                RemoveDrawObject(tradeTargetTag);
+
+            hasTradeLevelLines = false;
+            tradeLineEntryPrice = tradeLineStopPrice = tradeLineTargetPrice = 0;
+            tradeEntryTag = tradeStopTag = tradeTargetTag = string.Empty;
+        }
+
+        private void UpdatePreviewTradeLinesIfNonePending()
+        {
+            if (pendingLongSignal || pendingShortSignal)
+                return;
+
+            if (!hasActiveDR || !currentDrTradable || currentDrDirection == 0)
+                return;
+
+            double drHeight = currentDrHigh - currentDrLow;
+            if (drHeight <= 0)
+                return;
+
+            double entry = 0, stop = 0, tp = 0;
+            bool hasLevels = false;
+
+            if (EntryMethod == DREntryMethod.Method1_PullbackLimit)
+            {
+                double e, s, t;
+                if (!TryCalculateMethod1Prices(out e, out s, out t))
+                    return;
+
+                double risk = Math.Abs(e - s);
+                double reward = Math.Abs(t - e);
+                double rr = risk > 0 ? reward / risk : 0;
+                if (risk <= 0 || reward <= 0 || rr < MinRiskReward)
+                    return;
+
+                entry = Instrument.MasterInstrument.RoundToTickSize(e);
+                stop  = Instrument.MasterInstrument.RoundToTickSize(s);
+                tp    = Instrument.MasterInstrument.RoundToTickSize(t);
+                hasLevels = true;
+            }
+            else if (EntryMethod == DREntryMethod.Method2_OppositeCandle)
+            {
+                if (currentDrDirection == 1)
+                {
+                    // Use touch line as a visual proxy for the future entry (actual entry is the close of the bullish candle)
+                    entry = currentDrHigh - drHeight * (M2PriceTouchPercent / 100.0);
+                    stop  = currentDrLow;
+                    tp    = currentDrHigh - drHeight * (M2TpPercentOfDr / 100.0);
+                }
+                else if (currentDrDirection == -1)
+                {
+                    entry = currentDrLow + drHeight * (M2PriceTouchPercent / 100.0);
+                    stop  = currentDrHigh;
+                    tp    = currentDrLow + drHeight * (M2TpPercentOfDr / 100.0);
+                }
+
+                entry = Instrument.MasterInstrument.RoundToTickSize(entry);
+                stop  = Instrument.MasterInstrument.RoundToTickSize(stop);
+                tp    = Instrument.MasterInstrument.RoundToTickSize(tp);
+
+                double risk = Math.Abs(entry - stop);
+                double reward = Math.Abs(tp - entry);
+                double rr = risk > 0 ? reward / risk : 0;
+                if (risk <= 0 || reward <= 0 || rr < MinRiskReward)
+                    return;
+
+                hasLevels = true;
+            }
+
+            if (hasLevels)
+                UpdateTradeLevelLines(entry, stop, tp);
+        }
+        #endregion
+
+        #region Order/Execution Logging
+        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled, double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string nativeError)
+        {
+            if (!DebugLogging || order == null)
+                return;
+
+            string msg = string.Format("OrderUpdate: name={0}, fromEntry={1}, action={2}, type={3}, state={4}, qty={5}, filled={6}, avgFill={7:F2}, limit={8:F2}, stop={9:F2}, oco={10}",
+                order.Name, order.FromEntrySignal, order.OrderAction, order.OrderType, orderState, quantity, filled, averageFillPrice, limitPrice, stopPrice, order.Oco);
+
+            if (error != ErrorCode.NoError || !string.IsNullOrWhiteSpace(nativeError))
+                msg += string.Format(", error={0}, native={1}", error, nativeError);
+
+            DebugPrint(msg);
+        }
+
+        protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
+        {
+            if (!DebugLogging || execution == null || execution.Order == null)
+                return;
+
+            string orderName = execution.Order.Name;
+            string fromEntry = execution.Order.FromEntrySignal;
+            string exitReason = string.Empty;
+
+            if (!string.IsNullOrEmpty(orderName))
+            {
+                if (orderName.IndexOf("profit target", StringComparison.OrdinalIgnoreCase) >= 0)
+                    exitReason = "TP filled";
+                else if (orderName.IndexOf("stop loss", StringComparison.OrdinalIgnoreCase) >= 0)
+                    exitReason = "SL filled";
+            }
+
+            int filledQty = execution.Order != null ? execution.Order.Filled : 0;
+
+            DebugPrint(string.Format("Execution: order={0}, fromEntry={1}, action={2}, type={3}, qty={4}, price={5:F2}, pos={6}, filled={7}, avgFill={8:F2}{9}",
+                orderName,
+                fromEntry,
+                execution.Order.OrderAction,
+                execution.Order.OrderType,
+                quantity,
+                price,
+                marketPosition,
+                filledQty,
+                execution.Order.AverageFillPrice,
+                string.IsNullOrEmpty(exitReason) ? string.Empty : ", reason=" + exitReason));
+        }
+        #endregion
 
         #region Debug Logging
         private void DebugPrint(string message)
