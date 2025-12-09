@@ -35,7 +35,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         // Global minimum Risk/Reward filter (applied at least to Method 2 and safe to reuse for Method 1)
         [NinjaScriptProperty]
-        [Range(1.0, 10.0)]
+        [Range(0.0, 10.0)]
         [Display(Name = "Min Risk/Reward", GroupName = "01. DR Parameters", Order = 4)]
         public double MinRiskReward { get; set; }
 
@@ -952,9 +952,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     orderType, pendingEntryPrice, pendingStopPrice, pendingTargetPrice, drCounter));
 
                 if (useMarketOrdersForMethod2)
-                    EnterLong(DefaultQuantity, longSignalName);
+                    EnterLong(1, DefaultQuantity, longSignalName);
                 else
-                    EnterLongLimit(0, true, DefaultQuantity, pendingEntryPrice, longSignalName);
+                    EnterLongLimit(1, true, DefaultQuantity, pendingEntryPrice, longSignalName);
             }
             else if (pendingShortSignal)
             {
@@ -965,9 +965,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     orderType, pendingEntryPrice, pendingStopPrice, pendingTargetPrice, drCounter));
 
                 if (useMarketOrdersForMethod2)
-                    EnterShort(DefaultQuantity, shortSignalName);
+                    EnterShort(1, DefaultQuantity, shortSignalName);
                 else
-                    EnterShortLimit(0, true, DefaultQuantity, pendingEntryPrice, shortSignalName);
+                    EnterShortLimit(1, true, DefaultQuantity, pendingEntryPrice, shortSignalName);
             }
 
             ClearPendingSignals(false, "orders submitted");
