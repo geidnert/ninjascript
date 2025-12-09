@@ -212,6 +212,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string displayText = "Waiting...";
         private bool sessionClosed = false;
         private bool debug = false;
+        private int longSignalBar = -1;
+        private int shortSignalBar = -1;
+        private bool longLinesActive = false;
+        private bool shortLinesActive = false;
+        private int longExitBar = -1;
+        private int shortExitBar = -1;
+        private int lineTagCounter = 0;
+        private string longLineTagPrefix = "LongLine_0_";
+        private string shortLineTagPrefix = "ShortLine_0_";
 
         // --- Heartbeat reporting ---
         private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
@@ -324,6 +333,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			
 			    skipBarUntil = -1;
 			    lastBarProcessed = -1;
+                longSignalBar = -1;
+                shortSignalBar = -1;
+                longLinesActive = false;
+                shortLinesActive = false;
+                longExitBar = -1;
+                shortExitBar = -1;
 			
 			    displayText = "Waiting...";
 			
@@ -358,6 +373,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 						    CancelOrder(longEntryOrder);
                             SendWebhook("cancel");
 					    }
+                        longLinesActive = false;
+                        shortLinesActive = false;
+                        longSignalBar = -1;
+                        shortSignalBar = -1;
+                        longExitBar = -1;
+                        shortExitBar = -1;
                     }
 				}
 				else
@@ -405,6 +426,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     // Case 3: In a position -> do nothing, let TP/SL handle it
                 }
 
+                longLinesActive = false;
+                shortLinesActive = false;
+                longSignalBar = -1;
+                shortSignalBar = -1;
+                longExitBar = -1;
+                shortExitBar = -1;
+
                 sessionClosed = true;
             }
 
@@ -429,7 +457,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!TimeInSession(Time[0]))
                 return;
 
-			// 🔒 HARD GUARD: absolutely no logic after NoTradesAfter
+            // ✅ Always keep preview lines updating while in session
+            UpdatePreviewLines();
+
+			// 🔒 HARD GUARD: no entries after NoTradesAfter (but keep lines)
 			if (TimeInNoTradesAfter(Time[0])) {
 				CancelEntryIfAfterNoTrades();
 				return;
@@ -448,11 +479,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     longOrderPlaced = false;
                     longEntryOrder = null;
 
-                    // 🔄 Redraw canceled lines in gray
-                    Draw.Line(this, "LongEntryLine_" + CurrentBar, false, 1, currentLongEntry, 0, currentLongEntry, Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "LongTPLine_" + CurrentBar, false, 1, currentLongTP, 0, currentLongTP, Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "LongSLLine_" + CurrentBar, false, 1, GetSLForLong(), 0, GetSLForLong(), Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "LongCancelLine_" + CurrentBar, false, 1, currentLongCancelPrice, 0, currentLongCancelPrice, Brushes.Gray, DashStyleHelper.Dot, 2);
+                    int longCancelStartBarsAgo = longSignalBar >= 0 ? CurrentBar - longSignalBar : 1;
+
+                    Draw.Line(this, longLineTagPrefix + "LongEntryLineActive", false,
+                        longCancelStartBarsAgo, currentLongEntry,
+                        0, currentLongEntry,
+                        Brushes.Gray, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, longLineTagPrefix + "LongTPLineActive", false,
+                        longCancelStartBarsAgo, currentLongTP,
+                        0, currentLongTP,
+                        Brushes.Gray, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, longLineTagPrefix + "LongSLLineActive", false,
+                        longCancelStartBarsAgo, currentLongSL,
+                        0, currentLongSL,
+                        Brushes.Gray, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, longLineTagPrefix + "LongCancelLineActive", false,
+                        longCancelStartBarsAgo, currentLongCancelPrice,
+                        0, currentLongCancelPrice,
+                        Brushes.Gray, DashStyleHelper.Dot, 2);
+
+                    longLinesActive = false;
+                    longSignalBar = -1;
+                    longExitBar = -1;
 
                     skipBarUntil = CurrentBar;
                     if (debug)
@@ -473,11 +521,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     shortOrderPlaced = false;
                     shortEntryOrder = null;
 
-                    // 🔄 Redraw canceled lines in gray
-                    Draw.Line(this, "ShortEntryLine_" + CurrentBar, false, 1, currentShortEntry, 0, currentShortEntry, Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "ShortTPLine_" + CurrentBar, false, 1, currentShortTP, 0, currentShortTP, Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "ShortSLLine_" + CurrentBar, false, 1, GetSLForShort(), 0, GetSLForShort(), Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "LongCancelLine_" + CurrentBar, false, 1, currentShortCancelPrice, 0, currentShortCancelPrice, Brushes.Gray, DashStyleHelper.Dot, 2);
+                    int shortCancelStartBarsAgo = shortSignalBar >= 0 ? CurrentBar - shortSignalBar : 1;
+
+                    Draw.Line(this, shortLineTagPrefix + "ShortEntryLineActive", false,
+                        shortCancelStartBarsAgo, currentShortEntry,
+                        0, currentShortEntry,
+                        Brushes.Gray, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, shortLineTagPrefix + "ShortTPLineActive", false,
+                        shortCancelStartBarsAgo, currentShortTP,
+                        0, currentShortTP,
+                        Brushes.Gray, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, shortLineTagPrefix + "ShortSLLineActive", false,
+                        shortCancelStartBarsAgo, currentShortSL,
+                        0, currentShortSL,
+                        Brushes.Gray, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, shortLineTagPrefix + "ShortCancelLineActive", false,
+                        shortCancelStartBarsAgo, currentShortCancelPrice,
+                        0, currentShortCancelPrice,
+                        Brushes.Gray, DashStyleHelper.Dot, 2);
+
+                    shortLinesActive = false;
+                    shortSignalBar = -1;
+                    shortExitBar = -1;
 
                     skipBarUntil = CurrentBar;
                     if (debug)
@@ -671,22 +736,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     SetHedgeLock(instrument, desiredDirection); 
 
-                    // Draw short horizontal lines
-                    Draw.Line(this, "LongEntryLine_" + CurrentBar, false,
-                        1, longEntry, 0, longEntry, Brushes.Gold, DashStyleHelper.Solid, 2);
-
-                    Draw.Line(this, "LongTPLine_" + CurrentBar, false,
-                        1, longTP, 0, longTP, Brushes.LimeGreen, DashStyleHelper.Solid, 2);
-
-                    Draw.Line(this, "LongSLLine_" + CurrentBar, false,
-                        1, paddedLongSL, 0, paddedLongSL, Brushes.Red, DashStyleHelper.Solid, 2);
-                    
-                    Draw.Line(this, "LongCancelLine_" + CurrentBar, false, 1, longCancelPrice, 0, longCancelPrice, Brushes.Gray, DashStyleHelper.Dot, 2);
-
                     currentLongEntry = longEntry;
                     currentLongTP = longTP;
                     currentLongSL = paddedLongSL;
                     currentLongCancelPrice = longCancelPrice;
+                    longSignalBar = CurrentBar;
+                    longLineTagPrefix = $"LongLine_{++lineTagCounter}_{CurrentBar}_";
+                    longLinesActive = true;
+                    longExitBar = -1;
                     longOrderPlaced = true;
                     shortOrderPlaced = false;
                     UpdateInfo();
@@ -780,22 +837,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     SetHedgeLock(instrument, desiredDirection);
 
-
-                    Draw.Line(this, "ShortEntryLine_" + CurrentBar, false,
-                        1, shortEntry, 0, shortEntry, Brushes.Gold, DashStyleHelper.Solid, 2);
-
-                    Draw.Line(this, "ShortTPLine_" + CurrentBar, false,
-                        1, shortTP, 0, shortTP, Brushes.LimeGreen, DashStyleHelper.Solid, 2);
-
-                    Draw.Line(this, "ShortSLLine_" + CurrentBar, false,
-                        1, paddedShortSL, 0, paddedShortSL, Brushes.Red, DashStyleHelper.Solid, 2);
-                    
-                    Draw.Line(this, "ShortCancelLine_" + CurrentBar, false, 1, shortCancelPrice, 0, shortCancelPrice, Brushes.Gray, DashStyleHelper.Dot, 2);
-
                     currentShortEntry = shortEntry;
                     currentShortTP = shortTP;
                     currentShortSL = paddedShortSL;
                     currentShortCancelPrice = shortCancelPrice;
+                    shortSignalBar = CurrentBar;
+                    shortLineTagPrefix = $"ShortLine_{++lineTagCounter}_{CurrentBar}_";
+                    shortLinesActive = true;
+                    shortExitBar = -1;
                     shortOrderPlaced = true;
                     longOrderPlaced = false;
                     UpdateInfo();
@@ -900,6 +949,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     null, null, 0);
             }
 
+            if (execution.Order != null &&
+                execution.Order.FromEntrySignal == "LongEntry" &&
+                (execution.Order.Name == "Profit target" || execution.Order.Name == "Stop loss") &&
+                execution.Order.OrderState == OrderState.Filled)
+            {
+                int barIndex = Bars.GetBar(time);
+                longExitBar = barIndex >= 0 ? barIndex : CurrentBar;
+            }
+
+            if (execution.Order != null &&
+                execution.Order.FromEntrySignal == "ShortEntry" &&
+                (execution.Order.Name == "Profit target" || execution.Order.Name == "Stop loss") &&
+                execution.Order.OrderState == OrderState.Filled)
+            {
+                int barIndex = Bars.GetBar(time);
+                shortExitBar = barIndex >= 0 ? barIndex : CurrentBar;
+            }
+
             // ✅ Reset only after final exit (TP/SL/flatten) when position is truly flat
             if (Position.MarketPosition == MarketPosition.Flat)
             {
@@ -921,14 +988,65 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     shortEntryOrder = null;
                     longOrderPlaced = false;
                     shortOrderPlaced = false;
-                    currentLongEntry = currentShortEntry = 0;
-                    currentLongTP = currentShortTP = 0;
-                    currentLongSL = currentShortSL = 0;
-                    currentLongCancelPrice = currentShortCancelPrice = 0;
 
                     UpdateInfo();
                 }
                 ClearHedgeLock(Instrument.MasterInstrument.Name);
+            }
+        }
+
+        private void UpdatePreviewLines()
+        {
+            if (longLinesActive && longSignalBar >= 0)
+            {
+                int startBarsAgo = CurrentBar - longSignalBar;
+                int endBarsAgo = longExitBar >= 0 ? Math.Max(0, CurrentBar - longExitBar) : 0;
+
+                Draw.Line(this, longLineTagPrefix + "LongEntryLineActive", false,
+                    startBarsAgo, currentLongEntry,
+                    endBarsAgo, currentLongEntry,
+                    Brushes.Gold, DashStyleHelper.Solid, 2);
+
+                Draw.Line(this, longLineTagPrefix + "LongTPLineActive", false,
+                    startBarsAgo, currentLongTP,
+                    endBarsAgo, currentLongTP,
+                    Brushes.LimeGreen, DashStyleHelper.Solid, 2);
+
+                Draw.Line(this, longLineTagPrefix + "LongSLLineActive", false,
+                    startBarsAgo, currentLongSL,
+                    endBarsAgo, currentLongSL,
+                    Brushes.Red, DashStyleHelper.Solid, 2);
+
+                Draw.Line(this, longLineTagPrefix + "LongCancelLineActive", false,
+                    startBarsAgo, currentLongCancelPrice,
+                    endBarsAgo, currentLongCancelPrice,
+                    Brushes.Gray, DashStyleHelper.Dot, 2);
+            }
+
+            if (shortLinesActive && shortSignalBar >= 0)
+            {
+                int startBarsAgo = CurrentBar - shortSignalBar;
+                int endBarsAgo = shortExitBar >= 0 ? Math.Max(0, CurrentBar - shortExitBar) : 0;
+
+                Draw.Line(this, shortLineTagPrefix + "ShortEntryLineActive", false,
+                    startBarsAgo, currentShortEntry,
+                    endBarsAgo, currentShortEntry,
+                    Brushes.Gold, DashStyleHelper.Solid, 2);
+
+                Draw.Line(this, shortLineTagPrefix + "ShortTPLineActive", false,
+                    startBarsAgo, currentShortTP,
+                    endBarsAgo, currentShortTP,
+                    Brushes.LimeGreen, DashStyleHelper.Solid, 2);
+
+                Draw.Line(this, shortLineTagPrefix + "ShortSLLineActive", false,
+                    startBarsAgo, currentShortSL,
+                    endBarsAgo, currentShortSL,
+                    Brushes.Red, DashStyleHelper.Solid, 2);
+
+                Draw.Line(this, shortLineTagPrefix + "ShortCancelLineActive", false,
+                    startBarsAgo, currentShortCancelPrice,
+                    endBarsAgo, currentShortCancelPrice,
+                    Brushes.Gray, DashStyleHelper.Dot, 2);
             }
         }
 
@@ -950,7 +1068,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SendWebhook("cancel");
 			}
 
-			// Reset state tracking after cancel
 			longOrderPlaced = false;
 			shortOrderPlaced = false;
 			longEntryOrder = null;
@@ -977,6 +1094,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ✅ Send EXIT webhook for shorts
                 SendWebhook("exit", currentShortTP);
             }
+
+            longLinesActive = false;
+            shortLinesActive = false;
+            longSignalBar = -1;
+            shortSignalBar = -1;
+            longExitBar = -1;
+            shortExitBar = -1;
         }
 	
         private bool TimeInSkip(DateTime time)
