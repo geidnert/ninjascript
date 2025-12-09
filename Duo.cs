@@ -267,7 +267,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SkipEnd       = skipEnd;
                 Skip2Start     = skip2Start;
                 Skip2End       = skip2End;
-                ForceCloseAtSkipStart = false;
+                ForceCloseAtSkipStart = true;
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 WebhookUrl = "";
