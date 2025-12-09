@@ -179,6 +179,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "C. Skip Times")]
         public TimeSpan Skip2End { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "C. Skip Times")]
+        public bool ForceCloseAtSkipStart { get; set; }
+
         // State tracking
         private bool longOrderPlaced = false;
         private bool shortOrderPlaced = false;
@@ -250,6 +254,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SkipEnd       = skipEnd;
                 Skip2Start     = skip2Start;
                 Skip2End       = skip2End;
+                ForceCloseAtSkipStart = false;
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
 
@@ -335,15 +340,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (debug)
 					    Print($"{Time[0]} - ⛔ Entered skip window");
 
-					if (Position.MarketPosition != MarketPosition.Flat)
-					{
-						Flatten("SkipWindow");
-					}
-					else
-					{
-						CancelOrder(shortEntryOrder);
-						CancelOrder(longEntryOrder);
-					}
+                    if (ForceCloseAtSkipStart)
+                    {
+					    if (Position.MarketPosition != MarketPosition.Flat)
+					    {
+						    Flatten("SkipWindow");
+					    }
+					    else
+					    {
+						    CancelOrder(shortEntryOrder);
+						    CancelOrder(longEntryOrder);
+					    }
+                    }
 				}
 				else
 				{
