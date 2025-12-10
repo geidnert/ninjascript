@@ -135,8 +135,16 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
+        [Display(Name = "No Trades After", Description = "No new entries are placed after this time until session end", GroupName = "03. Session Time", Order = 2)]
+        public TimeSpan NoTradesAfter
+        {
+            get { return noTradesAfter; }
+            set { noTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0); }
+        }
+
+        [NinjaScriptProperty]
         [XmlIgnore]
-        [Display(Name = "Session Fill", Description = "Color of the session background", GroupName = "03. Session Time", Order = 2)]
+        [Display(Name = "Session Fill", Description = "Color of the session background", GroupName = "03. Session Time", Order = 3)]
         public Brush SessionBrush { get; set; }
 
         [Browsable(false)]
@@ -198,6 +206,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         // Session overlay
         private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
         private TimeSpan sessionEnd   = new TimeSpan(14, 50, 0);
+        private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
         private bool sessionClosed;
         #endregion
 
@@ -245,6 +254,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SessionBrush = Brushes.Gold;
                 SessionStart = sessionStart;
                 SessionEnd = sessionEnd;
+                NoTradesAfter = noTradesAfter;
             }
             else if (State == State.Configure)
             {
@@ -331,6 +341,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                     ClearPendingSignals(true, "session end", true);
                     RemoveTradeLevelLines();
                     sessionClosed = true;
+                }
+
+                // Detect crossing NoTradesAfter to cancel outstanding entries/pending signals
+                bool crossedNoTrades =
+                    (Time[1].TimeOfDay <= NoTradesAfter && Time[0].TimeOfDay > NoTradesAfter);
+
+                if (crossedNoTrades)
+                {
+                    CancelAllOrders();
+                    ClearPendingSignals(true, "NoTradesAfter crossed", true);
+                    RemoveTradeLevelLines();
                 }
 
                 // Outside session: keep drawing DRs but don't allow pending signals to linger
@@ -739,7 +760,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void EvaluateMethod1Setup()
         {
-            if (!TimeInSession(Time[0]))
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
                 return;
 
             if (EntryMethod != DREntryMethod.Method1_PullbackLimit)
@@ -849,7 +870,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void ProcessMethod2Signals()
         {
-            if (!TimeInSession(Time[0]))
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
                 return;
 
             if (EntryMethod != DREntryMethod.Method2_OppositeCandle)
@@ -1144,6 +1165,22 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ).ZOrder = -1;
             }
 
+            // Draw a vertical marker for NoTradesAfter (same style as Duo)
+            var noTradesBrush = new SolidColorBrush(Color.FromArgb(70, 255, 0, 0));
+            try
+            {
+                if (noTradesBrush.CanFreeze)
+                    noTradesBrush.Freeze();
+            }
+            catch { }
+
+            DateTime noTradesAfterTime = Time[0].Date + NoTradesAfter;
+            if (SessionStart > SessionEnd && NoTradesAfter < SessionStart)
+                noTradesAfterTime = noTradesAfterTime.AddDays(1);
+
+            Draw.VerticalLine(this, $"NoTradesAfter_{sessionStartTime:yyyyMMdd}", noTradesAfterTime, noTradesBrush,
+                DashStyleHelper.Solid, 2);
+
             // Cleanup prior day overlays so only the current session's fill shows
             string prevDay = sessionStartTime.AddDays(-1).ToString("yyyyMMdd");
             RemoveDrawObject("DR_SessionFill_" + prevDay);
@@ -1157,6 +1194,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return now >= SessionStart && now < SessionEnd;
 
             return now >= SessionStart || now < SessionEnd;
+        }
+
+        private bool TimeInNoTradesAfter(DateTime time)
+        {
+            TimeSpan now = time.TimeOfDay;
+
+            if (SessionStart < SessionEnd)
+                return now >= NoTradesAfter && now < SessionEnd;
+
+            return now >= NoTradesAfter || now < SessionEnd;
         }
 
         private void CancelAllOrders()
