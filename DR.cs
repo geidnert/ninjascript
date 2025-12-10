@@ -119,6 +119,34 @@ namespace NinjaTrader.NinjaScript.Strategies
         public int LineOpacity { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "When session is starting", GroupName = "03. Session Time", Order = 0)]
+        public TimeSpan SessionStart
+        {
+            get { return sessionStart; }
+            set { sessionStart = new TimeSpan(value.Hours, value.Minutes, 0); }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "When session is ending", GroupName = "03. Session Time", Order = 1)]
+        public TimeSpan SessionEnd
+        {
+            get { return sessionEnd; }
+            set { sessionEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
+        }
+
+        [NinjaScriptProperty]
+        [XmlIgnore]
+        [Display(Name = "Session Fill", Description = "Color of the session background", GroupName = "03. Session Time", Order = 2)]
+        public Brush SessionBrush { get; set; }
+
+        [Browsable(false)]
+        public string SessionBrushSerializable
+        {
+            get { return Serialize.BrushToString(SessionBrush); }
+            set { SessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Enable detailed debug logging to Output window", GroupName = "03. Debug", Order = 1)]
         public bool DebugLogging { get; set; }
         #endregion
@@ -166,6 +194,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         // Method 2 specific
         private bool m2PriceTouched;     // true once price has touched the M2PriceTouchPercent level
+
+        // Session overlay
+        private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
+        private TimeSpan sessionEnd   = new TimeSpan(14, 50, 0);
+        private bool sessionClosed;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -209,6 +242,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
                 DrMidLineBrush = Brushes.White;
+                SessionBrush = Brushes.Gold;
+                SessionStart = sessionStart;
+                SessionEnd = sessionEnd;
             }
             else if (State == State.Configure)
             {
@@ -246,6 +282,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 tradeStopTag = string.Empty;
                 tradeTargetTag = string.Empty;
                 m2PriceTouched = false;
+                sessionClosed = false;
 
                 // Freeze brushes for performance
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
@@ -254,6 +291,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     DrOutlineBrush.Freeze();
                 if (DrMidLineBrush != null && DrMidLineBrush.CanFreeze)
                     DrMidLineBrush.Freeze();
+                if (SessionBrush != null && SessionBrush.CanFreeze)
+                    SessionBrush.Freeze();
             }
         }
 
@@ -266,6 +305,37 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (!IsFirstTickOfBar)
                     return;
+
+                DrawSessionBackground();
+
+                bool inSessionNow = TimeInSession(Time[0]);
+                bool inSessionPrev = CurrentBar > 0 ? TimeInSession(Time[1]) : inSessionNow;
+
+                // Detect session start to re-enable trading and clear stale signals/lines
+                if (inSessionNow && !inSessionPrev)
+                {
+                    sessionClosed = false;
+                    ClearPendingSignals(true, "new session start", true);
+                    RemoveTradeLevelLines();
+                }
+
+                // Detect crossing session end to flatten/cancel like Duo
+                if (inSessionPrev && !inSessionNow && !sessionClosed)
+                {
+                    if (Position.MarketPosition == MarketPosition.Long)
+                        ExitLong();
+                    else if (Position.MarketPosition == MarketPosition.Short)
+                        ExitShort();
+
+                    CancelAllOrders();
+                    ClearPendingSignals(true, "session end", true);
+                    RemoveTradeLevelLines();
+                    sessionClosed = true;
+                }
+
+                // Outside session: keep drawing DRs but don't allow pending signals to linger
+                if (!inSessionNow)
+                    ClearPendingSignals(false, "outside session window", true);
 
                 // If we don't have an active DR, try to create the initial one
                 if (!hasActiveDR)
@@ -363,6 +433,18 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (CurrentBars[0] < SwingStrength * 2 + LegSwingLookback || CurrentBars[1] < 1)
                     return;
+
+                if (State != State.Realtime)
+                {
+                    ClearPendingSignals(false, "orders only in realtime (BIP1)", false);
+                    return;
+                }
+
+                if (!TimeInSession(Times[BarsInProgress][0]))
+                {
+                    ClearPendingSignals(false, "outside session window (BIP1)", false);
+                    return;
+                }
 
                 SubmitPendingOrders();
             }
@@ -657,6 +739,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void EvaluateMethod1Setup()
         {
+            if (!TimeInSession(Time[0]))
+                return;
+
             if (EntryMethod != DREntryMethod.Method1_PullbackLimit)
                 return;
 
@@ -764,6 +849,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void ProcessMethod2Signals()
         {
+            if (!TimeInSession(Time[0]))
+                return;
+
             if (EntryMethod != DREntryMethod.Method2_OppositeCandle)
                 return;
 
@@ -1027,6 +1115,73 @@ namespace NinjaTrader.NinjaScript.Strategies
         #endregion
 
         #region Drawing Methods
+        private void DrawSessionBackground()
+        {
+            if (CurrentBar < 1)
+                return;
+
+            DateTime barTime = Time[0];
+            DateTime sessionStartTime = barTime.Date + SessionStart;
+            DateTime sessionEndTime = SessionStart > SessionEnd
+                ? sessionStartTime.AddDays(1).Date + SessionEnd
+                : sessionStartTime.Date + SessionEnd;
+
+            string rectTag = "DR_SessionFill_" + sessionStartTime.ToString("yyyyMMdd");
+
+            if (DrawObjects[rectTag] == null)
+            {
+                Draw.Rectangle(
+                    this,
+                    rectTag,
+                    false,
+                    sessionStartTime,
+                    0,
+                    sessionEndTime,
+                    30000,
+                    Brushes.Transparent,
+                    SessionBrush ?? Brushes.DarkSlateGray,
+                    10
+                ).ZOrder = -1;
+            }
+
+            // Cleanup prior day overlays so only the current session's fill shows
+            string prevDay = sessionStartTime.AddDays(-1).ToString("yyyyMMdd");
+            RemoveDrawObject("DR_SessionFill_" + prevDay);
+        }
+
+        private bool TimeInSession(DateTime time)
+        {
+            TimeSpan now = time.TimeOfDay;
+
+            if (SessionStart < SessionEnd)
+                return now >= SessionStart && now < SessionEnd;
+
+            return now >= SessionStart || now < SessionEnd;
+        }
+
+        private void CancelAllOrders()
+        {
+            if (Account == null)
+                return;
+
+            foreach (Order order in Account.Orders)
+            {
+                if (order == null)
+                    continue;
+
+                if (order.Instrument != Instrument)
+                    continue;
+
+                if (order.OrderState == OrderState.Working ||
+                    order.OrderState == OrderState.Submitted ||
+                    order.OrderState == OrderState.Accepted ||
+                    order.OrderState == OrderState.ChangePending)
+                {
+                    CancelOrder(order);
+                }
+            }
+        }
+
         private void DrawCurrentDR()
         {
             if (!hasActiveDR)
