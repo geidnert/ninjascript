@@ -143,6 +143,26 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
+        [Display(Name = "Skip Start", Description = "Start of skip window", GroupName = "04. Skip Times", Order = 0)]
+        public TimeSpan SkipStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip End", Description = "End of skip window", GroupName = "04. Skip Times", Order = 1)]
+        public TimeSpan SkipEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", GroupName = "04. Skip Times", Order = 2)]
+        public TimeSpan Skip2Start { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip End 2", Description = "End of 2nd skip window", GroupName = "04. Skip Times", Order = 3)]
+        public TimeSpan Skip2End { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", GroupName = "04. Skip Times", Order = 4)]
+        public bool ForceCloseAtSkipStart { get; set; }
+
+        [NinjaScriptProperty]
         [XmlIgnore]
         [Display(Name = "Session Fill", Description = "Color of the session background", GroupName = "03. Session Time", Order = 3)]
         public Brush SessionBrush { get; set; }
@@ -207,6 +227,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
         private TimeSpan sessionEnd   = new TimeSpan(14, 50, 0);
         private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
+        private TimeSpan skipStart = new TimeSpan(11, 45, 0);
+        private TimeSpan skipEnd = new TimeSpan(13, 20, 0);
+        private TimeSpan skip2Start = new TimeSpan(0, 0, 0);
+        private TimeSpan skip2End = new TimeSpan(0, 0, 0);
         private bool sessionClosed;
         #endregion
 
@@ -255,6 +279,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SessionStart = sessionStart;
                 SessionEnd = sessionEnd;
                 NoTradesAfter = noTradesAfter;
+                SkipStart = skipStart;
+                SkipEnd = skipEnd;
+                Skip2Start = skip2Start;
+                Skip2End = skip2End;
+                ForceCloseAtSkipStart = true;
             }
             else if (State == State.Configure)
             {
@@ -293,6 +322,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 tradeTargetTag = string.Empty;
                 m2PriceTouched = false;
                 sessionClosed = false;
+                SkipStart = SkipStart == TimeSpan.Zero ? skipStart : SkipStart;
+                SkipEnd = SkipEnd == TimeSpan.Zero ? skipEnd : SkipEnd;
+                Skip2Start = Skip2Start == TimeSpan.Zero ? skip2Start : Skip2Start;
+                Skip2End = Skip2End == TimeSpan.Zero ? skip2End : Skip2End;
 
                 // Freeze brushes for performance
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
@@ -352,6 +385,43 @@ namespace NinjaTrader.NinjaScript.Strategies
                     CancelAllOrders();
                     ClearPendingSignals(true, "NoTradesAfter crossed", true);
                     RemoveTradeLevelLines();
+                }
+
+                // Skip window cross detection (mirrors Duo)
+                bool crossedSkipWindow =
+                    (!TimeInSkip(Time[1]) && TimeInSkip(Time[0]))   // entered skip
+                    || (TimeInSkip(Time[1]) && !TimeInSkip(Time[0])); // exited skip
+
+                if (crossedSkipWindow)
+                {
+                    if (TimeInSkip(Time[0]))
+                    {
+                        if (ForceCloseAtSkipStart)
+                        {
+                            if (Position.MarketPosition != MarketPosition.Flat)
+                            {
+                                ExitLong();
+                                ExitShort();
+                            }
+                            CancelAllOrders();
+                        }
+                        ClearPendingSignals(true, "entered skip window", true);
+                        RemoveTradeLevelLines();
+                    }
+                }
+
+                // Hard guard: while inside skip windows, no signals or orders
+                if (TimeInSkip(Time[0]))
+                {
+                    if (ForceCloseAtSkipStart && Position.MarketPosition != MarketPosition.Flat)
+                    {
+                        ExitLong();
+                        ExitShort();
+                    }
+                    CancelAllOrders();
+                    ClearPendingSignals(true, "inside skip window", true);
+                    RemoveTradeLevelLines();
+                    // continue processing so DR ranges keep drawing, but trading is blocked elsewhere
                 }
 
                 // Outside session: keep drawing DRs but don't allow pending signals to linger
@@ -458,6 +528,22 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (State != State.Realtime)
                 {
                     ClearPendingSignals(false, "orders only in realtime (BIP1)", false);
+                    return;
+                }
+
+                if (TimeInSkip(Times[BarsInProgress][0]))
+                {
+                    if (ForceCloseAtSkipStart)
+                    {
+                        if (Position.MarketPosition != MarketPosition.Flat)
+                        {
+                            ExitLong();
+                            ExitShort();
+                        }
+                        CancelAllOrders();
+                    }
+                    ClearPendingSignals(true, "inside skip window (BIP1)", true);
+                    RemoveTradeLevelLines();
                     return;
                 }
 
@@ -760,7 +846,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void EvaluateMethod1Setup()
         {
-            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]) || TimeInSkip(Time[0]))
                 return;
 
             if (EntryMethod != DREntryMethod.Method1_PullbackLimit)
@@ -870,7 +956,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void ProcessMethod2Signals()
         {
-            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]) || TimeInSkip(Time[0]))
                 return;
 
             if (EntryMethod != DREntryMethod.Method2_OppositeCandle)
@@ -1181,6 +1267,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             Draw.VerticalLine(this, $"NoTradesAfter_{sessionStartTime:yyyyMMdd}", noTradesAfterTime, noTradesBrush,
                 DashStyleHelper.Solid, 2);
 
+            DrawSkipWindow("Skip1", SkipStart, SkipEnd);
+            DrawSkipWindow("Skip2", Skip2Start, Skip2End);
+
             // Cleanup prior day overlays so only the current session's fill shows
             string prevDay = sessionStartTime.AddDays(-1).ToString("yyyyMMdd");
             RemoveDrawObject("DR_SessionFill_" + prevDay);
@@ -1204,6 +1293,75 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return now >= NoTradesAfter && now < SessionEnd;
 
             return now >= NoTradesAfter || now < SessionEnd;
+        }
+
+        private bool TimeInSkip(DateTime time)
+        {
+            TimeSpan now = time.TimeOfDay;
+
+            bool inSkip1 = false;
+            bool inSkip2 = false;
+
+            if (SkipStart != TimeSpan.Zero && SkipEnd != TimeSpan.Zero)
+            {
+                inSkip1 = (SkipStart < SkipEnd)
+                    ? (now >= SkipStart && now <= SkipEnd)
+                    : (now >= SkipStart || now <= SkipEnd);
+            }
+
+            if (Skip2Start != TimeSpan.Zero && Skip2End != TimeSpan.Zero)
+            {
+                inSkip2 = (Skip2Start < Skip2End)
+                    ? (now >= Skip2Start && now <= Skip2End)
+                    : (now >= Skip2Start || now <= Skip2End);
+            }
+
+            return inSkip1 || inSkip2;
+        }
+
+        private void DrawSkipWindow(string tagPrefix, TimeSpan start, TimeSpan end)
+        {
+            if (start == TimeSpan.Zero || end == TimeSpan.Zero)
+                return;
+
+            DateTime barDate = Time[0].Date;
+
+            DateTime windowStart = barDate + start;
+            DateTime windowEnd = barDate + end;
+
+            if (start > end)
+                windowEnd = windowEnd.AddDays(1);
+
+            int startBarsAgo = Bars.GetBar(windowStart);
+            int endBarsAgo = Bars.GetBar(windowEnd);
+
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+            areaBrush.Freeze();
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 255, 0, 0));
+            lineBrush.Freeze();
+
+            string rectTag = $"DR_{tagPrefix}_Rect_{windowStart:yyyyMMdd}";
+            Draw.Rectangle(
+                this,
+                rectTag,
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,
+                areaBrush,
+                2
+            ).ZOrder = -1;
+
+            string startTag = $"DR_{tagPrefix}_Start_{windowStart:yyyyMMdd}";
+            Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+
+            string endTag = $"DR_{tagPrefix}_End_{windowEnd:yyyyMMdd}";
+            Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
         }
 
         private void CancelAllOrders()
