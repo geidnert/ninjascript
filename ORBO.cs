@@ -357,6 +357,7 @@ public class ORBO : Strategy
             return;
 
         ResetDailyStateIfNeeded();
+        DrawTimeFilterVisuals();
 	
         // ======================================================
         // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
@@ -1473,6 +1474,76 @@ public class ORBO : Strategy
         // DebugPrint("No Trades After: " + NoTradesAfter);	
     }
 
+    private void DrawTimeFilterVisuals()
+    {
+        if (CurrentBar < 1)
+            return;
+
+        DrawNoTradesAfterLine();
+        DrawSkipWindow("Skip1", SkipStart, SkipEnd);
+    }
+
+    private void DrawNoTradesAfterLine()
+    {
+        if (NoTradesAfter == TimeSpan.Zero)
+            return;
+
+        var lineBrush = new SolidColorBrush(Color.FromArgb(70, 255, 0, 0));
+
+        DateTime noTradesAfterTime = Time[0].Date + NoTradesAfter;
+
+        if (SessionStart > SessionEnd && NoTradesAfter < SessionStart)
+            noTradesAfterTime = noTradesAfterTime.AddDays(1);
+
+        Draw.VerticalLine(this, $"ORBO_NoTradesAfter_{Time[0]:yyyyMMdd}", noTradesAfterTime, lineBrush,
+            DashStyleHelper.Solid, 2);
+    }
+
+    private void DrawSkipWindow(string tagPrefix, TimeSpan start, TimeSpan end)
+    {
+        if (start == TimeSpan.Zero || end == TimeSpan.Zero)
+            return;
+
+        DateTime barDate = Time[0].Date;
+
+        DateTime windowStart = barDate + start;
+        DateTime windowEnd = barDate + end;
+
+        if (start > end)
+            windowEnd = windowEnd.AddDays(1);
+
+        int startBarsAgo = Bars.GetBar(windowStart);
+        int endBarsAgo = Bars.GetBar(windowEnd);
+
+        if (startBarsAgo < 0 || endBarsAgo < 0)
+            return;
+
+        var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+        areaBrush.Freeze();
+        var lineBrush = new SolidColorBrush(Color.FromArgb(90, 255, 0, 0));
+        lineBrush.Freeze();
+
+        string rectTag = $"ORBO_{tagPrefix}_Rect_{windowStart:yyyyMMdd}";
+        Draw.Rectangle(
+            this,
+            rectTag,
+            false,
+            windowStart,
+            0,
+            windowEnd,
+            30000,
+            lineBrush,
+            areaBrush,
+            2
+        ).ZOrder = -1;
+
+        string startTag = $"ORBO_{tagPrefix}_Start_{windowStart:yyyyMMdd}";
+        Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+
+        string endTag = $"ORBO_{tagPrefix}_End_{windowEnd:yyyyMMdd}";
+        Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+    }
+
     private void DrawSessionWickRangePersistent(TimeSpan startTime, TimeSpan endTime, string tagPrefix, Brush lineColor,
                                                 DashStyleHelper style, int width)
     {
@@ -1620,10 +1691,6 @@ public class ORBO : Strategy
         int rounded = ((biasEndMinute + 4) / 5) * 5; // round to next 5-min boundary
         DateTime firstEval = Times[0][0].Date.AddHours(SessionStart.Hours).AddMinutes(rounded + 1);
         nextEvaluationTime = firstEval;
-
-        int noTradesAfter = (int)(NoTradesAfter - SessionStart).TotalMinutes - barValue;
-        Draw.VerticalLine(this, $"NoTradesAfter_{Times[0][0]:yyyyMMdd}", s - (noTradesAfter / barValue), r,
-                          DashStyleHelper.Solid, 2);
     }
 
    public void UpdateInfoText()
