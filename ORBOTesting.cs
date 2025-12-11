@@ -13,6 +13,7 @@ using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
+using NinjaTrader.NinjaScript.Indicators;
 using NinjaTrader.NinjaScript.DrawingTools;
 
 
@@ -134,15 +135,21 @@ public class ORBOTesting : Strategy
 
     [NinjaScriptProperty]
     [Display(Name = "Max VIX",
-             Description = "Block trading for the day if first 1-minute ^VIX open exceeds this value (0 = disabled)",
+             Description = "Block trading for the day if VIX indicator reports value >= this threshold (0 = disabled)",
              Order = 14, GroupName = "B. Entry Conditions")]
     public double MaxVix { get; set; }
 
     [NinjaScriptProperty]
-    [Display(Name = "VIX Instrument",
-             Description = "Instrument name for the VIX data series (e.g., ^VIX or VX 12-25)",
+    [Display(Name = "VIX Run Immediately",
+             Description = "If true, indicator fetches as soon as realtime begins; otherwise waits for VIX Run At time",
              Order = 15, GroupName = "B. Entry Conditions")]
-    public string VixInstrument { get; set; }
+    internal bool VixRunImmediately { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(Name = "VIX Run At (HH:mm ET)",
+             Description = "Time for indicator to fetch when Run Immediately is false (Eastern time, e.g. 09:45)",
+             Order = 16, GroupName = "B. Entry Conditions")]
+    internal string VixRunAtTime { get; set; }
 
     [NinjaScriptProperty]
     [Display(Name = "Cancel Order After X Bars", 
@@ -232,7 +239,6 @@ public class ORBOTesting : Strategy
     private double sessionHigh, sessionLow;
     private string lastDate = string.Empty;
     private const int TickSeriesIndex = 1;
-    private const int VixSeriesIndex  = 2;
     private Order entryOrder;
     private Order hardStopOrder;
     private List<Order> profitOrders = new List<Order>();
@@ -270,14 +276,11 @@ public class ORBOTesting : Strategy
     private bool rangeTooWideLogged = false;
     private int cachedPrimaryBarSeconds = 0;
     // --- VIX filter ---
-    private bool vixSampledToday = false;
-    private bool vixBlockedToday = false;
-    private double vixFirstOpen = double.NaN;
-    private bool vixPendingLoggedToday = false;
-    private bool vixBlockLoggedToday = false;
-    private bool vixNoDataAllowToday = false;
-    private bool vixDebugLoggedToday   = false;
-    private bool vixFallbackUsedToday  = false;
+    private VixBingHttpTest vixIndicator;
+    private bool vixIndicatorBlockedLogged = false;
+    private bool vixIndicatorWaitingLogged = false;
+    private bool vixIndicatorReadyLogged = false;
+    private bool vixIndicatorNoDataAllowToday = false;
     // --- Heartbeat reporting ---
     private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
     private System.Timers.Timer heartbeatTimer;
@@ -322,9 +325,6 @@ public class ORBOTesting : Strategy
         {
             // 1-tick series for intrabar fill accuracy
             AddDataSeries(BarsPeriodType.Tick, 1);
-            // VIX 1-minute series for daily volatility filter
-            string vixInstr = string.IsNullOrWhiteSpace(VixInstrument) ? "^VIX" : VixInstrument.Trim();
-            AddDataSeries(vixInstr, new BarsPeriod { BarsPeriodType = BarsPeriodType.Minute, Value = 1 });
         }
         else if (State == State.DataLoaded) {
             // --- Heartbeat timer setup ---
@@ -332,6 +332,12 @@ public class ORBOTesting : Strategy
             heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
             heartbeatTimer.AutoReset = true;
             heartbeatTimer.Start();
+
+            if (MaxVix > 0)
+            {
+                string runAt = string.IsNullOrWhiteSpace(VixRunAtTime) ? "09:45" : VixRunAtTime;
+                vixIndicator = VixBingHttpTest(VixRunImmediately, runAt, MaxVix);
+            }
 
             //ApplyPreset(PresetSetting);
         }
@@ -369,13 +375,13 @@ public class ORBOTesting : Strategy
         TakeProfitPercent = 32.4;
         HardStopLossPercent = 47.7;
         MaxVix = 0;
-        VixInstrument = "^VIX";
+        VixRunImmediately = true;
+        VixRunAtTime = "09:30";
         MinMarketRRPercent = 0;
         VarianceInTicks = 0;
         MaxAccountBalance = 0;
         MaxBarsInTrade = 0;
         CancelOrderPercent = 0;
-        MaxVix = 0;
         RangeBoxBrush = Brushes.Gold;
         RequireCloseBelowReturn = false;
         SLBETrigger = 0;
@@ -403,70 +409,6 @@ public class ORBOTesting : Strategy
             EvaluateManualExits(lastPrice, lastPrice, false);
             return;
         }
-
-        // VIX series (BIP=2) for daily filter sampling
-        if (BarsInProgress == VixSeriesIndex)
-        {
-            if (MaxVix <= 0)
-                return;
-
-            // Align to primary trading date; ignore other dates
-            if (Times[VixSeriesIndex][0].Date != Times[0][0].Date)
-                return;
-
-            TimeSpan vixStart = SessionStart.Add(TimeSpan.FromMinutes(1));
-
-            if (!vixSampledToday)
-            {
-                // Try a backfill: earliest bar today at or after vixStart
-                double candidateOpen = double.NaN;
-                for (int i = CurrentBars[VixSeriesIndex]; i >= 0; i--)
-                {
-                    var t = Times[VixSeriesIndex][i];
-                    if (t.Date != Times[0][0].Date)
-                        continue;
-                    if (t.TimeOfDay >= vixStart)
-                    {
-                        candidateOpen = Opens[VixSeriesIndex][i];
-                        break;
-                    }
-                }
-
-                if (!double.IsNaN(candidateOpen))
-                {
-                    vixFirstOpen = candidateOpen;
-                    vixSampledToday = true;
-                    vixBlockedToday = vixFirstOpen > MaxVix;
-                    vixPendingLoggedToday = false;
-                    vixBlockLoggedToday = false;
-                    vixNoDataAllowToday = false;
-                    vixFallbackUsedToday = true;
-
-                    if (vixBlockedToday)
-                        LogToOutput2($"⛔ VIX filter active (backfilled). Open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. Trades blocked today.");
-                    else
-                        LogToOutput2($"✅ VIX filter passed (backfilled). Open={vixFirstOpen:F2}, MaxVix={MaxVix:F2}");
-                }
-            }
-
-            // If still not sampled and this bar is at/after vixStart, sample current
-            if (!vixSampledToday && Times[VixSeriesIndex][0].TimeOfDay >= vixStart)
-            {
-                vixFirstOpen = Opens[VixSeriesIndex][0];
-                vixSampledToday = true;
-                vixBlockedToday = vixFirstOpen > MaxVix;
-                vixPendingLoggedToday = false;
-                vixBlockLoggedToday = false;
-                vixNoDataAllowToday = false;
-
-                if (vixBlockedToday)
-                    LogToOutput2($"⛔ VIX filter active. First 1m open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. Trades blocked today.");
-                else
-                    LogToOutput2($"✅ VIX filter passed. First 1m open={vixFirstOpen:F2}, MaxVix={MaxVix:F2}");
-            }
-            return;
-        }
-
         if (BarsInProgress != 0)
             return;
 
@@ -670,59 +612,62 @@ public class ORBOTesting : Strategy
             return;
         }
 
-        // 🚫 Daily VIX filter: block new entries if VIX exceeds threshold or not yet sampled
-        if (MaxVix > 0 && isFlat)
+        // 🚫 Daily VIX filter via indicator: block new entries unless indicator says OK (live + playback)
+        if (MaxVix > 0 && isFlat && !isStrategyAnalyzer)
         {
-            if (Times[0][0].TimeOfDay < SessionStart)
+            if (vixIndicator == null)
                 return;
 
-            TimeSpan vixStart = SessionStart.Add(TimeSpan.FromMinutes(1));
+            // Force an update so the indicator processes the current bar before we read values
+            try { vixIndicator.Update(); } catch { /* ignore, just a safeguard */ }
+
             TimeSpan vixGrace = SessionStart.Add(TimeSpan.FromMinutes(5));
             bool pastGrace = Times[0][0].TimeOfDay >= vixGrace;
 
-            bool hasTodayVixBar =
-                CurrentBars.Length > VixSeriesIndex &&
-                CurrentBars[VixSeriesIndex] >= 0 &&
-                Times[VixSeriesIndex][0].Date == Times[0][0].Date &&
-                Times[VixSeriesIndex][0].TimeOfDay >= vixStart &&
-                Times[VixSeriesIndex][0].TimeOfDay <= Times[0][0].TimeOfDay;
+            double vixValue = vixIndicator.VixValueToday;
+            bool vixReady = !double.IsNaN(vixValue);
 
-            if (!vixSampledToday)
+            if (!vixReady)
             {
-                string lastVixStamp = "none";
-                if (CurrentBars.Length > VixSeriesIndex && CurrentBars[VixSeriesIndex] >= 0)
+                if (!vixIndicatorWaitingLogged && !vixIndicatorNoDataAllowToday)
                 {
-                    var t = Times[VixSeriesIndex][0];
-                    lastVixStamp = $"{t:yyyy-MM-dd HH:mm:ss}";
-                    hasTodayVixBar =
-                        t.Date == Times[0][0].Date &&
-                        t.TimeOfDay >= vixStart &&
-                        t.TimeOfDay <= Times[0][0].TimeOfDay;
+                    string ts = Times[0][0].ToString("yyyy-MM-dd HH:mm:ss");
+                    LogToOutput2($"⏳ {ts} Waiting for VIX indicator value (threshold {MaxVix:F2}). Trades on hold.");
+                    vixIndicatorWaitingLogged = true;
                 }
+                if (!vixIndicatorNoDataAllowToday && pastGrace)
+                {
+                    vixIndicatorNoDataAllowToday = true;
+                    string ts = Times[0][0].ToString("yyyy-MM-dd HH:mm:ss");
+                    LogToOutput2($"ℹ️ {ts} VIX indicator still empty after grace period; allowing trades without VIX block.");
+                }
+                else if (!vixIndicatorNoDataAllowToday)
+                {
+                    return;
+                }
+                // If we are allowing due to no data, suppress further waiting spam
+                if (vixIndicatorNoDataAllowToday)
+                    return;
+            }
 
-                if (pastGrace && !hasTodayVixBar)
+            if (vixReady)
+            {
+                vixIndicatorWaitingLogged = false;
+                string ts = Times[0][0].ToString("yyyy-MM-dd HH:mm:ss");
+                if (!vixIndicatorReadyLogged)
                 {
-                    vixNoDataAllowToday = true;
-                    //LogToOutput2($"ℹ️ VIX data missing after grace period; allowing trades. Current time {Times[0][0]:HH:mm:ss}, lastVixStamp={lastVixStamp}");
-                }
-                else
-                {
-                    if (!vixPendingLoggedToday)
-                    {
-                        LogToOutput2($"⏳ VIX waiting for first 1m bar after {vixStart:hh\\:mm}. Now {Times[0][0]:HH:mm:ss}, hasTodayVixBar={hasTodayVixBar}, lastVixStamp={lastVixStamp}. Trades on hold.");
-                        vixPendingLoggedToday = true;
-                    }
-                    if (!pastGrace && !vixNoDataAllowToday)
-                        return; // block entries until grace
+                    LogToOutput2($"✅ {ts} VIX indicator value available. VIX={vixValue:F2}, threshold {MaxVix:F2}.");
+                    vixIndicatorReadyLogged = true;
                 }
             }
 
-            if (vixBlockedToday)
+            if (!vixIndicatorNoDataAllowToday && vixIndicator.VixOverThresholdToday)
             {
-                if (!vixBlockLoggedToday)
+                if (!vixIndicatorBlockedLogged)
                 {
-                    LogToOutput2($"⛔ VIX block in effect. First open={vixFirstOpen:F2} > MaxVix {MaxVix:F2}. No trades today.");
-                    vixBlockLoggedToday = true;
+                    string ts = Times[0][0].ToString("yyyy-MM-dd HH:mm:ss");
+                    LogToOutput2($"⛔ {ts} VIX indicator blocked trading. VIX={vixValue:F2} >= threshold {MaxVix:F2}. No trades today.");
+                    vixIndicatorBlockedLogged = true;
                 }
                 return;
             }
@@ -1273,13 +1218,10 @@ public class ORBOTesting : Strategy
         lastProtectionTime = DateTime.MinValue;
         nextEvaluationTime = DateTime.MinValue;
         breakoutActive = false;
-        vixSampledToday = false;
-        vixBlockedToday = false;
-        vixFirstOpen = double.NaN;
-        vixPendingLoggedToday = false;
-        vixBlockLoggedToday = false;
-        vixNoDataAllowToday = false;
-        vixDebugLoggedToday = false;
+        vixIndicatorBlockedLogged = false;
+        vixIndicatorWaitingLogged = false;
+        vixIndicatorReadyLogged = false;
+        vixIndicatorNoDataAllowToday = false;
         tpHoldLogged = false;
         tpManualLogged = false;
         tpManualExitSent = false;
