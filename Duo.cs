@@ -187,7 +187,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool shortOrderPlaced = false;
         private Order longEntryOrder = null;
         private Order shortEntryOrder = null;
-        private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
+        private TimeSpan sessionStart = new TimeSpan(9, 40, 0);
         private TimeSpan sessionEnd = new TimeSpan(14, 50, 0);  
 		private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
         private TimeSpan skipStart = new TimeSpan(11, 45, 0);
@@ -273,7 +273,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 WebhookUrl = "";
 
                 // Default session times
-                SessionStart  = new TimeSpan(09, 30, 0);
+                SessionStart  = new TimeSpan(09, 40, 0);
                 SessionEnd    = new TimeSpan(14, 50, 0);
 				NoTradesAfter = new TimeSpan(14, 30, 0);
             }
@@ -1760,19 +1760,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (preset)
             {
                 case StrategyPreset.NQ_MNQ_5m:
-                    MinC1Body   = 3.25;
-                    MaxC1Body   = 86;
-                    MinC2Body   = 12.25;
-                    MaxC2Body   = 73;
-                    OffsetPerc  = 30;					
-                    TpPerc      = 77;
+                    MinC1Body   = 2.6;
+                    MaxC1Body   = 86.1;
+                    MinC2Body   = 12.6;
+                    MaxC2Body   = 73.7;
+                    OffsetPerc  = 29.2;					
+                    TpPerc      = 68.1;
                     CancelPerc  = 295;
                     DeviationPerc = 0;
                     SLPadding = 0;
 					MaxSLTPRatioPerc = 500;
-                    SLPresetSetting = SLPreset.First_Candle_Percent;
-					SLPercentFirstCandle = 99;
-                    MaxSLPoints = 140;
+                    SLPresetSetting = SLPreset.First_Candle_High_Low;
+					SLPercentFirstCandle = 97;
+                    MaxSLPoints = 161;
                     break;
 
                 case StrategyPreset.ES_MES_5m:
