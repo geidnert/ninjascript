@@ -211,7 +211,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Random rng;
         private string displayText = "Waiting...";
         private bool sessionClosed = false;
-        private bool debug = false;
+        private bool debug = true;
         private int longSignalBar = -1;
         private int shortSignalBar = -1;
         private bool longLinesActive = false;
@@ -221,6 +221,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int lineTagCounter = 0;
         private string longLineTagPrefix = "LongLine_0_";
         private string shortLineTagPrefix = "ShortLine_0_";
+
+        // --- Webhook state (send entry only after order Accepted/Working) ---
+        private bool pendingLongWebhook;
+        private double pendingLongEntry;
+        private double pendingLongTP;
+        private double pendingLongSL;
+        private bool pendingShortWebhook;
+        private double pendingShortEntry;
+        private double pendingShortTP;
+        private double pendingShortSL;
+        private string lastLongWebhookOrderId;
+        private string lastShortWebhookOrderId;
+        private int lastCancelWebhookBar = -1;
+        private int lastExitWebhookBar = -1;
 
         // --- Heartbeat reporting ---
         private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
@@ -371,12 +385,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 					    {
 						    CancelOrder(shortEntryOrder);
 						    CancelOrder(longEntryOrder);
-                            SendWebhook("cancel");
+	                            SendWebhookCancelSafe();
 					    }
-                        longLinesActive = false;
-                        shortLinesActive = false;
-                        longSignalBar = -1;
-                        shortSignalBar = -1;
+	                        longLinesActive = false;
+	                        shortLinesActive = false;
+	                        longSignalBar = -1;
+	                        shortSignalBar = -1;
                         longExitBar = -1;
                         shortExitBar = -1;
                     }
@@ -408,23 +422,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     {
                         // Case 2: No position but entry orders active -> cancel only entries
                         //CancelEntryOrders("SessionEnd");
-						CancelOrder(shortEntryOrder);
-						CancelOrder(longEntryOrder);
-                        SendWebhook("cancel");
-                    }
-                }
-                else // CloseAtSessionEnd == false
-                {
+							CancelOrder(shortEntryOrder);
+							CancelOrder(longEntryOrder);
+	                        SendWebhookCancelSafe();
+	                    }
+	                }
+	                else // CloseAtSessionEnd == false
+	                {
                     if (Position.MarketPosition == MarketPosition.Flat)
                     {
                         // Case 4: No position -> cancel only entries
                         //CancelEntryOrders("SessionEnd (CloseAtSessionEnd=false)");
-						CancelOrder(shortEntryOrder);
-						CancelOrder(longEntryOrder);
-                        SendWebhook("cancel");
-                    }
-                    // Case 3: In a position -> do nothing, let TP/SL handle it
-                }
+							CancelOrder(shortEntryOrder);
+							CancelOrder(longEntryOrder);
+	                        SendWebhookCancelSafe();
+	                    }
+	                    // Case 3: In a position -> do nothing, let TP/SL handle it
+	                }
 
                 longLinesActive = false;
                 shortLinesActive = false;
@@ -444,10 +458,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			{
                 if (debug)
 				    Print($"{Time[0]} - ⛔ NoTradesAfter time crossed — canceling entry orders");
-				CancelOrder(shortEntryOrder);
-				CancelOrder(longEntryOrder);
-                SendWebhook("cancel");
-			}
+					CancelOrder(shortEntryOrder);
+					CancelOrder(longEntryOrder);
+	                SendWebhookCancelSafe();
+				}
 
             // 🔒 HARD GUARD: absolutely no logic inside skip windows
             if (TimeInSkip(Time[0]))
@@ -472,12 +486,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (High[0] >= currentLongCancelPrice && Low[0] > currentLongEntry)
                 //if (High[0] >= currentLongTP && Low[0] > currentLongEntry)
                 {
-                    if (debug)
-                        Print($"{Time[0]} - 🚫 Long cancel price hit before entry fill. Canceling order.");
-                    CancelOrder(longEntryOrder);
-                    SendWebhook("cancel");
-                    longOrderPlaced = false;
-                    longEntryOrder = null;
+	                    if (debug)
+	                        Print($"{Time[0]} - 🚫 Long cancel price hit before entry fill. Canceling order.");
+	                    CancelOrder(longEntryOrder);
+	                    SendWebhookCancelSafe();
+	                    longOrderPlaced = false;
+	                    longEntryOrder = null;
 
                     int longCancelStartBarsAgo = longSignalBar >= 0 ? CurrentBar - longSignalBar : 1;
 
@@ -514,12 +528,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (Low[0] <= currentShortCancelPrice && High[0] < currentShortEntry)
                 //if (Low[0] <= currentShortTP && High[0] < currentShortEntry)
                 {
-                    if (debug)
-                        Print($"{Time[0]} - 🚫 Short cancel price hit before entry fill. Canceling order.");
-                    CancelOrder(shortEntryOrder);
-                    SendWebhook("cancel");
-                    shortOrderPlaced = false;
-                    shortEntryOrder = null;
+	                    if (debug)
+	                        Print($"{Time[0]} - 🚫 Short cancel price hit before entry fill. Canceling order.");
+	                    CancelOrder(shortEntryOrder);
+	                    SendWebhookCancelSafe();
+	                    shortOrderPlaced = false;
+	                    shortEntryOrder = null;
 
                     int shortCancelStartBarsAgo = shortSignalBar >= 0 ? CurrentBar - shortSignalBar : 1;
 
@@ -729,10 +743,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         }
                     }
 
-                    SetStopLoss("LongEntry", CalculationMode.Price, paddedLongSL, false);
-                    SetProfitTarget("LongEntry", CalculationMode.Price, longTP);
-					EnterLongLimit(0, true, Contracts, longEntry, "LongEntry");
-                    SendWebhook("buy", longEntry, longTP, paddedLongSL);
+						SetStopLoss("LongEntry", CalculationMode.Price, paddedLongSL, false);
+	                    SetProfitTarget("LongEntry", CalculationMode.Price, longTP);
+						EnterLongLimit(0, true, Contracts, longEntry, "LongEntry");
+	                    QueueEntryWebhookLong(longEntry, longTP, paddedLongSL);
 
                     SetHedgeLock(instrument, desiredDirection); 
 
@@ -830,10 +844,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         }
                     }
 
-                    SetStopLoss("ShortEntry", CalculationMode.Price, paddedShortSL, false);
-                    SetProfitTarget("ShortEntry", CalculationMode.Price, shortTP);
-					EnterShortLimit(0, true, Contracts, shortEntry, "ShortEntry");
-                    SendWebhook("sell", shortEntry, shortTP, paddedShortSL);
+	                    SetStopLoss("ShortEntry", CalculationMode.Price, paddedShortSL, false);
+	                    SetProfitTarget("ShortEntry", CalculationMode.Price, shortTP);
+						EnterShortLimit(0, true, Contracts, shortEntry, "ShortEntry");
+	                    QueueEntryWebhookShort(shortEntry, shortTP, paddedShortSL);
 
                     SetHedgeLock(instrument, desiredDirection);
 
@@ -854,19 +868,51 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
-                                            double averageFillPrice, OrderState orderState, DateTime time,
-                                            ErrorCode error, string comment)
-        {
-            if (order.Name == "LongEntry")
-                longEntryOrder = order;
+	        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
+	                                            double averageFillPrice, OrderState orderState, DateTime time,
+	                                            ErrorCode error, string comment)
+	        {
+	            if (order.Name == "LongEntry")
+	                longEntryOrder = order;
+	
+	            if (order.Name == "ShortEntry")
+	                shortEntryOrder = order;
 
-            if (order.Name == "ShortEntry")
-                shortEntryOrder = order;
+	            if (order.Name == "LongEntry" && pendingLongWebhook)
+	            {
+	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
+	                if ((orderState == OrderState.Accepted || orderState == OrderState.Working)
+	                    && !string.Equals(lastLongWebhookOrderId, orderId, StringComparison.Ordinal))
+	                {
+	                    SendWebhook("buy", pendingLongEntry, pendingLongTP, pendingLongSL);
+	                    pendingLongWebhook = false;
+	                    lastLongWebhookOrderId = orderId;
+	                }
+	                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
+	                {
+	                    pendingLongWebhook = false;
+	                }
+	            }
 
-            // 🧠 Only reset on cancellations (not fills)
-            if (order.OrderState == OrderState.Cancelled)
-            {
+	            if (order.Name == "ShortEntry" && pendingShortWebhook)
+	            {
+	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
+	                if ((orderState == OrderState.Accepted || orderState == OrderState.Working)
+	                    && !string.Equals(lastShortWebhookOrderId, orderId, StringComparison.Ordinal))
+	                {
+	                    SendWebhook("sell", pendingShortEntry, pendingShortTP, pendingShortSL);
+	                    pendingShortWebhook = false;
+	                    lastShortWebhookOrderId = orderId;
+	                }
+	                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
+	                {
+	                    pendingShortWebhook = false;
+	                }
+	            }
+	
+	            // 🧠 Only reset on cancellations (not fills)
+	            if (order.OrderState == OrderState.Cancelled)
+	            {
                 bool allOrdersInactive =
                     (longEntryOrder == null || longEntryOrder.OrderState == OrderState.Cancelled || longEntryOrder.OrderState == OrderState.Filled) &&
                     (shortEntryOrder == null || shortEntryOrder.OrderState == OrderState.Cancelled || shortEntryOrder.OrderState == OrderState.Filled);
@@ -1056,17 +1102,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			{
                 if (debug)
 				    Print($"{Time[0]} - ⏰ Canceling SHORT entry due to NoTradesAfter");
-				CancelOrder(shortEntryOrder);
-                SendWebhook("cancel");
-			}
-
-			if (longEntryOrder != null)
-			{
-                if (debug)
-				    Print($"{Time[0]} - ⏰ Canceling LONG entry due to NoTradesAfter");
-				CancelOrder(longEntryOrder);
-                SendWebhook("cancel");
-			}
+					CancelOrder(shortEntryOrder);
+	                SendWebhookCancelSafe();
+				}
+	
+				if (longEntryOrder != null)
+				{
+	                if (debug)
+					    Print($"{Time[0]} - ⏰ Canceling LONG entry due to NoTradesAfter");
+					CancelOrder(longEntryOrder);
+	                SendWebhookCancelSafe();
+				}
 
 			longOrderPlaced = false;
 			shortOrderPlaced = false;
@@ -1074,26 +1120,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			shortEntryOrder = null;
 		}
 
-        private void Flatten(string reason)
-        {
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                if (debug)
-                    Print($"{Time[0]} - Flattening LONG due to {reason}");
-                ExitLong("Exit_" + reason, "LongEntry");
-                
-                // ✅ Send EXIT webhook for longs
-                SendWebhook("exit", currentLongTP);
-            }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                if (debug)
-                    Print($"{Time[0]} - Flattening SHORT due to {reason}");
-                ExitShort("Exit_" + reason, "ShortEntry");
-                
-                // ✅ Send EXIT webhook for shorts
-                SendWebhook("exit", currentShortTP);
-            }
+	        private void Flatten(string reason)
+	        {
+	            if (Position.MarketPosition == MarketPosition.Long)
+	            {
+	                if (debug)
+	                    Print($"{Time[0]} - Flattening LONG due to {reason}");
+	                ExitLong("Exit_" + reason, "LongEntry");
+	                
+	                // ✅ Send EXIT webhook for longs
+	                SendWebhookExitSafe();
+	            }
+	            else if (Position.MarketPosition == MarketPosition.Short)
+	            {
+	                if (debug)
+	                    Print($"{Time[0]} - Flattening SHORT due to {reason}");
+	                ExitShort("Exit_" + reason, "ShortEntry");
+	                
+	                // ✅ Send EXIT webhook for shorts
+	                SendWebhookExitSafe();
+	            }
 
             longLinesActive = false;
             shortLinesActive = false;
@@ -1833,15 +1879,58 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        string GetTicker(Instrument instrument)
-        {
+	        string GetTicker(Instrument instrument)
+	        {
             // Get the month code letter (F=Jan, G=Feb, H=Mar, etc.)
             string[] monthCodes = { "", "F", "G", "H", "J", "K", "M", "N", "Q", "U", "V", "X", "Z" };
             string monthCode = monthCodes[instrument.Expiry.Month];
             string yearCode = instrument.Expiry.Year.ToString().Substring(2, 2); // or full year if you prefer
 
-            return $"{instrument.MasterInstrument.Name}{monthCode}20{yearCode}";
-        }
+	            return $"{instrument.MasterInstrument.Name}{monthCode}20{yearCode}";
+	        }
+
+	        private void QueueEntryWebhookLong(double entryPrice, double takeProfit, double stopLoss)
+	        {
+	            if (Position.MarketPosition != MarketPosition.Flat)
+	                return;
+
+	            pendingLongWebhook = true;
+	            pendingLongEntry = entryPrice;
+	            pendingLongTP = takeProfit;
+	            pendingLongSL = stopLoss;
+	        }
+
+	        private void QueueEntryWebhookShort(double entryPrice, double takeProfit, double stopLoss)
+	        {
+	            if (Position.MarketPosition != MarketPosition.Flat)
+	                return;
+
+	            pendingShortWebhook = true;
+	            pendingShortEntry = entryPrice;
+	            pendingShortTP = takeProfit;
+	            pendingShortSL = stopLoss;
+	        }
+
+	        private void SendWebhookCancelSafe()
+	        {
+	            if (Position.MarketPosition != MarketPosition.Flat)
+	                return;
+
+	            if (CurrentBar == lastCancelWebhookBar)
+	                return;
+
+	            lastCancelWebhookBar = CurrentBar;
+	            SendWebhook("cancel");
+	        }
+
+	        private void SendWebhookExitSafe()
+	        {
+	            if (CurrentBar == lastExitWebhookBar)
+	                return;
+
+	            lastExitWebhookBar = CurrentBar;
+	            SendWebhook("exit");
+	        }
 
         private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0)
         {
@@ -1882,20 +1971,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         }}";
                         break;
 
-                    case "exit":
-                        json = $@"
-                        {{
-                            ""ticker"": ""{ticker}"",
-                            ""action"": ""exit"",
-                            ""orderType"": ""limit"",
-                            ""limitPrice"": {entryPrice},
-                            ""quantityType"": ""fixed_quantity"",
-                            ""quantity"": {Contracts},
-                            ""cancel"": true,
-                            ""signalPrice"": {entryPrice},
-                            ""time"": ""{time}""
-                        }}";
-                        break;
+	                    case "exit":
+	                        json = $@"
+	                        {{
+	                            ""ticker"": ""{ticker}"",
+	                            ""action"": ""exit"",
+	                            ""orderType"": ""market"",
+	                            ""quantityType"": ""fixed_quantity"",
+	                            ""quantity"": {Contracts},
+	                            ""cancel"": true,
+	                            ""time"": ""{time}""
+	                        }}";
+	                        break;
 
                     case "cancel":
                         json = $@"
@@ -1921,7 +2008,5 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Print($"⚠️ Webhook error: {ex.Message}");
             }
         }
-    }
-}
-
-// cid: 8122, secret: 758c83ae-f8ff-4417-8661-686546f0ca82, passwd: OrboAndreasSteve2025!!!
+	    }
+	}
