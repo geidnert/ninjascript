@@ -246,19 +246,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // Default input values
                 Contracts     = 1;
-                MinC1Body   = 3.25;
-                MaxC1Body   = 86;
-                MinC2Body   = 12.25;
-                MaxC2Body   = 73;
-                OffsetPerc  = 30;
-                TpPerc      = 77;
+                MinC1Body   = 2.6;
+                MaxC1Body   = 86.1;
+                MinC2Body   = 12.6;
+                MaxC2Body   = 73.7;
+                OffsetPerc  = 29.2;
+                TpPerc      = 68.1;
                 CancelPerc  = 295;
                 DeviationPerc = 0;
                 SLPadding = 0;
                 MaxSLTPRatioPerc = 500;
-                SLPresetSetting = SLPreset.First_Candle_Percent;
-                SLPercentFirstCandle = 99;
-                MaxSLPoints = 140;
+                SLPresetSetting = SLPreset.First_Candle_High_Low;
+                SLPercentFirstCandle = 97;
+                MaxSLPoints = 161;
 
                 // Other defaults
                 SessionBrush  = Brushes.Gold;
@@ -367,14 +367,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 					    {
 						    Flatten("SkipWindow");
 					    }
-						    else
-						    {
-							    CancelActiveEntryOrdersAndMaybeWebhook();
-						    }
-	                        longLinesActive = false;
-	                        shortLinesActive = false;
-	                        longSignalBar = -1;
-	                        shortSignalBar = -1;
+					    else
+					    {
+						    CancelOrder(shortEntryOrder);
+						    CancelOrder(longEntryOrder);
+                            SendWebhook("cancel");
+					    }
+                        longLinesActive = false;
+                        shortLinesActive = false;
+                        longSignalBar = -1;
+                        shortSignalBar = -1;
                         longExitBar = -1;
                         shortExitBar = -1;
                     }
@@ -402,23 +404,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         // Case 1: In a position -> flatten (Managed Mode removes TP/SL too)
                         Flatten("SessionEnd");
                     }
-	                    else
-	                    {
-	                        // Case 2: No position but entry orders active -> cancel only entries
-	                        //CancelEntryOrders("SessionEnd");
-							CancelActiveEntryOrdersAndMaybeWebhook();
-	                    }
-	                }
-	                else // CloseAtSessionEnd == false
-	                {
-	                    if (Position.MarketPosition == MarketPosition.Flat)
-	                    {
-	                        // Case 4: No position -> cancel only entries
-	                        //CancelEntryOrders("SessionEnd (CloseAtSessionEnd=false)");
-							CancelActiveEntryOrdersAndMaybeWebhook();
-	                    }
-	                    // Case 3: In a position -> do nothing, let TP/SL handle it
-	                }
+                    else
+                    {
+                        // Case 2: No position but entry orders active -> cancel only entries
+                        //CancelEntryOrders("SessionEnd");
+						CancelOrder(shortEntryOrder);
+						CancelOrder(longEntryOrder);
+                        SendWebhook("cancel");
+                    }
+                }
+                else // CloseAtSessionEnd == false
+                {
+                    if (Position.MarketPosition == MarketPosition.Flat)
+                    {
+                        // Case 4: No position -> cancel only entries
+                        //CancelEntryOrders("SessionEnd (CloseAtSessionEnd=false)");
+						CancelOrder(shortEntryOrder);
+						CancelOrder(longEntryOrder);
+                        SendWebhook("cancel");
+                    }
+                    // Case 3: In a position -> do nothing, let TP/SL handle it
+                }
 
                 longLinesActive = false;
                 shortLinesActive = false;
@@ -434,12 +440,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			bool crossedNoTradesAfter = 
 				(Time[1].TimeOfDay <= NoTradesAfter && Time[0].TimeOfDay > NoTradesAfter);
 
-				if (crossedNoTradesAfter)
-				{
-	                if (debug)
-					    Print($"{Time[0]} - ⛔ NoTradesAfter time crossed — canceling entry orders");
-					CancelActiveEntryOrdersAndMaybeWebhook();
-				}
+			if (crossedNoTradesAfter)
+			{
+                if (debug)
+				    Print($"{Time[0]} - ⛔ NoTradesAfter time crossed — canceling entry orders");
+				CancelOrder(shortEntryOrder);
+				CancelOrder(longEntryOrder);
+                SendWebhook("cancel");
+			}
 
             // 🔒 HARD GUARD: absolutely no logic inside skip windows
             if (TimeInSkip(Time[0]))
@@ -464,13 +472,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (High[0] >= currentLongCancelPrice && Low[0] > currentLongEntry)
                 //if (High[0] >= currentLongTP && Low[0] > currentLongEntry)
                 {
-	                    if (debug)
-	                        Print($"{Time[0]} - 🚫 Long cancel price hit before entry fill. Canceling order.");
-	                    CancelOrder(longEntryOrder);
-	                    if (Position.MarketPosition == MarketPosition.Flat)
-	                        SendWebhook("cancel");
-	                    longOrderPlaced = false;
-	                    longEntryOrder = null;
+                    if (debug)
+                        Print($"{Time[0]} - 🚫 Long cancel price hit before entry fill. Canceling order.");
+                    CancelOrder(longEntryOrder);
+                    SendWebhook("cancel");
+                    longOrderPlaced = false;
+                    longEntryOrder = null;
 
                     int longCancelStartBarsAgo = longSignalBar >= 0 ? CurrentBar - longSignalBar : 1;
 
@@ -507,13 +514,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (Low[0] <= currentShortCancelPrice && High[0] < currentShortEntry)
                 //if (Low[0] <= currentShortTP && High[0] < currentShortEntry)
                 {
-	                    if (debug)
-	                        Print($"{Time[0]} - 🚫 Short cancel price hit before entry fill. Canceling order.");
-	                    CancelOrder(shortEntryOrder);
-	                    if (Position.MarketPosition == MarketPosition.Flat)
-	                        SendWebhook("cancel");
-	                    shortOrderPlaced = false;
-	                    shortEntryOrder = null;
+                    if (debug)
+                        Print($"{Time[0]} - 🚫 Short cancel price hit before entry fill. Canceling order.");
+                    CancelOrder(shortEntryOrder);
+                    SendWebhook("cancel");
+                    shortOrderPlaced = false;
+                    shortEntryOrder = null;
 
                     int shortCancelStartBarsAgo = shortSignalBar >= 0 ? CurrentBar - shortSignalBar : 1;
 
@@ -544,31 +550,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
-	            // === Strategy signal logic (on bar close only) ===
-		            if (Calculate == Calculate.OnBarClose
-		                && CurrentBar > skipBarUntil
-		                && CurrentBar != lastBarProcessed)
-	            {
-	                if (Position.MarketPosition != MarketPosition.Flat)
-	                {
-	                    if (debug)
-	                        Print($"{Time[0]} - In position ({Position.MarketPosition}) — skipping new entry signals/webhooks.");
-	                    lastBarProcessed = CurrentBar;
-	                    return;
-	                }
-
-	                if (HasActiveEntryOrders())
-	                {
-	                    if (debug)
-	                        Print($"{Time[0]} - Active entry order(s) present — skipping new entry signals/webhooks.");
-	                    lastBarProcessed = CurrentBar;
-	                    return;
-	                }
-
-	                double c1Open = Open[1];
-	                double c1Close = Close[1];
-	                double c1High = High[1];
-	                double c1Low = Low[1];
+            // === Strategy signal logic (on bar close only) ===
+            if (Calculate == Calculate.OnBarClose 
+                && CurrentBar > skipBarUntil 
+                && CurrentBar != lastBarProcessed)
+            {
+                double c1Open = Open[1];
+                double c1Close = Close[1];
+                double c1High = High[1];
+                double c1Low = Low[1];
 
                 double c2Open = Open[0];
                 double c2Close = Close[0];
@@ -650,13 +640,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Print($"  ➤ Entry Offset = {offset:0.00}");
                     Print($"  ➤ Long TP = {longTP:0.00}, Short TP = {shortTP:0.00}");
                 }
-	                if (Position.MarketPosition == MarketPosition.Flat && !HasActiveEntryOrders())
-	                {
-	                    if (debug)
-	                        Print($"{Time[0]} - Flat and no active entry orders — resetting orderPlaced flags.");
-	                    longOrderPlaced = false;
-	                    shortOrderPlaced = false;
-	                }
+                if (Position.MarketPosition == MarketPosition.Flat)
+                {
+                    if (debug)
+                        Print($"{Time[0]} - Flat position, resetting orderPlaced flags.");
+                    longOrderPlaced = false;
+                    shortOrderPlaced = false;
+                }
 
                 if (validBull && !longOrderPlaced)
                 {
@@ -1060,91 +1050,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-			private void CancelEntryIfAfterNoTrades()
+		private void CancelEntryIfAfterNoTrades()
+		{
+			if (shortEntryOrder != null)
 			{
-	            bool cancelledAny = false;
-
-	            if (TryCancelEntryOrder(shortEntryOrder))
-	            {
-	                cancelledAny = true;
-	                if (debug)
-	                    Print($"{Time[0]} - ⏰ Canceling SHORT entry due to NoTradesAfter");
-	            }
-
-	            if (TryCancelEntryOrder(longEntryOrder))
-	            {
-	                cancelledAny = true;
-	                if (debug)
-	                    Print($"{Time[0]} - ⏰ Canceling LONG entry due to NoTradesAfter");
-	            }
-
-	            if (cancelledAny && Position.MarketPosition == MarketPosition.Flat)
-	                SendWebhook("cancel");
+                if (debug)
+				    Print($"{Time[0]} - ⏰ Canceling SHORT entry due to NoTradesAfter");
+				CancelOrder(shortEntryOrder);
+                SendWebhook("cancel");
 			}
 
-	        private static bool IsEntryOrderActive(Order order)
-	        {
-	            if (order == null)
-	                return false;
+			if (longEntryOrder != null)
+			{
+                if (debug)
+				    Print($"{Time[0]} - ⏰ Canceling LONG entry due to NoTradesAfter");
+				CancelOrder(longEntryOrder);
+                SendWebhook("cancel");
+			}
 
-	            switch (order.OrderState)
-	            {
-	                case OrderState.Submitted:
-	                case OrderState.Accepted:
-	                case OrderState.Working:
-	                case OrderState.PartFilled:
-	                case OrderState.ChangePending:
-	                case OrderState.CancelPending:
-	                    return true;
-	                default:
-	                    return false;
-	            }
-	        }
+			longOrderPlaced = false;
+			shortOrderPlaced = false;
+			longEntryOrder = null;
+			shortEntryOrder = null;
+		}
 
-	        private static bool IsEntryOrderCancelable(Order order)
-	        {
-	            if (order == null)
-	                return false;
-
-	            switch (order.OrderState)
-	            {
-	                case OrderState.Submitted:
-	                case OrderState.Accepted:
-	                case OrderState.Working:
-	                case OrderState.PartFilled:
-	                    return true;
-	                default:
-	                    return false;
-	            }
-	        }
-
-	        private bool HasActiveEntryOrders()
-	        {
-	            return IsEntryOrderActive(longEntryOrder) || IsEntryOrderActive(shortEntryOrder);
-	        }
-
-	        private bool TryCancelEntryOrder(Order order)
-	        {
-	            if (!IsEntryOrderCancelable(order))
-	                return false;
-
-	            CancelOrder(order);
-	            return true;
-	        }
-
-	        private void CancelActiveEntryOrdersAndMaybeWebhook()
-	        {
-	            bool cancelledAny = false;
-	            cancelledAny |= TryCancelEntryOrder(shortEntryOrder);
-	            cancelledAny |= TryCancelEntryOrder(longEntryOrder);
-
-	            if (cancelledAny && Position.MarketPosition == MarketPosition.Flat)
-	                SendWebhook("cancel");
-	        }
-
-	        private void Flatten(string reason)
-	        {
-	            if (Position.MarketPosition == MarketPosition.Long)
+        private void Flatten(string reason)
+        {
+            if (Position.MarketPosition == MarketPosition.Long)
             {
                 if (debug)
                     Print($"{Time[0]} - Flattening LONG due to {reason}");
