@@ -110,10 +110,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "A. Parameters")]
         internal double MaxSLPoints { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
-                GroupName = "B. Session Time")]
-        public TimeSpan SessionStart
+        // [NinjaScriptProperty]
+        // [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
+        //         GroupName = "B. Session Time")]
+        internal TimeSpan SessionStart
         {
             get {
                 return sessionStart;
@@ -123,11 +123,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Session End",
-                Description = "When session is ending, all positions and orders will be canceled when this time is passed",
-                Order = 2, GroupName = "B. Session Time")]
-        public TimeSpan SessionEnd
+        // [NinjaScriptProperty]
+        // [Display(Name = "Session End",
+        //         Description = "When session is ending, all positions and orders will be canceled when this time is passed",
+        //         Order = 2, GroupName = "B. Session Time")]
+        internal TimeSpan SessionEnd
         {
             get {
                 return sessionEnd;
@@ -137,11 +137,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-		[NinjaScriptProperty]
-		[Display(Name = "No Trades After",
-				Description = "No more orders is being placed between this time and session end,", Order = 3,
-				GroupName = "B. Session Time")]
-		public TimeSpan NoTradesAfter
+		// [NinjaScriptProperty]
+		// [Display(Name = "No Trades After",
+		// 		Description = "No more orders is being placed between this time and session end,", Order = 3,
+		// 		GroupName = "B. Session Time")]
+		internal TimeSpan NoTradesAfter
 		{
 			get {
 				return noTradesAfter;
@@ -156,31 +156,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Session Fill", Description = "Color of the session background", Order = 4, GroupName = "B. Session Time")]
         public Brush SessionBrush { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Close at Session End", 
-                Description = "If true, open trades will be closed and working orders canceled at session end", 
-                Order = 4, GroupName = "B. Session Time")]
-        public bool CloseAtSessionEnd { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Close at Session End", 
+        //         Description = "If true, open trades will be closed and working orders canceled at session end", 
+        //         Order = 4, GroupName = "B. Session Time")]
+        internal bool CloseAtSessionEnd { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "C. Skip Times")]
-        public TimeSpan SkipStart { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "C. Skip Times")]
+        internal TimeSpan SkipStart { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "C. Skip Times")]
-        public TimeSpan SkipEnd { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "C. Skip Times")]
+        internal TimeSpan SkipEnd { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "C. Skip Times")]
-        public TimeSpan Skip2Start { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "C. Skip Times")]
+        internal TimeSpan Skip2Start { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "C. Skip Times")]
-        public TimeSpan Skip2End { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "C. Skip Times")]
+        internal TimeSpan Skip2End { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "C. Skip Times")]
-        public bool ForceCloseAtSkipStart { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "C. Skip Times")]
+        internal bool ForceCloseAtSkipStart { get; set; }
 
         // State tracking
         private bool longOrderPlaced = false;
@@ -190,8 +190,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan sessionStart = new TimeSpan(9, 40, 0);
         private TimeSpan sessionEnd = new TimeSpan(14, 50, 0);  
 		private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
-        private TimeSpan skipStart = new TimeSpan(11, 45, 0);
-        private TimeSpan skipEnd = new TimeSpan(13, 20, 0);
+        private TimeSpan skipStart = new TimeSpan(00, 00, 0);
+        private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
         private TimeSpan skip2Start = new TimeSpan(00, 00, 0);
         private TimeSpan skip2End = new TimeSpan(00, 00, 0); 
         private int skipBarUntil = -1;
@@ -211,7 +211,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Random rng;
         private string displayText = "Waiting...";
         private bool sessionClosed = false;
-        private bool debug = true;
+        private bool debug = false;
         private int longSignalBar = -1;
         private int shortSignalBar = -1;
         private bool longLinesActive = false;
@@ -1729,15 +1729,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         public enum StrategyPreset
         {
-            NQ_MNQ_5m,
-            ES_MES_5m
+            London,
+            New_York
         }
 
         private void ApplyInstrumentPreset(StrategyPreset preset)
         {
             switch (preset)
             {
-                case StrategyPreset.NQ_MNQ_5m:
+                case StrategyPreset.New_York:
                     MinC1Body   = 2.6;
                     MaxC1Body   = 86.1;
                     MinC2Body   = 12.6;
@@ -1751,22 +1751,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     SLPresetSetting = SLPreset.First_Candle_High_Low;
 					SLPercentFirstCandle = 97;
                     MaxSLPoints = 161;
-                    break;
 
-                case StrategyPreset.ES_MES_5m:
-                    MinC1Body   = 3.75;
-                    MaxC1Body   = 23.5;
-                    MinC2Body   = 7.75;
-                    MaxC2Body   = 42.5;
-                    OffsetPerc  = 80;					
-                    TpPerc      = 52.25;
-                    CancelPerc  = 200;
+                    // ✅ Session preset values
+                    SessionStart  = new TimeSpan(9, 40, 0);
+                    SessionEnd    = new TimeSpan(14, 50, 0);
+                    NoTradesAfter = new TimeSpan(14, 30, 0);
+                    SkipStart = new TimeSpan(11, 45, 0);
+                    SkipEnd = new TimeSpan(13, 20, 0);
+                    Skip2Start = new TimeSpan(00, 00, 0);
+                    Skip2End = new TimeSpan(00, 00, 0); 
+                    break;
+                
+                case StrategyPreset.London:
+                    MinC1Body   = 18.1;
+                    MaxC1Body   = 93;
+                    MinC2Body   = 8.1;
+                    MaxC2Body   = 54.25;
+                    OffsetPerc  = 6.4;					
+                    TpPerc      = 83.5;
+                    CancelPerc  = 295;
                     DeviationPerc = 0;
                     SLPadding = 0;
-					MaxSLTPRatioPerc = 650;
-                    SLPresetSetting = SLPreset.First_Candle_Open;
-					SLPercentFirstCandle = 99;
-                    MaxSLPoints = 28;
+					MaxSLTPRatioPerc = 500;
+                    SLPresetSetting = SLPreset.First_Candle_High_Low;
+					SLPercentFirstCandle = 100;
+                    MaxSLPoints = 143;
+
+                    // ✅ Session preset values
+                    SessionStart  = new TimeSpan(4, 00, 0);
+                    SessionEnd    = new TimeSpan(8, 00, 0);
+                    NoTradesAfter = new TimeSpan(7, 00, 0);
+                    SkipStart = new TimeSpan(00, 00, 0);
+                    SkipEnd = new TimeSpan(00, 00, 0);
+                    Skip2Start = new TimeSpan(00, 00, 0);
+                    Skip2End = new TimeSpan(00, 00, 0); 
                     break;
             }
 
