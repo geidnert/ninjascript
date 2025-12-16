@@ -216,7 +216,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Random rng;
         private string displayText = "Waiting...";
         private bool sessionClosed = false;
-        private bool debug = true;
+        private bool debug = false;
         private int longSignalBar = -1;
         private int shortSignalBar = -1;
         private bool longLinesActive = false;
@@ -1856,9 +1856,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     MaxSLPoints = 143;
 
                     // ✅ Session preset values
-                    SessionStart  = new TimeSpan(4, 00, 0);
-                    SessionEnd    = new TimeSpan(8, 00, 0);
-                    NoTradesAfter = new TimeSpan(7, 00, 0);
+                    SessionStart  = new TimeSpan(3, 00, 0);
+                    SessionEnd    = new TimeSpan(7, 00, 0);
+                    NoTradesAfter = new TimeSpan(6, 00, 0);
                     SkipStart = new TimeSpan(00, 00, 0);
                     SkipEnd = new TimeSpan(00, 00, 0);
                     Skip2Start = new TimeSpan(00, 00, 0);
