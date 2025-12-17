@@ -1176,7 +1176,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 				if (effectiveSessionStart > effectiveSessionEnd && effectiveNoTradesAfter < effectiveSessionStart)
 					noTradesAfterTime = noTradesAfterTime.AddDays(1);
 
-			// Draw the vertical line exactly at NoTradesAfter
+			    // Draw the vertical line exactly at NoTradesAfter
 				Draw.VerticalLine(this, $"NoTradesAfter_{Time[0]:yyyyMMdd}", noTradesAfterTime, r,
 								DashStyleHelper.Solid, 2);
 
