@@ -216,7 +216,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Random rng;
         private string displayText = "Waiting...";
         private bool sessionClosed = false;
-        private bool debug = false;
+        private bool debug = true;
         private int longSignalBar = -1;
         private int shortSignalBar = -1;
         private bool longLinesActive = false;
