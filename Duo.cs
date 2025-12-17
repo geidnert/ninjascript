@@ -238,6 +238,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double pendingShortSL;
         private string lastLongWebhookOrderId;
         private string lastShortWebhookOrderId;
+        private double lastLongWebhookEntry;
+        private double lastLongWebhookTP;
+        private double lastLongWebhookSL;
+        private double lastShortWebhookEntry;
+        private double lastShortWebhookTP;
+        private double lastShortWebhookSL;
         private int lastCancelWebhookBar = -1;
         private int lastExitWebhookBar = -1;
 
@@ -912,32 +918,86 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	            if (order.Name == "LongEntry" && pendingLongWebhook)
 	            {
 	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
-	                if ((orderState == OrderState.Accepted || orderState == OrderState.Working)
-	                    && !string.Equals(lastLongWebhookOrderId, orderId, StringComparison.Ordinal))
+	                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working;
+	                bool isNewOrderId = !string.Equals(lastLongWebhookOrderId, orderId, StringComparison.Ordinal);
+	                bool payloadChanged =
+	                    isNewOrderId ||
+	                    !PricesEqual(lastLongWebhookEntry, pendingLongEntry) ||
+	                    !PricesEqual(lastLongWebhookTP, pendingLongTP) ||
+	                    !PricesEqual(lastLongWebhookSL, pendingLongSL);
+
+	                if (isActive && payloadChanged)
 	                {
+                        if (!string.IsNullOrEmpty(lastLongWebhookOrderId))
+                        {
+                            if (debug)
+                                Print($"{Time[0]} - 🔁 Webhook updating LONG working order: {lastLongWebhookEntry:0.00}/{lastLongWebhookTP:0.00}/{lastLongWebhookSL:0.00} -> {pendingLongEntry:0.00}/{pendingLongTP:0.00}/{pendingLongSL:0.00}");
+                            SendWebhook("cancel");
+                        }
+                        else if (debug)
+                        {
+                            Print($"{Time[0]} - 📤 Webhook sending initial LONG order: {pendingLongEntry:0.00}/{pendingLongTP:0.00}/{pendingLongSL:0.00}");
+                        }
 	                    SendWebhook("buy", pendingLongEntry, pendingLongTP, pendingLongSL);
 	                    pendingLongWebhook = false;
 	                    lastLongWebhookOrderId = orderId;
+                        lastLongWebhookEntry = pendingLongEntry;
+                        lastLongWebhookTP = pendingLongTP;
+                        lastLongWebhookSL = pendingLongSL;
 	                }
 	                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
 	                {
 	                    pendingLongWebhook = false;
+                        if (orderState == OrderState.Cancelled)
+                        {
+                            lastLongWebhookOrderId = null;
+                            lastLongWebhookEntry = 0;
+                            lastLongWebhookTP = 0;
+                            lastLongWebhookSL = 0;
+                        }
 	                }
 	            }
 
 	            if (order.Name == "ShortEntry" && pendingShortWebhook)
 	            {
 	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
-	                if ((orderState == OrderState.Accepted || orderState == OrderState.Working)
-	                    && !string.Equals(lastShortWebhookOrderId, orderId, StringComparison.Ordinal))
+	                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working;
+	                bool isNewOrderId = !string.Equals(lastShortWebhookOrderId, orderId, StringComparison.Ordinal);
+	                bool payloadChanged =
+	                    isNewOrderId ||
+	                    !PricesEqual(lastShortWebhookEntry, pendingShortEntry) ||
+	                    !PricesEqual(lastShortWebhookTP, pendingShortTP) ||
+	                    !PricesEqual(lastShortWebhookSL, pendingShortSL);
+
+	                if (isActive && payloadChanged)
 	                {
+                        if (!string.IsNullOrEmpty(lastShortWebhookOrderId))
+                        {
+                            if (debug)
+                                Print($"{Time[0]} - 🔁 Webhook updating SHORT working order: {lastShortWebhookEntry:0.00}/{lastShortWebhookTP:0.00}/{lastShortWebhookSL:0.00} -> {pendingShortEntry:0.00}/{pendingShortTP:0.00}/{pendingShortSL:0.00}");
+                            SendWebhook("cancel");
+                        }
+                        else if (debug)
+                        {
+                            Print($"{Time[0]} - 📤 Webhook sending initial SHORT order: {pendingShortEntry:0.00}/{pendingShortTP:0.00}/{pendingShortSL:0.00}");
+                        }
 	                    SendWebhook("sell", pendingShortEntry, pendingShortTP, pendingShortSL);
 	                    pendingShortWebhook = false;
 	                    lastShortWebhookOrderId = orderId;
+                        lastShortWebhookEntry = pendingShortEntry;
+                        lastShortWebhookTP = pendingShortTP;
+                        lastShortWebhookSL = pendingShortSL;
 	                }
 	                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
 	                {
 	                    pendingShortWebhook = false;
+                        if (orderState == OrderState.Cancelled)
+                        {
+                            lastShortWebhookOrderId = null;
+                            lastShortWebhookEntry = 0;
+                            lastShortWebhookTP = 0;
+                            lastShortWebhookSL = 0;
+                        }
 	                }
 	            }
 	
@@ -970,6 +1030,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // For all other order updates (Submitted, Working, Filled), just refresh info
                 UpdateInfo();
             }
+        }
+
+        private bool PricesEqual(double a, double b)
+        {
+            double tolerance = TickSize > 0 ? TickSize * 0.5 : 1e-10;
+            return Math.Abs(a - b) <= tolerance;
         }
 
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
