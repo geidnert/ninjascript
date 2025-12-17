@@ -201,9 +201,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool shortOrderPlaced = false;
         private Order longEntryOrder = null;
         private Order shortEntryOrder = null;
-        private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
-        private TimeSpan sessionEnd = new TimeSpan(12, 05, 0);  
-		private TimeSpan noTradesAfter = new TimeSpan(11, 40, 0);
+        private TimeSpan sessionStart = new TimeSpan(9, 40, 0);
+        private TimeSpan sessionEnd = new TimeSpan(14, 50, 0);  
+		private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
         private TimeSpan skipStart = new TimeSpan(00, 00, 0);
         private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
         private TimeSpan skip2Start = new TimeSpan(00, 00, 0);
@@ -222,23 +222,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool Second_Candle_Open= false;
         private double currentLongCancelPrice = 0;
         private double currentShortCancelPrice = 0;
-	        private Random rng;
-	        private string displayText = "Waiting...";
- 	        private bool sessionClosed = false;
- 	        private bool debug = true;
+        private Random rng;
+        private string displayText = "Waiting...";
+        private bool sessionClosed = false;
+        private bool debug = true;
 
-			private DateTime effectiveTimesDate = DateTime.MinValue;
-			private TimeSpan effectiveSessionStart;
-			private TimeSpan effectiveSessionEnd;
-			private TimeSpan effectiveNoTradesAfter;
-			private TimeSpan effectiveSkipStart;
-			private TimeSpan effectiveSkipEnd;
-			private TimeSpan effectiveSkip2Start;
-			private TimeSpan effectiveSkip2End;
+        private DateTime effectiveTimesDate = DateTime.MinValue;
+        private TimeSpan effectiveSessionStart;
+        private TimeSpan effectiveSessionEnd;
+        private TimeSpan effectiveNoTradesAfter;
+        private TimeSpan effectiveSkipStart;
+        private TimeSpan effectiveSkipEnd;
+        private TimeSpan effectiveSkip2Start;
+        private TimeSpan effectiveSkip2End;
 
-			private TimeZoneInfo targetTimeZone;
-			private TimeZoneInfo londonTimeZone;
-			private static readonly TimeSpan LondonBaselineOffset = TimeSpan.FromHours(5);
+        private TimeZoneInfo targetTimeZone;
+        private TimeZoneInfo londonTimeZone;
+        private static readonly TimeSpan LondonBaselineOffset = TimeSpan.FromHours(5);
 
         // --- Consecutive win direction filter ---
         private int consecutiveWinsSameDirection;
@@ -264,37 +264,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // Default input values (same order as A. Parameters)
                 Contracts     = 1;
-                MinC1Body   = 3.25;
-                MaxC1Body   = 86;
-                MinC2Body   = 12.25;
-                MaxC2Body   = 73;
-                OffsetPerc  = 30;
-                TpPerc      = 77;
+                MinC1Body   = 2.6;
+                MaxC1Body   = 86.1;
+                MinC2Body   = 12.6;
+                MaxC2Body   = 73.7;
+                OffsetPerc  = 29.2;
+                TpPerc      = 68.1;
                 CancelPerc  = 295;
                 DeviationPerc = 0;
                 SLPadding = 0;
                 MaxSLTPRatioPerc = 500;
                 SLPresetSetting = SLPreset.First_Candle_Percent;
-                SLPercentFirstCandle = 99;
-                MaxSLPoints = 140;
+                SLPercentFirstCandle = 97;
+                MaxSLPoints = 161;
 
-	                // Other defaults
-	                SessionBrush  = Brushes.Gold;
-	                CloseAtSessionEnd = true;
-					LondonAutoShiftTimes = false;
-	                SkipStart     = skipStart;
-	                SkipEnd       = skipEnd;
-	                Skip2Start     = skip2Start;
-	                Skip2End       = skip2End;
+                // Other defaults
+                SessionBrush  = Brushes.Gold;
+                CloseAtSessionEnd = true;
+                LondonAutoShiftTimes = false;
+                SkipStart     = skipStart;
+                SkipEnd       = skipEnd;
+                Skip2Start     = skip2Start;
+                Skip2End       = skip2End;
                 ForceCloseAtSkipStart = false;
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 MaxWinsSameDirection = 0;
 
                 // Default session times
-                SessionStart  = new TimeSpan(09, 30, 0);
-                SessionEnd    = new TimeSpan(12, 05, 0);
-				NoTradesAfter = new TimeSpan(11, 40, 0);
+                SessionStart  = new TimeSpan(09, 40, 0);
+                SessionEnd    = new TimeSpan(14, 50, 0);
+				NoTradesAfter = new TimeSpan(14, 30, 0);
             }
             else if (State == State.DataLoaded)
             {
