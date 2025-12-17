@@ -1357,7 +1357,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Higher opacity fill, light dash-dot outlines
             var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));   // fill (~78% opaque)
             areaBrush.Freeze();
-            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 255, 0, 0));    // lines (~35% opaque)
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));    // lines (~35% opaque)
             lineBrush.Freeze();
 
             string rectTag = $"DUO_{tagPrefix}_Rect_{windowStart:yyyyMMdd}";
@@ -1375,10 +1375,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ).ZOrder = -1;
 
             string startTag = $"DUO_{tagPrefix}_Start_{windowStart:yyyyMMdd}";
-            Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.Solid, 2);
 
             string endTag = $"DUO_{tagPrefix}_End_{windowEnd:yyyyMMdd}";
-            Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.Solid, 2);
         }
 
         private double GetSLForLong()
