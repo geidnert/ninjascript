@@ -236,9 +236,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan effectiveSkip2Start;
         private TimeSpan effectiveSkip2End;
 
-        private TimeZoneInfo targetTimeZone;
-        private TimeZoneInfo londonTimeZone;
-        private static readonly TimeSpan LondonBaselineOffset = TimeSpan.FromHours(5);
+			private TimeZoneInfo targetTimeZone;
+			private TimeZoneInfo londonTimeZone;
 
         // --- Consecutive win direction filter ---
         private int consecutiveWinsSameDirection;
@@ -515,11 +514,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // === Strategy signal logic (on bar close only) ===
-            if (Calculate == Calculate.OnBarClose 
-                && CurrentBar > skipBarUntil 
-                && CurrentBar != lastBarProcessed)
-            {
-                double c1Open = Open[1];
+	            if (Calculate == Calculate.OnBarClose 
+	                && CurrentBar > skipBarUntil 
+	                && CurrentBar != lastBarProcessed)
+	            {
+	                double c1Open = Open[1];
                 double c1Close = Close[1];
                 double c1High = High[1];
                 double c1Low = Low[1];
@@ -529,14 +528,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double c2High = High[0];
                 double c2Low = Low[0];
 
-                double c1Body = Math.Abs(c1Close - c1Open);
-                double c2Body = Math.Abs(c2Close - c2Open);
+	                double c1Body = Math.Abs(c1Close - c1Open);
+	                double c2Body = Math.Abs(c2Close - c2Open);
 
-                if (c1Body < MinC1Body || c1Body > MaxC1Body ||
-                    c2Body < MinC2Body || c2Body > MaxC2Body)
-                {
-                    return;
-                }
+	                if (c1Body < MinC1Body || c1Body > MaxC1Body ||
+	                    c2Body < MinC2Body || c2Body > MaxC2Body)
+	                {
+						if (debug)
+						{
+							Print(
+								$"{Time[0]} - Candle body filter skip | " +
+								$"c1Body={c1Body:0.00} (min={MinC1Body:0.00}, max={MaxC1Body:0.00}) | " +
+								$"c2Body={c2Body:0.00} (min={MinC2Body:0.00}, max={MaxC2Body:0.00})");
+						}
+	                    return;
+	                }
 
                 bool c1Bull = c1Close > c1Open;
                 bool c2Bull = c2Close > c2Open;
@@ -1204,17 +1210,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 				effectiveSkipEnd = ShiftTime(SkipEnd, shift);
 				effectiveSkip2Start = ShiftTime(Skip2Start, shift);
 				effectiveSkip2End = ShiftTime(Skip2End, shift);
+
+				if (debug)
+				{
+					Print(
+						$"{date:yyyy-MM-dd} - LondonAutoShiftTimes recompute | " +
+						$"Base SS={SessionStart:hh\\:mm} SE={SessionEnd:hh\\:mm} NTA={NoTradesAfter:hh\\:mm} | " +
+						$"Eff SS={effectiveSessionStart:hh\\:mm} SE={effectiveSessionEnd:hh\\:mm} NTA={effectiveNoTradesAfter:hh\\:mm} | " +
+						$"Shift={shift.TotalHours:0.##}h");
+				}
 			}
 
 			private TimeSpan GetLondonSessionShiftForDate(DateTime date)
 			{
 				// Use midday UTC to avoid DST transition hour edge cases.
 				DateTime utcSample = new DateTime(date.Year, date.Month, date.Day, 12, 0, 0, DateTimeKind.Utc);
+
+				// Compute a dynamic baseline for this year so we only shift during UK/US DST mismatch weeks.
+				// Jan 15 is a stable reference day (both typically on standard time).
+				DateTime utcRef = new DateTime(date.Year, 1, 15, 12, 0, 0, DateTimeKind.Utc);
+
 				TimeZoneInfo londonTz = GetLondonTimeZone();
 				TimeZoneInfo targetTz = GetTargetTimeZone();
 
-				TimeSpan actualOffset = londonTz.GetUtcOffset(utcSample) - targetTz.GetUtcOffset(utcSample);
-				return LondonBaselineOffset - actualOffset;
+				TimeSpan baseline = londonTz.GetUtcOffset(utcRef) - targetTz.GetUtcOffset(utcRef);
+				TimeSpan actual = londonTz.GetUtcOffset(utcSample) - targetTz.GetUtcOffset(utcSample);
+
+				return baseline - actual;
 			}
 
 			private TimeSpan ShiftTime(TimeSpan baseTime, TimeSpan shift)
