@@ -83,11 +83,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [Display(Name = "Cancel Order % of 2nd candle body", GroupName = "A. Parameters", Order = 7)]
         internal double CancelPerc { get; set; }
 
-        // [NinjaScriptProperty]
-        // [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", 
-        //     Order = 8, GroupName = "A. Parameters")]
-        // [Range(0, double.MaxValue)]
-        internal double DeviationPerc { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", 
+            Order = 8, GroupName = "A. Parameters")]
+        [Range(0, double.MaxValue)]
+        public double DeviationPerc { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "SL Padding", Description = "Extra padding added to stop loss (in price units, 0.25 increments)", 
@@ -1907,29 +1907,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     break;
                 
                 case StrategyPreset.London:
-                    MinC1Body   = 18.1;
-                    MaxC1Body   = 93;
-                    MinC2Body   = 8.1;
-                    MaxC2Body   = 54.25;
-                    OffsetPerc  = 6.4;					
-                    TpPerc      = 83.5;
-                    CancelPerc  = 295;
+                    MinC1Body   = 5.6;
+                    MaxC1Body   = 27;
+                    MinC2Body   = 9.2;
+                    MaxC2Body   = 80;
+                    OffsetPerc  = 21;					
+                    TpPerc      = 78;
+                    CancelPerc  = 299;
                     DeviationPerc = 0;
                     SLPadding = 0;
-					MaxSLTPRatioPerc = 500;
+					MaxSLTPRatioPerc = 510;
                     SLPresetSetting = SLPreset.First_Candle_High_Low;
 					SLPercentFirstCandle = 100;
-                    MaxSLPoints = 143;
+                    MaxSLPoints = 93;
 
                     // ✅ Session preset values
                     SessionStart  = new TimeSpan(3, 00, 0);
-                    SessionEnd    = new TimeSpan(7, 00, 0);
-                    NoTradesAfter = new TimeSpan(6, 00, 0);
+                    SessionEnd    = new TimeSpan(5, 20, 0);
+                    NoTradesAfter = new TimeSpan(5, 00, 0);
                     SkipStart = new TimeSpan(00, 00, 0);
                     SkipEnd = new TimeSpan(00, 00, 0);
                     Skip2Start = new TimeSpan(00, 00, 0);
                     Skip2End = new TimeSpan(00, 00, 0); 
                     break;
+
             }
 
             //PrintInstrumentPreset(preset);
