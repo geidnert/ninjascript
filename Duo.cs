@@ -46,14 +46,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             get; set;
         }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 4, GroupName = "A. Config")]
-        public string WebhookUrl { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Max Wins Same Direction", Description = "0 = Disabled. After N consecutive wins in the same direction, the next entry must be opposite.", Order = 5, GroupName = "A. Config")]
-        [Range(0, int.MaxValue)]
-        public int MaxWinsSameDirection { get; set; }
+	        [NinjaScriptProperty]
+	        [Display(Name = "Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 4, GroupName = "A. Config")]
+	        public string WebhookUrl { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Minimum 1st Candle Body", GroupName = "A. Parameters", Order = 1)]
@@ -244,18 +239,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double lastShortWebhookEntry;
         private double lastShortWebhookTP;
         private double lastShortWebhookSL;
-        private int lastCancelWebhookBar = -1;
-        private int lastExitWebhookBar = -1;
+	        private int lastCancelWebhookBar = -1;
+	        private int lastExitWebhookBar = -1;
 
-        // --- Consecutive win direction filter ---
-        private int consecutiveWinsSameDirection;
-        private MarketPosition consecutiveWinsDirection = MarketPosition.Flat;
-        private MarketPosition requiredNextEntryDirection = MarketPosition.Flat; // Flat = no restriction
-
-        // --- Heartbeat reporting ---
-        private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
-        private System.Timers.Timer heartbeatTimer;
-        private DateTime lastHeartbeatWrite = DateTime.MinValue;
+	        // --- Heartbeat reporting ---
+	        private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
+	        private System.Timers.Timer heartbeatTimer;
+	        private DateTime lastHeartbeatWrite = DateTime.MinValue;
         private int heartbeatIntervalSeconds = 10; // send heartbeat every 10 seconds
         private static readonly object heartbeatFileLock = new object();
         private string heartbeatId;
@@ -297,16 +287,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SkipEnd       = skipEnd;
                 Skip2Start     = skip2Start;
                 Skip2End       = skip2End;
-                ForceCloseAtSkipStart = true;
-                RequireEntryConfirmation = false;
-                AntiHedge = false;
-                WebhookUrl = "";
-                MaxWinsSameDirection = 0;
+	                ForceCloseAtSkipStart = true;
+	                RequireEntryConfirmation = false;
+	                AntiHedge = false;
+	                WebhookUrl = "";
 
-                // Default session times
-                SessionStart  = new TimeSpan(09, 40, 0);
-                SessionEnd    = new TimeSpan(14, 50, 0);
-				NoTradesAfter = new TimeSpan(14, 30, 0);
+	                // Default session times
+	                SessionStart  = new TimeSpan(09, 40, 0);
+	                SessionEnd    = new TimeSpan(14, 50, 0);
+					NoTradesAfter = new TimeSpan(14, 30, 0);
             }
             else if (State == State.DataLoaded)
             {
@@ -367,18 +356,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 longSignalBar = -1;
                 shortSignalBar = -1;
                 longLinesActive = false;
-                shortLinesActive = false;
-			    longExitBar = -1;
-			    shortExitBar = -1;
-
-                consecutiveWinsSameDirection = 0;
-                consecutiveWinsDirection = MarketPosition.Flat;
-                requiredNextEntryDirection = MarketPosition.Flat;
-			
-			    displayText = "Waiting...";
-			
-			    Print($"{Time[0]} - New session started, state reset.");
-			}
+	                shortLinesActive = false;
+				    longExitBar = -1;
+				    shortExitBar = -1;
+				
+				    displayText = "Waiting...";
+				
+				    Print($"{Time[0]} - New session started, state reset.");
+				}
 
             DrawSessionBackground();
             UpdateInfo();
@@ -683,19 +668,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     shortOrderPlaced = false;
                 }
 
-                if (validBull && !longOrderPlaced)
-                {
-                    if (!IsEntryAllowedByConsecutiveWinRule(MarketPosition.Long))
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - 🚫 Long entry blocked: requires {requiredNextEntryDirection} after {consecutiveWinsSameDirection} consecutive {consecutiveWinsDirection} wins.");
-                    }
-                    else
-                    {
-                    if (RequireEntryConfirmation)
-                    {
-                        if (!ShowEntryConfirmation("Long", longEntry, Contracts))
-                        {
+	                if (validBull && !longOrderPlaced)
+	                {
+	                    if (RequireEntryConfirmation)
+	                    {
+	                        if (!ShowEntryConfirmation("Long", longEntry, Contracts))
+	                        {
                             if (debug)
                                 Print($"User declined Long entry via confirmation dialog.");
                             return;
@@ -785,26 +763,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     longSignalBar = CurrentBar;
                     longLineTagPrefix = $"LongLine_{++lineTagCounter}_{CurrentBar}_";
                     longLinesActive = true;
-                    longExitBar = -1;
-                    longOrderPlaced = true;
-                    shortOrderPlaced = false;
-                    UpdateInfo();
-                    }
-                }
+	                    longExitBar = -1;
+	                    longOrderPlaced = true;
+	                    shortOrderPlaced = false;
+	                    UpdateInfo();
+	                }
 
-                if (validBear && !shortOrderPlaced)
-                {
-                    if (!IsEntryAllowedByConsecutiveWinRule(MarketPosition.Short))
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - 🚫 Short entry blocked: requires {requiredNextEntryDirection} after {consecutiveWinsSameDirection} consecutive {consecutiveWinsDirection} wins.");
-                    }
-                    else
-                    {
-                    if (RequireEntryConfirmation)
-                    {
-                        if (!ShowEntryConfirmation("Short", shortEntry, Contracts))
-                        {
+	                if (validBear && !shortOrderPlaced)
+	                {
+	                    if (RequireEntryConfirmation)
+	                    {
+	                        if (!ShowEntryConfirmation("Short", shortEntry, Contracts))
+	                        {
                             if (debug)
                                 Print($"User declined Long entry via confirmation dialog.");
                             return;
@@ -894,12 +864,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     shortSignalBar = CurrentBar;
                     shortLineTagPrefix = $"ShortLine_{++lineTagCounter}_{CurrentBar}_";
                     shortLinesActive = true;
-                    shortExitBar = -1;
-                    shortOrderPlaced = true;
-                    longOrderPlaced = false;
-                    UpdateInfo();
-                    }
-                }
+	                    shortExitBar = -1;
+	                    shortOrderPlaced = true;
+	                    longOrderPlaced = false;
+	                    UpdateInfo();
+	                }
                 lastBarProcessed = CurrentBar;
 
             }
@@ -1039,45 +1008,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
-            MarketPosition marketPosition, string orderId, DateTime time)
-        {
-            var smallFont = new SimpleFont("Arial", 8) { Bold = true };
+	            MarketPosition marketPosition, string orderId, DateTime time)
+	        {
+	            var smallFont = new SimpleFont("Arial", 8) { Bold = true };
 
-            // --- Clear "required next direction" once an entry in that direction fills ---
-            if (MaxWinsSameDirection > 0 && requiredNextEntryDirection != MarketPosition.Flat
-                && execution.Order != null && execution.Order.OrderState == OrderState.Filled)
-            {
-                if (execution.Order.Name == "LongEntry" && requiredNextEntryDirection == MarketPosition.Long)
-                    requiredNextEntryDirection = MarketPosition.Flat;
-                else if (execution.Order.Name == "ShortEntry" && requiredNextEntryDirection == MarketPosition.Short)
-                    requiredNextEntryDirection = MarketPosition.Flat;
-            }
-
-            // ✅ Track TP fills
-            if (execution.Order != null && execution.Order.Name == "Profit target"
-                && execution.Order.OrderState == OrderState.Filled)
-            {
-                if (MaxWinsSameDirection > 0)
-                {
-                    MarketPosition winDirection = execution.Order.FromEntrySignal == "LongEntry"
-                        ? MarketPosition.Long
-                        : MarketPosition.Short;
-
-                    if (consecutiveWinsDirection == winDirection)
-                        consecutiveWinsSameDirection++;
-                    else
-                    {
-                        consecutiveWinsDirection = winDirection;
-                        consecutiveWinsSameDirection = 1;
-                    }
-
-                    if (consecutiveWinsSameDirection >= MaxWinsSameDirection)
-                        requiredNextEntryDirection = winDirection == MarketPosition.Long ? MarketPosition.Short : MarketPosition.Long;
-                }
-
-                double entryPrice = execution.Order.FromEntrySignal == "LongEntry"
-                    ? currentLongEntry
-                    : currentShortEntry;
+	            // ✅ Track TP fills
+	            if (execution.Order != null && execution.Order.Name == "Profit target"
+	                && execution.Order.OrderState == OrderState.Filled)
+	            {
+	                double entryPrice = execution.Order.FromEntrySignal == "LongEntry"
+	                    ? currentLongEntry
+	                    : currentShortEntry;
 
                 double points = Math.Abs(price - entryPrice) / TickSize;
                 double pointsInPrice = points * TickSize;
@@ -1097,19 +1038,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ✅ Track SL fills
-            if (execution.Order != null && execution.Order.Name == "Stop loss"
-                && execution.Order.OrderState == OrderState.Filled)
-            {
-                if (MaxWinsSameDirection > 0)
-                {
-                    consecutiveWinsSameDirection = 0;
-                    consecutiveWinsDirection = MarketPosition.Flat;
-                    requiredNextEntryDirection = MarketPosition.Flat;
-                }
-
-                double entryPrice = execution.Order.FromEntrySignal == "LongEntry"
-                    ? currentLongEntry
-                    : currentShortEntry;
+	            if (execution.Order != null && execution.Order.Name == "Stop loss"
+	                && execution.Order.OrderState == OrderState.Filled)
+	            {
+	                double entryPrice = execution.Order.FromEntrySignal == "LongEntry"
+	                    ? currentLongEntry
+	                    : currentShortEntry;
 
                 double points = Math.Abs(price - entryPrice) / TickSize;
                 double pointsInPrice = points * TickSize;
@@ -1171,24 +1105,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateInfo();
                 }
                 ClearHedgeLock(Instrument.MasterInstrument.Name);
-            }
-        }
+	            }
+	        }
 
-        private bool IsEntryAllowedByConsecutiveWinRule(MarketPosition desiredDirection)
-        {
-            if (MaxWinsSameDirection <= 0)
-                return true;
-
-            if (requiredNextEntryDirection == MarketPosition.Flat)
-                return true;
-
-            return desiredDirection == requiredNextEntryDirection;
-        }
-
-        private void UpdatePreviewLines()
-        {
-            if (longLinesActive && longSignalBar >= 0)
-            {
+	        private void UpdatePreviewLines()
+	        {
+	            if (longLinesActive && longSignalBar >= 0)
+	            {
                 int startBarsAgo = CurrentBar - longSignalBar;
                 int endBarsAgo = longExitBar >= 0 ? Math.Max(0, CurrentBar - longExitBar) : 0;
 
