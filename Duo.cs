@@ -341,7 +341,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
 			ApplyPresetForTime(Time[0]);
-			EnsureEffectiveTimes(Time[0]);
+			EnsureEffectiveTimes(Time[0], true);
 			TimeSpan sessionEnd = effectiveSessionEnd;
 			TimeSpan noTradesAfter = effectiveNoTradesAfter;
 			
@@ -1231,7 +1231,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	
         private bool TimeInSkip(DateTime time)
         {
-			EnsureEffectiveTimes(time);
+			EnsureEffectiveTimes(time, false);
             TimeSpan now = time.TimeOfDay;
 
             bool inSkip1 = false;
@@ -1258,7 +1258,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 		private bool TimeInSession(DateTime time)
 		{
-			EnsureEffectiveTimes(time);
+			EnsureEffectiveTimes(time, false);
 		    TimeSpan now = time.TimeOfDay;
 		
 		    if (effectiveSessionStart < effectiveSessionEnd)
@@ -1269,7 +1269,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 		private bool TimeInNoTradesAfter(DateTime time)
 		{
-			EnsureEffectiveTimes(time);
+			EnsureEffectiveTimes(time, false);
 			TimeSpan now = time.TimeOfDay;
 
 			// If the session doesn’t cross midnight
@@ -1288,7 +1288,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // Find current bar time
             DateTime barTime = Time[0];
-			EnsureEffectiveTimes(barTime);
+			EnsureEffectiveTimes(barTime, false);
             bool isOvernight = effectiveSessionStart > effectiveSessionEnd;
 
             DateTime sessionStartTime = barTime.Date + effectiveSessionStart;
@@ -1387,7 +1387,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.Solid, 2);
         }
 
-		private void EnsureEffectiveTimes(DateTime barTime)
+		private void EnsureEffectiveTimes(DateTime barTime, bool log)
 		{
 			if (!londonAutoShiftTimes)
 			{
@@ -1416,7 +1416,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			effectiveSkip2Start = ShiftTime(Skip2Start, shift);
 			effectiveSkip2End = ShiftTime(Skip2End, shift);
 
-			if (debug)
+			if (debug && log)
 			{
 				Print(
 					$"{date:yyyy-MM-dd} - LondonAutoShiftTimes recompute | " +
@@ -1951,6 +1951,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 				activePreset = desired;
 				ApplyInstrumentPreset(activePreset);
 				presetInitialized = true;
+				if (debug)
+				{
+					EnsureEffectiveTimes(time, false);
+					Print(
+						$"{time:yyyy-MM-dd HH:mm} - Preset switched to {FormatPresetLabel(activePreset)} | " +
+						$"SS={effectiveSessionStart:hh\\:mm} SE={effectiveSessionEnd:hh\\:mm} " +
+						$"NTA={effectiveNoTradesAfter:hh\\:mm} Skip1={effectiveSkipStart:hh\\:mm}-{effectiveSkipEnd:hh\\:mm}");
+				}
 			}
 		}
 
