@@ -141,6 +141,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Session Fill", Description = "Color of the session background", Order = 4, GroupName = "Session Time")]
         public Brush SessionBrush { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Trade London Session", Description = "Allow trading during the London session", Order = 5, GroupName = "Session Time")]
+        public bool TradeLondonSession { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade New York Session", Description = "Allow trading during the New York session", Order = 6, GroupName = "Session Time")]
+        public bool TradeNewYorkSession { get; set; }
+
         // [NinjaScriptProperty]
         // [Display(Name = "Close at Session End", Description = "If true, open trades will be closed and working orders canceled at session end", Order = 4, GroupName = "Session Time")]
         internal bool CloseAtSessionEnd { get; set; }
@@ -279,6 +287,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // Other defaults
                 SessionBrush  = Brushes.Gold;
                 CloseAtSessionEnd = true;
+                TradeLondonSession = true;
+                TradeNewYorkSession = true;
                 SkipStart     = skipStart;
                 SkipEnd       = skipEnd;
                 Skip2Start     = skip2Start;
@@ -1247,12 +1257,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 		private bool TimeInSession(DateTime time)
 		{
 			EnsureEffectiveTimes(time, false);
+			if (!IsTradingEnabledForPreset(activePreset))
+				return false;
 		    TimeSpan now = time.TimeOfDay;
 		
 		    if (effectiveSessionStart < effectiveSessionEnd)
 		        return now >= effectiveSessionStart && now < effectiveSessionEnd;   // strictly less
 		    else
 		        return now >= effectiveSessionStart || now < effectiveSessionEnd;
+		}
+
+		private bool IsTradingEnabledForPreset(StrategyPreset preset)
+		{
+			return preset == StrategyPreset.London ? TradeLondonSession : TradeNewYorkSession;
 		}
 
 		private bool TimeInNoTradesAfter(DateTime time)
