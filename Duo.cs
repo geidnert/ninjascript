@@ -2015,21 +2015,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case StrategyPreset.London:
 					londonAutoShiftTimes = true;
                     MinC1Body   = 5.6;
-                    MaxC1Body   = 27;
-                    MinC2Body   = 9.2;
-                    MaxC2Body   = 80;
-                    OffsetPerc  = 21;					
-                    TpPerc      = 78;
-                    CancelPerc  = 299;
+                    MaxC1Body   = 26.8;
+                    MinC2Body   = 9.1;
+                    MaxC2Body   = 77.7;
+                    OffsetPerc  = 20.5;					
+                    TpPerc      = 78.5;
+                    CancelPerc  = 309;
                     DeviationPerc = 0;
                     SLPadding = 0;
-					MaxSLTPRatioPerc = 510;
+					MaxSLTPRatioPerc = 550;
                     SLPresetSetting = SLPreset.First_Candle_High_Low;
 					SLPercentFirstCandle = 100;
-                    MaxSLPoints = 93;
+                    MaxSLPoints = 92;
 
                     // ✅ Session preset values
-                    SessionStart  = new TimeSpan(3, 00, 0);
+                    SessionStart  = new TimeSpan(2, 30, 0);
                     SessionEnd    = new TimeSpan(5, 20, 0);
                     NoTradesAfter = new TimeSpan(5, 00, 0);
                     SkipStart = new TimeSpan(00, 00, 0);
