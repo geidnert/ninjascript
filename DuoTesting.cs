@@ -592,7 +592,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // === Determine range depending on Candle Mode ===
                 double range;
-                if (CandleModeSetting == CandleMode.OneCandle)
+                if (CandleModeSetting == CandleMode.TwoCandle)
                 {
                     // 🟦 New 1-Candle mode: use Open of first candle (previous bar)
                     // and Close of current candle (second bar)
