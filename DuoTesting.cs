@@ -65,6 +65,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int MaxWinsSameDirection { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Reverse On Signal", Description = "If true, flatten current position when a reverse signal is generated, then place the new limit order", Order = 5, GroupName = "A. Config")]
+        public bool ReverseOnSignal { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Minimum 1st Candle Body", GroupName = "A. Parameters", Order = 1)]
         public double MinC1Body { get; set; }
 
@@ -257,15 +261,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnStateChange()
         {
-	            if (State == State.SetDefaults)
-	            {
-	                Name = "DuoTesting";
-	                Calculate = Calculate.OnBarClose;
+            if (State == State.SetDefaults)
+            {
+                Name = "DuoTesting";
+                Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
                 IsInstantiatedOnEachOptimizationIteration = false;
 
                 // Default input values (same order as A. Parameters)
+                CandleModeSetting = CandleMode.TwoCandle; 
                 Contracts     = 1;
                 MinC1Body   = 2.6;
                 MaxC1Body   = 86.1;
@@ -278,7 +283,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 DeviationPerc = 0;
                 SLPadding = 0;
                 MaxSLTPRatioPerc = 500;
-                SLPresetSetting = SLPreset.First_Candle_Percent;
+                SLPresetSetting = SLPreset.First_Candle_High_Low;
                 SLPercentFirstCandle = 97;
                 MaxSLPoints = 161;
 
@@ -290,10 +295,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SkipEnd       = skipEnd;
                 Skip2Start     = skip2Start;
                 Skip2End       = skip2End;
-                ForceCloseAtSkipStart = false;
+                ForceCloseAtSkipStart = true;
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 MaxWinsSameDirection = 0;
+                ReverseOnSignal = false;
 
                 // Default session times
                 SessionStart  = new TimeSpan(09, 40, 0);
@@ -626,6 +632,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                     else
                     {
+                    HandleReverseOnSignal(MarketPosition.Long);
+
                     if (RequireEntryConfirmation)
                     {
                         if (!ShowEntryConfirmation("Long", longEntry, Contracts))
@@ -736,6 +744,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                     else
                     {
+                    HandleReverseOnSignal(MarketPosition.Short);
+
                     if (RequireEntryConfirmation)
                     {
                         if (!ShowEntryConfirmation("Short", shortEntry, Contracts))
@@ -1066,6 +1076,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             skipBarUntil = CurrentBar;
             if (debug)
                 Print($"{Time[0]} - ➡️ Skipping signals until bar > {skipBarUntil}");
+        }
+
+        private void HandleReverseOnSignal(MarketPosition desiredDirection)
+        {
+            if (!ReverseOnSignal)
+                return;
+
+            if (desiredDirection == MarketPosition.Long && Position.MarketPosition == MarketPosition.Short)
+            {
+                Flatten("ReverseSignal");
+                if (shortEntryOrder != null)
+                    CancelOrder(shortEntryOrder);
+                shortEntryOrder = null;
+                shortOrderPlaced = false;
+            }
+            else if (desiredDirection == MarketPosition.Short && Position.MarketPosition == MarketPosition.Long)
+            {
+                Flatten("ReverseSignal");
+                if (longEntryOrder != null)
+                    CancelOrder(longEntryOrder);
+                longEntryOrder = null;
+                longOrderPlaced = false;
+            }
         }
 
         private bool IsEntryAllowedByConsecutiveWinRule(MarketPosition desiredDirection)
