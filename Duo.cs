@@ -141,12 +141,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Session Fill", Description = "Color of the session background", Order = 4, GroupName = "Session Time")]
         public Brush SessionBrush { get; set; }
 
+        // [NinjaScriptProperty]
+        // [Display(Name = "Trade Asia Session", Description = "Allow trading during the Asia session", Order = 5, GroupName = "Session Time")]
+        internal bool TradeAsiaSession { get; set; }
+
         [NinjaScriptProperty]
-        [Display(Name = "Trade London Session", Description = "Allow trading during the London session", Order = 5, GroupName = "Session Time")]
+        [Display(Name = "Trade London Session", Description = "Allow trading during the London session", Order = 6, GroupName = "Session Time")]
         public bool TradeLondonSession { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade New York Session", Description = "Allow trading during the New York session", Order = 6, GroupName = "Session Time")]
+        [Display(Name = "Trade New York Session", Description = "Allow trading during the New York session", Order = 7, GroupName = "Session Time")]
         public bool TradeNewYorkSession { get; set; }
 
         // [NinjaScriptProperty]
@@ -287,6 +291,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // Other defaults
                 SessionBrush  = Brushes.Gold;
                 CloseAtSessionEnd = true;
+                TradeAsiaSession = false;
                 TradeLondonSession = true;
                 TradeNewYorkSession = true;
                 SkipStart     = skipStart;
@@ -1269,7 +1274,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 		private bool IsTradingEnabledForPreset(StrategyPreset preset)
 		{
-			return preset == StrategyPreset.London ? TradeLondonSession : TradeNewYorkSession;
+			switch (preset)
+			{
+				case StrategyPreset.Asia:
+					return TradeAsiaSession;
+				case StrategyPreset.London:
+					return TradeLondonSession;
+				default:
+					return TradeNewYorkSession;
+			}
 		}
 
 		private bool TimeInNoTradesAfter(DateTime time)
@@ -1944,6 +1957,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         public enum StrategyPreset
         {
+            Asia,
             London,
             New_York
         }
@@ -1969,28 +1983,134 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private StrategyPreset DeterminePresetForTime(DateTime time)
         {
+			TimeSpan asiaStart = new TimeSpan(0, 10, 0);
+			TimeSpan asiaEnd = new TimeSpan(2, 0, 0);
 			TimeSpan baseLondonStart = new TimeSpan(3, 0, 0);
 			TimeSpan baseLondonEnd = new TimeSpan(5, 20, 0);
 			TimeSpan shift = GetLondonSessionShiftForDate(time.Date);
 			TimeSpan londonStart = ShiftTime(baseLondonStart, shift);
 			TimeSpan londonEnd = ShiftTime(baseLondonEnd, shift);
+			TimeSpan newYorkStart = new TimeSpan(9, 40, 0);
+			TimeSpan newYorkEnd = new TimeSpan(14, 50, 0);
 			TimeSpan now = time.TimeOfDay;
 
-			if (londonStart < londonEnd)
-				return now < londonEnd ? StrategyPreset.London : StrategyPreset.New_York;
+			if (TradeAsiaSession && IsTimeInRange(now, asiaStart, asiaEnd))
+				return StrategyPreset.Asia;
+			if (TradeLondonSession && IsTimeInRange(now, londonStart, londonEnd))
+				return StrategyPreset.London;
+			if (TradeNewYorkSession && IsTimeInRange(now, newYorkStart, newYorkEnd))
+				return StrategyPreset.New_York;
 
-			return (now >= londonStart || now < londonEnd) ? StrategyPreset.London : StrategyPreset.New_York;
+			bool hasNext = false;
+			TimeSpan nextStart = TimeSpan.MaxValue;
+			StrategyPreset nextPreset = StrategyPreset.New_York;
+
+			ConsiderNextPreset(StrategyPreset.Asia, TradeAsiaSession, asiaStart, now, ref hasNext, ref nextStart, ref nextPreset);
+			ConsiderNextPreset(StrategyPreset.London, TradeLondonSession, londonStart, now, ref hasNext, ref nextStart, ref nextPreset);
+			ConsiderNextPreset(StrategyPreset.New_York, TradeNewYorkSession, newYorkStart, now, ref hasNext, ref nextStart, ref nextPreset);
+
+			return hasNext ? nextPreset : StrategyPreset.New_York;
 		}
 
 		private string FormatPresetLabel(StrategyPreset preset)
 		{
-			return preset == StrategyPreset.New_York ? "New York" : "London";
+			switch (preset)
+			{
+				case StrategyPreset.Asia:
+					return "Asia";
+				case StrategyPreset.London:
+					return "London";
+				default:
+					return "New York";
+			}
+		}
+
+		private bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
+		{
+			if (start < end)
+				return now >= start && now < end;
+
+			return now >= start || now < end;
+		}
+
+		private void ConsiderNextPreset(
+			StrategyPreset preset,
+			bool enabled,
+			TimeSpan start,
+			TimeSpan now,
+			ref bool hasNext,
+			ref TimeSpan nextStart,
+			ref StrategyPreset nextPreset)
+		{
+			if (!enabled)
+				return;
+
+			TimeSpan candidate = start < now ? start.Add(TimeSpan.FromDays(1)) : start;
+			if (!hasNext || candidate < nextStart)
+			{
+				hasNext = true;
+				nextStart = candidate;
+				nextPreset = preset;
+			}
 		}
 
         private void ApplyInstrumentPreset(StrategyPreset preset)
         {
             switch (preset)
             {
+
+                case StrategyPreset.Asia:
+					londonAutoShiftTimes = true;
+                    MinC1Body   = 1.6;
+                    MaxC1Body   = 26.8;
+                    MinC2Body   = 1.1;
+                    MaxC2Body   = 77.7;
+                    OffsetPerc  = 20.5;					
+                    TpPerc      = 78.5;
+                    CancelPerc  = 309;
+                    DeviationPerc = 0;
+                    SLPadding = 0;
+					MaxSLTPRatioPerc = 550;
+                    SLPresetSetting = SLPreset.First_Candle_High_Low;
+					SLPercentFirstCandle = 100;
+                    MaxSLPoints = 92;
+
+                    // ✅ Session preset values
+                    SessionStart  = new TimeSpan(20, 00, 0);
+                    SessionEnd    = new TimeSpan(00, 00, 0);
+                    NoTradesAfter = new TimeSpan(23, 30, 0);
+                    SkipStart = new TimeSpan(00, 00, 0);
+                    SkipEnd = new TimeSpan(00, 00, 0);
+                    Skip2Start = new TimeSpan(00, 00, 0);
+                    Skip2End = new TimeSpan(00, 00, 0); 
+                    break;
+
+                case StrategyPreset.London:
+					londonAutoShiftTimes = true;
+                    MinC1Body   = 5.6;
+                    MaxC1Body   = 26.8;
+                    MinC2Body   = 9.1;
+                    MaxC2Body   = 77.7;
+                    OffsetPerc  = 20.5;					
+                    TpPerc      = 78.5;
+                    CancelPerc  = 309;
+                    DeviationPerc = 0;
+                    SLPadding = 0;
+					MaxSLTPRatioPerc = 550;
+                    SLPresetSetting = SLPreset.First_Candle_High_Low;
+					SLPercentFirstCandle = 100;
+                    MaxSLPoints = 92;
+
+                    // ✅ Session preset values
+                    SessionStart  = new TimeSpan(2, 30, 0);
+                    SessionEnd    = new TimeSpan(5, 20, 0);
+                    NoTradesAfter = new TimeSpan(5, 00, 0);
+                    SkipStart = new TimeSpan(00, 00, 0);
+                    SkipEnd = new TimeSpan(00, 00, 0);
+                    Skip2Start = new TimeSpan(00, 00, 0);
+                    Skip2End = new TimeSpan(00, 00, 0); 
+                    break;
+                    
                 case StrategyPreset.New_York:
 					londonAutoShiftTimes = false;
                     MinC1Body   = 2.6;
@@ -2017,31 +2137,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Skip2End = new TimeSpan(00, 00, 0); 
                     break;
                 
-                case StrategyPreset.London:
-					londonAutoShiftTimes = true;
-                    MinC1Body   = 5.6;
-                    MaxC1Body   = 26.8;
-                    MinC2Body   = 9.1;
-                    MaxC2Body   = 77.7;
-                    OffsetPerc  = 20.5;					
-                    TpPerc      = 78.5;
-                    CancelPerc  = 309;
-                    DeviationPerc = 0;
-                    SLPadding = 0;
-					MaxSLTPRatioPerc = 550;
-                    SLPresetSetting = SLPreset.First_Candle_High_Low;
-					SLPercentFirstCandle = 100;
-                    MaxSLPoints = 92;
 
-                    // ✅ Session preset values
-                    SessionStart  = new TimeSpan(2, 30, 0);
-                    SessionEnd    = new TimeSpan(5, 20, 0);
-                    NoTradesAfter = new TimeSpan(5, 00, 0);
-                    SkipStart = new TimeSpan(00, 00, 0);
-                    SkipEnd = new TimeSpan(00, 00, 0);
-                    Skip2Start = new TimeSpan(00, 00, 0);
-                    Skip2End = new TimeSpan(00, 00, 0); 
-                    break;
 
             }
 
