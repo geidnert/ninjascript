@@ -93,6 +93,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double CancelPerc { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Cancel On Touch", Description = "If true, cancel as soon as price touches the cancel level; otherwise cancel on bar close", GroupName = "A. Parameters", Order = 50)]
+        public bool CancelOnTouch { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", 
             Order = 8, GroupName = "A. Parameters")]
         [Range(0, double.MaxValue)]
@@ -270,6 +274,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 OffsetPerc  = 29.2;
                 TpPerc      = 68.1;
                 CancelPerc  = 295;
+                CancelOnTouch = false;
                 DeviationPerc = 0;
                 SLPadding = 0;
                 MaxSLTPRatioPerc = 500;
@@ -465,51 +470,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 				return;
 			}
 
-            // === Long Cancel: TP hit before entry === 
-            if (longEntryOrder != null && longEntryOrder.OrderState == OrderState.Working)
+            // === Long/Short Cancel: TP hit before entry ===
+            if (!CancelOnTouch)
             {
-                if (High[0] >= currentLongCancelPrice && Low[0] > currentLongEntry)
-                //if (High[0] >= currentLongTP && Low[0] > currentLongEntry)
+                if (longEntryOrder != null && longEntryOrder.OrderState == OrderState.Working)
                 {
-                    if (debug)
-                        Print($"{Time[0]} - 🚫 Long cancel price hit before entry fill. Canceling order.");
-                    CancelOrder(longEntryOrder);
-                    longOrderPlaced = false;
-                    longEntryOrder = null;
-
-                    // 🔄 Redraw canceled lines in gray
-                    Draw.Line(this, "LongEntryLine_" + CurrentBar, false, 1, currentLongEntry, 0, currentLongEntry, Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "LongTPLine_" + CurrentBar, false, 1, currentLongTP, 0, currentLongTP, Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "LongSLLine_" + CurrentBar, false, 1, GetSLForLong(), 0, GetSLForLong(), Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "LongCancelLine_" + CurrentBar, false, 1, currentLongCancelPrice, 0, currentLongCancelPrice, Brushes.Gray, DashStyleHelper.Dot, 2);
-
-                    skipBarUntil = CurrentBar;
-                    if (debug)
-                        Print($"{Time[0]} - ➡️ Skipping signals until bar > {skipBarUntil}");
+                    if (High[0] >= currentLongCancelPrice && Low[0] > currentLongEntry)
+                    //if (High[0] >= currentLongTP && Low[0] > currentLongEntry)
+                    {
+                        CancelLongEntry();
+                    }
                 }
-            }
 
-            // === Short Cancel: TP hit before entry ===
-            if (shortEntryOrder != null && shortEntryOrder.OrderState == OrderState.Working)
-            {
-                if (Low[0] <= currentShortCancelPrice && High[0] < currentShortEntry)
-                //if (Low[0] <= currentShortTP && High[0] < currentShortEntry)
+                if (shortEntryOrder != null && shortEntryOrder.OrderState == OrderState.Working)
                 {
-                    if (debug)
-                        Print($"{Time[0]} - 🚫 Short cancel price hit before entry fill. Canceling order.");
-                    CancelOrder(shortEntryOrder);
-                    shortOrderPlaced = false;
-                    shortEntryOrder = null;
-
-                    // 🔄 Redraw canceled lines in gray
-                    Draw.Line(this, "ShortEntryLine_" + CurrentBar, false, 1, currentShortEntry, 0, currentShortEntry, Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "ShortTPLine_" + CurrentBar, false, 1, currentShortTP, 0, currentShortTP, Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "ShortSLLine_" + CurrentBar, false, 1, GetSLForShort(), 0, GetSLForShort(), Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, "ShortCancelLine_" + CurrentBar, false, 1, currentShortCancelPrice, 0, currentShortCancelPrice, Brushes.Gray, DashStyleHelper.Dot, 2);
-
-                    skipBarUntil = CurrentBar;
-                    if (debug)
-                        Print($"{Time[0]} - ➡️ Skipping signals until bar > {skipBarUntil}");
+                    if (Low[0] <= currentShortCancelPrice && High[0] < currentShortEntry)
+                    //if (Low[0] <= currentShortTP && High[0] < currentShortEntry)
+                    {
+                        CancelShortEntry();
+                    }
                 }
             }
 
@@ -1020,6 +999,73 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateInfo();
                 }
             }
+        }
+
+        protected override void OnMarketData(MarketDataEventArgs marketDataUpdate)
+        {
+            if (!CancelOnTouch)
+                return;
+
+            if (marketDataUpdate.MarketDataType != MarketDataType.Last)
+                return;
+
+            if (BarsInProgress != 0 || CurrentBar < 1)
+                return;
+
+            if (TimeInSkip(Time[0]) || !TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
+                return;
+
+            double price = marketDataUpdate.Price;
+
+            if (longEntryOrder != null && longEntryOrder.OrderState == OrderState.Working)
+            {
+                if (price >= currentLongCancelPrice && price > currentLongEntry)
+                    CancelLongEntry();
+            }
+
+            if (shortEntryOrder != null && shortEntryOrder.OrderState == OrderState.Working)
+            {
+                if (price <= currentShortCancelPrice && price < currentShortEntry)
+                    CancelShortEntry();
+            }
+        }
+
+        private void CancelLongEntry()
+        {
+            if (debug)
+                Print($"{Time[0]} - 🚫 Long cancel price hit before entry fill. Canceling order.");
+            CancelOrder(longEntryOrder);
+            longOrderPlaced = false;
+            longEntryOrder = null;
+
+            // 🔄 Redraw canceled lines in gray
+            Draw.Line(this, "LongEntryLine_" + CurrentBar, false, 1, currentLongEntry, 0, currentLongEntry, Brushes.Gray, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "LongTPLine_" + CurrentBar, false, 1, currentLongTP, 0, currentLongTP, Brushes.Gray, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "LongSLLine_" + CurrentBar, false, 1, GetSLForLong(), 0, GetSLForLong(), Brushes.Gray, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "LongCancelLine_" + CurrentBar, false, 1, currentLongCancelPrice, 0, currentLongCancelPrice, Brushes.Gray, DashStyleHelper.Dot, 2);
+
+            skipBarUntil = CurrentBar;
+            if (debug)
+                Print($"{Time[0]} - ➡️ Skipping signals until bar > {skipBarUntil}");
+        }
+
+        private void CancelShortEntry()
+        {
+            if (debug)
+                Print($"{Time[0]} - 🚫 Short cancel price hit before entry fill. Canceling order.");
+            CancelOrder(shortEntryOrder);
+            shortOrderPlaced = false;
+            shortEntryOrder = null;
+
+            // 🔄 Redraw canceled lines in gray
+            Draw.Line(this, "ShortEntryLine_" + CurrentBar, false, 1, currentShortEntry, 0, currentShortEntry, Brushes.Gray, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "ShortTPLine_" + CurrentBar, false, 1, currentShortTP, 0, currentShortTP, Brushes.Gray, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "ShortSLLine_" + CurrentBar, false, 1, GetSLForShort(), 0, GetSLForShort(), Brushes.Gray, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "ShortCancelLine_" + CurrentBar, false, 1, currentShortCancelPrice, 0, currentShortCancelPrice, Brushes.Gray, DashStyleHelper.Dot, 2);
+
+            skipBarUntil = CurrentBar;
+            if (debug)
+                Print($"{Time[0]} - ➡️ Skipping signals until bar > {skipBarUntil}");
         }
 
         private bool IsEntryAllowedByConsecutiveWinRule(MarketPosition desiredDirection)
