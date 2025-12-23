@@ -27,87 +27,81 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Number of Contracts", GroupName = "A. Config", Order = 1)]
+        [Display(Name = "Number of Contracts", GroupName = "Config", Order = 1)]
         public int Contracts { get; set; }
 
         [NinjaScriptProperty]
-		[Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 2, GroupName = "A. Config")]
+		[Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 2, GroupName = "Config")]
 		public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3,
-                GroupName = "A. Config")]
+        [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3, GroupName = "Config")]
         public bool AntiHedge {
             get; set;
         }
 
-	        [NinjaScriptProperty]
-	        [Display(Name = "Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 4, GroupName = "A. Config")]
-	        public string WebhookUrl { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 4, GroupName = "Config")]
+        public string WebhookUrl { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Minimum 1st Candle Body", GroupName = "A. Parameters", Order = 1)]
+        // [Display(Name = "Minimum 1st Candle Body", GroupName = "Parameters", Order = 1)]
         internal double MinC1Body { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Maximum 1st Candle Body", GroupName = "A. Parameters", Order = 2)]
+        // [Display(Name = "Maximum 1st Candle Body", GroupName = "Parameters", Order = 2)]
         internal double MaxC1Body { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Minimum 2nd Candle Body", GroupName = "A. Parameters", Order = 3)]
+        // [Display(Name = "Minimum 2nd Candle Body", GroupName = "Parameters", Order = 3)]
         internal double MinC2Body { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Maximum 2nd Candle Body", GroupName = "A. Parameters", Order = 4)]
+        // [Display(Name = "Maximum 2nd Candle Body", GroupName = "Parameters", Order = 4)]
         internal double MaxC2Body { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Offset % of 2nd candle body", GroupName = "A. Parameters", Order = 5)]
+        // [Display(Name = "Offset % of 2nd candle body", GroupName = "Parameters", Order = 5)]
         internal double OffsetPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Take Profit % of 2nd candle body", GroupName = "A. Parameters", Order = 6)]
+        // [Display(Name = "Take Profit % of 2nd candle body", GroupName = "Parameters", Order = 6)]
         internal double TpPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Cancel Order % of 2nd candle body", GroupName = "A. Parameters", Order = 7)]
+        // [Display(Name = "Cancel Order % of 2nd candle body", GroupName = "Parameters", Order = 7)]
         internal double CancelPerc { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", 
-            Order = 8, GroupName = "A. Parameters")]
+        [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", Order = 8, GroupName = "Parameters")]
         [Range(0, double.MaxValue)]
         public double DeviationPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "SL Padding", Description = "Extra padding added to stop loss (in price units, 0.25 increments)", 
-        //     GroupName = "A. Parameters", Order = 9)]
+        // [Display(Name = "SL Padding", Description = "Extra padding added to stop loss (in price units, 0.25 increments)", GroupName = "Parameters", Order = 9)]
         // [Range(0, double.MaxValue)]
         internal double SLPadding { get; set; }
 
 		// [NinjaScriptProperty]
-        // [Display(Name = "Max SL/TP Ratio %", Description = "Skip trades if SL is more than this % of TP (e.g., 200 = SL can be at most 2x TP)", 
-        //         Order = 10, GroupName = "A. Parameters")]
+        // [Display(Name = "Max SL/TP Ratio %", Description = "Skip trades if SL is more than this % of TP (e.g., 200 = SL can be at most 2x TP)", Order = 10, GroupName = "Parameters")]
         // [Range(0, 1000)]
         internal double MaxSLTPRatioPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "SL type", Description = "Select the sl type you want", Order = 11, GroupName = "A. Parameters")]
+        // [Display(Name = "SL type", Description = "Select the sl type you want", Order = 11, GroupName = "Parameters")]
         internal SLPreset SLPresetSetting { get; set; }
 
 		// [NinjaScriptProperty]
-        // [Display(Name = "SL % of 1st Candle", Description = "0% = High of 1st candle (long), 100% = Low of 1st candle (long)", 
-        //         Order = 12, GroupName = "A. Parameters")]
+        // [Display(Name = "SL % of 1st Candle", Description = "0% = High of 1st candle (long), 100% = Low of 1st candle (long)", Order = 12, GroupName = "Parameters")]
         // [Range(0, 100)]
         internal double SLPercentFirstCandle { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "A. Parameters")]
+        // [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "Parameters")]
         internal double MaxSLPoints { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
-        //         GroupName = "B. Session Time")]
+        // [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "Session Time")]
         internal TimeSpan SessionStart
         {
             get {
@@ -119,9 +113,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Session End",
-        //         Description = "When session is ending, all positions and orders will be canceled when this time is passed",
-        //         Order = 2, GroupName = "B. Session Time")]
+        // [Display(Name = "Session End", Description = "When session is ending, all positions and orders will be canceled when this time is passed", Order = 2, GroupName = "Session Time")]
         internal TimeSpan SessionEnd
         {
             get {
@@ -133,9 +125,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
 		// [NinjaScriptProperty]
-		// [Display(Name = "No Trades After",
-		// 		Description = "No more orders is being placed between this time and session end,", Order = 3,
-		// 		GroupName = "B. Session Time")]
+		// [Display(Name = "No Trades After", Description = "No more orders is being placed between this time and session end,", Order = 3, GroupName = "Session Time")]
 		internal TimeSpan NoTradesAfter
 		{
 			get {
@@ -148,33 +138,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [XmlIgnore]
         [NinjaScriptProperty]
-        [Display(Name = "Session Fill", Description = "Color of the session background", Order = 4, GroupName = "B. Session Time")]
+        [Display(Name = "Session Fill", Description = "Color of the session background", Order = 4, GroupName = "Session Time")]
         public Brush SessionBrush { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Close at Session End", 
-        //         Description = "If true, open trades will be closed and working orders canceled at session end", 
-        //         Order = 4, GroupName = "B. Session Time")]
+        // [Display(Name = "Close at Session End", Description = "If true, open trades will be closed and working orders canceled at session end", Order = 4, GroupName = "Session Time")]
         internal bool CloseAtSessionEnd { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "C. Skip Times")]
+        // [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "Skip Times")]
         internal TimeSpan SkipStart { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "C. Skip Times")]
+        // [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "Skip Times")]
         internal TimeSpan SkipEnd { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "C. Skip Times")]
+        // [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "Skip Times")]
         internal TimeSpan Skip2Start { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "C. Skip Times")]
+        // [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "Skip Times")]
         internal TimeSpan Skip2End { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "C. Skip Times")]
+        // [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "Skip Times")]
         internal bool ForceCloseAtSkipStart { get; set; }
 
         // State tracking
