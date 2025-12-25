@@ -212,8 +212,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan sessionStart = new TimeSpan(9, 40, 0);
         private TimeSpan sessionEnd = new TimeSpan(14, 50, 0);  
 		private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
-        private TimeSpan skipStart = new TimeSpan(00, 00, 0);
-        private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
+        private TimeSpan skipStart = new TimeSpan(11, 45, 0);
+        private TimeSpan skipEnd = new TimeSpan(13, 20, 0);
         private TimeSpan skip2Start = new TimeSpan(00, 00, 0);
         private TimeSpan skip2End = new TimeSpan(00, 00, 0); 
         private int skipBarUntil = -1;
@@ -503,30 +503,48 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                && CurrentBar > skipBarUntil 
 	                && CurrentBar != lastBarProcessed)
 	            {
-	                double c1Open = Open[1];
-                double c1Close = Close[1];
-                double c1High = High[1];
-                double c1Low = Low[1];
+	                int c1Idx = CandleModeSetting == CandleMode.OneCandle ? 0 : 1;
+	                int c2Idx = 0;
+	                double c1Open = Open[c1Idx];
+                double c1Close = Close[c1Idx];
+                double c1High = High[c1Idx];
+                double c1Low = Low[c1Idx];
 
-                double c2Open = Open[0];
-                double c2Close = Close[0];
-                double c2High = High[0];
-                double c2Low = Low[0];
+                double c2Open = Open[c2Idx];
+                double c2Close = Close[c2Idx];
+                double c2High = High[c2Idx];
+                double c2Low = Low[c2Idx];
 
 	                double c1Body = Math.Abs(c1Close - c1Open);
 	                double c2Body = Math.Abs(c2Close - c2Open);
 
-	                if (c1Body < MinC1Body || c1Body > MaxC1Body ||
-	                    c2Body < MinC2Body || c2Body > MaxC2Body)
+	                if (CandleModeSetting == CandleMode.OneCandle)
 	                {
-						if (debug)
-						{
-							Print(
-								$"{Time[0]} - Candle body filter skip | " +
-								$"c1Body={c1Body:0.00} (min={MinC1Body:0.00}, max={MaxC1Body:0.00}) | " +
-								$"c2Body={c2Body:0.00} (min={MinC2Body:0.00}, max={MaxC2Body:0.00})");
-						}
-	                    return;
+	                    if (c1Body < MinC1Body || c1Body > MaxC1Body)
+	                    {
+	                        if (debug)
+	                        {
+	                            Print(
+	                                $"{Time[0]} - Candle body filter skip | " +
+	                                $"c1Body={c1Body:0.00} (min={MinC1Body:0.00}, max={MaxC1Body:0.00})");
+	                        }
+	                        return;
+	                    }
+	                }
+	                else
+	                {
+	                    if (c1Body < MinC1Body || c1Body > MaxC1Body ||
+	                        c2Body < MinC2Body || c2Body > MaxC2Body)
+	                    {
+	                        if (debug)
+	                        {
+	                            Print(
+	                                $"{Time[0]} - Candle body filter skip | " +
+	                                $"c1Body={c1Body:0.00} (min={MinC1Body:0.00}, max={MaxC1Body:0.00}) | " +
+	                                $"c2Body={c2Body:0.00} (min={MinC2Body:0.00}, max={MaxC2Body:0.00})");
+	                        }
+	                        return;
+	                    }
 	                }
 
                 bool c1Bull = c1Close > c1Open;
@@ -534,8 +552,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 bool c1Bear = c1Close < c1Open;
                 bool c2Bear = c2Close < c2Open;
 
-                bool validBull = c1Bull && c2Bull;
-                bool validBear = c1Bear && c2Bear;
+                bool validBull = CandleModeSetting == CandleMode.OneCandle ? c2Bull : (c1Bull && c2Bull);
+                bool validBear = CandleModeSetting == CandleMode.OneCandle ? c2Bear : (c1Bear && c2Bear);
 
                 double longSL = 0;
                 double shortSL = 0;
@@ -577,20 +595,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // === Determine range depending on Candle Mode ===
                 double range;
-                if (CandleModeSetting == CandleMode.TwoCandle)
+                if (CandleModeSetting == CandleMode.OneCandle)
                 {
-                    // 🟦 New 1-Candle mode: use Open of first candle (previous bar)
-                    // and Close of current candle (second bar)
-                    range = Math.Abs(Close[0] - Open[1]);
+                    // 🟦 1-Candle mode: use body of current candle
+                    range = Math.Abs(Close[c2Idx] - Open[c2Idx]);
                     if (debug)
-                        Print($"{Time[0]} - 🟦 Using 1-Candle mode range: |Close[0] - Open[1]| = {range:0.00}");
+                        Print($"{Time[0]} - 🟦 Using 1-Candle mode range: |Close[0] - Open[0]| = {range:0.00}");
                 }
                 else
                 {
-                    // 🟩 Default 2-Candle mode: use body of current candle (second)
-                    range = Math.Abs(Close[0] - Open[0]);
+                    // 🟩 2-Candle mode: use Open of previous candle and Close of current candle
+                    range = Math.Abs(Close[c2Idx] - Open[c1Idx]);
                     if (debug)
-                        Print($"{Time[0]} - 🟩 Using 2-Candle mode range: |Close[0] - Open[0]| = {range:0.00}");
+                        Print($"{Time[0]} - 🟩 Using 2-Candle mode range: |Close[0] - Open[1]| = {range:0.00}");
                 }
 
                 // === Apply range to entry / TP / cancel calculations ===
@@ -610,7 +627,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (debug) {
                     Print($"\n{Time[0]} - Candle body sizes:");
                     Print($"  ➤ c1Body = {c1Body:0.00} (Min allowed: {MinC1Body:0.00}, Max allowed: {MaxC1Body:0.00})");
-                    Print($"  ➤ c2Body = {c2Body:0.00} (Min allowed: {MinC2Body:0.00}, Max allowed: {MaxC2Body:0.00})");
+                    if (CandleModeSetting == CandleMode.TwoCandle)
+                        Print($"  ➤ c2Body = {c2Body:0.00} (Min allowed: {MinC2Body:0.00}, Max allowed: {MaxC2Body:0.00})");
                     Print($"  ➤ Entry Offset = {offset:0.00}");
                     Print($"  ➤ Long TP = {longTP:0.00}, Short TP = {shortTP:0.00}");
                 }
@@ -651,8 +669,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                         if (CandleModeSetting == CandleMode.OneCandle)
                         {
-                            // Use previous candle's full wick range for RR% in OneCandle mode
-                            double oneCandleRange = Math.Abs(High[1] - Low[1]);
+                            // Use current candle's full wick range for RR% in OneCandle mode
+                            double oneCandleRange = Math.Abs(High[c2Idx] - Low[c2Idx]);
                             double estimatedTP = longEntry + oneCandleRange * (TpPerc / 100.0);
                             longTPPoints2 = Math.Abs(estimatedTP - longEntry) / TickSize;
                         }
@@ -763,8 +781,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                         if (CandleModeSetting == CandleMode.OneCandle)
                         {
-                            // Use previous candle's full wick range for RR% in OneCandle mode
-                            double oneCandleRange = Math.Abs(High[1] - Low[1]);
+                            // Use current candle's full wick range for RR% in OneCandle mode
+                            double oneCandleRange = Math.Abs(High[c2Idx] - Low[c2Idx]);
                             double estimatedTP = shortEntry - oneCandleRange * (TpPerc / 100.0);
                             shortTPPoints2 = Math.Abs(shortEntry - estimatedTP) / TickSize;
                         }
@@ -1389,10 +1407,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private double GetSLForLong()
         {
+            int c1Idx = CandleModeSetting == CandleMode.OneCandle ? 0 : 1;
+            int c2Idx = 0;
             if (SLPresetSetting == SLPreset.First_Candle_Percent)
             {
-                double c1High = High[1];
-                double c1Low = Low[1];
+                double c1High = High[c1Idx];
+                double c1Low = Low[c1Idx];
                 double sl = c1High - (SLPercentFirstCandle / 100.0) * (c1High - c1Low);
 
                 if (debug)
@@ -1401,20 +1421,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return sl - SLPadding;
             }
 
-            double baseSL = First_Candle_High_Low ? Low[1] :
-                            First_Candle_Open ? Open[1] :
-                            Second_Candle_High_Low ? Low[0] :
-                            Second_Candle_Open ? Open[0] :
-                            Open[1];
+            double baseSL = First_Candle_High_Low ? Low[c1Idx] :
+                            First_Candle_Open ? Open[c1Idx] :
+                            Second_Candle_High_Low ? Low[c2Idx] :
+                            Second_Candle_Open ? Open[c2Idx] :
+                            Open[c1Idx];
             return baseSL - SLPadding;
         }
 
         private double GetSLForShort()
         {
+            int c1Idx = CandleModeSetting == CandleMode.OneCandle ? 0 : 1;
+            int c2Idx = 0;
             if (SLPresetSetting == SLPreset.First_Candle_Percent)
             {
-                double c1High = High[1];
-                double c1Low = Low[1];
+                double c1High = High[c1Idx];
+                double c1Low = Low[c1Idx];
                 double sl = c1Low + (SLPercentFirstCandle / 100.0) * (c1High - c1Low);
 
                 if (debug)
@@ -1423,11 +1445,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return sl + SLPadding;
             }
 
-            double baseSL = First_Candle_High_Low ? High[1] :
-                            First_Candle_Open ? Open[1] :
-                            Second_Candle_High_Low ? High[0] :
-                            Second_Candle_Open ? Open[0] :
-                            Open[1];
+            double baseSL = First_Candle_High_Low ? High[c1Idx] :
+                            First_Candle_Open ? Open[c1Idx] :
+                            Second_Candle_High_Low ? High[c2Idx] :
+                            Second_Candle_Open ? Open[c2Idx] :
+                            Open[c1Idx];
             return baseSL + SLPadding;
         }
 		
