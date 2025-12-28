@@ -695,6 +695,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     //double paddedLongSL = longSL - SLPadding;
 					double paddedLongSL = GetSLForLong();
+                    if (paddedLongSL >= longEntry)
+                    {
+                        if (debug)
+                            Print($"{Time[0]} - 🚫 Skipping long trade: SL {paddedLongSL:0.00} is not below entry {longEntry:0.00}");
+                        return;
+                    }
                     double slInPoints = Math.Abs(longEntry - paddedLongSL);
 
                     if (MaxSLPoints > 0 && slInPoints > MaxSLPoints)
@@ -807,6 +813,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     //double paddedShortSL = shortSL + SLPadding;
 					double paddedShortSL = GetSLForShort();
+                    if (paddedShortSL <= shortEntry)
+                    {
+                        if (debug)
+                            Print($"{Time[0]} - 🚫 Skipping short trade: SL {paddedShortSL:0.00} is not above entry {shortEntry:0.00}");
+                        return;
+                    }
                     double slInPoints = Math.Abs(shortEntry - paddedShortSL);
 
                     if (MaxSLPoints > 0 && slInPoints > MaxSLPoints)
@@ -1101,22 +1113,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!ReverseOnSignal)
                 return;
 
-            if (desiredDirection == MarketPosition.Long && Position.MarketPosition == MarketPosition.Short)
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
             {
-                Flatten("ReverseSignal");
-                if (shortEntryOrder != null)
+                if (desiredDirection == MarketPosition.Long && IsOrderActive(shortEntryOrder))
+                {
+                    if (debug)
+                        Print($"{Time[0]} - 🔁 Reverse signal while SHORT order working. Canceling SHORT entry.");
                     CancelOrder(shortEntryOrder);
-                shortEntryOrder = null;
-                shortOrderPlaced = false;
-            }
-            else if (desiredDirection == MarketPosition.Short && Position.MarketPosition == MarketPosition.Long)
-            {
-                Flatten("ReverseSignal");
-                if (longEntryOrder != null)
+                    shortEntryOrder = null;
+                    shortOrderPlaced = false;
+                }
+                else if (desiredDirection == MarketPosition.Short && IsOrderActive(longEntryOrder))
+                {
+                    if (debug)
+                        Print($"{Time[0]} - 🔁 Reverse signal while LONG order working. Canceling LONG entry.");
                     CancelOrder(longEntryOrder);
-                longEntryOrder = null;
-                longOrderPlaced = false;
+                    longEntryOrder = null;
+                    longOrderPlaced = false;
+                }
             }
+        }
+
+        private bool IsOrderActive(Order order)
+        {
+            return order != null &&
+                (order.OrderState == OrderState.Working ||
+                order.OrderState == OrderState.Submitted ||
+                order.OrderState == OrderState.Accepted ||
+                order.OrderState == OrderState.ChangePending);
         }
 
         private bool IsEntryAllowedByConsecutiveWinRule(MarketPosition desiredDirection)
