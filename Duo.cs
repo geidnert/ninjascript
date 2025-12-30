@@ -45,31 +45,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public string WebhookUrl { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Minimum 1st Candle Body", GroupName = "Parameters", Order = 1)]
-        internal double MinC1Body { get; set; }
+        // [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "Parameters", Order = 1)]
+        internal double MinC12Body { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Maximum 1st Candle Body", GroupName = "Parameters", Order = 2)]
-        internal double MaxC1Body { get; set; }
+        // [Display(Name = "Maximum 1st+2nd Candle Body", GroupName = "Parameters", Order = 2)]
+        internal double MaxC12Body { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Minimum 2nd Candle Body", GroupName = "Parameters", Order = 3)]
-        internal double MinC2Body { get; set; }
-
-        // [NinjaScriptProperty]
-        // [Display(Name = "Maximum 2nd Candle Body", GroupName = "Parameters", Order = 4)]
-        internal double MaxC2Body { get; set; }
-
-        // [NinjaScriptProperty]
-        // [Display(Name = "Offset % of 2nd candle body", GroupName = "Parameters", Order = 5)]
+        // [Display(Name = "Offset % of 1st+2nd Candle Body", GroupName = "Parameters", Order = 5)]
         internal double OffsetPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Take Profit % of 2nd candle body", GroupName = "Parameters", Order = 6)]
+        // [Display(Name = "Take Profit % of 1st+2nd Candle Body", GroupName = "Parameters", Order = 6)]
         internal double TpPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Cancel Order % of 2nd candle body", GroupName = "Parameters", Order = 7)]
+        // [Display(Name = "Cancel Order % of 1st+2nd Candle Body", GroupName = "Parameters", Order = 7)]
         internal double CancelPerc { get; set; }
 
         [NinjaScriptProperty]
@@ -274,10 +266,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // Default input values
                 Contracts     = 1;
-                MinC1Body   = 2.6;
-                MaxC1Body   = 86.1;
-                MinC2Body   = 12.6;
-                MaxC2Body   = 73.7;
+                MinC12Body  = 15.2;
+                MaxC12Body  = 159.8;
                 OffsetPerc  = 29.2;
                 TpPerc      = 68.1;
                 CancelPerc  = 295;
@@ -601,11 +591,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double c2High = High[0];
                 double c2Low = Low[0];
 
-                double c1Body = Math.Abs(c1Close - c1Open);
-                double c2Body = Math.Abs(c2Close - c2Open);
+                double c12Body = Math.Abs(c2Close - c1Open);
 
-                if (c1Body < MinC1Body || c1Body > MaxC1Body ||
-                    c2Body < MinC2Body || c2Body > MaxC2Body)
+                if (c12Body < MinC12Body || c12Body > MaxC12Body)
                 {
                     return;
                 }
@@ -657,22 +645,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 randomizedTpPerc     = Math.Max(0, randomizedTpPerc);
 
                 // Apply to calculations
-                double offset = c2Body * (randomizedOffsetPerc / 100.0);
+                double offset = c12Body * (randomizedOffsetPerc / 100.0);
                 double longEntry = c2Close - offset;
                 double shortEntry = c2Close + offset;
 
-                double longTP = longEntry + c2Body * (randomizedTpPerc / 100.0);
-                double shortTP = shortEntry - c2Body * (randomizedTpPerc / 100.0);
+                double longTP = longEntry + c12Body * (randomizedTpPerc / 100.0);
+                double shortTP = shortEntry - c12Body * (randomizedTpPerc / 100.0);
 
-                double longCancelPrice = longEntry + c2Body * (CancelPerc / 100.0);
-                double shortCancelPrice = shortEntry - c2Body * (CancelPerc / 100.0);
+                double longCancelPrice = longEntry + c12Body * (CancelPerc / 100.0);
+                double shortCancelPrice = shortEntry - c12Body * (CancelPerc / 100.0);
                 double longSLPoints = Math.Abs(longEntry - longSL) / TickSize;
                 double shortSLPoints = Math.Abs(shortEntry - shortSL) / TickSize;
 
                 if (debug) {
                     Print($"\n{Time[0]} - Candle body sizes:");
-                    Print($"  ➤ c1Body = {c1Body:0.00} (Min allowed: {MinC1Body:0.00}, Max allowed: {MaxC1Body:0.00})");
-                    Print($"  ➤ c2Body = {c2Body:0.00} (Min allowed: {MinC2Body:0.00}, Max allowed: {MaxC2Body:0.00})");
+                    Print($"  ➤ c12Body = {c12Body:0.00} (Min allowed: {MinC12Body:0.00}, Max allowed: {MaxC12Body:0.00})");
                     Print($"  ➤ Entry Offset = {offset:0.00}");
                     Print($"  ➤ Long TP = {longTP:0.00}, Short TP = {shortTP:0.00}");
                 }
@@ -1938,10 +1925,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 		{
 			Print($"\n== INSTRUMENT PRESET APPLIED: {preset} ==");
 
-			Print($"  ➤ MinC1Body: {MinC1Body}");
-			Print($"  ➤ MaxC1Body: {MaxC1Body}");
-			Print($"  ➤ MinC2Body: {MinC2Body}");
-			Print($"  ➤ MaxC2Body: {MaxC2Body}");
+			Print($"  ➤ MinC12Body: {MinC12Body}");
+			Print($"  ➤ MaxC12Body: {MaxC12Body}");
 			Print($"  ➤ OffsetPerc: {OffsetPerc}");
 			Print($"  ➤ TpPerc: {TpPerc}");
 			Print($"  ➤ CancelPerc: {CancelPerc}");
@@ -2061,10 +2046,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 case StrategyPreset.Asia:
 					londonAutoShiftTimes = true;
-                    MinC1Body   = 1.6;
-                    MaxC1Body   = 26.8;
-                    MinC2Body   = 1.1;
-                    MaxC2Body   = 77.7;
+                    MinC12Body  = 2.7;
+                    MaxC12Body  = 104.5;
                     OffsetPerc  = 20.5;					
                     TpPerc      = 78.5;
                     CancelPerc  = 309;
@@ -2087,10 +2070,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 case StrategyPreset.London:
 					londonAutoShiftTimes = true;
-                    MinC1Body   = 5.6;
-                    MaxC1Body   = 26.8;
-                    MinC2Body   = 9.1;
-                    MaxC2Body   = 77.7;
+                    MinC12Body  = 14.7;
+                    MaxC12Body  = 104.5;
                     OffsetPerc  = 20.5;					
                     TpPerc      = 78.5;
                     CancelPerc  = 309;
@@ -2113,10 +2094,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     
                 case StrategyPreset.New_York:
 					londonAutoShiftTimes = false;
-                    MinC1Body   = 2.6;
-                    MaxC1Body   = 86.1;
-                    MinC2Body   = 12.6;
-                    MaxC2Body   = 73.7;
+                    MinC12Body  = 15.2;
+                    MaxC12Body  = 159.8;
                     OffsetPerc  = 29.2;					
                     TpPerc      = 68.1;
                     CancelPerc  = 295;
