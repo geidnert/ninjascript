@@ -270,17 +270,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // Default input values
                 Contracts     = 1;
-                MinC12Body  = 15.2;
-                MaxC12Body  = 159.8;
-                OffsetPerc  = 29.2;
-                TpPerc      = 68.1;
-                CancelPerc  = 295;
+                MinC12Body  = 19.5;
+                MaxC12Body  = 130.5;
+                OffsetPerc  = 1;
+                TpPerc      = 28;
+                CancelPerc  = 9999;
                 DeviationPerc = 0;
                 SLPadding = 0;
-                MaxSLTPRatioPerc = 500;
+                MaxSLTPRatioPerc = 477;
                 SLPresetSetting = SLPreset.First_Candle_High_Low;
-                SLPercentFirstCandle = 97;
-                MaxSLPoints = 161;
+                SLPercentFirstCandle = 100;
+                MaxSLPoints = 152;
 
                 // Other defaults
                 SessionBrush  = Brushes.Gold;
@@ -297,7 +297,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                RequireEntryConfirmation = false;
 	                AntiHedge = false;
 	                WebhookUrl = "";
-	                ReverseOnSignal = false;
+	                ReverseOnSignal = true;
 
 	                // Default session times
 	                SessionStart  = new TimeSpan(09, 40, 0);
@@ -2139,17 +2139,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     
                 case StrategyPreset.New_York:
 					londonAutoShiftTimes = false;
-                    MinC12Body  = 15.2;
-                    MaxC12Body  = 159.8;
-                    OffsetPerc  = 29.2;					
-                    TpPerc      = 68.1;
-                    CancelPerc  = 295;
+                    MinC12Body  = 19.5;
+                    MaxC12Body  = 130.5;
+                    OffsetPerc  = 1;					
+                    TpPerc      = 28;
+                    CancelPerc  = 9999;
                     DeviationPerc = 0;
                     SLPadding = 0;
-					MaxSLTPRatioPerc = 500;
+					MaxSLTPRatioPerc = 477;
                     SLPresetSetting = SLPreset.First_Candle_High_Low;
-					SLPercentFirstCandle = 97;
-                    MaxSLPoints = 161;
+					SLPercentFirstCandle = 100;
+                    MaxSLPoints = 152;
 
                     // ✅ Session preset values
                     SessionStart  = new TimeSpan(9, 40, 0);
