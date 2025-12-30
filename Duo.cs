@@ -44,6 +44,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 4, GroupName = "Config")]
         public string WebhookUrl { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Reverse On Signal", Description = "If true, flatten current position when a reverse signal is generated, then place the new limit order", Order = 5, GroupName = "Config")]
+        public bool ReverseOnSignal { get; set; }
+
         // [NinjaScriptProperty]
         // [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "Parameters", Order = 1)]
         internal double MinC12Body { get; set; }
@@ -293,6 +297,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                RequireEntryConfirmation = false;
 	                AntiHedge = false;
 	                WebhookUrl = "";
+	                ReverseOnSignal = false;
 
 	                // Default session times
 	                SessionStart  = new TimeSpan(09, 40, 0);
@@ -673,6 +678,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 	                if (validBull && !longOrderPlaced)
 	                {
+	                    HandleReverseOnSignal(MarketPosition.Long);
 	                    if (RequireEntryConfirmation)
 	                    {
 	                        if (!ShowEntryConfirmation("Long", longEntry, Contracts))
@@ -774,6 +780,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 	                if (validBear && !shortOrderPlaced)
 	                {
+	                    HandleReverseOnSignal(MarketPosition.Short);
 	                    if (RequireEntryConfirmation)
 	                    {
 	                        if (!ShowEntryConfirmation("Short", shortEntry, Contracts))
@@ -1189,6 +1196,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			longEntryOrder = null;
 			shortEntryOrder = null;
 		}
+
+        private void HandleReverseOnSignal(MarketPosition desiredDirection)
+        {
+            if (!ReverseOnSignal)
+                return;
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                if (desiredDirection == MarketPosition.Long && IsOrderActive(shortEntryOrder))
+                {
+                    if (debug)
+                        Print($"{Time[0]} - 🔁 Reverse signal while SHORT order working. Canceling SHORT entry.");
+                    CancelOrder(shortEntryOrder);
+                    shortEntryOrder = null;
+                    shortOrderPlaced = false;
+                }
+                else if (desiredDirection == MarketPosition.Short && IsOrderActive(longEntryOrder))
+                {
+                    if (debug)
+                        Print($"{Time[0]} - 🔁 Reverse signal while LONG order working. Canceling LONG entry.");
+                    CancelOrder(longEntryOrder);
+                    longEntryOrder = null;
+                    longOrderPlaced = false;
+                }
+            }
+        }
+
+        private bool IsOrderActive(Order order)
+        {
+            return order != null &&
+                (order.OrderState == OrderState.Working ||
+                order.OrderState == OrderState.Submitted ||
+                order.OrderState == OrderState.Accepted ||
+                order.OrderState == OrderState.ChangePending);
+        }
 
 	        private void Flatten(string reason)
 	        {
