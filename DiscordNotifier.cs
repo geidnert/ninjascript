@@ -47,6 +47,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string workingOrderSide = "";
         private double monthlyTotal = 0;
         private string currentMonth = "";
+        private DateTime lastMessageDay = DateTime.MinValue;
         // Internal toggle: when true, skip Discord posts and log the full message for debugging.
         private bool debugMode = false;
 
@@ -95,6 +96,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else
                 {
                     lastMessageId = "";
+                    lastMessageDay = DateTime.MinValue;
                     LogToOutput2("ℹ️ No message ID file found — will create new Discord message on first update.");
                 }
 
@@ -135,6 +137,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         currentWeekStart = thisWeek;
                         lastSavedWeekStart = thisWeek;
                         lastMessageId = "";
+                        lastMessageDay = DateTime.MinValue;
                         SavePnLStats();    // reset stats file immediately
                         SaveMessageId();   // reset message ID immediately
                     }
@@ -146,6 +149,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         currentWeekStart = thisWeek;
                         lastSavedWeekStart = thisWeek;
                         lastMessageId = "";
+                        lastMessageDay = DateTime.MinValue;
                         SavePnLStats();
                         SaveMessageId();
                     }
@@ -159,6 +163,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     currentWeekStart = now.AddDays(-(int)now.DayOfWeek + (int)DayOfWeek.Monday);
                     lastSavedWeekStart = currentWeekStart;
                     lastMessageId = "";
+                    lastMessageDay = DateTime.MinValue;
                     SaveMessageId();
                 }
             }
@@ -307,81 +312,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 lastSavedWeekStart = weekStart;
                 SavePnLStats();
 
-                // Announce start of new week
-                sendOrUpdateDiscordMessage(
-                    $"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 **New Week — {currentWeekStart:MMMM dd, yyyy}**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                );
             }
             else
             {
                 currentWeekStart = weekStart;
                 lastSavedWeekStart = weekStart;
             }
-
-            if (!dailyPnls.ContainsKey(localDate))
-                dailyPnls[localDate] = new Dictionary<string, double>();
-
-            var sb = new StringBuilder();
-            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            sb.AppendLine($"📊 **New Week — {lastSavedWeekStart:MMMM dd, yyyy}**");
-            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-
-            double weeklyTotal = 0;
-
-            foreach (var kvp in new SortedDictionary<DateTime, Dictionary<string, double>>(dailyPnls))
-            {
-                DateTime day = kvp.Key;
-                var pnls = kvp.Value;
-                double dayTotal = 0;
-
-                sb.AppendLine($"**{day.ToString("dddd", usCulture)} {day.Day}**");
-
-                foreach (var trade in pnls)
-                {
-                    double p = trade.Value;
-                    if (TryFormatTradeTime(trade.Key, out string timeStr))
-                        sb.AppendLine($"{FormatPnl(p)} — {timeStr}");
-                    else
-                        sb.AppendLine($"{FormatPnl(p)}");
-                    dayTotal += p;
-                }
-
-                if (day == localDate)
-                {
-                    string timeStr = FormatTradeTime(filltime); // ✅ adds time like “3:12pm EST”
-
-                    if (positionActive)
-                    {
-                        string coloredStatus = entryIsShort
-                            ? $"🔴  **Currently Short — {timeStr}**"
-                            : $"🟢  **Currently Long — {timeStr}**";
-                        sb.AppendLine(coloredStatus);
-                    }
-                    else if (workingOrderActive)
-                    {
-                        string workingLine = workingOrderSide == "Short"
-                            ? $"🔴  **Working Order – Short — {timeStr}**"
-                            : $"🟢  **Working Order – Long — {timeStr}**";
-                        sb.AppendLine(workingLine);
-                    }
-                }
-
-                sb.AppendLine($"**{FormatPnl(dayTotal)} total**\n");
-                weeklyTotal += dayTotal;
-            }
-
-            sb.AppendLine("---");
-            sb.AppendLine($"**Weekly Total: {FormatPnl(weeklyTotal)}**");
-
-            // DAILY AVERAGE
-            int daysCount = dailyPnls.Count;
-            double dailyAverage = daysCount > 0 ? weeklyTotal / daysCount : 0;
-            sb.AppendLine($"**Daily Average: {FormatPnl(dailyAverage)}**");
-
-            // MONTHLY TOTAL
-            sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
-
-            sendOrUpdateDiscordMessage(sb.ToString());
+            PostDailySummary(filltime, includeStatus: true);
         }
 
         private void AddTradeToWeek(DateTime entryFillTime, DateTime exitFillTime, double tradePnl)
@@ -414,6 +351,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 lastSavedWeekStart = weekStart;
                 dailyPnls.Clear();
                 lastMessageId = "";
+                lastMessageDay = DateTime.MinValue;
                 SaveMessageId();
                 SavePnLStats();
                 LogToOutput2($"📅 Starting new week: {currentWeekStart:MMMM dd, yyyy}");
@@ -439,20 +377,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void PostWeeklySummary(DateTime filltime)
         {
+            PostDailySummary(filltime, includeStatus: false);
+        }
+
+        private string FormatPnl(double pnl) =>
+            pnl >= 0 ? pnl.ToString("C", usCulture) : "-" + Math.Abs(pnl).ToString("C", usCulture);
+
+        private void PostDailySummary(DateTime filltime, bool includeStatus)
+        {
+            DateTime localDate = filltime.Date;
+
+            if (!dailyPnls.ContainsKey(localDate))
+                dailyPnls[localDate] = new Dictionary<string, double>();
+
             var sb = new StringBuilder();
             sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            sb.AppendLine($"📊 **New Week — {lastSavedWeekStart:MMMM dd, yyyy}**");
+            sb.AppendLine($"📅 **{localDate:dddd MMMM dd, yyyy}**");
             sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-            double weeklyTotal = 0;
-
-            foreach (var kvp in new SortedDictionary<DateTime, Dictionary<string, double>>(dailyPnls))
+            double dayTotal = 0;
+            if (dailyPnls.TryGetValue(localDate, out var pnls))
             {
-                DateTime day = kvp.Key;
-                var pnls = kvp.Value;
-                double dayTotal = 0;
-                sb.AppendLine($"**{day.ToString("dddd", usCulture)} {day.Day}**");
-
                 foreach (var trade in pnls)
                 {
                     double p = trade.Value;
@@ -462,9 +407,34 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         sb.AppendLine($"{FormatPnl(p)}");
                     dayTotal += p;
                 }
+            }
 
-                sb.AppendLine($"**{FormatPnl(dayTotal)} total**\n");
-                weeklyTotal += dayTotal;
+            if (includeStatus)
+            {
+                string timeStr = FormatTradeTime(filltime);
+                if (positionActive)
+                {
+                    string coloredStatus = entryIsShort
+                        ? $"🔴  **Currently Short — {timeStr}**"
+                        : $"🟢  **Currently Long — {timeStr}**";
+                    sb.AppendLine(coloredStatus);
+                }
+                else if (workingOrderActive)
+                {
+                    string workingLine = workingOrderSide == "Short"
+                        ? $"🔴  **Working Order – Short — {timeStr}**"
+                        : $"🟢  **Working Order – Long — {timeStr}**";
+                    sb.AppendLine(workingLine);
+                }
+            }
+
+            sb.AppendLine($"**{FormatPnl(dayTotal)} total**\n");
+
+            double weeklyTotal = 0;
+            foreach (var kvp in dailyPnls)
+            {
+                foreach (var trade in kvp.Value.Values)
+                    weeklyTotal += trade;
             }
 
             sb.AppendLine("---");
@@ -474,13 +444,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sb.AppendLine($"**Daily Average: {FormatPnl(dailyAverage)}**");
             sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
 
-            sendOrUpdateDiscordMessage(sb.ToString());
+            sendOrUpdateDiscordMessage(sb.ToString(), localDate);
         }
 
-        private string FormatPnl(double pnl) =>
-            pnl >= 0 ? pnl.ToString("C", usCulture) : "-" + Math.Abs(pnl).ToString("C", usCulture);
-
-        private void sendOrUpdateDiscordMessage(string content)
+        private void sendOrUpdateDiscordMessage(string content, DateTime messageDay)
         {
             // If somehow currentWeekStart is still uninitialized, use the saved one
             if (currentWeekStart == DateTime.MinValue && lastSavedWeekStart != DateTime.MinValue)
@@ -508,7 +475,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             try
             {
-                if (!string.IsNullOrEmpty(lastMessageId) && currentWeekStart == lastSavedWeekStart)
+                bool sameDay = lastMessageDay != DateTime.MinValue && lastMessageDay.Date == messageDay.Date;
+                if (!string.IsNullOrEmpty(lastMessageId) && sameDay)
                 {
                     try
                     {
@@ -517,7 +485,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         deleteReq.Method = "DELETE";
                         deleteReq.Headers["Authorization"] = $"Bot {DiscordBotToken}";
                         using (var resp = (HttpWebResponse)deleteReq.GetResponse()) { }
-                        LogToOutput2($"🗑️ Deleted old Discord message for current week ({lastMessageId}).");
+                        LogToOutput2($"🗑️ Deleted old Discord message for current day ({lastMessageId}).");
                     }
                     catch (WebException delEx)
                     {
@@ -526,7 +494,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
                 else if (!string.IsNullOrEmpty(lastMessageId))
                 {
-                    LogToOutput2($"🗓️ Keeping old message ({lastMessageId}) for previous week.");
+                    LogToOutput2($"🗓️ Keeping old message ({lastMessageId}) for previous day.");
                 }
                 else
                 {
@@ -556,6 +524,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (result.ContainsKey("id"))
                     {
                         lastMessageId = result["id"].ToString();
+                        lastMessageDay = messageDay.Date;
                         SaveMessageId();
                         LogToOutput2($"✅ Posted new Discord message: {lastMessageId}");
                     }
@@ -644,14 +613,52 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void SaveMessageId()
         {
-            try { File.WriteAllText(messageIdFilePath, lastMessageId ?? "", Encoding.UTF8); }
+            try
+            {
+                if (string.IsNullOrEmpty(lastMessageId))
+                {
+                    File.WriteAllText(messageIdFilePath, "", Encoding.UTF8);
+                    return;
+                }
+
+                string dayPart = lastMessageDay == DateTime.MinValue ? "" : lastMessageDay.ToString("yyyy-MM-dd");
+                string content = string.IsNullOrEmpty(dayPart) ? lastMessageId : $"{dayPart}|{lastMessageId}";
+                File.WriteAllText(messageIdFilePath, content, Encoding.UTF8);
+            }
             catch (Exception ex) { LogToOutput2($"⚠️ Failed to save message ID: {ex.Message}"); }
         }
 
         private void LoadMessageId()
         {
-            try { lastMessageId = File.ReadAllText(messageIdFilePath, Encoding.UTF8).Trim(); }
-            catch { lastMessageId = ""; }
+            try
+            {
+                string content = File.ReadAllText(messageIdFilePath, Encoding.UTF8).Trim();
+                if (string.IsNullOrEmpty(content))
+                {
+                    lastMessageId = "";
+                    lastMessageDay = DateTime.MinValue;
+                    return;
+                }
+
+                int separatorIndex = content.IndexOf("|", StringComparison.Ordinal);
+                if (separatorIndex > 0)
+                {
+                    string datePart = content.Substring(0, separatorIndex);
+                    string idPart = content.Substring(separatorIndex + 1);
+                    if (DateTime.TryParse(datePart, out DateTime parsedDay))
+                        lastMessageDay = parsedDay.Date;
+                    lastMessageId = idPart;
+                    return;
+                }
+
+                lastMessageId = content;
+                lastMessageDay = DateTime.MinValue;
+            }
+            catch
+            {
+                lastMessageId = "";
+                lastMessageDay = DateTime.MinValue;
+            }
         }
 
         private string FormatTradeTime(DateTime time) =>
