@@ -32,6 +32,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private double entryPrice = 0;
         private bool entryIsShort = false;
+        private DateTime entryTime = DateTime.MinValue;
         private string statsFilePath;
         private string messageIdFilePath;
         private string lastMessageId = "";
@@ -188,6 +189,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     case OrderAction.Buy:
                         entryPrice = exec.Price;
                         entryIsShort = false;
+                        entryTime = exec.Time;
                         positionActive = true;
                         workingOrderActive = false;
                         currentPositionStatus = "Currently Long";
@@ -197,6 +199,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     case OrderAction.SellShort:
                         entryPrice = exec.Price;
                         entryIsShort = true;
+                        entryTime = exec.Time;
                         positionActive = true;
                         workingOrderActive = false;
                         currentPositionStatus = "Currently Short";
@@ -219,7 +222,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         positionActive = false;
                         workingOrderActive = false;
                         currentPositionStatus = "";
-                        AddTradeToWeek(e.Time, tradePnl);
+                        AddTradeToWeek(entryTime, e.Time, tradePnl);
+                        entryTime = DateTime.MinValue;
                         break;
                 }
             }
@@ -335,16 +339,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 foreach (var trade in pnls)
                 {
                     double p = trade.Value;
-                    DateTime tradeTime;
-                    if (DateTime.TryParseExact(trade.Key, "yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out tradeTime))
-                    {
-                        string timeStr = FormatTradeTime(tradeTime);
+                    if (TryFormatTradeTime(trade.Key, out string timeStr))
                         sb.AppendLine($"{FormatPnl(p)} — {timeStr}");
-                    }
                     else
-                    {
                         sb.AppendLine($"{FormatPnl(p)}");
-                    }
                     dayTotal += p;
                 }
 
@@ -386,12 +384,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sendOrUpdateDiscordMessage(sb.ToString());
         }
 
-        private void AddTradeToWeek(DateTime filltime, double tradePnl)
+        private void AddTradeToWeek(DateTime entryFillTime, DateTime exitFillTime, double tradePnl)
         {
-            DateTime localDate = filltime.Date;
+            DateTime localDate = exitFillTime.Date;
             DateTime weekStart = localDate.AddDays(-(int)localDate.DayOfWeek + (int)DayOfWeek.Monday);
 
-            string monthKey = filltime.ToString("yyyy-MM");
+            string monthKey = exitFillTime.ToString("yyyy-MM");
 
             if (currentMonth == "")
             {
@@ -424,10 +422,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!dailyPnls.ContainsKey(localDate))
                 dailyPnls[localDate] = new Dictionary<string, double>();
 
-            string tradeKey = filltime.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
+            DateTime safeEntryTime = entryFillTime == DateTime.MinValue ? exitFillTime : entryFillTime;
+            string tradeKey = BuildTradeKey(safeEntryTime, exitFillTime);
             if (dailyPnls[localDate].ContainsKey(tradeKey))
             {
-                PostWeeklySummary(filltime);
+                PostWeeklySummary(exitFillTime);
                 return;
             }
 
@@ -435,7 +434,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             monthlyTotal += tradePnl;
 
             SavePnLStats();
-            PostWeeklySummary(filltime);
+            PostWeeklySummary(exitFillTime);
         }
 
         private void PostWeeklySummary(DateTime filltime)
@@ -457,9 +456,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 foreach (var trade in pnls)
                 {
                     double p = trade.Value;
-                    DateTime tradeTime;
-                    if (DateTime.TryParseExact(trade.Key, "yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out tradeTime))
-                        sb.AppendLine($"{FormatPnl(p)} — {FormatTradeTime(tradeTime)}");
+                    if (TryFormatTradeTime(trade.Key, out string timeStr))
+                        sb.AppendLine($"{FormatPnl(p)} — {timeStr}");
                     else
                         sb.AppendLine($"{FormatPnl(p)}");
                     dayTotal += p;
@@ -658,6 +656,46 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string FormatTradeTime(DateTime time) =>
             $"{time.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLower()} EST";
+
+        private string FormatTradeTimeRange(DateTime entryTimeValue, DateTime exitTimeValue)
+        {
+            string entry = entryTimeValue.ToString("h:mm", CultureInfo.InvariantCulture);
+            string exitWithMeridiem = exitTimeValue.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLower();
+            string entryMeridiem = entryTimeValue.ToString("tt", CultureInfo.InvariantCulture);
+            string exitMeridiem = exitTimeValue.ToString("tt", CultureInfo.InvariantCulture);
+            if (entryMeridiem == exitMeridiem)
+                return $"{entry}-{exitWithMeridiem} EST";
+            return $"{entryTimeValue.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLower()}-{exitWithMeridiem} EST";
+        }
+
+        private string BuildTradeKey(DateTime entryTimeValue, DateTime exitTimeValue) =>
+            $"{entryTimeValue.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)}|{exitTimeValue.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)}";
+
+        private bool TryFormatTradeTime(string tradeKey, out string timeStr)
+        {
+            timeStr = "";
+            if (string.IsNullOrEmpty(tradeKey))
+                return false;
+
+            string[] parts = tradeKey.Split('|');
+            if (parts.Length == 2)
+            {
+                if (DateTime.TryParseExact(parts[0], "yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime entryTimeValue)
+                    && DateTime.TryParseExact(parts[1], "yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime exitTimeValue))
+                {
+                    timeStr = FormatTradeTimeRange(entryTimeValue, exitTimeValue);
+                    return true;
+                }
+            }
+
+            if (DateTime.TryParseExact(tradeKey, "yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime singleTime))
+            {
+                timeStr = FormatTradeTime(singleTime);
+                return true;
+            }
+
+            return false;
+        }
 
         private void LogToOutput2(string message) =>
             NinjaTrader.Code.Output.Process(message, PrintTo.OutputTab2);
