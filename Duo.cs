@@ -293,16 +293,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Skip2Start     = skip2Start;
                 Skip2End       = skip2End;
                 londonAutoShiftTimes = false;
-	                ForceCloseAtSkipStart = true;
-	                RequireEntryConfirmation = false;
-	                AntiHedge = false;
-	                WebhookUrl = "";
-	                ReverseOnSignal = true;
+                ForceCloseAtSkipStart = true;
+                RequireEntryConfirmation = false;
+                AntiHedge = false;
+                WebhookUrl = "";
+                ReverseOnSignal = true;
 
-	                // Default session times
-	                SessionStart  = new TimeSpan(09, 40, 0);
-	                SessionEnd    = new TimeSpan(14, 50, 0);
-					NoTradesAfter = new TimeSpan(14, 30, 0);
+                // Default session times
+                SessionStart  = new TimeSpan(09, 40, 0);
+                SessionEnd    = new TimeSpan(14, 50, 0);
+                NoTradesAfter = new TimeSpan(14, 30, 0);
             }
             else if (State == State.DataLoaded)
             {
@@ -2115,21 +2115,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 case StrategyPreset.London:
 					londonAutoShiftTimes = true;
-                    MinC12Body  = 14.7;
-                    MaxC12Body  = 104.5;
-                    OffsetPerc  = 20.5;					
-                    TpPerc      = 78.5;
-                    CancelPerc  = 309;
+                    MinC12Body  = 11;
+                    MaxC12Body  = 156.5;
+                    OffsetPerc  = 5.5;					
+                    TpPerc      = 31.5;
+                    CancelPerc  = 172;
                     DeviationPerc = 0;
                     SLPadding = 0;
-					MaxSLTPRatioPerc = 550;
+					MaxSLTPRatioPerc = 446;
                     SLPresetSetting = SLPreset.First_Candle_High_Low;
 					SLPercentFirstCandle = 100;
-                    MaxSLPoints = 92;
+                    MaxSLPoints = 150;
 
                     // ✅ Session preset values
-                    SessionStart  = new TimeSpan(2, 30, 0);
-                    SessionEnd    = new TimeSpan(5, 20, 0);
+                    SessionStart  = new TimeSpan(2, 00, 0);
+                    SessionEnd    = new TimeSpan(5, 30, 0);
                     NoTradesAfter = new TimeSpan(5, 00, 0);
                     SkipStart = new TimeSpan(00, 00, 0);
                     SkipEnd = new TimeSpan(00, 00, 0);
@@ -2143,7 +2143,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     MaxC12Body  = 130.5;
                     OffsetPerc  = 1;					
                     TpPerc      = 28;
-                    CancelPerc  = 9999;
+                    CancelPerc  = 158;
                     DeviationPerc = 0;
                     SLPadding = 0;
 					MaxSLTPRatioPerc = 477;
@@ -2160,9 +2160,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Skip2Start = new TimeSpan(00, 00, 0);
                     Skip2End = new TimeSpan(00, 00, 0); 
                     break;
-                
-
-
             }
 
 			effectiveTimesDate = DateTime.MinValue;
