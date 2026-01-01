@@ -426,8 +426,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			bool crossedSessionEnd = 
 					(Time[1].TimeOfDay <= sessionEnd && Time[0].TimeOfDay > sessionEnd)
 					|| (!TimeInSession(Time[0]) && TimeInSession(Time[1]));
+			bool isLastBarOfTradingSession = Bars.IsLastBarOfSession && !sessionClosed;
             
-			if (crossedSessionEnd)
+			if (crossedSessionEnd || isLastBarOfTradingSession)
             {
                 if (CloseAtSessionEnd)
                 {
