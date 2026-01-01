@@ -142,11 +142,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal bool TradeAsiaSession { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade London Session", Description = "Allow trading during the London session", Order = 6, GroupName = "Session Time")]
+        [Display(Name = "Trade London Session (01:30-05:30)", Description = "Allow trading during the London session", Order = 6, GroupName = "Session Time")]
         public bool TradeLondonSession { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade New York Session", Description = "Allow trading during the New York session", Order = 7, GroupName = "Session Time")]
+        [Display(Name = "Trade New York Session (09:40-15:00)", Description = "Allow trading during the New York session", Order = 7, GroupName = "Session Time")]
         public bool TradeNewYorkSession { get; set; }
 
         // [NinjaScriptProperty]
@@ -2128,8 +2128,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     MaxSLPoints = 150;
 
                     // ✅ Session preset values
-                    SessionStart  = new TimeSpan(2, 00, 0);
-                    SessionEnd    = new TimeSpan(5, 30, 0);
+                    SessionStart  = new TimeSpan(1, 30, 0); // Remember to change in settings as well
+                    SessionEnd    = new TimeSpan(5, 30, 0); // Remember to change in settings as well
                     NoTradesAfter = new TimeSpan(5, 00, 0);
                     SkipStart = new TimeSpan(00, 00, 0);
                     SkipEnd = new TimeSpan(00, 00, 0);
@@ -2152,8 +2152,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     MaxSLPoints = 152;
 
                     // ✅ Session preset values
-                    SessionStart  = new TimeSpan(9, 40, 0);
-                    SessionEnd    = new TimeSpan(14, 50, 0);
+                    SessionStart  = new TimeSpan(9, 40, 0); // Remember to change in settings as well
+                    SessionEnd    = new TimeSpan(15, 00, 0); // Remember to change in settings as well
                     NoTradesAfter = new TimeSpan(14, 30, 0);
                     SkipStart = new TimeSpan(11, 45, 0);
                     SkipEnd = new TimeSpan(13, 20, 0);
