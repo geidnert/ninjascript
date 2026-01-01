@@ -9,6 +9,8 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Web.Script.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui;
 using NinjaTrader.NinjaScript;
@@ -50,6 +52,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime lastMessageDay = DateTime.MinValue;
         // Internal toggle: when true, skip Discord posts and log the full message for debugging.
         private bool debugMode = false;
+        private readonly object discordQueueLock = new object();
+        private Queue<DiscordMessage> discordQueue = new Queue<DiscordMessage>();
+        private bool isProcessingDiscordQueue = false;
+        private bool stopDiscordQueue = false;
+        private int discordMinDelayMs = 1000;
+
+        private class DiscordMessage
+        {
+            public string Content { get; set; }
+            public DateTime Day { get; set; }
+            public int Attempts { get; set; }
+        }
 
         protected override void OnStateChange()
         {
@@ -172,6 +186,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Account.ExecutionUpdate -= OnAccountExecutionUpdate;
                 Account.OrderUpdate -= OnAccountOrderUpdate;
+                stopDiscordQueue = true;
                 //SavePnLStats();
             }
         }
@@ -444,10 +459,66 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sb.AppendLine($"**Daily Average: {FormatPnl(dailyAverage)}**");
             sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
 
-            sendOrUpdateDiscordMessage(sb.ToString(), localDate);
+            EnqueueDiscordMessage(sb.ToString(), localDate);
         }
 
-        private void sendOrUpdateDiscordMessage(string content, DateTime messageDay)
+        private void EnqueueDiscordMessage(string content, DateTime messageDay)
+        {
+            lock (discordQueueLock)
+            {
+                discordQueue.Enqueue(new DiscordMessage
+                {
+                    Content = content,
+                    Day = messageDay.Date,
+                    Attempts = 0
+                });
+
+                if (!isProcessingDiscordQueue)
+                {
+                    isProcessingDiscordQueue = true;
+                    Task.Run(() => ProcessDiscordQueue());
+                }
+            }
+        }
+
+        private void ProcessDiscordQueue()
+        {
+            while (true)
+            {
+                if (stopDiscordQueue)
+                    return;
+
+                DiscordMessage message = null;
+                lock (discordQueueLock)
+                {
+                    if (discordQueue.Count == 0)
+                    {
+                        isProcessingDiscordQueue = false;
+                        return;
+                    }
+                    message = discordQueue.Dequeue();
+                }
+
+                bool success = SendOrUpdateDiscordMessageInternal(message.Content, message.Day);
+                if (!success)
+                {
+                    message.Attempts++;
+                    if (message.Attempts <= 10 && !stopDiscordQueue)
+                    {
+                        Thread.Sleep(discordMinDelayMs);
+                        lock (discordQueueLock)
+                        {
+                            discordQueue.Enqueue(message);
+                        }
+                        continue;
+                    }
+                }
+
+                Thread.Sleep(discordMinDelayMs);
+            }
+        }
+
+        private bool SendOrUpdateDiscordMessageInternal(string content, DateTime messageDay)
         {
             // If somehow currentWeekStart is still uninitialized, use the saved one
             if (currentWeekStart == DateTime.MinValue && lastSavedWeekStart != DateTime.MinValue)
@@ -464,13 +535,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 LogToOutput2("🐞 Debug mode enabled — skipping Discord post. Message preview:");
                 LogToOutput2(content);
-                return;
+                return true;
             }
 
             if (string.IsNullOrWhiteSpace(DiscordBotToken) || string.IsNullOrWhiteSpace(DiscordChannelId))
             {
                 LogToOutput2("⚠️ Discord bot token or channel ID not set.");
-                return;
+                return true;
             }
 
             try
@@ -489,6 +560,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                     catch (WebException delEx)
                     {
+                        if (IsRateLimited(delEx))
+                        {
+                            LogToOutput2("⚠️ Rate limited while deleting message; will retry.");
+                            return false;
+                        }
                         LogToOutput2($"⚠️ Failed to delete old message: {delEx.Message}");
                     }
                 }
@@ -530,10 +606,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                 }
             }
+            catch (WebException ex) when (IsRateLimited(ex))
+            {
+                LogToOutput2("⚠️ Rate limited while posting message; will retry.");
+                return false;
+            }
             catch (Exception ex)
             {
                 LogToOutput2($"🚨 Discord update error: {ex.Message}");
             }
+            return true;
         }
 
         private void SavePnLStats()
@@ -663,6 +745,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string FormatTradeTime(DateTime time) =>
             $"{time.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLower()} EST";
+
+        private bool IsRateLimited(WebException ex)
+        {
+            var response = ex.Response as HttpWebResponse;
+            return response != null && (int)response.StatusCode == 429;
+        }
 
         private string FormatTradeTimeRange(DateTime entryTimeValue, DateTime exitTimeValue)
         {
