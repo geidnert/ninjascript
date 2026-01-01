@@ -203,6 +203,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string displayText = "Waiting...";
         private bool sessionClosed = false;
         private bool debug = true;
+        private bool reverseFlattensLivePosition = true; // false = legacy behavior (only cancel pending reverse when flat)
         private int longSignalBar = -1;
         private int shortSignalBar = -1;
         private bool longLinesActive = false;
@@ -1203,7 +1204,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                if (!reverseFlattensLivePosition)
+                    return;
+
+                if (desiredDirection == MarketPosition.Long && Position.MarketPosition == MarketPosition.Short)
+                {
+                    if (debug)
+                        Print($"{Time[0]} - 🔁 Reverse signal while SHORT position active. Exiting SHORT.");
+                    Flatten("ReverseSignal");
+                }
+                else if (desiredDirection == MarketPosition.Short && Position.MarketPosition == MarketPosition.Long)
+                {
+                    if (debug)
+                        Print($"{Time[0]} - 🔁 Reverse signal while LONG position active. Exiting LONG.");
+                    Flatten("ReverseSignal");
+                }
+
                 return;
+            }
 
             if (Position.MarketPosition == MarketPosition.Flat)
             {
