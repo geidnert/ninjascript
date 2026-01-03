@@ -340,7 +340,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 			ApplyPresetForTime(Time[0]);
 			EnsureEffectiveTimes(Time[0], true);
-			TimeSpan sessionEnd = effectiveSessionEnd;
 			TimeSpan noTradesAfter = effectiveNoTradesAfter;
 			
 			// Reset sessionClosed when a new session starts
@@ -422,9 +421,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
 			// === Session check ===
-			bool crossedSessionEnd = 
-					(Time[1].TimeOfDay <= sessionEnd && Time[0].TimeOfDay > sessionEnd)
-					|| (!TimeInSession(Time[0]) && TimeInSession(Time[1]));
+			bool crossedSessionEnd = CrossedSessionEnd(Time[1], Time[0]);
             
             bool isLastBarOfTradingSession = Bars.IsLastBarOfSession && !sessionClosed;
             
@@ -2063,6 +2060,64 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 				return now >= start && now < end;
 
 			return now >= start || now < end;
+		}
+
+		private bool CrossedSessionEnd(DateTime previousTime, DateTime currentTime)
+		{
+			return CrossedSessionEndForPreset(StrategyPreset.Asia, previousTime, currentTime)
+				|| CrossedSessionEndForPreset(StrategyPreset.London, previousTime, currentTime)
+				|| CrossedSessionEndForPreset(StrategyPreset.New_York, previousTime, currentTime);
+		}
+
+		private bool CrossedSessionEndForPreset(
+			StrategyPreset preset,
+			DateTime previousTime,
+			DateTime currentTime)
+		{
+			if (!IsTradingEnabledForPreset(preset))
+				return false;
+			if (!TryGetSessionWindowForPreset(preset, previousTime, out TimeSpan start, out TimeSpan end))
+				return false;
+
+			bool wasInSession = IsTimeInRange(previousTime.TimeOfDay, start, end);
+			bool nowInSession = IsTimeInRange(currentTime.TimeOfDay, start, end);
+			return wasInSession && !nowInSession;
+		}
+
+		private bool TryGetSessionWindowForPreset(
+			StrategyPreset preset,
+			DateTime time,
+			out TimeSpan start,
+			out TimeSpan end)
+		{
+			start = TimeSpan.Zero;
+			end = TimeSpan.Zero;
+
+			switch (preset)
+			{
+				case StrategyPreset.Asia:
+					start = new TimeSpan(20, 00, 0);
+					end = new TimeSpan(00, 00, 0);
+					break;
+				case StrategyPreset.London:
+					start = new TimeSpan(1, 30, 0);
+					end = new TimeSpan(5, 30, 0);
+					break;
+				default:
+					start = new TimeSpan(9, 40, 0);
+					end = new TimeSpan(15, 00, 0);
+					break;
+			}
+
+			bool autoShift = preset == StrategyPreset.Asia || preset == StrategyPreset.London;
+			if (autoShift)
+			{
+				TimeSpan shift = GetLondonSessionShiftForDate(time.Date);
+				start = ShiftTime(start, shift);
+				end = ShiftTime(end, shift);
+			}
+
+			return true;
 		}
 
 		private void ConsiderNextPreset(
