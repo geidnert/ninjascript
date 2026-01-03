@@ -2157,8 +2157,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     SessionStart  = new TimeSpan(9, 40, 0);
                     SessionEnd    = new TimeSpan(15, 00, 0);
                     NoTradesAfter = new TimeSpan(14, 30, 0);
-                    SkipStart = new TimeSpan(00, 00, 0);
-                    SkipEnd = new TimeSpan(00, 00, 0);
+                    SkipStart = new TimeSpan(11, 45, 0);
+                    SkipEnd = new TimeSpan(13, 20, 0);
                     Skip2Start = new TimeSpan(00, 00, 0);
                     Skip2End = new TimeSpan(00, 00, 0); 
                     break;
