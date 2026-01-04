@@ -490,11 +490,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ✅ Always keep preview lines updating while in session
             UpdatePreviewLines();
 
-			// 🔒 HARD GUARD: no entries after NoTradesAfter (but keep lines)
-			if (TimeInNoTradesAfter(Time[0])) {
+            // 🔒 HARD GUARD: no entries after NoTradesAfter (but keep lines)
+            if (TimeInNoTradesAfter(Time[0])) {
 				CancelEntryIfAfterNoTrades();
 				return;
 			}
+
+            // 🔒 HARD GUARD: no signal/order logic while a position is open
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
 
             // === Long Cancel: TP hit before entry === 
             if (longEntryOrder != null && longEntryOrder.OrderState == OrderState.Working)
