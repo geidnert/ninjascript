@@ -406,9 +406,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 dailyPnls[localDate] = new Dictionary<string, double>();
 
             var sb = new StringBuilder();
-            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━");
             sb.AppendLine($"📅 **{localDate:dddd MMMM dd, yyyy}**");
-            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
             double dayTotal = 0;
             if (dailyPnls.TryGetValue(localDate, out var pnls))
