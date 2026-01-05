@@ -34,9 +34,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 		[Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 2, GroupName = "Config")]
 		public bool RequireEntryConfirmation { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3, GroupName = "Config")]
-        public bool AntiHedge {
+        // [NinjaScriptProperty]
+        // [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3, GroupName = "Config")]
+        internal bool AntiHedge {
             get; set;
         }
 
@@ -44,9 +44,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 4, GroupName = "Config")]
         public string WebhookUrl { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Reverse On Signal", Description = "If true, flatten current position when a reverse signal is generated, then place the new limit order", Order = 5, GroupName = "Config")]
-        public bool ReverseOnSignal { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Reverse On Signal", Description = "If true, flatten current position when a reverse signal is generated, then place the new limit order", Order = 5, GroupName = "Config")]
+        internal bool ReverseOnSignal { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "Parameters", Order = 1)]
