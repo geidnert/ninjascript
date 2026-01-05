@@ -809,6 +809,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double longSLPoints = Math.Abs(longEntry - longSL) / TickSize;
                 double shortSLPoints = Math.Abs(shortEntry - shortSL) / TickSize;
 
+                longEntry = RoundToTickSize(longEntry);
+                shortEntry = RoundToTickSize(shortEntry);
+                longTP = RoundToTickSize(longTP);
+                shortTP = RoundToTickSize(shortTP);
+                longCancelPrice = RoundToTickSize(longCancelPrice);
+                shortCancelPrice = RoundToTickSize(shortCancelPrice);
+                longSL = RoundToTickSize(longSL);
+                shortSL = RoundToTickSize(shortSL);
+
                 if (debug) {
                     Print($"\n{Time[0]} - Candle body sizes:");
                     Print($"  ➤ c12Body = {c12Body:0.00} (Min allowed: {activeMinC12Body:0.00}, Max allowed: {activeMaxC12Body:0.00})");
@@ -854,7 +863,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     //double paddedLongSL = longSL - London_SLPadding;
-					double paddedLongSL = GetSLForLong();
+					double paddedLongSL = RoundToTickSize(GetSLForLong());
                     double slInPoints = Math.Abs(longEntry - paddedLongSL);
 
                     if (activeMaxSLPoints > 0 && slInPoints > activeMaxSLPoints)
@@ -907,8 +916,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 						SetStopLoss("LongEntry", CalculationMode.Price, paddedLongSL, false);
 	                    SetProfitTarget("LongEntry", CalculationMode.Price, longTP);
-						EnterLongLimit(0, true, Contracts, longEntry, "LongEntry");
 	                    QueueEntryWebhookLong(longEntry, longTP, paddedLongSL);
+						EnterLongLimit(0, true, Contracts, longEntry, "LongEntry");
 
                     SetHedgeLock(instrument, desiredDirection); 
 
@@ -956,7 +965,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     //double paddedShortSL = shortSL + London_SLPadding;
-					double paddedShortSL = GetSLForShort();
+					double paddedShortSL = RoundToTickSize(GetSLForShort());
                     double slInPoints = Math.Abs(shortEntry - paddedShortSL);
 
                     if (activeMaxSLPoints > 0 && slInPoints > activeMaxSLPoints)
@@ -1009,8 +1018,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 	                    SetStopLoss("ShortEntry", CalculationMode.Price, paddedShortSL, false);
 	                    SetProfitTarget("ShortEntry", CalculationMode.Price, shortTP);
-						EnterShortLimit(0, true, Contracts, shortEntry, "ShortEntry");
 	                    QueueEntryWebhookShort(shortEntry, shortTP, paddedShortSL);
+						EnterShortLimit(0, true, Contracts, shortEntry, "ShortEntry");
 
                     SetHedgeLock(instrument, desiredDirection);
 
@@ -1044,11 +1053,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	            if (order.Name == "LongEntry" && pendingLongWebhook)
 	            {
 	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
+                    double resolvedEntryPrice = pendingLongEntry;
+                    double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
+                    if (orderLimitPrice > 0)
+                        resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
 	                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working;
 	                bool isNewOrderId = !string.Equals(lastLongWebhookOrderId, orderId, StringComparison.Ordinal);
 	                bool payloadChanged =
 	                    isNewOrderId ||
-	                    !PricesEqual(lastLongWebhookEntry, pendingLongEntry) ||
+	                    !PricesEqual(lastLongWebhookEntry, resolvedEntryPrice) ||
 	                    !PricesEqual(lastLongWebhookTP, pendingLongTP) ||
 	                    !PricesEqual(lastLongWebhookSL, pendingLongSL);
 
@@ -1064,10 +1077,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         {
                             Print($"{Time[0]} - 📤 Webhook sending initial LONG order: {pendingLongEntry:0.00}/{pendingLongTP:0.00}/{pendingLongSL:0.00}");
                         }
-	                    SendWebhook("buy", pendingLongEntry, pendingLongTP, pendingLongSL);
+	                    SendWebhook("buy", resolvedEntryPrice, pendingLongTP, pendingLongSL);
 	                    pendingLongWebhook = false;
 	                    lastLongWebhookOrderId = orderId;
-                        lastLongWebhookEntry = pendingLongEntry;
+                        lastLongWebhookEntry = resolvedEntryPrice;
                         lastLongWebhookTP = pendingLongTP;
                         lastLongWebhookSL = pendingLongSL;
 	                }
@@ -1087,11 +1100,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	            if (order.Name == "ShortEntry" && pendingShortWebhook)
 	            {
 	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
+                    double resolvedEntryPrice = pendingShortEntry;
+                    double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
+                    if (orderLimitPrice > 0)
+                        resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
 	                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working;
 	                bool isNewOrderId = !string.Equals(lastShortWebhookOrderId, orderId, StringComparison.Ordinal);
 	                bool payloadChanged =
 	                    isNewOrderId ||
-	                    !PricesEqual(lastShortWebhookEntry, pendingShortEntry) ||
+	                    !PricesEqual(lastShortWebhookEntry, resolvedEntryPrice) ||
 	                    !PricesEqual(lastShortWebhookTP, pendingShortTP) ||
 	                    !PricesEqual(lastShortWebhookSL, pendingShortSL);
 
@@ -1107,10 +1124,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         {
                             Print($"{Time[0]} - 📤 Webhook sending initial SHORT order: {pendingShortEntry:0.00}/{pendingShortTP:0.00}/{pendingShortSL:0.00}");
                         }
-	                    SendWebhook("sell", pendingShortEntry, pendingShortTP, pendingShortSL);
+	                    SendWebhook("sell", resolvedEntryPrice, pendingShortTP, pendingShortSL);
 	                    pendingShortWebhook = false;
 	                    lastShortWebhookOrderId = orderId;
-                        lastShortWebhookEntry = pendingShortEntry;
+                        lastShortWebhookEntry = resolvedEntryPrice;
                         lastShortWebhookTP = pendingShortTP;
                         lastShortWebhookSL = pendingShortSL;
 	                }
@@ -1162,6 +1179,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             double tolerance = TickSize > 0 ? TickSize * 0.5 : 1e-10;
             return Math.Abs(a - b) <= tolerance;
+        }
+
+        private double RoundToTickSize(double price)
+        {
+            if (Instrument == null || TickSize <= 0)
+                return price;
+
+            return Instrument.MasterInstrument.RoundToTickSize(price);
         }
 
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
