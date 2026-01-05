@@ -395,17 +395,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // London
                 Contracts     = 1;
-                London_MinC12Body  = 11;
-                London_MaxC12Body  = 156.5;
+                London_MinC12Body  = 10.8;
+                London_MaxC12Body  = 113;
                 London_OffsetPerc  = 5.5;
                 London_TpPerc      = 31.5;
-                London_CancelPerc  = 172;
+                London_CancelPerc  = 174;
                 London_DeviationPerc = 0;
                 London_SLPadding = 0;
                 London_MaxSLTPRatioPerc = 446;
                 London_SLPresetSetting = SLPreset.First_Candle_High_Low;
                 London_SLPercentFirstCandle = 100;
-                London_MaxSLPoints = 150;
+                London_MaxSLPoints = 135;
                 London_SessionStart  = new TimeSpan(1, 30, 0);
                 London_SessionEnd    = new TimeSpan(5, 30, 0);
                 London_NoTradesAfter = new TimeSpan(5, 00, 0);

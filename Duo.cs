@@ -2176,17 +2176,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 case StrategyPreset.London:
 					londonAutoShiftTimes = true;
-                    MinC12Body  = 11;
-                    MaxC12Body  = 156.5;
+                    MinC12Body  = 10.8;
+                    MaxC12Body  = 113;
                     OffsetPerc  = 5.5;					
                     TpPerc      = 31.5;
-                    CancelPerc  = 172;
+                    CancelPerc  = 174;
                     DeviationPerc = 0;
                     SLPadding = 0;
 					MaxSLTPRatioPerc = 446;
                     SLPresetSetting = SLPreset.First_Candle_High_Low;
 					SLPercentFirstCandle = 100;
-                    MaxSLPoints = 150;
+                    MaxSLPoints = 135;
 
                     // ✅ Session preset values
                     SessionStart  = new TimeSpan(1, 30, 0);
