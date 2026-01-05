@@ -395,44 +395,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // Default input values
                 Contracts     = 1;
-                MinC12Body  = 19.5;
-                MaxC12Body  = 130.5;
-                OffsetPerc  = 1;
-                TpPerc      = 28;
-                CancelPerc  = 9999;
+                MinC12Body  = 11;
+                MaxC12Body  = 156.5;
+                OffsetPerc  = 5.5;
+                TpPerc      = 31.5;
+                CancelPerc  = 172;
                 DeviationPerc = 0;
                 SLPadding = 0;
-                MaxSLTPRatioPerc = 477;
+                MaxSLTPRatioPerc = 446;
                 SLPresetSetting = SLPreset.First_Candle_High_Low;
                 SLPercentFirstCandle = 100;
-                MaxSLPoints = 152;
-                NewYorkMinC12Body  = MinC12Body;
-                NewYorkMaxC12Body  = MaxC12Body;
-                NewYorkOffsetPerc  = OffsetPerc;
-                NewYorkTpPerc      = TpPerc;
-                NewYorkCancelPerc  = CancelPerc;
-                NewYorkDeviationPerc = DeviationPerc;
-                NewYorkSLPadding = SLPadding;
-                NewYorkMaxSLTPRatioPerc = MaxSLTPRatioPerc;
-                NewYorkSLPresetSetting = SLPresetSetting;
-                NewYorkSLPercentFirstCandle = SLPercentFirstCandle;
-                NewYorkMaxSLPoints = MaxSLPoints;
+                MaxSLPoints = 150;
+                NewYorkMinC12Body  = 19.5;
+                NewYorkMaxC12Body  = 130.5;
+                NewYorkOffsetPerc  = 1;
+                NewYorkTpPerc      = 28;
+                NewYorkCancelPerc  = 158;
+                NewYorkDeviationPerc = 0;
+                NewYorkSLPadding = 0;
+                NewYorkMaxSLTPRatioPerc = 477;
+                NewYorkSLPresetSetting = SLPreset.First_Candle_High_Low;
+                NewYorkSLPercentFirstCandle = 100;
+                NewYorkMaxSLPoints = 152;
 
                 // Other defaults
                 SessionBrush  = Brushes.Gold;
                 CloseAtSessionEnd = true;
                 UseSession1 = true;
                 UseSession2 = true;
-                AutoShiftSession1 = false;
+                AutoShiftSession1 = true;
                 AutoShiftSession2 = false;
-                SkipStart     = skipStart;
-                SkipEnd       = skipEnd;
-                Skip2Start     = skip2Start;
-                Skip2End       = skip2End;
-                NewYorkSkipStart = SkipStart;
-                NewYorkSkipEnd = SkipEnd;
-                NewYorkSkip2Start = Skip2Start;
-                NewYorkSkip2End = Skip2End;
+                SkipStart     = new TimeSpan(0, 0, 0);
+                SkipEnd       = new TimeSpan(0, 0, 0);
+                Skip2Start     = new TimeSpan(0, 0, 0);
+                Skip2End       = new TimeSpan(0, 0, 0);
+                NewYorkSkipStart = new TimeSpan(11, 45, 0);
+                NewYorkSkipEnd = new TimeSpan(13, 20, 0);
+                NewYorkSkip2Start = new TimeSpan(0, 0, 0);
+                NewYorkSkip2End = new TimeSpan(0, 0, 0);
                 ForceCloseAtSkipStart = true;
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
@@ -440,12 +440,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ReverseOnSignal = true;
 
                 // Default session times
-                SessionStart  = new TimeSpan(09, 40, 0);
-                SessionEnd    = new TimeSpan(14, 50, 0);
-                NoTradesAfter = new TimeSpan(14, 30, 0);
-                NewYorkSessionStart = SessionStart;
-                NewYorkSessionEnd = SessionEnd;
-                NewYorkNoTradesAfter = NoTradesAfter;
+                SessionStart  = new TimeSpan(1, 30, 0);
+                SessionEnd    = new TimeSpan(5, 30, 0);
+                NoTradesAfter = new TimeSpan(5, 00, 0);
+                NewYorkSessionStart = new TimeSpan(9, 40, 0);
+                NewYorkSessionEnd = new TimeSpan(15, 00, 0);
+                NewYorkNoTradesAfter = new TimeSpan(14, 30, 0);
             }
             else if (State == State.DataLoaded)
             {
