@@ -415,17 +415,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_Skip2End       = new TimeSpan(0, 0, 0);
 
                 // New York
-                NewYork_MinC12Body  = 19.5;
+                NewYork_MinC12Body  = 18.8;
                 NewYork_MaxC12Body  = 130.5;
-                NewYork_OffsetPerc  = 1;
-                NewYork_TpPerc      = 28;
-                NewYork_CancelPerc  = 158;
+                NewYork_OffsetPerc  = 0.2;
+                NewYork_TpPerc      = 28.3;
+                NewYork_CancelPerc  = 110;
                 NewYork_DeviationPerc = 0;
                 NewYork_SLPadding = 0;
                 NewYork_MaxSLTPRatioPerc = 477;
                 NewYork_SLPresetSetting = SLPreset.First_Candle_High_Low;
                 NewYork_SLPercentFirstCandle = 100;
-                NewYork_MaxSLPoints = 152;
+                NewYork_MaxSLPoints = 153;
                 NewYork_SessionStart = new TimeSpan(9, 40, 0);
                 NewYork_SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
