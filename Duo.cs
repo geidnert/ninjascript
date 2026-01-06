@@ -49,56 +49,56 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal bool ReverseOnSignal { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "Parameters", Order = 1)]
-        internal double MinC12Body { get; set; }
+        // [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "London Parameters", Order = 1)]
+        internal double London_MinC12Body { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Maximum 1st+2nd Candle Body", GroupName = "Parameters", Order = 2)]
-        internal double MaxC12Body { get; set; }
+        // [Display(Name = "Maximum 1st+2nd Candle Body", GroupName = "London Parameters", Order = 2)]
+        internal double London_MaxC12Body { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Offset % of 1st+2nd Candle Body", GroupName = "Parameters", Order = 5)]
-        internal double OffsetPerc { get; set; }
+        // [Display(Name = "Offset % of 1st+2nd Candle Body", GroupName = "London Parameters", Order = 5)]
+        internal double London_OffsetPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Take Profit % of 1st+2nd Candle Body", GroupName = "Parameters", Order = 6)]
-        internal double TpPerc { get; set; }
+        // [Display(Name = "Take Profit % of 1st+2nd Candle Body", GroupName = "London Parameters", Order = 6)]
+        internal double London_TpPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Cancel Order % of 1st+2nd Candle Body", GroupName = "Parameters", Order = 7)]
-        internal double CancelPerc { get; set; }
+        // [Display(Name = "Cancel Order % of 1st+2nd Candle Body", GroupName = "London Parameters", Order = 7)]
+        internal double London_CancelPerc { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", Order = 8, GroupName = "Parameters")]
+        [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", Order = 8, GroupName = "London Parameters")]
         [Range(0, double.MaxValue)]
-        public double DeviationPerc { get; set; }
+        public double London_DeviationPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "SL Padding", Description = "Extra padding added to stop loss (in price units, 0.25 increments)", GroupName = "Parameters", Order = 9)]
+        // [Display(Name = "SL Padding", Description = "Extra padding added to stop loss (in price units, 0.25 increments)", GroupName = "London Parameters", Order = 9)]
         // [Range(0, double.MaxValue)]
-        internal double SLPadding { get; set; }
+        internal double London_SLPadding { get; set; }
 
 		// [NinjaScriptProperty]
-        // [Display(Name = "Max SL/TP Ratio %", Description = "Skip trades if SL is more than this % of TP (e.g., 200 = SL can be at most 2x TP)", Order = 10, GroupName = "Parameters")]
+        // [Display(Name = "Max SL/TP Ratio %", Description = "Skip trades if SL is more than this % of TP (e.g., 200 = SL can be at most 2x TP)", Order = 10, GroupName = "London Parameters")]
         // [Range(0, 1000)]
-        internal double MaxSLTPRatioPerc { get; set; }
+        internal double London_MaxSLTPRatioPerc { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "SL type", Description = "Select the sl type you want", Order = 11, GroupName = "Parameters")]
-        internal SLPreset SLPresetSetting { get; set; }
+        // [Display(Name = "SL type", Description = "Select the sl type you want", Order = 11, GroupName = "London Parameters")]
+        internal SLPreset London_SLPresetSetting { get; set; }
 
 		// [NinjaScriptProperty]
-        // [Display(Name = "SL % of 1st Candle", Description = "0% = High of 1st candle (long), 100% = Low of 1st candle (long)", Order = 12, GroupName = "Parameters")]
+        // [Display(Name = "SL % of 1st Candle", Description = "0% = High of 1st candle (long), 100% = Low of 1st candle (long)", Order = 12, GroupName = "London Parameters")]
         // [Range(0, 100)]
-        internal double SLPercentFirstCandle { get; set; }
+        internal double London_SLPercentFirstCandle { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "Parameters")]
-        internal double MaxSLPoints { get; set; }
+        // [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "London Parameters")]
+        internal double London_MaxSLPoints { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "Session Time")]
-        internal TimeSpan SessionStart
+        // [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "London Time")]
+        internal TimeSpan London_SessionStart
         {
             get {
                 return sessionStart;
@@ -109,8 +109,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Session End", Description = "When session is ending, all positions and orders will be canceled when this time is passed", Order = 2, GroupName = "Session Time")]
-        internal TimeSpan SessionEnd
+        // [Display(Name = "Session End", Description = "When session is ending, all positions and orders will be canceled when this time is passed", Order = 2, GroupName = "London Time")]
+        internal TimeSpan London_SessionEnd
         {
             get {
                 return sessionEnd;
@@ -121,8 +121,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
 		// [NinjaScriptProperty]
-		// [Display(Name = "No Trades After", Description = "No more orders is being placed between this time and session end,", Order = 3, GroupName = "Session Time")]
-		internal TimeSpan NoTradesAfter
+		// [Display(Name = "No Trades After", Description = "No more orders is being placed between this time and session end,", Order = 3, GroupName = "London Time")]
+		internal TimeSpan London_NoTradesAfter
 		{
 			get {
 				return noTradesAfter;
@@ -132,42 +132,146 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			}
 		}
 
+        // [NinjaScriptProperty]
+        // [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 1)]
+        internal double NewYork_MinC12Body { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Maximum 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 2)]
+        internal double NewYork_MaxC12Body { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Offset % of 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 5)]
+        internal double NewYork_OffsetPerc { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Take Profit % of 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 6)]
+        internal double NewYork_TpPerc { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Cancel Order % of 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 7)]
+        internal double NewYork_CancelPerc { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", Order = 8, GroupName = "New York Parameters")]
+        [Range(0, double.MaxValue)]
+        public double NewYork_DeviationPerc { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "SL Padding", Description = "Extra padding added to stop loss (in price units, 0.25 increments)", GroupName = "New York Parameters", Order = 9)]
+        // [Range(0, double.MaxValue)]
+        internal double NewYork_SLPadding { get; set; }
+
+		// [NinjaScriptProperty]
+        // [Display(Name = "Max SL/TP Ratio %", Description = "Skip trades if SL is more than this % of TP (e.g., 200 = SL can be at most 2x TP)", Order = 10, GroupName = "New York Parameters")]
+        // [Range(0, 1000)]
+        internal double NewYork_MaxSLTPRatioPerc { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "SL type", Description = "Select the sl type you want", Order = 11, GroupName = "New York Parameters")]
+        internal SLPreset NewYork_SLPresetSetting { get; set; }
+
+		// [NinjaScriptProperty]
+        // [Display(Name = "SL % of 1st Candle", Description = "0% = High of 1st candle (long), 100% = Low of 1st candle (long)", Order = 12, GroupName = "New York Parameters")]
+        // [Range(0, 100)]
+        internal double NewYork_SLPercentFirstCandle { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "New York Parameters")]
+        internal double NewYork_MaxSLPoints { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "New York Time")]
+        internal TimeSpan NewYork_SessionStart
+        {
+            get {
+                return session2SessionStart;
+            }
+            set {
+                session2SessionStart = new TimeSpan(value.Hours, value.Minutes, 0);
+            }
+        }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Session End", Description = "When session is ending, all positions and orders will be canceled when this time is passed", Order = 2, GroupName = "New York Time")]
+        internal TimeSpan NewYork_SessionEnd
+        {
+            get {
+                return session2SessionEnd;
+            }
+            set {
+                session2SessionEnd = new TimeSpan(value.Hours, value.Minutes, 0);
+            }
+        }
+
+		// [NinjaScriptProperty]
+		// [Display(Name = "No Trades After", Description = "No more orders is being placed between this time and session end,", Order = 3, GroupName = "New York Time")]
+		internal TimeSpan NewYork_NoTradesAfter
+		{
+			get {
+				return session2NoTradesAfter;
+			}
+			set {
+				session2NoTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0);
+			}
+		}
+
         [XmlIgnore]
         [NinjaScriptProperty]
-        [Display(Name = "Session Fill", Description = "Color of the session background", Order = 4, GroupName = "Session Time")]
+        [Display(Name = "Session Fill", Description = "Color of the session background", Order = 4, GroupName = "Sessions")]
         public Brush SessionBrush { get; set; }
 
-        // [NinjaScriptProperty]
-        // [Display(Name = "Trade Asia Session", Description = "Allow trading during the Asia session", Order = 5, GroupName = "Session Time")]
-        internal bool TradeAsiaSession { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "Use London", Description = "Allow trading during London", Order = 1, GroupName = "Sessions")]
+        public bool UseSession1 { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade London Session (01:30-05:30)", Description = "Allow trading during the London session", Order = 6, GroupName = "Session Time")]
-        public bool TradeLondonSession { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Trade New York Session (09:40-15:00)", Description = "Allow trading during the New York session", Order = 7, GroupName = "Session Time")]
-        public bool TradeNewYorkSession { get; set; }
+        [Display(Name = "Use New York", Description = "Allow trading during New York", Order = 2, GroupName = "Sessions")]
+        public bool UseSession2 { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Close at Session End", Description = "If true, open trades will be closed and working orders canceled at session end", Order = 4, GroupName = "Session Time")]
+        // [Display(Name = "Auto Shift London", Description = "Apply London DST auto-shift to London times", Order = 3, GroupName = "Sessions")]
+        internal bool AutoShiftSession1 { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Auto Shift NewYork", Description = "Apply London DST auto-shift to New York times", Order = 4, GroupName = "Sessions")]
+        internal bool AutoShiftSession2 { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Close at Session End", Description = "If true, open trades will be closed and working orders canceled at session end", Order = 5, GroupName = "Sessions")]
         internal bool CloseAtSessionEnd { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "Skip Times")]
-        internal TimeSpan SkipStart { get; set; }
+        // [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "London Skip Times")]
+        internal TimeSpan London_SkipStart { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "Skip Times")]
-        internal TimeSpan SkipEnd { get; set; }
+        // [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "London Skip Times")]
+        internal TimeSpan London_SkipEnd { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "Skip Times")]
-        internal TimeSpan Skip2Start { get; set; }
+        // [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "London Skip Times")]
+        internal TimeSpan London_Skip2Start { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "Skip Times")]
-        internal TimeSpan Skip2End { get; set; }
+        // [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "London Skip Times")]
+        internal TimeSpan London_Skip2End { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "New York Skip Times")]
+        internal TimeSpan NewYork_SkipStart { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "New York Skip Times")]
+        internal TimeSpan NewYork_SkipEnd { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "New York Skip Times")]
+        internal TimeSpan NewYork_Skip2Start { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "New York Skip Times")]
+        internal TimeSpan NewYork_Skip2End { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "Skip Times")]
@@ -181,6 +285,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan sessionStart = new TimeSpan(9, 40, 0);
         private TimeSpan sessionEnd = new TimeSpan(15, 00, 0);  
 		private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
+        private TimeSpan session2SessionStart = new TimeSpan(9, 40, 0);
+        private TimeSpan session2SessionEnd = new TimeSpan(15, 00, 0);
+        private TimeSpan session2NoTradesAfter = new TimeSpan(14, 30, 0);
         private TimeSpan skipStart = new TimeSpan(00, 00, 0);
         private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
         private TimeSpan skip2Start = new TimeSpan(00, 00, 0);
@@ -209,9 +316,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool shortLinesActive = false;
         private int longExitBar = -1;
         private int shortExitBar = -1;
-        private bool londonAutoShiftTimes;
-        private StrategyPreset activePreset = StrategyPreset.New_York;
-        private bool presetInitialized;
+        private SessionSlot activeSession = SessionSlot.None;
+        private bool sessionInitialized;
         private DateTime effectiveTimesDate = DateTime.MinValue;
         private TimeSpan effectiveSessionStart;
         private TimeSpan effectiveSessionEnd;
@@ -220,6 +326,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan effectiveSkipEnd;
         private TimeSpan effectiveSkip2Start;
         private TimeSpan effectiveSkip2End;
+        private bool activeAutoShiftTimes;
+        private double activeMinC12Body;
+        private double activeMaxC12Body;
+        private double activeOffsetPerc;
+        private double activeTpPerc;
+        private double activeCancelPerc;
+        private double activeDeviationPerc;
+        private double activeSLPadding;
+        private double activeMaxSLTPRatioPerc;
+        private SLPreset activeSLPresetSetting;
+        private double activeSLPercentFirstCandle;
+        private double activeMaxSLPoints;
+        private TimeSpan activeSessionStart;
+        private TimeSpan activeSessionEnd;
+        private TimeSpan activeNoTradesAfter;
+        private TimeSpan activeSkipStart;
+        private TimeSpan activeSkipEnd;
+        private TimeSpan activeSkip2Start;
+        private TimeSpan activeSkip2End;
 		private TimeZoneInfo targetTimeZone;
 		private TimeZoneInfo londonTimeZone;
         private int lineTagCounter = 0;
@@ -243,13 +368,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double lastShortWebhookEntry;
         private double lastShortWebhookTP;
         private double lastShortWebhookSL;
-	        private int lastCancelWebhookBar = -1;
-	        private int lastExitWebhookBar = -1;
+        private int lastCancelWebhookBar = -1;
+        private int lastExitWebhookBar = -1;
 
-	        // --- Heartbeat reporting ---
-	        private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
-	        private System.Timers.Timer heartbeatTimer;
-	        private DateTime lastHeartbeatWrite = DateTime.MinValue;
+        // --- Heartbeat reporting ---
+        private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
+        private System.Timers.Timer heartbeatTimer;
+        private DateTime lastHeartbeatWrite = DateTime.MinValue;
         private int heartbeatIntervalSeconds = 10; // send heartbeat every 10 seconds
         private static readonly object heartbeatFileLock = new object();
         private string heartbeatId;
@@ -268,54 +393,72 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EntryHandling = EntryHandling.UniqueEntries;
                 IsInstantiatedOnEachOptimizationIteration = false;
 
-                // Default input values
+                // London
                 Contracts     = 1;
-                MinC12Body  = 19.5;
-                MaxC12Body  = 130.5;
-                OffsetPerc  = 1;
-                TpPerc      = 28;
-                CancelPerc  = 9999;
-                DeviationPerc = 0;
-                SLPadding = 0;
-                MaxSLTPRatioPerc = 477;
-                SLPresetSetting = SLPreset.First_Candle_High_Low;
-                SLPercentFirstCandle = 100;
-                MaxSLPoints = 152;
+                London_MinC12Body  = 10.8;
+                London_MaxC12Body  = 113;
+                London_OffsetPerc  = 5.5;
+                London_TpPerc      = 31.5;
+                London_CancelPerc  = 174;
+                London_DeviationPerc = 0;
+                London_SLPadding = 0;
+                London_MaxSLTPRatioPerc = 446;
+                London_SLPresetSetting = SLPreset.First_Candle_High_Low;
+                London_SLPercentFirstCandle = 100;
+                London_MaxSLPoints = 135;
+                London_SessionStart  = new TimeSpan(1, 30, 0);
+                London_SessionEnd    = new TimeSpan(5, 30, 0);
+                London_NoTradesAfter = new TimeSpan(5, 00, 0);
+                London_SkipStart     = new TimeSpan(0, 0, 0);
+                London_SkipEnd       = new TimeSpan(0, 0, 0);
+                London_Skip2Start     = new TimeSpan(0, 0, 0);
+                London_Skip2End       = new TimeSpan(0, 0, 0);
+
+                // New York
+                NewYork_MinC12Body  = 18.8;
+                NewYork_MaxC12Body  = 130.5;
+                NewYork_OffsetPerc  = 0.2;
+                NewYork_TpPerc      = 28.3;
+                NewYork_CancelPerc  = 110;
+                NewYork_DeviationPerc = 0;
+                NewYork_SLPadding = 0;
+                NewYork_MaxSLTPRatioPerc = 477;
+                NewYork_SLPresetSetting = SLPreset.First_Candle_High_Low;
+                NewYork_SLPercentFirstCandle = 100;
+                NewYork_MaxSLPoints = 153;
+                NewYork_SessionStart = new TimeSpan(9, 40, 0);
+                NewYork_SessionEnd = new TimeSpan(15, 00, 0);
+                NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
+                NewYork_SkipStart = new TimeSpan(11, 45, 0);
+                NewYork_SkipEnd = new TimeSpan(13, 20, 0);
+                NewYork_Skip2Start = new TimeSpan(0, 0, 0);
+                NewYork_Skip2End = new TimeSpan(0, 0, 0);
 
                 // Other defaults
                 SessionBrush  = Brushes.Gold;
                 CloseAtSessionEnd = true;
-                TradeAsiaSession = false;
-                TradeLondonSession = true;
-                TradeNewYorkSession = true;
-                SkipStart     = skipStart;
-                SkipEnd       = skipEnd;
-                Skip2Start     = skip2Start;
-                Skip2End       = skip2End;
-                londonAutoShiftTimes = false;
+                UseSession1 = true;
+                UseSession2 = true;
+                AutoShiftSession1 = true;
+                AutoShiftSession2 = false;
                 ForceCloseAtSkipStart = true;
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 WebhookUrl = "";
                 ReverseOnSignal = true;
-
-                // Default session times
-                SessionStart  = new TimeSpan(09, 40, 0);
-                SessionEnd    = new TimeSpan(14, 50, 0);
-                NoTradesAfter = new TimeSpan(14, 30, 0);
             }
             else if (State == State.DataLoaded)
             {
-                heartbeatId = BuildHeartbeatId();
+                //heartbeatId = BuildHeartbeatId();
                 // --- Heartbeat timer setup ---
-                heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
-                heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
-                heartbeatTimer.AutoReset = true;
-                heartbeatTimer.Start();
+                //heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
+                //heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
+                //heartbeatTimer.AutoReset = true;
+                //heartbeatTimer.Start();
 
-                //ApplyStopLossPreset(SLPresetSetting);
+                //ApplyStopLossPreset(London_SLPresetSetting);
 
-                //Print($"\n== PRESETS FINAL: {PresetSetting} | SL = {SLPresetSetting} ==\n");
+                //Print($"\n== PRESETS FINAL: {PresetSetting} | SL = {London_SLPresetSetting} ==\n");
             }
             else if (State == State.Configure)
             {
@@ -324,12 +467,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (State == State.Terminated)
             {
                 // --- Clean up heartbeat timer ---
-                if (heartbeatTimer != null)
-                {
-                    heartbeatTimer.Stop();
-                    heartbeatTimer.Dispose();
-                    heartbeatTimer = null;
-                }
+                // if (heartbeatTimer != null)
+                // {
+                //     heartbeatTimer.Stop();
+                //     heartbeatTimer.Dispose();
+                //     heartbeatTimer = null;
+                // }
             }
         }
 
@@ -338,8 +481,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CurrentBar < 2)
                 return;
 
-			ApplyPresetForTime(Time[0]);
-			EnsureEffectiveTimes(Time[0], true);
+			EnsureActiveSession(Time[0]);
+			EnsureEffectiveTimes(Time[0], false);
 			TimeSpan noTradesAfter = effectiveNoTradesAfter;
 			
 			// Reset sessionClosed when a new session starts
@@ -366,13 +509,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 longSignalBar = -1;
                 shortSignalBar = -1;
                 longLinesActive = false;
-	                shortLinesActive = false;
-				    longExitBar = -1;
-				    shortExitBar = -1;
-				
-				    displayText = "Waiting...";
-				
-				    Print($"{Time[0]} - New session started, state reset.");
+                shortLinesActive = false;
+                longExitBar = -1;
+                shortExitBar = -1;
+            
+                displayText = "Waiting...";
+            
+                Print($"{Time[0]} - New session started, state reset.");
 				}
 
             DrawSessionBackground();
@@ -468,7 +611,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 			// === No Trades After check ===
 			bool crossedNoTradesAfter = 
-				(Time[1].TimeOfDay <= noTradesAfter && Time[0].TimeOfDay > noTradesAfter);
+				activeSession != SessionSlot.None
+				&& (Time[1].TimeOfDay <= noTradesAfter && Time[0].TimeOfDay > noTradesAfter);
 
 			if (crossedNoTradesAfter)
 			{
@@ -490,7 +634,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ✅ Always keep preview lines updating while in session
             UpdatePreviewLines();
 
-            // 🔒 HARD GUARD: no entries after NoTradesAfter (but keep lines)
+            // 🔒 HARD GUARD: no entries after London_NoTradesAfter (but keep lines)
             if (TimeInNoTradesAfter(Time[0])) {
 				CancelEntryIfAfterNoTrades();
 				return;
@@ -601,7 +745,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 double c12Body = Math.Abs(c2Close - c1Open);
 
-                if (c12Body < MinC12Body || c12Body > MaxC12Body)
+                if (c12Body < activeMinC12Body || c12Body > activeMaxC12Body)
                 {
                     return;
                 }
@@ -644,9 +788,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     shortSL = c1Open;
                 }
 
-                // Randomize % within DeviationPerc
-                double randomizedOffsetPerc = OffsetPerc + (rng.NextDouble() * 2 - 1) * DeviationPerc;
-                double randomizedTpPerc     = TpPerc     + (rng.NextDouble() * 2 - 1) * DeviationPerc;
+                // Randomize % within London_DeviationPerc
+                double randomizedOffsetPerc = activeOffsetPerc + (rng.NextDouble() * 2 - 1) * activeDeviationPerc;
+                double randomizedTpPerc     = activeTpPerc     + (rng.NextDouble() * 2 - 1) * activeDeviationPerc;
 
                 // Ensure no negative values
                 randomizedOffsetPerc = Math.Max(0, randomizedOffsetPerc);
@@ -660,8 +804,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double longTP = longEntry + c12Body * (randomizedTpPerc / 100.0);
                 double shortTP = shortEntry - c12Body * (randomizedTpPerc / 100.0);
 
-                double longCancelPrice = longEntry + c12Body * (CancelPerc / 100.0);
-                double shortCancelPrice = shortEntry - c12Body * (CancelPerc / 100.0);
+                double longCancelPrice = longEntry + c12Body * (activeCancelPerc / 100.0);
+                double shortCancelPrice = shortEntry - c12Body * (activeCancelPerc / 100.0);
                 double longSLPoints = Math.Abs(longEntry - longSL) / TickSize;
                 double shortSLPoints = Math.Abs(shortEntry - shortSL) / TickSize;
 
@@ -676,7 +820,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (debug) {
                     Print($"\n{Time[0]} - Candle body sizes:");
-                    Print($"  ➤ c12Body = {c12Body:0.00} (Min allowed: {MinC12Body:0.00}, Max allowed: {MaxC12Body:0.00})");
+                    Print($"  ➤ c12Body = {c12Body:0.00} (Min allowed: {activeMinC12Body:0.00}, Max allowed: {activeMaxC12Body:0.00})");
                     Print($"  ➤ Entry Offset = {offset:0.00}");
                     Print($"  ➤ Long TP = {longTP:0.00}, Short TP = {shortTP:0.00}");
                 }
@@ -702,30 +846,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     // Long RR check
-                    if (MaxSLTPRatioPerc > 0)  // only enforce if enabled
+                    if (activeMaxSLTPRatioPerc > 0)  // only enforce if enabled
                     {
                         double longTPPoints2 = Math.Abs(longTP - longEntry) / TickSize;
                         double longSLPoints2 = Math.Abs(longEntry - longSL) / TickSize;
                         if (longTPPoints2 > 0)
                         {
                             double ratioPerc = (longSLPoints2 / longTPPoints2) * 100.0;
-                            if (ratioPerc > MaxSLTPRatioPerc)
+                            if (ratioPerc > activeMaxSLTPRatioPerc)
                             {
                                 if (debug)
-                                    Print($"{Time[0]} - ❌ Skipping LONG trade. SL/TP ratio = {ratioPerc:0.00}% exceeds max {MaxSLTPRatioPerc}%");
+                                    Print($"{Time[0]} - ❌ Skipping LONG trade. SL/TP ratio = {ratioPerc:0.00}% exceeds max {activeMaxSLTPRatioPerc}%");
                                 return; // Skip this trade
                             }
                         }
                     }
 
-                    //double paddedLongSL = longSL - SLPadding;
+                    //double paddedLongSL = longSL - London_SLPadding;
 					double paddedLongSL = RoundToTickSize(GetSLForLong());
                     double slInPoints = Math.Abs(longEntry - paddedLongSL);
 
-                    if (MaxSLPoints > 0 && slInPoints > MaxSLPoints)
+                    if (activeMaxSLPoints > 0 && slInPoints > activeMaxSLPoints)
                     {
                         if (debug)
-                            Print($"{Time[0]} - 🚫 Skipping long trade: SL = {slInPoints:0.00} points > MaxSL = {MaxSLPoints}");
+                            Print($"{Time[0]} - 🚫 Skipping long trade: SL = {slInPoints:0.00} points > MaxSL = {activeMaxSLPoints}");
                         return;
                     }
 
@@ -804,30 +948,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     // Short RR check
-                    if (MaxSLTPRatioPerc > 0)  // only enforce if enabled
+                    if (activeMaxSLTPRatioPerc > 0)  // only enforce if enabled
                     {
                         double shortTPPoints2 = Math.Abs(shortEntry - shortTP) / TickSize;
                         double shortSLPoints2 = Math.Abs(shortSL - shortEntry) / TickSize;
                         if (shortTPPoints2 > 0)
                         {
                             double ratioPerc = (shortSLPoints2 / shortTPPoints2) * 100.0;
-                            if (ratioPerc > MaxSLTPRatioPerc)
+                            if (ratioPerc > activeMaxSLTPRatioPerc)
                             {
                                 if (debug)
-                                    Print($"{Time[0]} - ❌ Skipping SHORT trade. SL/TP ratio = {ratioPerc:0.00}% exceeds max {MaxSLTPRatioPerc}%");
+                                    Print($"{Time[0]} - ❌ Skipping SHORT trade. SL/TP ratio = {ratioPerc:0.00}% exceeds max {activeMaxSLTPRatioPerc}%");
                                 return; // Skip this trade
                             }
                         }
                     }
 
-                    //double paddedShortSL = shortSL + SLPadding;
+                    //double paddedShortSL = shortSL + London_SLPadding;
 					double paddedShortSL = RoundToTickSize(GetSLForShort());
                     double slInPoints = Math.Abs(shortEntry - paddedShortSL);
 
-                    if (MaxSLPoints > 0 && slInPoints > MaxSLPoints)
+                    if (activeMaxSLPoints > 0 && slInPoints > activeMaxSLPoints)
                     {
                         if (debug)
-                            Print($"{Time[0]} - 🚫 Skipping short trade: SL = {slInPoints:0.00} points > MaxSL = {MaxSLPoints}");
+                            Print($"{Time[0]} - 🚫 Skipping short trade: SL = {slInPoints:0.00} points > MaxSL = {activeMaxSLPoints}");
                         return;
                     }
                     
@@ -1294,6 +1438,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	
         private bool TimeInSkip(DateTime time)
         {
+			EnsureActiveSession(time);
+			if (activeSession == SessionSlot.None)
+				return false;
 			EnsureEffectiveTimes(time, false);
             TimeSpan now = time.TimeOfDay;
 
@@ -1321,9 +1468,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 		private bool TimeInSession(DateTime time)
 		{
-			EnsureEffectiveTimes(time, false);
-			if (!IsTradingEnabledForPreset(activePreset))
+			EnsureActiveSession(time);
+			if (activeSession == SessionSlot.None)
 				return false;
+			EnsureEffectiveTimes(time, false);
 		    TimeSpan now = time.TimeOfDay;
 		
 		    if (effectiveSessionStart < effectiveSessionEnd)
@@ -1332,21 +1480,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 		        return now >= effectiveSessionStart || now < effectiveSessionEnd;
 		}
 
-		private bool IsTradingEnabledForPreset(StrategyPreset preset)
-		{
-			switch (preset)
-			{
-				case StrategyPreset.Asia:
-					return TradeAsiaSession;
-				case StrategyPreset.London:
-					return TradeLondonSession;
-				default:
-					return TradeNewYorkSession;
-			}
-		}
-
 		private bool TimeInNoTradesAfter(DateTime time)
 		{
+			EnsureActiveSession(time);
+			if (activeSession == SessionSlot.None)
+				return false;
 			EnsureEffectiveTimes(time, false);
 			TimeSpan now = time.TimeOfDay;
 
@@ -1366,6 +1504,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // Find current bar time
             DateTime barTime = Time[0];
+			EnsureActiveSession(barTime);
+			if (activeSession == SessionSlot.None)
+				return;
 			EnsureEffectiveTimes(barTime, false);
             bool isOvernight = effectiveSessionStart > effectiveSessionEnd;
 
@@ -1381,7 +1522,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (startBarsAgo < 0 || endBarsAgo < 0)
                 return;
 
-            string tag = $"DUO_SessionFill_{activePreset}_{sessionStartTime:yyyyMMdd_HHmm}";
+            string tag = $"DUO_SessionFill_{activeSession}_{sessionStartTime:yyyyMMdd_HHmm}";
 
             if (DrawObjects[tag] == null)
             {
@@ -1402,16 +1543,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			
 			var r = new SolidColorBrush(Color.FromArgb(70, 255, 0, 0));
 
-			// Calculate the exact DateTime for the NoTradesAfter time (on this chart date)
-			//DateTime sessionStartTime = Time[0].Date + SessionStart;
+			// Calculate the exact DateTime for the London_NoTradesAfter time (on this chart date)
+			//DateTime sessionStartTime = Time[0].Date + London_SessionStart;
 			DateTime noTradesAfterTime = Time[0].Date + effectiveNoTradesAfter;
 
-			// Handle overnight sessions (when SessionEnd < SessionStart)
+			// Handle overnight sessions (when London_SessionEnd < London_SessionStart)
 			if (effectiveSessionStart > effectiveSessionEnd && effectiveNoTradesAfter < effectiveSessionStart)
 				noTradesAfterTime = noTradesAfterTime.AddDays(1);
 
-			// Draw the vertical line exactly at NoTradesAfter
-			Draw.VerticalLine(this, $"NoTradesAfter_{activePreset}_{sessionStartTime:yyyyMMdd_HHmm}", noTradesAfterTime, r,
+			// Draw the vertical line exactly at London_NoTradesAfter
+			Draw.VerticalLine(this, $"NoTradesAfter_{activeSession}_{sessionStartTime:yyyyMMdd_HHmm}", noTradesAfterTime, r,
 							DashStyleHelper.Solid, 2);
 
             DrawSkipWindow("Skip1", effectiveSkipStart, effectiveSkipEnd);
@@ -1465,144 +1606,156 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.Solid, 2);
         }
 
-		private void EnsureEffectiveTimes(DateTime barTime, bool log)
-		{
-			if (!londonAutoShiftTimes)
-			{
-				effectiveSessionStart = SessionStart;
-				effectiveSessionEnd = SessionEnd;
-				effectiveNoTradesAfter = NoTradesAfter;
-				effectiveSkipStart = SkipStart;
-				effectiveSkipEnd = SkipEnd;
-				effectiveSkip2Start = Skip2Start;
-				effectiveSkip2End = Skip2End;
-				return;
-			}
+        private void EnsureEffectiveTimes(DateTime barTime, bool log)
+        {
+            if (activeSession == SessionSlot.None)
+            {
+                effectiveSessionStart = TimeSpan.Zero;
+                effectiveSessionEnd = TimeSpan.Zero;
+                effectiveNoTradesAfter = TimeSpan.Zero;
+                effectiveSkipStart = TimeSpan.Zero;
+                effectiveSkipEnd = TimeSpan.Zero;
+                effectiveSkip2Start = TimeSpan.Zero;
+                effectiveSkip2End = TimeSpan.Zero;
+                return;
+            }
 
-			DateTime date = barTime.Date;
-			if (date == effectiveTimesDate)
-				return;
+            if (!activeAutoShiftTimes)
+            {
+                effectiveSessionStart = activeSessionStart;
+                effectiveSessionEnd = activeSessionEnd;
+                effectiveNoTradesAfter = activeNoTradesAfter;
+                effectiveSkipStart = activeSkipStart;
+                effectiveSkipEnd = activeSkipEnd;
+                effectiveSkip2Start = activeSkip2Start;
+                effectiveSkip2End = activeSkip2End;
+                return;
+            }
 
-			effectiveTimesDate = date;
+            DateTime date = barTime.Date;
+            if (date == effectiveTimesDate)
+                return;
 
-			TimeSpan shift = GetLondonSessionShiftForDate(date);
-			effectiveSessionStart = ShiftTime(SessionStart, shift);
-			effectiveSessionEnd = ShiftTime(SessionEnd, shift);
-			effectiveNoTradesAfter = ShiftTime(NoTradesAfter, shift);
-			effectiveSkipStart = ShiftTime(SkipStart, shift);
-			effectiveSkipEnd = ShiftTime(SkipEnd, shift);
-			effectiveSkip2Start = ShiftTime(Skip2Start, shift);
-			effectiveSkip2End = ShiftTime(Skip2End, shift);
+            effectiveTimesDate = date;
 
-			if (debug && log)
-			{
-				Print(
-					$"{date:yyyy-MM-dd} - LondonAutoShiftTimes recompute | " +
-					$"Base SS={SessionStart:hh\\:mm} SE={SessionEnd:hh\\:mm} NTA={NoTradesAfter:hh\\:mm} | " +
-					$"Eff SS={effectiveSessionStart:hh\\:mm} SE={effectiveSessionEnd:hh\\:mm} NTA={effectiveNoTradesAfter:hh\\:mm} | " +
-					$"Shift={shift.TotalHours:0.##}h");
-			}
-		}
+            TimeSpan shift = GetLondonSessionShiftForDate(date);
+            effectiveSessionStart = ShiftTime(activeSessionStart, shift);
+            effectiveSessionEnd = ShiftTime(activeSessionEnd, shift);
+            effectiveNoTradesAfter = ShiftTime(activeNoTradesAfter, shift);
+            effectiveSkipStart = ShiftTime(activeSkipStart, shift);
+            effectiveSkipEnd = ShiftTime(activeSkipEnd, shift);
+            effectiveSkip2Start = ShiftTime(activeSkip2Start, shift);
+            effectiveSkip2End = ShiftTime(activeSkip2End, shift);
 
-		private TimeSpan GetLondonSessionShiftForDate(DateTime date)
-		{
-			// Use midday UTC to avoid DST transition hour edge cases.
-			DateTime utcSample = new DateTime(date.Year, date.Month, date.Day, 12, 0, 0, DateTimeKind.Utc);
+            if (debug && log)
+            {
+                Print(
+                    $"{date:yyyy-MM-dd} - AutoShiftTimes recompute | " +
+                    $"Base SS={activeSessionStart:hh\\:mm} SE={activeSessionEnd:hh\\:mm} NTA={activeNoTradesAfter:hh\\:mm} | " +
+                    $"Eff SS={effectiveSessionStart:hh\\:mm} SE={effectiveSessionEnd:hh\\:mm} NTA={effectiveNoTradesAfter:hh\\:mm} | " +
+                    $"Shift={shift.TotalHours:0.##}h");
+            }
+        }
 
-			// Compute a dynamic baseline for this year so we only shift during UK/US DST mismatch weeks.
-			// Jan 15 is a stable reference day (both typically on standard time).
-			DateTime utcRef = new DateTime(date.Year, 1, 15, 12, 0, 0, DateTimeKind.Utc);
+        private TimeSpan GetLondonSessionShiftForDate(DateTime date)
+        {
+            // Use midday UTC to avoid DST transition hour edge cases.
+            DateTime utcSample = new DateTime(date.Year, date.Month, date.Day, 12, 0, 0, DateTimeKind.Utc);
 
-			TimeZoneInfo londonTz = GetLondonTimeZone();
-			TimeZoneInfo targetTz = GetTargetTimeZone();
+            // Compute a dynamic baseline for this year so we only shift during UK/US DST mismatch weeks.
+            // Jan 15 is a stable reference day (both typically on standard time).
+            DateTime utcRef = new DateTime(date.Year, 1, 15, 12, 0, 0, DateTimeKind.Utc);
 
-			TimeSpan baseline = londonTz.GetUtcOffset(utcRef) - targetTz.GetUtcOffset(utcRef);
-			TimeSpan actual = londonTz.GetUtcOffset(utcSample) - targetTz.GetUtcOffset(utcSample);
+            TimeZoneInfo londonTz = GetLondonTimeZone();
+            TimeZoneInfo targetTz = GetTargetTimeZone();
 
-			return baseline - actual;
-		}
+            TimeSpan baseline = londonTz.GetUtcOffset(utcRef) - targetTz.GetUtcOffset(utcRef);
+            TimeSpan actual = londonTz.GetUtcOffset(utcSample) - targetTz.GetUtcOffset(utcSample);
 
-		private TimeSpan ShiftTime(TimeSpan baseTime, TimeSpan shift)
-		{
-			long ticks = (baseTime.Ticks + shift.Ticks) % TimeSpan.TicksPerDay;
-			if (ticks < 0)
-				ticks += TimeSpan.TicksPerDay;
-			return new TimeSpan(ticks);
-		}
+            return baseline - actual;
+        }
 
-		private TimeZoneInfo GetTargetTimeZone()
-		{
-			if (targetTimeZone != null)
-				return targetTimeZone;
+        private TimeSpan ShiftTime(TimeSpan baseTime, TimeSpan shift)
+        {
+            long ticks = (baseTime.Ticks + shift.Ticks) % TimeSpan.TicksPerDay;
+            if (ticks < 0)
+                ticks += TimeSpan.TicksPerDay;
+            return new TimeSpan(ticks);
+        }
 
-			try
-			{
-				// Prefer the Bars/data-series time zone (matches Time[0]) if available.
-				// Use reflection to avoid compile-time dependency on specific NinjaTrader members.
-				var bars = Bars;
-				if (bars != null)
-				{
-					var timeZoneProp = bars.GetType().GetProperty(
-						"TimeZoneInfo",
-						BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        private TimeZoneInfo GetTargetTimeZone()
+        {
+            if (targetTimeZone != null)
+                return targetTimeZone;
 
-					if (timeZoneProp != null && typeof(TimeZoneInfo).IsAssignableFrom(timeZoneProp.PropertyType))
-						targetTimeZone = (TimeZoneInfo)timeZoneProp.GetValue(bars, null);
-				}
+            try
+            {
+                // Prefer the Bars/data-series time zone (matches Time[0]) if available.
+                // Use reflection to avoid compile-time dependency on specific NinjaTrader members.
+                var bars = Bars;
+                if (bars != null)
+                {
+                    var timeZoneProp = bars.GetType().GetProperty(
+                        "TimeZoneInfo",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-				// Fallback to TradingHours template time zone.
-				if (targetTimeZone == null)
-					targetTimeZone = Bars?.TradingHours?.TimeZoneInfo;
-			}
-			catch
-			{
-				targetTimeZone = null;
-			}
+                    if (timeZoneProp != null && typeof(TimeZoneInfo).IsAssignableFrom(timeZoneProp.PropertyType))
+                        targetTimeZone = (TimeZoneInfo)timeZoneProp.GetValue(bars, null);
+                }
 
-			if (targetTimeZone == null)
-				targetTimeZone = TimeZoneInfo.Local;
+                // Fallback to TradingHours template time zone.
+                if (targetTimeZone == null)
+                    targetTimeZone = Bars?.TradingHours?.TimeZoneInfo;
+            }
+            catch
+            {
+                targetTimeZone = null;
+            }
 
-			return targetTimeZone;
-		}
+            if (targetTimeZone == null)
+                targetTimeZone = TimeZoneInfo.Local;
 
-		private TimeZoneInfo GetLondonTimeZone()
-		{
-			if (londonTimeZone != null)
-				return londonTimeZone;
+            return targetTimeZone;
+        }
 
-			try
-			{
-				// Windows time zone id (NinjaTrader runs on Windows).
-				londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
-			}
-			catch
-			{
-				try
-				{
-					// Fallback for environments that support IANA ids.
-					londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/London");
-				}
-				catch
-				{
-					londonTimeZone = TimeZoneInfo.Utc;
-				}
-			}
+        private TimeZoneInfo GetLondonTimeZone()
+        {
+            if (londonTimeZone != null)
+                return londonTimeZone;
 
-			return londonTimeZone;
-		}
+            try
+            {
+                // Windows time zone id (NinjaTrader runs on Windows).
+                londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
+            }
+            catch
+            {
+                try
+                {
+                    // Fallback for environments that support IANA ids.
+                    londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/London");
+                }
+                catch
+                {
+                    londonTimeZone = TimeZoneInfo.Utc;
+                }
+            }
+
+            return londonTimeZone;
+        }
 
         private double GetSLForLong()
         {
-            if (SLPresetSetting == SLPreset.First_Candle_Percent)
+            if (activeSLPresetSetting == SLPreset.First_Candle_Percent)
             {
                 double c1High = High[1];
                 double c1Low = Low[1];
-                double sl = c1High - (SLPercentFirstCandle / 100.0) * (c1High - c1Low);
+                double sl = c1High - (activeSLPercentFirstCandle / 100.0) * (c1High - c1Low);
 
                 if (debug)
-                    Print($"{Time[0]} - 📉 Long SL set at {SLPercentFirstCandle}% of Candle 1 range: {sl:0.00}");
+                    Print($"{Time[0]} - 📉 Long SL set at {activeSLPercentFirstCandle}% of Candle 1 range: {sl:0.00}");
 
-                return sl - SLPadding;
+                return sl - activeSLPadding;
             }
 
             double baseSL = First_Candle_High_Low ? Low[1] :
@@ -1610,21 +1763,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             Second_Candle_High_Low ? Low[0] :
                             Second_Candle_Open ? Open[0] :
                             Open[1];
-            return baseSL - SLPadding;
+            return baseSL - activeSLPadding;
         }
 
         private double GetSLForShort()
         {
-            if (SLPresetSetting == SLPreset.First_Candle_Percent)
+            if (activeSLPresetSetting == SLPreset.First_Candle_Percent)
             {
                 double c1High = High[1];
                 double c1Low = Low[1];
-                double sl = c1Low + (SLPercentFirstCandle / 100.0) * (c1High - c1Low);
+                double sl = c1Low + (activeSLPercentFirstCandle / 100.0) * (c1High - c1Low);
 
                 if (debug)
-                    Print($"{Time[0]} - 📈 Short SL set at {SLPercentFirstCandle}% of Candle 1 range: {sl:0.00}");
+                    Print($"{Time[0]} - 📈 Short SL set at {activeSLPercentFirstCandle}% of Candle 1 range: {sl:0.00}");
 
-                return sl + SLPadding;
+                return sl + activeSLPadding;
             }
 
             double baseSL = First_Candle_High_Low ? High[1] :
@@ -1632,7 +1785,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             Second_Candle_High_Low ? High[0] :
                             Second_Candle_Open ? Open[0] :
                             Open[1];
-            return baseSL + SLPadding;
+            return baseSL + activeSLPadding;
         }
 		
         private bool ShowEntryConfirmation(string orderType, double price, int quantity)
@@ -1746,7 +1899,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lines.Add(("SL:        ", $"{slLine}", Brushes.IndianRed));
             lines.Add(("Contracts: ", $"{Contracts}", Brushes.LightGray));
             lines.Add(("Anti Hedge:", AntiHedge ? "✅" : "⛔", AntiHedge ? Brushes.LimeGreen : Brushes.IndianRed));
-            lines.Add((FormatPresetLabel(activePreset), string.Empty, Brushes.LightGray));
+            lines.Add((FormatSessionLabel(activeSession), string.Empty, Brushes.LightGray));
 
             var version = $"v{GetAddOnVersion()}";
             lines.Add(($"{version}", string.Empty, Brushes.LightGray));
@@ -1918,7 +2071,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? $"{BarsPeriod.BarsPeriodType}-{BarsPeriod.Value}"
                 : "NoBars";
 
-            string configKey = $"{Contracts}-{OffsetPerc}-{TpPerc}-{CancelPerc}-{DeviationPerc}-{SLPadding}-{SLPresetSetting}";
+            string configKey = $"{Contracts}-{activeOffsetPerc}-{activeTpPerc}-{activeCancelPerc}-{activeDeviationPerc}-{activeSLPadding}-{activeSLPresetSetting}";
 
             string raw = $"{baseName}-{instrumentName}-{barsInfo}-{accountName}-{configKey}";
             return raw.Replace(",", "_").Replace(Environment.NewLine, " ").Trim();
@@ -1994,264 +2147,210 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private void PrintInstrumentPreset(StrategyPreset preset)
-		{
-			Print($"\n== INSTRUMENT PRESET APPLIED: {preset} ==");
-
-			Print($"  ➤ MinC12Body: {MinC12Body}");
-			Print($"  ➤ MaxC12Body: {MaxC12Body}");
-			Print($"  ➤ OffsetPerc: {OffsetPerc}");
-			Print($"  ➤ TpPerc: {TpPerc}");
-			Print($"  ➤ CancelPerc: {CancelPerc}");
-			Print($"  ➤ DeviationPerc: {DeviationPerc}");
-			Print($"  ➤ SLPadding: {SLPadding}");
-			Print($"  ➤ MaxSLTPRatioPerc: {MaxSLTPRatioPerc}");
-			Print($"  ➤ SLPresetSetting: {SLPresetSetting}");
-			Print($"  ➤ SLPercentFirstCandle: {SLPercentFirstCandle}");
-			Print($"  ➤ MaxSLPoints: {MaxSLPoints}");
-			Print($"  ➤ SessionStart: {SessionStart}");
-			Print($"  ➤ SessionEnd: {SessionEnd}");
-		}
-
-        public enum StrategyPreset
+        public enum SessionSlot
         {
-            Asia,
-            London,
-            New_York
+            None,
+            Session1,
+            Session2
         }
 
-		private void ApplyPresetForTime(DateTime time)
-		{
-			StrategyPreset desired = DeterminePresetForTime(time);
-			if (!presetInitialized || desired != activePreset)
-			{
-				activePreset = desired;
-				ApplyInstrumentPreset(activePreset);
-				presetInitialized = true;
-				if (debug)
-				{
-					EnsureEffectiveTimes(time, false);
-					Print(
-						$"{time:yyyy-MM-dd HH:mm} - Preset switched to {FormatPresetLabel(activePreset)} | " +
-						$"SS={effectiveSessionStart:hh\\:mm} SE={effectiveSessionEnd:hh\\:mm} " +
-						$"NTA={effectiveNoTradesAfter:hh\\:mm} Skip1={effectiveSkipStart:hh\\:mm}-{effectiveSkipEnd:hh\\:mm}");
-				}
-			}
-		}
-
-        private StrategyPreset DeterminePresetForTime(DateTime time)
+        private void EnsureActiveSession(DateTime time)
         {
-			TimeSpan asiaStart = new TimeSpan(0, 10, 0);
-			TimeSpan asiaEnd = new TimeSpan(2, 0, 0);
-			TimeSpan baseLondonStart = new TimeSpan(3, 0, 0);
-			TimeSpan baseLondonEnd = new TimeSpan(5, 20, 0);
-			TimeSpan shift = GetLondonSessionShiftForDate(time.Date);
-			TimeSpan londonStart = ShiftTime(baseLondonStart, shift);
-			TimeSpan londonEnd = ShiftTime(baseLondonEnd, shift);
-			TimeSpan newYorkStart = new TimeSpan(9, 40, 0);
-			TimeSpan newYorkEnd = new TimeSpan(14, 50, 0);
-			TimeSpan now = time.TimeOfDay;
-
-			if (TradeAsiaSession && IsTimeInRange(now, asiaStart, asiaEnd))
-				return StrategyPreset.Asia;
-			if (TradeLondonSession && IsTimeInRange(now, londonStart, londonEnd))
-				return StrategyPreset.London;
-			if (TradeNewYorkSession && IsTimeInRange(now, newYorkStart, newYorkEnd))
-				return StrategyPreset.New_York;
-
-			bool hasNext = false;
-			TimeSpan nextStart = TimeSpan.MaxValue;
-			StrategyPreset nextPreset = StrategyPreset.New_York;
-
-			ConsiderNextPreset(StrategyPreset.Asia, TradeAsiaSession, asiaStart, now, ref hasNext, ref nextStart, ref nextPreset);
-			ConsiderNextPreset(StrategyPreset.London, TradeLondonSession, londonStart, now, ref hasNext, ref nextStart, ref nextPreset);
-			ConsiderNextPreset(StrategyPreset.New_York, TradeNewYorkSession, newYorkStart, now, ref hasNext, ref nextStart, ref nextPreset);
-
-			return hasNext ? nextPreset : StrategyPreset.New_York;
-		}
-
-		private string FormatPresetLabel(StrategyPreset preset)
-		{
-			switch (preset)
-			{
-				case StrategyPreset.Asia:
-					return "Asia";
-				case StrategyPreset.London:
-					return "London";
-				default:
-					return "New York";
-			}
-		}
-
-		private bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
-		{
-			if (start < end)
-				return now >= start && now < end;
-
-			return now >= start || now < end;
-		}
-
-		private bool CrossedSessionEnd(DateTime previousTime, DateTime currentTime)
-		{
-			return CrossedSessionEndForPreset(StrategyPreset.Asia, previousTime, currentTime)
-				|| CrossedSessionEndForPreset(StrategyPreset.London, previousTime, currentTime)
-				|| CrossedSessionEndForPreset(StrategyPreset.New_York, previousTime, currentTime);
-		}
-
-		private bool CrossedSessionEndForPreset(
-			StrategyPreset preset,
-			DateTime previousTime,
-			DateTime currentTime)
-		{
-			if (!IsTradingEnabledForPreset(preset))
-				return false;
-			if (!TryGetSessionWindowForPreset(preset, previousTime, out TimeSpan start, out TimeSpan end))
-				return false;
-
-			bool wasInSession = IsTimeInRange(previousTime.TimeOfDay, start, end);
-			bool nowInSession = IsTimeInRange(currentTime.TimeOfDay, start, end);
-			return wasInSession && !nowInSession;
-		}
-
-		private bool TryGetSessionWindowForPreset(
-			StrategyPreset preset,
-			DateTime time,
-			out TimeSpan start,
-			out TimeSpan end)
-		{
-			start = TimeSpan.Zero;
-			end = TimeSpan.Zero;
-
-			switch (preset)
-			{
-				case StrategyPreset.Asia:
-					start = new TimeSpan(20, 00, 0);
-					end = new TimeSpan(00, 00, 0);
-					break;
-				case StrategyPreset.London:
-					start = new TimeSpan(1, 30, 0);
-					end = new TimeSpan(5, 30, 0);
-					break;
-				default:
-					start = new TimeSpan(9, 40, 0);
-					end = new TimeSpan(15, 00, 0);
-					break;
-			}
-
-			bool autoShift = preset == StrategyPreset.Asia || preset == StrategyPreset.London;
-			if (autoShift)
-			{
-				TimeSpan shift = GetLondonSessionShiftForDate(time.Date);
-				start = ShiftTime(start, shift);
-				end = ShiftTime(end, shift);
-			}
-
-			return true;
-		}
-
-		private void ConsiderNextPreset(
-			StrategyPreset preset,
-			bool enabled,
-			TimeSpan start,
-			TimeSpan now,
-			ref bool hasNext,
-			ref TimeSpan nextStart,
-			ref StrategyPreset nextPreset)
-		{
-			if (!enabled)
-				return;
-
-			TimeSpan candidate = start < now ? start.Add(TimeSpan.FromDays(1)) : start;
-			if (!hasNext || candidate < nextStart)
-			{
-				hasNext = true;
-				nextStart = candidate;
-				nextPreset = preset;
-			}
-		}
-
-        private void ApplyInstrumentPreset(StrategyPreset preset)
-        {
-            switch (preset)
+            SessionSlot desired = DetermineSessionForTime(time);
+            if (!sessionInitialized || desired != activeSession)
             {
+                if (debug)
+                {
+                    GetSessionWindowForSession(SessionSlot.Session1, time.Date, out TimeSpan s1Start, out TimeSpan s1End);
+                    GetSessionWindowForSession(SessionSlot.Session2, time.Date, out TimeSpan s2Start, out TimeSpan s2End);
+                    Print($"{time} - Session switch: desired={desired} | S1={s1Start:hh\\:mm}-{s1End:hh\\:mm} (AutoShift={AutoShiftSession1}) | S2={s2Start:hh\\:mm}-{s2End:hh\\:mm} (AutoShift={AutoShiftSession2})");
+                }
 
-                case StrategyPreset.Asia:
-					londonAutoShiftTimes = true;
-                    MinC12Body  = 2.7;
-                    MaxC12Body  = 104.5;
-                    OffsetPerc  = 20.5;					
-                    TpPerc      = 78.5;
-                    CancelPerc  = 309;
-                    DeviationPerc = 0;
-                    SLPadding = 0;
-					MaxSLTPRatioPerc = 550;
-                    SLPresetSetting = SLPreset.First_Candle_High_Low;
-					SLPercentFirstCandle = 100;
-                    MaxSLPoints = 92;
+                activeSession = desired;
+                if (activeSession != SessionSlot.None)
+                    ApplyInputsForSession(activeSession);
+                effectiveTimesDate = DateTime.MinValue;
+                sessionInitialized = true;
+            }
+        }
 
-                    // ✅ Session preset values
-                    SessionStart  = new TimeSpan(20, 00, 0);
-                    SessionEnd    = new TimeSpan(00, 00, 0);
-                    NoTradesAfter = new TimeSpan(23, 30, 0);
-                    SkipStart = new TimeSpan(00, 00, 0);
-                    SkipEnd = new TimeSpan(00, 00, 0);
-                    Skip2Start = new TimeSpan(00, 00, 0);
-                    Skip2End = new TimeSpan(00, 00, 0); 
+        private SessionSlot DetermineSessionForTime(DateTime time)
+        {
+            TimeSpan now = time.TimeOfDay;
+
+            GetSessionWindowForSession(SessionSlot.Session1, time.Date, out TimeSpan session1Start, out TimeSpan session1End);
+            GetSessionWindowForSession(SessionSlot.Session2, time.Date, out TimeSpan session2Start, out TimeSpan session2End);
+
+            bool session1Configured = IsSessionConfigured(SessionSlot.Session1);
+            bool session2Configured = IsSessionConfigured(SessionSlot.Session2);
+
+            if (session1Configured && IsTimeInRange(now, session1Start, session1End))
+                return SessionSlot.Session1;
+            if (session2Configured && IsTimeInRange(now, session2Start, session2End))
+                return SessionSlot.Session2;
+
+            if (!session1Configured && !session2Configured)
+                return SessionSlot.None;
+
+            DateTime nextSession1Start = DateTime.MaxValue;
+            DateTime nextSession2Start = DateTime.MaxValue;
+
+            if (session1Configured)
+            {
+                nextSession1Start = time.Date + session1Start;
+                if (nextSession1Start <= time)
+                    nextSession1Start = nextSession1Start.AddDays(1);
+            }
+
+            if (session2Configured)
+            {
+                nextSession2Start = time.Date + session2Start;
+                if (nextSession2Start <= time)
+                    nextSession2Start = nextSession2Start.AddDays(1);
+            }
+
+            return nextSession1Start <= nextSession2Start
+                ? SessionSlot.Session1
+                : SessionSlot.Session2;
+        }
+
+        private string FormatSessionLabel(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Session1:
+                    return "London";
+                case SessionSlot.Session2:
+                    return "New York";
+                default:
+                    return "Outside Sessions";
+            }
+        }
+
+        private bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
+        {
+            if (start < end)
+                return now >= start && now < end;
+
+            return now >= start || now < end;
+        }
+
+        private bool CrossedSessionEnd(DateTime previousTime, DateTime currentTime)
+        {
+            return CrossedSessionEndForSession(SessionSlot.Session1, previousTime, currentTime)
+                || CrossedSessionEndForSession(SessionSlot.Session2, previousTime, currentTime);
+        }
+
+        private bool CrossedSessionEndForSession(
+            SessionSlot session,
+            DateTime previousTime,
+            DateTime currentTime)
+        {
+            if (!IsSessionConfigured(session))
+                return false;
+
+            GetSessionWindowForSession(session, currentTime.Date, out TimeSpan start, out TimeSpan end);
+
+            bool wasInSession = IsTimeInRange(previousTime.TimeOfDay, start, end);
+            bool nowInSession = IsTimeInRange(currentTime.TimeOfDay, start, end);
+            return wasInSession && !nowInSession;
+        }
+
+        private void GetSessionWindowForSession(
+            SessionSlot session,
+            DateTime date,
+            out TimeSpan start,
+            out TimeSpan end)
+        {
+            start = TimeSpan.Zero;
+            end = TimeSpan.Zero;
+            bool autoShift = false;
+
+            switch (session)
+            {
+                case SessionSlot.Session1:
+                    start = London_SessionStart;
+                    end = London_SessionEnd;
+                    autoShift = AutoShiftSession1;
                     break;
-
-                case StrategyPreset.London:
-					londonAutoShiftTimes = true;
-                    MinC12Body  = 10.8;
-                    MaxC12Body  = 113;
-                    OffsetPerc  = 5.5;					
-                    TpPerc      = 31.5;
-                    CancelPerc  = 174;
-                    DeviationPerc = 0;
-                    SLPadding = 0;
-					MaxSLTPRatioPerc = 446;
-                    SLPresetSetting = SLPreset.First_Candle_High_Low;
-					SLPercentFirstCandle = 100;
-                    MaxSLPoints = 135;
-
-                    // ✅ Session preset values
-                    SessionStart  = new TimeSpan(1, 30, 0);
-                    SessionEnd    = new TimeSpan(5, 30, 0);
-                    NoTradesAfter = new TimeSpan(5, 00, 0);
-                    SkipStart = new TimeSpan(00, 00, 0);
-                    SkipEnd = new TimeSpan(00, 00, 0);
-                    Skip2Start = new TimeSpan(00, 00, 0);
-                    Skip2End = new TimeSpan(00, 00, 0); 
-                    break;
-                    
-                case StrategyPreset.New_York:
-					londonAutoShiftTimes = false;
-                    MinC12Body  = 18.8;
-                    MaxC12Body  = 130.5;
-                    OffsetPerc  = 0.2;					
-                    TpPerc      = 28.3;
-                    CancelPerc  = 110;
-                    DeviationPerc = 0;
-                    SLPadding = 0;
-					MaxSLTPRatioPerc = 477;
-                    SLPresetSetting = SLPreset.First_Candle_High_Low;
-					SLPercentFirstCandle = 100;
-                    MaxSLPoints = 153;
-
-                    // ✅ Session preset values
-                    SessionStart  = new TimeSpan(9, 40, 0);
-                    SessionEnd    = new TimeSpan(15, 00, 0);
-                    NoTradesAfter = new TimeSpan(14, 30, 0);
-                    SkipStart = new TimeSpan(11, 45, 0);
-                    SkipEnd = new TimeSpan(13, 20, 0);
-                    Skip2Start = new TimeSpan(00, 00, 0);
-                    Skip2End = new TimeSpan(00, 00, 0); 
+                case SessionSlot.Session2:
+                    start = NewYork_SessionStart;
+                    end = NewYork_SessionEnd;
+                    autoShift = AutoShiftSession2;
                     break;
             }
 
-			effectiveTimesDate = DateTime.MinValue;
-            //PrintInstrumentPreset(preset);
+            if (autoShift)
+            {
+                TimeSpan shift = GetLondonSessionShiftForDate(date);
+                start = ShiftTime(start, shift);
+                end = ShiftTime(end, shift);
+            }
         }
 
+        private bool IsSessionConfigured(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Session1:
+                    return UseSession1 && London_SessionStart != London_SessionEnd;
+                case SessionSlot.Session2:
+                    return UseSession2 && NewYork_SessionStart != NewYork_SessionEnd;
+                default:
+                    return false;
+            }
+        }
+
+        private void ApplyInputsForSession(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Session1:
+                    activeAutoShiftTimes = AutoShiftSession1;
+                    activeMinC12Body  = London_MinC12Body;
+                    activeMaxC12Body  = London_MaxC12Body;
+                    activeOffsetPerc  = London_OffsetPerc;
+                    activeTpPerc      = London_TpPerc;
+                    activeCancelPerc  = London_CancelPerc;
+                    activeDeviationPerc = London_DeviationPerc;
+                    activeSLPadding = London_SLPadding;
+                    activeMaxSLTPRatioPerc = London_MaxSLTPRatioPerc;
+                    activeSLPresetSetting = London_SLPresetSetting;
+                    activeSLPercentFirstCandle = London_SLPercentFirstCandle;
+                    activeMaxSLPoints = London_MaxSLPoints;
+
+                    activeSessionStart  = London_SessionStart;
+                    activeSessionEnd    = London_SessionEnd;
+                    activeNoTradesAfter = London_NoTradesAfter;
+                    activeSkipStart = London_SkipStart;
+                    activeSkipEnd = London_SkipEnd;
+                    activeSkip2Start = London_Skip2Start;
+                    activeSkip2End = London_Skip2End;
+                    break;
+                case SessionSlot.Session2:
+                    activeAutoShiftTimes = AutoShiftSession2;
+                    activeMinC12Body  = NewYork_MinC12Body;
+                    activeMaxC12Body  = NewYork_MaxC12Body;
+                    activeOffsetPerc  = NewYork_OffsetPerc;
+                    activeTpPerc      = NewYork_TpPerc;
+                    activeCancelPerc  = NewYork_CancelPerc;
+                    activeDeviationPerc = NewYork_DeviationPerc;
+                    activeSLPadding = NewYork_SLPadding;
+                    activeMaxSLTPRatioPerc = NewYork_MaxSLTPRatioPerc;
+                    activeSLPresetSetting = NewYork_SLPresetSetting;
+                    activeSLPercentFirstCandle = NewYork_SLPercentFirstCandle;
+                    activeMaxSLPoints = NewYork_MaxSLPoints;
+
+                    activeSessionStart  = NewYork_SessionStart;
+                    activeSessionEnd    = NewYork_SessionEnd;
+                    activeNoTradesAfter = NewYork_NoTradesAfter;
+                    activeSkipStart = NewYork_SkipStart;
+                    activeSkipEnd = NewYork_SkipEnd;
+                    activeSkip2Start = NewYork_Skip2Start;
+                    activeSkip2End = NewYork_Skip2End;
+                    break;
+            }
+        }
         private void ApplyStopLossPreset(SLPreset preset)
         {
             switch (preset)
