@@ -49,6 +49,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string workingOrderSide = "";
         private double monthlyTotal = 0;
         private string currentMonth = "";
+        private Dictionary<DateTime, double> monthlyDayTotals = new Dictionary<DateTime, double>();
         private DateTime lastMessageDay = DateTime.MinValue;
         // Internal toggle: when true, skip Discord posts and log the full message for debugging.
         private bool debugMode = false;
@@ -301,6 +302,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // First load or fresh install
                 currentMonth = monthKey;
                 monthlyTotal = 0;
+                monthlyDayTotals.Clear();
                 SavePnLStats();
             }
             else if (monthKey != currentMonth)
@@ -310,6 +312,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 currentMonth = monthKey;
                 monthlyTotal = 0;
+                monthlyDayTotals.Clear();
                 SavePnLStats();
             }
 
@@ -348,6 +351,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // First load or fresh install
                 currentMonth = monthKey;
                 monthlyTotal = 0;
+                monthlyDayTotals.Clear();
                 SavePnLStats();
             }
             else if (monthKey != currentMonth)
@@ -357,6 +361,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 currentMonth = monthKey;
                 monthlyTotal = 0;
+                monthlyDayTotals.Clear();
                 SavePnLStats();
             }
 
@@ -385,6 +390,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             dailyPnls[localDate][tradeKey] = tradePnl;
             monthlyTotal += tradePnl;
+            if (!monthlyDayTotals.ContainsKey(localDate))
+                monthlyDayTotals[localDate] = 0;
+            monthlyDayTotals[localDate] += tradePnl;
 
             SavePnLStats();
             PostWeeklySummary(exitFillTime);
@@ -454,9 +462,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             sb.AppendLine("---");
             sb.AppendLine($"**Weekly Total: {FormatPnl(weeklyTotal)}**");
-            int daysCount = dailyPnls.Count;
-            double dailyAverage = daysCount > 0 ? weeklyTotal / daysCount : 0;
-            sb.AppendLine($"**Daily Average: {FormatPnl(dailyAverage)}**");
+            int monthlyDayCount = monthlyDayTotals.Count;
+            double monthlyDailyAverage = monthlyDayCount > 0 ? monthlyTotal / monthlyDayCount : 0;
+            sb.AppendLine($"**Monthly Daily Average: {FormatPnl(monthlyDailyAverage)}**");
             sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
 
             EnqueueDiscordMessage(sb.ToString(), localDate);
@@ -630,13 +638,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     foreach (var kvp in dailyPnls)
                         serializableDict[kvp.Key.ToString("yyyy-MM-dd")] = new Dictionary<string, double>(kvp.Value);
 
+                    var serializableMonthlyDayTotals = new Dictionary<string, double>();
+                    foreach (var kvp in monthlyDayTotals)
+                        serializableMonthlyDayTotals[kvp.Key.ToString("yyyy-MM-dd")] = kvp.Value;
+
                     var serializer = new JavaScriptSerializer();
                     var jsonObj = new 
                     {
                         LastWeekStart = lastSavedWeekStart.ToString("yyyy-MM-dd"),
                         CurrentMonth = currentMonth,
                         MonthlyTotal = monthlyTotal,
-                        DailyPnLs = serializableDict
+                        DailyPnLs = serializableDict,
+                        MonthDailyTotals = serializableMonthlyDayTotals
                     };
                     string json = serializer.Serialize(jsonObj);
                     File.WriteAllText(statsFilePath, json, Encoding.UTF8);
@@ -683,12 +696,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else
                     monthlyTotal = 0;
 
+                monthlyDayTotals.Clear();
+                if (data.ContainsKey("MonthDailyTotals"))
+                {
+                    var rawMonthly = data["MonthDailyTotals"] as Dictionary<string, object>;
+                    if (rawMonthly != null)
+                    {
+                        foreach (var kvp in rawMonthly)
+                        {
+                            if (DateTime.TryParse(kvp.Key, out DateTime keyDate))
+                                monthlyDayTotals[keyDate] = Convert.ToDouble(kvp.Value);
+                        }
+                    }
+                }
+
                 LogToOutput2($"✅ Loaded PnL stats from {statsFilePath} (LastWeekStart={lastSavedWeekStart:MMMM dd})");
             }
             catch
             {
                 dailyPnls.Clear();
                 lastSavedWeekStart = DateTime.MinValue;
+                monthlyDayTotals.Clear();
                 LogToOutput2("ℹ️ No existing stats file found — starting fresh.");
             }
         }
