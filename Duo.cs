@@ -28,10 +28,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Number of Contracts", GroupName = "Config", Order = 1)]
-        public int Contracts { get; set; }
-
-        [NinjaScriptProperty]
 		[Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 2, GroupName = "Config")]
 		public bool RequireEntryConfirmation { get; set; }
 
@@ -68,6 +64,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [NinjaScriptProperty]
         // [Display(Name = "Cancel Order % of 1st+2nd Candle Body", GroupName = "London Parameters", Order = 7)]
         internal double London_CancelPerc { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Number of Contracts", GroupName = "London Parameters", Order = 0)]
+        [Range(1, int.MaxValue)]
+        public int London_Contracts { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", Order = 8, GroupName = "London Parameters")]
@@ -152,6 +153,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [NinjaScriptProperty]
         // [Display(Name = "Cancel Order % of 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 7)]
         internal double NewYork_CancelPerc { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Number of Contracts", GroupName = "New York Parameters", Order = 0)]
+        [Range(1, int.MaxValue)]
+        public int NewYork_Contracts { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", Order = 8, GroupName = "New York Parameters")]
@@ -339,6 +345,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private SLPreset activeSLPresetSetting;
         private double activeSLPercentFirstCandle;
         private double activeMaxSLPoints;
+        private int activeContracts;
         private TimeSpan activeSessionStart;
         private TimeSpan activeSessionEnd;
         private TimeSpan activeNoTradesAfter;
@@ -398,7 +405,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IsInstantiatedOnEachOptimizationIteration = false;
 
                 // London
-                Contracts     = 1;
+                London_Contracts     = 1;
                 London_MinC12Body  = 10.8;
                 London_MaxC12Body  = 113;
                 London_OffsetPerc  = 5.5;
@@ -419,6 +426,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_Skip2End       = new TimeSpan(0, 0, 0);
 
                 // New York
+                NewYork_Contracts     = 1;
                 NewYork_MinC12Body  = 18.8;
                 NewYork_MaxC12Body  = 130.5;
                 NewYork_OffsetPerc  = 0.2;
@@ -841,7 +849,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                    HandleReverseOnSignal(MarketPosition.Long);
 	                    if (RequireEntryConfirmation)
 	                    {
-	                        if (!ShowEntryConfirmation("Long", longEntry, Contracts))
+	                        if (!ShowEntryConfirmation("Long", longEntry, activeContracts))
 	                        {
                             if (debug)
                                 Print($"User declined Long entry via confirmation dialog.");
@@ -921,7 +929,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 						SetStopLoss("LongEntry", CalculationMode.Price, paddedLongSL, false);
 	                    SetProfitTarget("LongEntry", CalculationMode.Price, longTP);
 	                    QueueEntryWebhookLong(longEntry, longTP, paddedLongSL);
-						EnterLongLimit(0, true, Contracts, longEntry, "LongEntry");
+						EnterLongLimit(0, true, activeContracts, longEntry, "LongEntry");
 
                     SetHedgeLock(instrument, desiredDirection); 
 
@@ -943,7 +951,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                    HandleReverseOnSignal(MarketPosition.Short);
 	                    if (RequireEntryConfirmation)
 	                    {
-	                        if (!ShowEntryConfirmation("Short", shortEntry, Contracts))
+	                        if (!ShowEntryConfirmation("Short", shortEntry, activeContracts))
 	                        {
                             if (debug)
                                 Print($"User declined Long entry via confirmation dialog.");
@@ -1023,7 +1031,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                    SetStopLoss("ShortEntry", CalculationMode.Price, paddedShortSL, false);
 	                    SetProfitTarget("ShortEntry", CalculationMode.Price, shortTP);
 	                    QueueEntryWebhookShort(shortEntry, shortTP, paddedShortSL);
-						EnterShortLimit(0, true, Contracts, shortEntry, "ShortEntry");
+						EnterShortLimit(0, true, activeContracts, shortEntry, "ShortEntry");
 
                     SetHedgeLock(instrument, desiredDirection);
 
@@ -1920,7 +1928,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             lines.Add(("TP:        ", $"{tpLine}", Brushes.LimeGreen));
             lines.Add(("SL:        ", $"{slLine}", Brushes.IndianRed));
-            lines.Add(("Contracts: ", $"{Contracts}", Brushes.LightGray));
+            lines.Add(("Contracts: ", $"{activeContracts}", Brushes.LightGray));
             lines.Add(("Anti Hedge:", AntiHedge ? "✅" : "⛔", AntiHedge ? Brushes.LimeGreen : Brushes.IndianRed));
             lines.Add((FormatSessionLabel(activeSession), string.Empty, Brushes.LightGray));
 
@@ -2011,8 +2019,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double tpTicks = Math.Abs(tp - entry) / TickSize;
             double slTicks = Math.Abs(entry - sl) / TickSize;
 
-            double tpDollars = tpTicks * tickValue * Contracts;
-            double slDollars = slTicks * tickValue * Contracts;
+            double tpDollars = tpTicks * tickValue * activeContracts;
+            double slDollars = slTicks * tickValue * activeContracts;
 
             tpLine = $"${tpDollars:0}";
             slLine = $"${slDollars:0}";
@@ -2094,7 +2102,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? $"{BarsPeriod.BarsPeriodType}-{BarsPeriod.Value}"
                 : "NoBars";
 
-            string configKey = $"{Contracts}-{activeOffsetPerc}-{activeTpPerc}-{activeCancelPerc}-{activeDeviationPerc}-{activeSLPadding}-{activeSLPresetSetting}";
+            string configKey = $"{activeContracts}-{activeOffsetPerc}-{activeTpPerc}-{activeCancelPerc}-{activeDeviationPerc}-{activeSLPadding}-{activeSLPresetSetting}";
 
             string raw = $"{baseName}-{instrumentName}-{barsInfo}-{accountName}-{configKey}";
             return raw.Replace(",", "_").Replace(Environment.NewLine, " ").Trim();
@@ -2330,6 +2338,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case SessionSlot.Session1:
                     activeAutoShiftTimes = AutoShiftSession1;
+                    activeContracts = London_Contracts;
                     activeMinC12Body  = London_MinC12Body;
                     activeMaxC12Body  = London_MaxC12Body;
                     activeOffsetPerc  = London_OffsetPerc;
@@ -2352,6 +2361,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     break;
                 case SessionSlot.Session2:
                     activeAutoShiftTimes = AutoShiftSession2;
+                    activeContracts = NewYork_Contracts;
                     activeMinC12Body  = NewYork_MinC12Body;
                     activeMaxC12Body  = NewYork_MaxC12Body;
                     activeOffsetPerc  = NewYork_OffsetPerc;
@@ -2592,7 +2602,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             ""orderType"": ""limit"",
                             ""limitPrice"": {entryStr},
                             ""quantityType"": ""fixed_quantity"",
-                            ""quantity"": {Contracts},
+                            ""quantity"": {activeContracts},
                             ""signalPrice"": {entryStr},
                             ""time"": ""{time}"",
                             ""takeProfit"": {{
@@ -2613,7 +2623,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                            ""action"": ""exit"",
 	                            ""orderType"": ""market"",
 	                            ""quantityType"": ""fixed_quantity"",
-	                            ""quantity"": {Contracts},
+	                            ""quantity"": {activeContracts},
 	                            ""cancel"": true,
 	                            ""time"": ""{time}""
 	                        }}";
