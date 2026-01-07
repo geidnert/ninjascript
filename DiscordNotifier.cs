@@ -35,6 +35,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double entryPrice = 0;
         private bool entryIsShort = false;
         private DateTime entryTime = DateTime.MinValue;
+        private double entryQuantity = 0;
+        private double currentTradePnl = 0;
         private string statsFilePath;
         private string messageIdFilePath;
         private string lastMessageId = "";
@@ -94,6 +96,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     entryPrice = pos.AveragePrice;
                     entryIsShort = pos.MarketPosition == MarketPosition.Short;
                     positionActive = true;
+                    entryQuantity = Math.Abs(pos.Quantity);
+                    currentTradePnl = 0;
                     currentPositionStatus = entryIsShort ? "Currently Short" : "Currently Long";
                     LogToOutput2($"ℹ️ Resuming with existing {pos.MarketPosition} position from {entryPrice}.");
                 }
@@ -203,26 +207,48 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             var order = exec.Order;
 
             // 🟠 2️⃣ Filled order becomes active position
-            if (order.OrderState == OrderState.Filled)
+            if (order.OrderState == OrderState.Filled || order.OrderState == OrderState.PartFilled)
             {
                 switch (order.OrderAction)
                 {
                     case OrderAction.Buy:
-                        entryPrice = exec.Price;
+                        if (entryQuantity <= 0)
+                        {
+                            entryPrice = exec.Price;
+                            entryTime = exec.Time;
+                            currentTradePnl = 0;
+                        }
+                        else
+                        {
+                            // Weighted average price for multi-fill entries
+                            double newQty = entryQuantity + exec.Quantity;
+                            entryPrice = ((entryPrice * entryQuantity) + (exec.Price * exec.Quantity)) / newQty;
+                        }
                         entryIsShort = false;
-                        entryTime = exec.Time;
                         positionActive = true;
                         workingOrderActive = false;
+                        entryQuantity += exec.Quantity;
                         currentPositionStatus = "Currently Long";
                         PostPositionStatus(e.Time);
                         break;
 
                     case OrderAction.SellShort:
-                        entryPrice = exec.Price;
+                        if (entryQuantity <= 0)
+                        {
+                            entryPrice = exec.Price;
+                            entryTime = exec.Time;
+                            currentTradePnl = 0;
+                        }
+                        else
+                        {
+                            // Weighted average price for multi-fill entries
+                            double newQty = entryQuantity + exec.Quantity;
+                            entryPrice = ((entryPrice * entryQuantity) + (exec.Price * exec.Quantity)) / newQty;
+                        }
                         entryIsShort = true;
-                        entryTime = exec.Time;
                         positionActive = true;
                         workingOrderActive = false;
+                        entryQuantity += exec.Quantity;
                         currentPositionStatus = "Currently Short";
                         PostPositionStatus(e.Time);
                         break;
@@ -239,12 +265,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         double qty = exec.Quantity;
                         double points = entryIsShort ? entryPrice - exitPrice : exitPrice - entryPrice;
                         double tradePnl = points * Instrument.MasterInstrument.PointValue * qty;
+                        currentTradePnl += tradePnl;
 
-                        positionActive = false;
-                        workingOrderActive = false;
-                        currentPositionStatus = "";
-                        AddTradeToWeek(entryTime, e.Time, tradePnl);
-                        entryTime = DateTime.MinValue;
+                        entryQuantity -= qty;
+                        if (entryQuantity <= 0)
+                        {
+                            positionActive = false;
+                            workingOrderActive = false;
+                            currentPositionStatus = "";
+                            AddTradeToWeek(entryTime, e.Time, currentTradePnl);
+                            entryTime = DateTime.MinValue;
+                            entryQuantity = 0;
+                            currentTradePnl = 0;
+                        }
                         break;
                 }
             }
