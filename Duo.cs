@@ -1929,7 +1929,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lines.Add(("TP:        ", $"{tpLine}", Brushes.LimeGreen));
             lines.Add(("SL:        ", $"{slLine}", Brushes.IndianRed));
             lines.Add(("Contracts: ", $"{activeContracts}", Brushes.LightGray));
-            lines.Add(("Anti Hedge:", AntiHedge ? "✅" : "⛔", AntiHedge ? Brushes.LimeGreen : Brushes.IndianRed));
+            //lines.Add(("Anti Hedge:", AntiHedge ? "✅" : "⛔", AntiHedge ? Brushes.LimeGreen : Brushes.IndianRed));
             lines.Add((FormatSessionLabel(activeSession), string.Empty, Brushes.LightGray));
 
             var version = $"v{GetAddOnVersion()}";
