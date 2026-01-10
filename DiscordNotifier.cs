@@ -32,11 +32,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Instance ID", Order = 3, GroupName = "Discord")]
         public string InstanceId { get; set; } = "Default";
 
+        [NinjaScriptProperty]
+        [Display(Name = "Deduct Commissions", Order = 1, GroupName = "PnL")]
+        public bool DeductCommissions { get; set; }
+
         private double entryPrice = 0;
         private bool entryIsShort = false;
         private DateTime entryTime = DateTime.MinValue;
         private double entryQuantity = 0;
         private double currentTradePnl = 0;
+        private double currentTradeCommission = 0;
         private string statsFilePath;
         private string messageIdFilePath;
         private string lastMessageId = "";
@@ -76,6 +81,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 DiscordBotToken = "";
                 DiscordChannelId = "";
                 InstanceId = "Default";
+                DeductCommissions = false;
             }
             else if (State == State.Configure)
             {
@@ -98,6 +104,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     positionActive = true;
                     entryQuantity = Math.Abs(pos.Quantity);
                     currentTradePnl = 0;
+                    currentTradeCommission = 0;
                     currentPositionStatus = entryIsShort ? "Currently Short" : "Currently Long";
                     LogToOutput2($"ℹ️ Resuming with existing {pos.MarketPosition} position from {entryPrice}.");
                 }
@@ -205,6 +212,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             var order = exec.Order;
+            double execCommission = 0;
+            try { execCommission = exec.Commission; } catch { }
+            currentTradeCommission += execCommission;
 
             // 🟠 2️⃣ Filled order becomes active position
             if (order.OrderState == OrderState.Filled || order.OrderState == OrderState.PartFilled)
@@ -273,10 +283,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             positionActive = false;
                             workingOrderActive = false;
                             currentPositionStatus = "";
-                            AddTradeToWeek(entryTime, e.Time, currentTradePnl);
+                            double tradePnlToLog = DeductCommissions
+                                ? currentTradePnl - currentTradeCommission
+                                : currentTradePnl;
+                            AddTradeToWeek(entryTime, e.Time, tradePnlToLog);
                             entryTime = DateTime.MinValue;
                             entryQuantity = 0;
                             currentTradePnl = 0;
+                            currentTradeCommission = 0;
                         }
                         break;
                 }
