@@ -284,6 +284,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "Skip Times")]
         public bool ForceCloseAtSkipStart { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Use FOMC Skip Filter", Description = "Skip trading during FOMC window on listed dates", Order = 6, GroupName = "Skip Times")]
+        public bool UseFomcSkip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "FOMC Skip Start", Description = "Start of FOMC skip window (chart time)", Order = 7, GroupName = "Skip Times")]
+        public TimeSpan FomcSkipStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "FOMC Skip End", Description = "End of FOMC skip window (chart time)", Order = 8, GroupName = "Skip Times")]
+        public TimeSpan FomcSkipEnd { get; set; }
+
         // State tracking
         private bool longOrderPlaced = false;
         private bool shortOrderPlaced = false;
@@ -358,6 +370,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int lineTagCounter = 0;
         private string longLineTagPrefix = "LongLine_0_";
         private string shortLineTagPrefix = "ShortLine_0_";
+        private const string FomcDatesRaw = 
+            "2025-01-29\n" +
+            "2025-03-19\n" +
+            "2025-05-07\n" +
+            "2025-06-18\n" +
+            "2025-07-30\n" +
+            "2025-09-17\n" +
+            "2025-10-29\n" +
+            "2025-12-10\n" +
+            "2026-01-28\n" +
+            "2026-03-18\n" +
+            "2026-04-29\n" +
+            "2026-06-17\n" +
+            "2026-07-29\n" +
+            "2026-09-16\n" +
+            "2026-10-28\n" +
+            "2026-12-09";
+        private HashSet<DateTime> fomcDates;
+        private bool fomcDatesInitialized;
+        private TimeZoneInfo easternTimeZone;
 
         // --- Webhook state (send entry only after order Accepted/Working) ---
         private bool pendingLongWebhook;
@@ -454,6 +486,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AutoShiftSession1 = true;
                 AutoShiftSession2 = false;
                 ForceCloseAtSkipStart = true;
+                UseFomcSkip = true;
+                FomcSkipStart = new TimeSpan(14, 0, 0);
+                FomcSkipEnd = new TimeSpan(14, 5, 0);
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 WebhookUrl = "";
@@ -1477,6 +1512,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool inSkip1 = false;
             bool inSkip2 = false;
+            bool inFomc = IsFomcSkipTime(time);
 
             // ✅ Skip1 only active if both are not 00:00:00
             if (effectiveSkipStart != TimeSpan.Zero && effectiveSkipEnd != TimeSpan.Zero)
@@ -1494,7 +1530,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     : (now >= effectiveSkip2Start || now <= effectiveSkip2End); // overnight handling
             }
 
-            return inSkip1 || inSkip2;
+            return inSkip1 || inSkip2 || inFomc;
         }
 
 		private bool TimeInSession(DateTime time)
@@ -1588,6 +1624,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             DrawSkipWindow("Skip1", effectiveSkipStart, effectiveSkipEnd);
             DrawSkipWindow("Skip2", effectiveSkip2Start, effectiveSkip2End);
+            DrawFomcWindow(barTime);
         }
 
         private void DrawSkipWindow(string tagPrefix, TimeSpan start, TimeSpan end)
@@ -1634,6 +1671,57 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.Solid, 2);
 
             string endTag = $"DUO_{tagPrefix}_End_{windowEnd:yyyyMMdd}";
+            Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.Solid, 2);
+        }
+
+        private void DrawFomcWindow(DateTime barTime)
+        {
+            if (!UseFomcSkip)
+                return;
+
+            EnsureFomcDatesInitialized();
+            if (fomcDates == null || fomcDates.Count == 0)
+                return;
+
+            if (FomcSkipStart == FomcSkipEnd)
+                return;
+
+            if (!fomcDates.Contains(barTime.Date))
+                return;
+
+            DateTime windowStart = barTime.Date + FomcSkipStart;
+            DateTime windowEnd = barTime.Date + FomcSkipEnd;
+            if (FomcSkipStart > FomcSkipEnd)
+                windowEnd = windowEnd.AddDays(1);
+
+            int startBarsAgo = Bars.GetBar(windowStart);
+            int endBarsAgo = Bars.GetBar(windowEnd);
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));   // match regular skip fill
+            areaBrush.Freeze();
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));      // match regular skip lines
+            lineBrush.Freeze();
+
+            string rectTag = $"DUO_FOMC_Rect_{barTime:yyyyMMdd}";
+            Draw.Rectangle(
+                this,
+                rectTag,
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,
+                areaBrush,
+                2
+            ).ZOrder = -1;
+
+            string startTag = $"DUO_FOMC_Start_{barTime:yyyyMMdd}";
+            Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.Solid, 2);
+
+            string endTag = $"DUO_FOMC_End_{barTime:yyyyMMdd}";
             Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.Solid, 2);
         }
 
@@ -1747,6 +1835,80 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 targetTimeZone = TimeZoneInfo.Local;
 
             return targetTimeZone;
+        }
+
+        private TimeZoneInfo GetEasternTimeZone()
+        {
+            if (easternTimeZone != null)
+                return easternTimeZone;
+
+            try
+            {
+                easternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            }
+            catch
+            {
+                try
+                {
+                    easternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+                }
+                catch
+                {
+                    easternTimeZone = TimeZoneInfo.Utc;
+                }
+            }
+
+            return easternTimeZone;
+        }
+
+        private void EnsureFomcDatesInitialized()
+        {
+            if (fomcDatesInitialized)
+                return;
+
+            fomcDatesInitialized = true;
+            fomcDates = new HashSet<DateTime>();
+
+            if (string.IsNullOrWhiteSpace(FomcDatesRaw))
+                return;
+
+            string[] entries = FomcDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string entry in entries)
+            {
+                string trimmed = entry.Trim();
+                if (DateTime.TryParseExact(trimmed, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime date))
+                {
+                    fomcDates.Add(date.Date);
+                }
+                else if (debug)
+                {
+                    Print($"Invalid FOMC date entry: {trimmed}");
+                }
+            }
+        }
+
+        private bool IsFomcSkipTime(DateTime time)
+        {
+            if (!UseFomcSkip)
+                return false;
+
+            EnsureFomcDatesInitialized();
+            if (fomcDates == null || fomcDates.Count == 0)
+                return false;
+
+            if (!fomcDates.Contains(time.Date))
+                return false;
+
+            TimeSpan now = time.TimeOfDay;
+            TimeSpan start = FomcSkipStart;
+            TimeSpan end = FomcSkipEnd;
+
+            if (start == end)
+                return false;
+
+            return start < end
+                ? (now >= start && now < end)
+                : (now >= start || now < end);
         }
 
         private TimeZoneInfo GetLondonTimeZone()
