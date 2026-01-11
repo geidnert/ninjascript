@@ -437,18 +437,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IsInstantiatedOnEachOptimizationIteration = false;
 
                 // London
-                London_Contracts     = 1;
-                London_MinC12Body  = 10.8;
-                London_MaxC12Body  = 113;
-                London_OffsetPerc  = 5.5;
-                London_TpPerc      = 31.5;
-                London_CancelPerc  = 174;
+                London_Contracts     = 2;
+                London_MinC12Body  = 13;
+                London_MaxC12Body  = 112.5;
+                London_OffsetPerc  = 5.7;
+                London_TpPerc      = 31.7;
+                London_CancelPerc  = 180.5;
                 London_DeviationPerc = 0;
                 London_SLPadding = 0;
-                London_MaxSLTPRatioPerc = 446;
+                London_MaxSLTPRatioPerc = 445;
                 London_SLPresetSetting = SLPreset.First_Candle_High_Low;
                 London_SLPercentFirstCandle = 100;
-                London_MaxSLPoints = 135;
+                London_MaxSLPoints = 140;
                 London_SessionStart  = new TimeSpan(1, 30, 0);
                 London_SessionEnd    = new TimeSpan(5, 30, 0);
                 London_NoTradesAfter = new TimeSpan(5, 00, 0);
@@ -459,17 +459,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // New York
                 NewYork_Contracts     = 1;
-                NewYork_MinC12Body  = 18.8;
-                NewYork_MaxC12Body  = 130.5;
+                NewYork_MinC12Body  = 19;
+                NewYork_MaxC12Body  = 132;
                 NewYork_OffsetPerc  = 0.2;
                 NewYork_TpPerc      = 28.3;
-                NewYork_CancelPerc  = 110;
+                NewYork_CancelPerc  = 114.5;
                 NewYork_DeviationPerc = 0;
                 NewYork_SLPadding = 0;
-                NewYork_MaxSLTPRatioPerc = 477;
+                NewYork_MaxSLTPRatioPerc = 479;
                 NewYork_SLPresetSetting = SLPreset.First_Candle_High_Low;
                 NewYork_SLPercentFirstCandle = 100;
-                NewYork_MaxSLPoints = 153;
+                NewYork_MaxSLPoints = 154;
                 NewYork_SessionStart = new TimeSpan(9, 40, 0);
                 NewYork_SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
