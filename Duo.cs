@@ -487,8 +487,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AutoShiftSession2 = false;
                 ForceCloseAtSkipStart = true;
                 UseFomcSkip = true;
-                FomcSkipStart = new TimeSpan(14, 0, 0);
-                FomcSkipEnd = new TimeSpan(14, 5, 0);
+                FomcSkipStart = new TimeSpan(14, 5, 0);
+                FomcSkipEnd = new TimeSpan(14, 10, 0);
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 WebhookUrl = "";
