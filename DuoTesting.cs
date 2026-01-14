@@ -229,11 +229,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public Brush SessionBrush { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use London", Description = "Allow trading during London", Order = 1, GroupName = "Sessions")]
+        [Display(Name = "Trade London (1:30-5:30)", Description = "Allow trading during London", Order = 1, GroupName = "Sessions")]
         public bool UseSession1 { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use New York", Description = "Allow trading during New York", Order = 2, GroupName = "Sessions")]
+        [Display(Name = "Trade New York (9:40-15:00)", Description = "Allow trading during New York", Order = 2, GroupName = "Sessions")]
         public bool UseSession2 { get; set; }
 
         [NinjaScriptProperty]
@@ -487,8 +487,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AutoShiftSession2 = false;
                 ForceCloseAtSkipStart = true;
                 UseFomcSkip = true;
-                FomcSkipStart = new TimeSpan(14, 0, 0);
-                FomcSkipEnd = new TimeSpan(14, 5, 0);
+                FomcSkipStart = new TimeSpan(14, 5, 0);
+                FomcSkipEnd = new TimeSpan(14, 10, 0);
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 WebhookUrl = "";
@@ -975,6 +975,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     longSignalBar = CurrentBar;
                     longLineTagPrefix = $"LongLine_{++lineTagCounter}_{CurrentBar}_";
                     longLinesActive = true;
+                    Draw.Line(this, longLineTagPrefix + "LongEntryLineActive", false,
+                        1, currentLongEntry,
+                        0, currentLongEntry,
+                        Brushes.Gold, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, longLineTagPrefix + "LongTPLineActive", false,
+                        1, currentLongTP,
+                        0, currentLongTP,
+                        Brushes.LimeGreen, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, longLineTagPrefix + "LongSLLineActive", false,
+                        1, currentLongSL,
+                        0, currentLongSL,
+                        Brushes.Red, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, longLineTagPrefix + "LongCancelLineActive", false,
+                        1, currentLongCancelPrice,
+                        0, currentLongCancelPrice,
+                        Brushes.Gray, DashStyleHelper.Dot, 2);
 	                    longExitBar = -1;
 	                    longOrderPlaced = true;
 	                    shortOrderPlaced = false;
@@ -1077,6 +1093,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     shortSignalBar = CurrentBar;
                     shortLineTagPrefix = $"ShortLine_{++lineTagCounter}_{CurrentBar}_";
                     shortLinesActive = true;
+                    Draw.Line(this, shortLineTagPrefix + "ShortEntryLineActive", false,
+                        1, currentShortEntry,
+                        0, currentShortEntry,
+                        Brushes.Gold, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, shortLineTagPrefix + "ShortTPLineActive", false,
+                        1, currentShortTP,
+                        0, currentShortTP,
+                        Brushes.LimeGreen, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, shortLineTagPrefix + "ShortSLLineActive", false,
+                        1, currentShortSL,
+                        0, currentShortSL,
+                        Brushes.Red, DashStyleHelper.Solid, 2);
+                    Draw.Line(this, shortLineTagPrefix + "ShortCancelLineActive", false,
+                        1, currentShortCancelPrice,
+                        0, currentShortCancelPrice,
+                        Brushes.Gray, DashStyleHelper.Dot, 2);
 	                    shortExitBar = -1;
 	                    shortOrderPlaced = true;
 	                    longOrderPlaced = false;
