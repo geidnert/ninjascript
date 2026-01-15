@@ -22,10 +22,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class DuoTesing : Strategy
     {
-        // public DuoTesing()
-        // {
-        //     VendorLicense(337);
-        // }
+        public DuoTesing()
+        {
+            // VendorLicense(337);
+        }
 
         [NinjaScriptProperty]
 		[Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 2, GroupName = "Config")]
@@ -496,16 +496,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
-                //heartbeatId = BuildHeartbeatId();
-                // --- Heartbeat timer setup ---
-                //heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
-                //heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
-                //heartbeatTimer.AutoReset = true;
-                //heartbeatTimer.Start();
+                heartbeatId = BuildHeartbeatId();
+                //--- Heartbeat timer setup ---
+                heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
+                heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
+                heartbeatTimer.AutoReset = true;
+                heartbeatTimer.Start();
 
-                //ApplyStopLossPreset(London_SLPresetSetting);
-
-                //Print($"\n== PRESETS FINAL: {PresetSetting} | SL = {London_SLPresetSetting} ==\n");
+                ApplyStopLossPreset(London_SLPresetSetting);
             }
             else if (State == State.Configure)
             {
@@ -513,13 +511,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.Terminated)
             {
-                // --- Clean up heartbeat timer ---
-                // if (heartbeatTimer != null)
-                // {
-                //     heartbeatTimer.Stop();
-                //     heartbeatTimer.Dispose();
-                //     heartbeatTimer = null;
-                // }
+                //--- Clean up heartbeat timer ---
+                if (heartbeatTimer != null)
+                {
+                    heartbeatTimer.Stop();
+                    heartbeatTimer.Dispose();
+                    heartbeatTimer = null;
+                }
             }
         }
 
@@ -790,13 +788,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double c2High = High[0];
                 double c2Low = Low[0];
 
-                double c12Body = Math.Abs(c2Close - c1Open);
-
-                if (c12Body < activeMinC12Body || c12Body > activeMaxC12Body)
-                {
-                    return;
-                }
-
                 bool c1Bull = c1Close > c1Open;
                 bool c2Bull = c2Close > c2Open;
                 bool c1Bear = c1Close < c1Open;
@@ -804,6 +795,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 bool validBull = c1Bull && c2Bull;
                 bool validBear = c1Bear && c2Bear;
+				bool shouldLog = debug && (validBull || validBear);
+                if (!validBull && !validBear)
+                    return;
+
+                double c12Body = Math.Abs(c2Close - c1Open);
+
+                if (c12Body < activeMinC12Body || c12Body > activeMaxC12Body)
+                {
+                    if (shouldLog)
+                        Print($"\n{Time[0]} - 🚫 Skipping signals: c12Body {c12Body:0.00} outside [{activeMinC12Body:0.00}, {activeMaxC12Body:0.00}]");
+                    return;
+                }
 
                 double longSL = 0;
                 double shortSL = 0;
@@ -996,6 +999,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                    shortOrderPlaced = false;
 	                    UpdateInfo();
 	                }
+					else if (shouldLog && validBull && longOrderPlaced)
+					{
+						Print($"{Time[0]} - 🚫 Skipping LONG: long order already placed/working");
+					}
 
 	                if (validBear && !shortOrderPlaced)
 	                {
@@ -1114,6 +1121,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                    longOrderPlaced = false;
 	                    UpdateInfo();
 	                }
+					else if (shouldLog && validBear && shortOrderPlaced)
+					{
+						Print($"{Time[0]} - 🚫 Skipping SHORT: short order already placed/working");
+					}
                 lastBarProcessed = CurrentBar;
 
             }
@@ -2379,8 +2390,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Session2
         }
 
+        private DateTime lastSessionEvalTime = DateTime.MinValue;
+
         private void EnsureActiveSession(DateTime time)
         {
+            if (time <= lastSessionEvalTime)
+                return;
+            lastSessionEvalTime = time;
+
             SessionSlot desired = DetermineSessionForTime(time);
             if (!sessionInitialized || desired != activeSession)
             {

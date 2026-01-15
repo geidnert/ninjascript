@@ -788,13 +788,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double c2High = High[0];
                 double c2Low = Low[0];
 
-                double c12Body = Math.Abs(c2Close - c1Open);
-
-                if (c12Body < activeMinC12Body || c12Body > activeMaxC12Body)
-                {
-                    return;
-                }
-
                 bool c1Bull = c1Close > c1Open;
                 bool c2Bull = c2Close > c2Open;
                 bool c1Bear = c1Close < c1Open;
@@ -802,6 +795,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 bool validBull = c1Bull && c2Bull;
                 bool validBear = c1Bear && c2Bear;
+				bool shouldLog = debug && (validBull || validBear);
+                if (!validBull && !validBear)
+                    return;
+
+                double c12Body = Math.Abs(c2Close - c1Open);
+
+                if (c12Body < activeMinC12Body || c12Body > activeMaxC12Body)
+                {
+                    if (shouldLog)
+                        Print($"\n{Time[0]} - 🚫 Skipping signals: c12Body {c12Body:0.00} outside [{activeMinC12Body:0.00}, {activeMaxC12Body:0.00}]");
+                    return;
+                }
 
                 double longSL = 0;
                 double shortSL = 0;
@@ -994,6 +999,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                    shortOrderPlaced = false;
 	                    UpdateInfo();
 	                }
+					else if (shouldLog && validBull && longOrderPlaced)
+					{
+						Print($"{Time[0]} - 🚫 Skipping LONG: long order already placed/working");
+					}
 
 	                if (validBear && !shortOrderPlaced)
 	                {
@@ -1112,6 +1121,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                    longOrderPlaced = false;
 	                    UpdateInfo();
 	                }
+					else if (shouldLog && validBear && shortOrderPlaced)
+					{
+						Print($"{Time[0]} - 🚫 Skipping SHORT: short order already placed/working");
+					}
                 lastBarProcessed = CurrentBar;
 
             }
@@ -2377,8 +2390,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Session2
         }
 
+        private DateTime lastSessionEvalTime = DateTime.MinValue;
+
         private void EnsureActiveSession(DateTime time)
         {
+            if (time <= lastSessionEvalTime)
+                return;
+            lastSessionEvalTime = time;
+
             SessionSlot desired = DetermineSessionForTime(time);
             if (!sessionInitialized || desired != activeSession)
             {
