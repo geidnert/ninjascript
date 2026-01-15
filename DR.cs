@@ -219,6 +219,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         private string tradeEntryTag;
         private string tradeStopTag;
         private string tradeTargetTag;
+        private string activeEntrySignal;
+        private double activeEntryPrice;
+        private double activeStopPrice;
+        private double activeTargetPrice;
+        private string lastDebugMessage;
 
         // Method 2 specific
         private bool m2PriceTouched;     // true once price has touched the M2PriceTouchPercent level
@@ -232,6 +237,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private TimeSpan skip2Start = new TimeSpan(0, 0, 0);
         private TimeSpan skip2End = new TimeSpan(0, 0, 0);
         private bool sessionClosed;
+        private bool wasOutsideSessionBip1;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -320,8 +326,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 tradeEntryTag = string.Empty;
                 tradeStopTag = string.Empty;
                 tradeTargetTag = string.Empty;
+                activeEntrySignal = string.Empty;
+                activeEntryPrice = 0;
+                activeStopPrice = 0;
+                activeTargetPrice = 0;
+                lastDebugMessage = null;
                 m2PriceTouched = false;
                 sessionClosed = false;
+                wasOutsideSessionBip1 = false;
                 SkipStart = SkipStart == TimeSpan.Zero ? skipStart : SkipStart;
                 SkipEnd = SkipEnd == TimeSpan.Zero ? skipEnd : SkipEnd;
                 Skip2Start = Skip2Start == TimeSpan.Zero ? skip2Start : Skip2Start;
@@ -525,12 +537,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (CurrentBars[0] < SwingStrength * 2 + LegSwingLookback || CurrentBars[1] < 1)
                     return;
 
-                if (State != State.Realtime)
-                {
-                    ClearPendingSignals(false, "orders only in realtime (BIP1)", false);
-                    return;
-                }
-
                 if (TimeInSkip(Times[BarsInProgress][0]))
                 {
                     if (ForceCloseAtSkipStart)
@@ -549,9 +555,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (!TimeInSession(Times[BarsInProgress][0]))
                 {
-                    ClearPendingSignals(false, "outside session window (BIP1)", false);
+                    if (!wasOutsideSessionBip1)
+                    {
+                        ClearPendingSignals(false, "outside session window (BIP1)", false);
+                        wasOutsideSessionBip1 = true;
+                    }
+                    else
+                    {
+                        ClearPendingSignals(false, null, false);
+                    }
                     return;
                 }
+
+                if (wasOutsideSessionBip1)
+                    wasOutsideSessionBip1 = false;
 
                 SubmitPendingOrders();
             }
@@ -919,6 +936,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (lastTradedDrId != drCounter)
                 return; // no Method 1 trade planned for this DR
 
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return; // avoid pre-setting stops/targets before entry
+
             double entry, stop, tp;
             if (!TryCalculateMethod1Prices(out entry, out stop, out tp))
                 return;
@@ -1136,12 +1156,39 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             bool useMarketOrdersForMethod2 = EntryMethod == DREntryMethod.Method2_OppositeCandle;
             string orderType = useMarketOrdersForMethod2 ? "MARKET" : "LIMIT";
+            double currentPrice = Close[0];
+            double priceBuffer = TickSize;
+            bool isLong = pendingLongSignal;
+            bool isMarketable = useMarketOrdersForMethod2
+                || (isLong ? pendingEntryPrice >= currentPrice : pendingEntryPrice <= currentPrice);
+
+            // Guard against marketable entries that would create invalid stop/target orders.
+            if (isMarketable)
+            {
+                if (isLong)
+                {
+                    if (pendingStopPrice >= currentPrice - priceBuffer || pendingTargetPrice <= currentPrice + priceBuffer)
+                    {
+                        ClearPendingSignals(false, "marketable long: stop/target invalid vs current price", true);
+                        return;
+                    }
+                }
+                else
+                {
+                    if (pendingStopPrice <= currentPrice + priceBuffer || pendingTargetPrice >= currentPrice - priceBuffer)
+                    {
+                        ClearPendingSignals(false, "marketable short: stop/target invalid vs current price", true);
+                        return;
+                    }
+                }
+            }
 
             if (pendingLongSignal)
             {
-                // Set targets before entry to avoid broker-side rejections
-                SetStopLoss(longSignalName, CalculationMode.Price, pendingStopPrice, false);
-                SetProfitTarget(longSignalName, CalculationMode.Price, pendingTargetPrice);
+                activeEntrySignal = longSignalName;
+                activeEntryPrice = pendingEntryPrice;
+                activeStopPrice = pendingStopPrice;
+                activeTargetPrice = pendingTargetPrice;
 
                 DebugPrint(string.Format("Submitting LONG {0}: entry={1:F2}, stop={2:F2}, tp={3:F2}, drId={4}",
                     orderType, pendingEntryPrice, pendingStopPrice, pendingTargetPrice, drCounter));
@@ -1153,8 +1200,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (pendingShortSignal)
             {
-                SetStopLoss(shortSignalName, CalculationMode.Price, pendingStopPrice, false);
-                SetProfitTarget(shortSignalName, CalculationMode.Price, pendingTargetPrice);
+                activeEntrySignal = shortSignalName;
+                activeEntryPrice = pendingEntryPrice;
+                activeStopPrice = pendingStopPrice;
+                activeTargetPrice = pendingTargetPrice;
 
                 DebugPrint(string.Format("Submitting SHORT {0}: entry={1:F2}, stop={2:F2}, tp={3:F2}, drId={4}",
                     orderType, pendingEntryPrice, pendingStopPrice, pendingTargetPrice, drCounter));
@@ -1184,6 +1233,52 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (clearLines)
                 RemoveTradeLevelLines();
+        }
+
+        private void ClearActiveEntryLevels()
+        {
+            activeEntrySignal = string.Empty;
+            activeEntryPrice = 0;
+            activeStopPrice = 0;
+            activeTargetPrice = 0;
+        }
+
+        private void ApplyStopsAfterEntry(string entrySignal, bool isLong)
+        {
+            if (string.IsNullOrEmpty(entrySignal))
+                return;
+
+            double currentPrice = Close[0];
+            double priceBuffer = TickSize;
+
+            if (isLong)
+            {
+                if (activeStopPrice >= currentPrice - priceBuffer || activeTargetPrice <= currentPrice + priceBuffer)
+                {
+                    DebugPrint("Entry fill: invalid long stop/target vs current price. Exiting immediately.");
+                    ExitLong("InvalidStopTarget", entrySignal);
+                    ClearActiveEntryLevels();
+                    return;
+                }
+
+                SetStopLoss(entrySignal, CalculationMode.Price, activeStopPrice, false);
+                SetProfitTarget(entrySignal, CalculationMode.Price, activeTargetPrice);
+            }
+            else
+            {
+                if (activeStopPrice <= currentPrice + priceBuffer || activeTargetPrice >= currentPrice - priceBuffer)
+                {
+                    DebugPrint("Entry fill: invalid short stop/target vs current price. Exiting immediately.");
+                    ExitShort("InvalidStopTarget", entrySignal);
+                    ClearActiveEntryLevels();
+                    return;
+                }
+
+                SetStopLoss(entrySignal, CalculationMode.Price, activeStopPrice, false);
+                SetProfitTarget(entrySignal, CalculationMode.Price, activeTargetPrice);
+            }
+
+            ClearActiveEntryLevels();
         }
         #endregion
 
@@ -1661,6 +1756,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         #region Order/Execution Logging
         protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled, double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string nativeError)
         {
+            if (order != null && !string.IsNullOrEmpty(activeEntrySignal)
+                && string.Equals(order.Name, activeEntrySignal, StringComparison.Ordinal)
+                && (orderState == OrderState.Rejected || orderState == OrderState.Cancelled))
+            {
+                ClearActiveEntryLevels();
+            }
+
             if (!DebugLogging || order == null)
                 return;
 
@@ -1675,7 +1777,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
         {
-            if (!DebugLogging || execution == null || execution.Order == null)
+            if (execution == null || execution.Order == null)
+                return;
+
+            if (execution.Order.OrderState == OrderState.Filled && !string.IsNullOrEmpty(activeEntrySignal)
+                && string.Equals(execution.Order.Name, activeEntrySignal, StringComparison.Ordinal))
+            {
+                bool isLong = execution.Order.OrderAction == OrderAction.Buy;
+                ApplyStopsAfterEntry(activeEntrySignal, isLong);
+            }
+
+            if (!DebugLogging)
                 return;
 
             string orderName = execution.Order.Name;
@@ -1719,6 +1831,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             }
 
+            if (string.Equals(message, lastDebugMessage, StringComparison.Ordinal))
+                return;
+
+            lastDebugMessage = message;
             Print(string.Format("[{0:yyyy-MM-dd HH:mm:ss}] - {1}", Time[0], message));
         }
         #endregion
