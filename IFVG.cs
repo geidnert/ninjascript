@@ -97,11 +97,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				showInvalidatedFvgs = false;
 				minFvgSizePoints = 0;
 				maxFvgSizePoints = 0;
-				fvgDrawLimit = 1;
 				AsiaSessionStart = asiaSessionStart;
 				AsiaSessionEnd = asiaSessionEnd;
 				LondonSessionStart = londonSessionStart;
 				LondonSessionEnd = londonSessionEnd;
+				fvgDrawLimit = 2;
 				sessionDrawLimit = 2;
 			}
 			else if (State == State.Configure)
