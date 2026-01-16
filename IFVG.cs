@@ -68,6 +68,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int lastEntryBar;
 		private SweepEvent lastSwingSweep;
 		private SweepEvent lastSessionSweep;
+		private bool debugLogging;
 
 		private enum TradeDirection
 		{
@@ -146,6 +147,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				maxBarsBetweenSweepAndIfvg = 20;
 				enableHistoricalTrading = false;
 				lastEntryBar = -1;
+				debugLogging = false;
 			}
 			else if (State == State.Configure)
 			{
@@ -392,6 +394,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 				lastSessionSweep = sweep;
 			else
 				lastSwingSweep = sweep;
+
+			LogDebug(string.Format(
+				"Sweep registered {0} price={1} bar={2} source={3}",
+				direction,
+				price,
+				CurrentBar,
+				isSession ? "session" : "swing"));
 		}
 
 		private SweepEvent GetEligibleSweep(TradeDirection direction)
@@ -408,12 +417,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			if (best == null)
+			{
+				LogDebug(string.Format("No eligible sweep for {0}: none available", direction));
 				return null;
+			}
 
 			int barsSince = CurrentBar - best.BarIndex;
 			if (barsSince < 0 || barsSince > maxBarsBetweenSweepAndIfvg)
+			{
+				LogDebug(string.Format(
+					"No eligible sweep for {0}: barsSince={1} max={2}",
+					direction,
+					barsSince,
+					maxBarsBetweenSweepAndIfvg));
 				return null;
+			}
 
+			LogDebug(string.Format(
+				"Eligible sweep for {0}: price={1} bar={2} barsSince={3}",
+				direction,
+				best.Price,
+				best.BarIndex,
+				barsSince));
 			return best;
 		}
 
@@ -502,11 +527,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private void TryEnterFromIfvg(TradeDirection direction)
 		{
 			if (State == State.Historical && !EnableHistoricalTrading)
+			{
+				LogDebug("Entry blocked: historical trading disabled");
 				return;
+			}
 			if (lastEntryBar == CurrentBar)
+			{
+				LogDebug("Entry blocked: already entered this bar");
 				return;
+			}
 			if (Position.MarketPosition != MarketPosition.Flat)
+			{
+				LogDebug(string.Format("Entry blocked: position not flat ({0})", Position.MarketPosition));
 				return;
+			}
 
 			SweepEvent sweep = GetEligibleSweep(direction);
 			if (sweep == null)
@@ -515,15 +549,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double entryPrice = Close[0];
 			double? targetPrice = GetClosestLiquidityTarget(direction, entryPrice);
 			if (!targetPrice.HasValue)
+			{
+				LogDebug(string.Format("Entry blocked: no target for {0} at {1}", direction, entryPrice));
 				return;
+			}
 
 			double? stopPrice = GetClosestStopLevel(direction, entryPrice);
 			if (!stopPrice.HasValue)
+			{
+				LogDebug(string.Format("Entry blocked: no stop for {0} at {1}", direction, entryPrice));
 				return;
+			}
 
 			string signalName = direction == TradeDirection.Long ? "IFVG_Long" : "IFVG_Short";
 			SetStopLoss(signalName, CalculationMode.Price, stopPrice.Value, false);
 			SetProfitTarget(signalName, CalculationMode.Price, targetPrice.Value);
+
+			LogDebug(string.Format(
+				"Placing {0} entry at {1} stop={2} target={3}",
+				direction,
+				entryPrice,
+				stopPrice.Value,
+				targetPrice.Value));
 
 			if (direction == TradeDirection.Long)
 				EnterLong(signalName);
@@ -725,6 +772,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (invalidated)
 				{
+					LogDebug(string.Format(
+						"IFVG invalidated {0} tag={1} lower={2} upper={3}",
+						fvg.IsBullish ? "bullish" : "bearish",
+						fvg.Tag,
+						fvg.Lower,
+						fvg.Upper));
 					TradeDirection ifvgDirection = fvg.IsBullish ? TradeDirection.Short : TradeDirection.Long;
 					TryEnterFromIfvg(ifvgDirection);
 					fvg.IsActive = false;
@@ -768,6 +821,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 			lastFvg.Upper = Math.Max(lastFvg.Upper, newFvg.Upper);
 			lastFvg.EndBarIndex = newFvg.EndBarIndex;
 
+			LogDebug(string.Format(
+				"Combined FVGs into tag={0} lower={1} upper={2} endBar={3}",
+				lastFvg.Tag,
+				lastFvg.Lower,
+				lastFvg.Upper,
+				lastFvg.EndBarIndex));
+
 			int startBarsAgo = CurrentBar - lastFvg.StartBarIndex;
 			int endBarsAgo = CurrentBar - lastFvg.EndBarIndex;
 			if (startBarsAgo < 0)
@@ -800,6 +860,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!bullishFvg && !bearishFvg)
 				return;
 
+			LogDebug(string.Format(
+				"FVG detected {0} low0={1} high2={2} high0={3} low2={4}",
+				bullishFvg ? "bullish" : "bearish",
+				Low[0],
+				High[2],
+				High[0],
+				Low[2]));
+
 			FvgBox fvg = new FvgBox();
 			fvg.IsBullish = bullishFvg;
 			fvg.Lower = bullishFvg ? High[2] : High[0];
@@ -812,9 +880,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
 			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
+			{
+				LogDebug(string.Format("FVG rejected: size {0} < min {1}", fvgSizePoints, MinFvgSizePoints));
 				return;
+			}
 			if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
+			{
+				LogDebug(string.Format("FVG rejected: size {0} > max {1}", fvgSizePoints, MaxFvgSizePoints));
 				return;
+			}
 
 			if (TryCombineWithPreviousFvg(fvg))
 				return;
@@ -833,6 +907,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 				fvgFill,
 				fvgOpacity
 			);
+
+			LogDebug(string.Format(
+				"FVG added tag={0} lower={1} upper={2} startBar={3} endBar={4}",
+				fvg.Tag,
+				fvg.Lower,
+				fvg.Upper,
+				fvg.StartBarIndex,
+				fvg.EndBarIndex));
+		}
+
+		private void LogDebug(string message)
+		{
+			if (!DebugLogging)
+				return;
+			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
 		}
 
 		private void PruneFvgs(int drawLimitDays)
@@ -923,6 +1012,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return enableHistoricalTrading; }
 			set { enableHistoricalTrading = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Debug Logging", GroupName = "Trade Config", Order = 4)]
+		public bool DebugLogging
+		{
+			get { return debugLogging; }
+			set { debugLogging = value; }
 		}
 
 		[NinjaScriptProperty]
