@@ -72,6 +72,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool verboseDebugLogging;
 		private bool invalidateIfTargetHitBeforeEntry;
 		private MarketPosition lastMarketPosition;
+		private int intrabarTargetBarIndex;
+		private bool intrabarTargetHitLong;
+		private bool intrabarTargetHitShort;
+		private double intrabarTargetPriceLong;
+		private double intrabarTargetPriceShort;
 
 		private enum TradeDirection
 		{
@@ -154,6 +159,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				verboseDebugLogging = false;
 				invalidateIfTargetHitBeforeEntry = false;
 				lastMarketPosition = MarketPosition.Flat;
+				intrabarTargetBarIndex = -1;
 			}
 			else if (State == State.Configure)
 			{
@@ -188,6 +194,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		protected override void OnBarUpdate()
 		{
+			if (BarsInProgress == 1)
+			{
+				UpdateIntrabarTargetHit();
+				return;
+			}
+
 			if (BarsInProgress != 0)
 				return;
 
@@ -543,17 +555,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 			barsAgo = -1;
 			int found = 0;
 
-			for (int i = 1; i + 1 <= CurrentBar; i++)
+			for (int i = 1; i + 1 <= CurrentBars[0]; i++)
 			{
-				if (High[i] <= High[i - 1] || High[i] <= High[i + 1])
+				if (Highs[0][i] <= Highs[0][i - 1] || Highs[0][i] <= Highs[0][i + 1])
 					continue;
-				if (High[i] <= entryPrice)
+				if (Highs[0][i] <= entryPrice)
 					continue;
 
 				found++;
 				if (found == occurrence)
 				{
-					price = High[i];
+					price = Highs[0][i];
 					barsAgo = i;
 					return true;
 				}
@@ -568,17 +580,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 			barsAgo = -1;
 			int found = 0;
 
-			for (int i = 1; i + 1 <= CurrentBar; i++)
+			for (int i = 1; i + 1 <= CurrentBars[0]; i++)
 			{
-				if (Low[i] >= Low[i - 1] || Low[i] >= Low[i + 1])
+				if (Lows[0][i] >= Lows[0][i - 1] || Lows[0][i] >= Lows[0][i + 1])
 					continue;
-				if (Low[i] >= entryPrice)
+				if (Lows[0][i] >= entryPrice)
 					continue;
 
 				found++;
 				if (found == occurrence)
 				{
-					price = Low[i];
+					price = Lows[0][i];
 					barsAgo = i;
 					return true;
 				}
@@ -623,8 +635,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
+			targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
+
 			if (InvalidateIfTargetHitBeforeEntry &&
-				(direction == TradeDirection.Long ? High[0] >= targetPrice : Low[0] <= targetPrice))
+				intrabarTargetBarIndex == CurrentBar &&
+				(direction == TradeDirection.Long
+					? (intrabarTargetHitLong && Math.Abs(intrabarTargetPriceLong - targetPrice) <= Instrument.MasterInstrument.TickSize / 2.0)
+					: (intrabarTargetHitShort && Math.Abs(intrabarTargetPriceShort - targetPrice) <= Instrument.MasterInstrument.TickSize / 2.0)))
+			{
+				LogDebug(string.Format(
+					"Entry blocked: target hit intrabar before close for {0} at {1} target={2}",
+					direction,
+					entryPrice,
+					targetPrice));
+				return;
+			}
+
+			if (InvalidateIfTargetHitBeforeEntry &&
+				(direction == TradeDirection.Long
+					? (High[0] >= targetPrice || Close[0] >= targetPrice)
+					: (Low[0] <= targetPrice || Close[0] <= targetPrice)))
 			{
 				LogDebug(string.Format(
 					"Entry blocked: target hit before close for {0} at {1} target={2}",
@@ -644,6 +674,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LogDebug(string.Format("Entry blocked: no pivot stop for {0} at {1}", direction, entryPrice));
 				return;
 			}
+
+			stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
 
 			string signalName = direction == TradeDirection.Long ? "Long" : "Short";
 			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
@@ -1023,6 +1055,46 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			Print(string.Empty);
 			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
+		}
+
+		private void UpdateIntrabarTargetHit()
+		{
+			if (!InvalidateIfTargetHitBeforeEntry)
+				return;
+			if (CurrentBars[0] < 2)
+				return;
+
+			int primaryBar = CurrentBars[0];
+			if (intrabarTargetBarIndex != primaryBar)
+			{
+				intrabarTargetBarIndex = primaryBar;
+				intrabarTargetHitLong = false;
+				intrabarTargetHitShort = false;
+				intrabarTargetPriceLong = 0;
+				intrabarTargetPriceShort = 0;
+			}
+
+			double entryPrice = Closes[0][0];
+			double targetPrice;
+			int targetBarsAgo;
+
+			if (!intrabarTargetHitLong &&
+				TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, out targetPrice, out targetBarsAgo))
+			{
+				targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
+				intrabarTargetPriceLong = targetPrice;
+				if (Highs[0][0] >= targetPrice)
+					intrabarTargetHitLong = true;
+			}
+
+			if (!intrabarTargetHitShort &&
+				TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, out targetPrice, out targetBarsAgo))
+			{
+				targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
+				intrabarTargetPriceShort = targetPrice;
+				if (Lows[0][0] <= targetPrice)
+					intrabarTargetHitShort = true;
+			}
 		}
 
 		protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
