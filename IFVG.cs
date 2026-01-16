@@ -41,6 +41,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private Brush invalidatedFill;
 		private int invalidatedOpacity;
 		private bool showInvalidatedFvgs;
+		private double minFvgSizePoints;
+		private double maxFvgSizePoints;
 
 		protected override void OnStateChange()
 		{
@@ -51,7 +53,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				IsOverlay = true;
 				fvgOpacity = 10;
 				invalidatedOpacity = 5;
-				showInvalidatedFvgs = true;
+				showInvalidatedFvgs = false;
+				minFvgSizePoints = 0;
+				maxFvgSizePoints = 0;
 			}
 			else if (State == State.Configure)
 			{
@@ -159,6 +163,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 			fvg.IsActive = true;
 			fvg.Tag = string.Format("IFVG_{0}_{1:yyyyMMdd_HHmmss}", fvgCounter++, Time[0]);
 
+			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
+			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
+				return;
+			if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
+				return;
+
 			activeFvgs.Add(fvg);
 
 			Draw.Rectangle(
@@ -177,12 +187,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		#region Properties
 		[NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "Show Inversed FVGs", GroupName = "NinjaScriptParameters", Order = 0)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Show Inversed FVGs", GroupName = "FVG", Order = 0)]
 		public bool ShowInvalidatedFvgs
 		{
 			get { return showInvalidatedFvgs; }
 			set { showInvalidatedFvgs = value; }
 		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", GroupName = "FVG", Order = 1)]
+		public double MinFvgSizePoints
+		{
+			get { return minFvgSizePoints; }
+			set { minFvgSizePoints = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Max FVG Size (Points)", GroupName = "FVG", Order = 2)]
+		public double MaxFvgSizePoints
+		{
+			get { return maxFvgSizePoints; }
+			set { maxFvgSizePoints = value; }
+		}
+
 		#endregion
 	}
 }
