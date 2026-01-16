@@ -53,6 +53,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private List<LiquidityLine> liquidityLines;
 		private SessionLiquidityState asiaState;
 		private SessionLiquidityState londonState;
+		private int sessionDrawLimit;
 
 		private class LiquidityLine
 		{
@@ -65,6 +66,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			public bool IsArmed;
 			public bool IsHigh;
 			public Brush Brush;
+			public DateTime SessionDate;
 		}
 
 		private class SessionLiquidityState
@@ -97,6 +99,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				AsiaSessionEnd = asiaSessionEnd;
 				LondonSessionStart = londonSessionStart;
 				LondonSessionEnd = londonSessionEnd;
+				sessionDrawLimit = 2;
 			}
 			else if (State == State.Configure)
 			{
@@ -140,6 +143,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void UpdateLiquidity()
 		{
+			if (SessionDrawLimit <= 0)
+			{
+				if (liquidityLines.Count > 0)
+				{
+					for (int i = 0; i < liquidityLines.Count; i++)
+					{
+						RemoveDrawObject(liquidityLines[i].Tag);
+						RemoveDrawObject(liquidityLines[i].Tag + "_Lbl");
+					}
+					liquidityLines.Clear();
+				}
+				return;
+			}
+
+			PruneLiquidityLines(SessionDrawLimit);
+
 			DateTime barTime = Time[0];
 			ProcessSession(asiaState, barTime, AsiaSessionStart, AsiaSessionEnd, asiaLineBrush);
 			ProcessSession(londonState, barTime, LondonSessionStart, LondonSessionEnd, londonLineBrush);
@@ -226,7 +245,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				IsActive = true,
 				IsArmed = false,
 				IsHigh = isHigh,
-				Brush = lineBrush
+				Brush = lineBrush,
+				SessionDate = state.SessionStartDate.Date
 			};
 
 			liquidityLines.Add(line);
@@ -283,7 +303,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 				);
 
 				if (hit)
+				{
 					line.IsActive = false;
+					RemoveDrawObject(line.Tag + "_Lbl");
+				}
+			}
+		}
+
+		private void PruneLiquidityLines(int drawLimitDays)
+		{
+			if (drawLimitDays <= 0)
+				return;
+
+			DateTime cutoffDate = Time[0].Date.AddDays(-(drawLimitDays - 1));
+			for (int i = liquidityLines.Count - 1; i >= 0; i--)
+			{
+				LiquidityLine line = liquidityLines[i];
+				if (line.SessionDate < cutoffDate)
+				{
+					RemoveDrawObject(line.Tag);
+					RemoveDrawObject(line.Tag + "_Lbl");
+					liquidityLines.RemoveAt(i);
+				}
 			}
 		}
 
@@ -306,9 +347,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private static string GetLiquidityLabel(string sessionName, bool isHigh)
 		{
 			if (string.Equals(sessionName, "Asia", StringComparison.OrdinalIgnoreCase))
-				return isHigh ? "AH" : "AL";
+				return isHigh ? "AS.H" : "AS.L";
 			if (string.Equals(sessionName, "London", StringComparison.OrdinalIgnoreCase))
-				return isHigh ? "LH" : "LL";
+				return isHigh ? "LO.H" : "LO.L";
 			return isHigh ? "H" : "L";
 		}
 
@@ -465,6 +506,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return londonSessionEnd; }
 			set { londonSessionEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[Range(0, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Session Draw Limit", GroupName = "Liquidity", Order = 4)]
+		public int SessionDrawLimit
+		{
+			get { return sessionDrawLimit; }
+			set { sessionDrawLimit = value; }
 		}
 
 		#endregion
