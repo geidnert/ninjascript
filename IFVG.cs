@@ -129,8 +129,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				fvgOpacity = 10;
 				invalidatedOpacity = 5;
 				showInvalidatedFvgs = false;
-				minFvgSizePoints = 0;
-				maxFvgSizePoints = 0;
+				minFvgSizePoints = 10;
+				maxFvgSizePoints = 50;
 				AsiaSessionStart = asiaSessionStart;
 				AsiaSessionEnd = asiaSessionEnd;
 				LondonSessionStart = londonSessionStart;
@@ -142,7 +142,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				useSwingLiquiditySweep = true;
 				useSessionLiquiditySweep = true;
 				maxBarsBetweenSweepAndIfvg = 20;
-				enableHistoricalTrading = false;
+				enableHistoricalTrading = true;
 				lastEntryBar = -1;
 			}
 			else if (State == State.Configure)
