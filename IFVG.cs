@@ -128,7 +128,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Name = "IFVG";
 				IsOverlay = true;
 				fvgOpacity = 10;
-				invalidatedOpacity = 5;
+				invalidatedOpacity = 10;
 				showInvalidatedFvgs = true;
 				minFvgSizePoints = 10;
 				maxFvgSizePoints = 50;
