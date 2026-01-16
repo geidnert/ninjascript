@@ -72,12 +72,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool verboseDebugLogging;
 		private bool invalidateIfTargetHitBeforeEntry;
 		private double minTpSlDistancePoints;
+		private bool exitOnCloseBeyondEntryIfvg;
 		private MarketPosition lastMarketPosition;
 		private int intrabarTargetBarIndex;
 		private bool intrabarTargetHitLong;
 		private bool intrabarTargetHitShort;
 		private double intrabarTargetPriceLong;
 		private double intrabarTargetPriceShort;
+		private double entryIfvgLower;
+		private double entryIfvgUpper;
+		private TradeDirection? entryIfvgDirection;
 
 		private enum TradeDirection
 		{
@@ -160,8 +164,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 				verboseDebugLogging = false;
 				invalidateIfTargetHitBeforeEntry = false;
 				minTpSlDistancePoints = 0;
+				exitOnCloseBeyondEntryIfvg = false;
 				lastMarketPosition = MarketPosition.Flat;
 				intrabarTargetBarIndex = -1;
+				entryIfvgLower = 0;
+				entryIfvgUpper = 0;
+				entryIfvgDirection = null;
 			}
 			else if (State == State.Configure)
 			{
@@ -211,6 +219,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			UpdateLiquidity();
 			UpdateFvgs();
 			UpdateSwingLiquidity();
+			CheckExitOnCloseBeyondEntryIfvg();
 		}
 
 		private void UpdateFvgs()
@@ -742,6 +751,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				stopBarsAgo,
 				targetBarsAgo));
 
+			entryIfvgLower = fvgLower;
+			entryIfvgUpper = fvgUpper;
+			entryIfvgDirection = direction;
+
 			if (direction == TradeDirection.Long)
 				EnterLong(signalName);
 			else
@@ -1109,6 +1122,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
 		}
 
+		private void CheckExitOnCloseBeyondEntryIfvg()
+		{
+			if (!ExitOnCloseBeyondEntryIfvg)
+				return;
+			if (Position.MarketPosition == MarketPosition.Flat || entryIfvgDirection == null)
+				return;
+			if (CurrentBar <= lastEntryBar)
+				return;
+
+			bool shouldExit = entryIfvgDirection == TradeDirection.Long
+				? Close[0] < entryIfvgLower
+				: Close[0] > entryIfvgUpper;
+
+			if (!shouldExit)
+				return;
+
+			LogTradeSeparator(string.Format(
+				"Exit on close beyond entry IFVG {0} close={1} fvgLower={2} fvgUpper={3}",
+				entryIfvgDirection,
+				Close[0],
+				entryIfvgLower,
+				entryIfvgUpper));
+
+			if (entryIfvgDirection == TradeDirection.Long)
+				ExitLong("IFVGCloseExit", "Long");
+			else
+				ExitShort("IFVGCloseExit", "Short");
+		}
+
 		private void UpdateIntrabarTargetHit()
 		{
 			if (!InvalidateIfTargetHitBeforeEntry)
@@ -1163,6 +1205,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 						price,
 						quantity,
 						execution != null && execution.Order != null ? execution.Order.Name : "n/a"));
+					entryIfvgDirection = null;
 				}
 				else
 				{
@@ -1298,6 +1341,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return minTpSlDistancePoints; }
 			set { minTpSlDistancePoints = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Exit On Close Beyond Entry IFVG", GroupName = "Trade Config", Order = 8)]
+		public bool ExitOnCloseBeyondEntryIfvg
+		{
+			get { return exitOnCloseBeyondEntryIfvg; }
+			set { exitOnCloseBeyondEntryIfvg = value; }
 		}
 
 		[NinjaScriptProperty]
