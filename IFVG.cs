@@ -33,6 +33,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			public double Lower;
 			public bool IsBullish;
 			public bool IsActive;
+			public DateTime SessionDate;
 		}
 
 		private List<FvgBox> activeFvgs;
@@ -44,6 +45,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool showInvalidatedFvgs;
 		private double minFvgSizePoints;
 		private double maxFvgSizePoints;
+		private int fvgDrawLimit;
 		private TimeSpan asiaSessionStart = new TimeSpan(18, 0, 0);
 		private TimeSpan asiaSessionEnd = new TimeSpan(0, 0, 0);
 		private TimeSpan londonSessionStart = new TimeSpan(0, 0, 0);
@@ -95,6 +97,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				showInvalidatedFvgs = false;
 				minFvgSizePoints = 0;
 				maxFvgSizePoints = 0;
+				fvgDrawLimit = 1;
 				AsiaSessionStart = asiaSessionStart;
 				AsiaSessionEnd = asiaSessionEnd;
 				LondonSessionStart = londonSessionStart;
@@ -137,6 +140,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 
 			UpdateLiquidity();
+			UpdateFvgs();
+		}
+
+		private void UpdateFvgs()
+		{
+			if (FvgDrawLimit <= 0)
+			{
+				if (activeFvgs.Count > 0)
+				{
+					for (int i = 0; i < activeFvgs.Count; i++)
+						RemoveDrawObject(activeFvgs[i].Tag);
+					activeFvgs.Clear();
+				}
+				return;
+			}
+
+			PruneFvgs(FvgDrawLimit);
 			UpdateActiveFvgs();
 			DetectNewFvg();
 		}
@@ -427,6 +447,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			fvg.StartBarIndex = CurrentBar - 2;
 			fvg.EndBarIndex = CurrentBar;
 			fvg.IsActive = true;
+			fvg.SessionDate = Time[0].Date;
 			fvg.Tag = string.Format("IFVG_{0}_{1:yyyyMMdd_HHmmss}", fvgCounter++, Time[0]);
 
 			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
@@ -449,6 +470,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 				fvgFill,
 				fvgOpacity
 			);
+		}
+
+		private void PruneFvgs(int drawLimitDays)
+		{
+			if (drawLimitDays <= 0)
+				return;
+
+			DateTime cutoffDate = Time[0].Date.AddDays(-(drawLimitDays - 1));
+			for (int i = activeFvgs.Count - 1; i >= 0; i--)
+			{
+				FvgBox fvg = activeFvgs[i];
+				if (fvg.SessionDate < cutoffDate)
+				{
+					RemoveDrawObject(fvg.Tag);
+					activeFvgs.RemoveAt(i);
+				}
+			}
 		}
 
 		#region Properties
@@ -474,6 +512,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return maxFvgSizePoints; }
 			set { maxFvgSizePoints = value; }
+		}
+
+		[Range(0, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "FVG Draw Limit", GroupName = "FVG", Order = 3)]
+		public int FvgDrawLimit
+		{
+			get { return fvgDrawLimit; }
+			set { fvgDrawLimit = value; }
 		}
 
 		[NinjaScriptProperty]
