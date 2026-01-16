@@ -38,6 +38,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int fvgCounter;
 		private Brush fvgFill;
 		private int fvgOpacity;
+		private bool showInvalidatedFvgs;
 
 		protected override void OnStateChange()
 		{
@@ -47,6 +48,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Name = "IFVG";
 				IsOverlay = true;
 				fvgOpacity = 10;
+				showInvalidatedFvgs = true;
 			}
 			else if (State == State.Configure)
 			{
@@ -86,8 +88,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 					continue;
 
 				bool invalidated = fvg.IsBullish
-					? bodyHigh < fvg.Lower
-					: bodyLow > fvg.Upper;
+					? (Close[0] < fvg.Lower && Close[0] < Open[0])
+					: (Close[0] > fvg.Upper && Close[0] > Open[0]);
 
 				fvg.EndBarIndex = CurrentBar;
 
@@ -112,7 +114,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				);
 
 				if (invalidated)
+				{
 					fvg.IsActive = false;
+					if (!ShowInvalidatedFvgs)
+						RemoveDrawObject(fvg.Tag);
+				}
 			}
 		}
 
@@ -136,22 +142,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			activeFvgs.Add(fvg);
 
-			Draw.Text(
-				this,
-				"IFVG_T_" + fvg.Tag,
-				false,
-				fvg.IsBullish ? "FVG+" : "FVG-",
-				0,
-				fvg.IsBullish ? Low[0] : High[0],
-				0,
-				Brushes.White,
-				new SimpleFont("Arial", 12),
-				TextAlignment.Center,
-				Brushes.Transparent,
-				Brushes.Transparent,
-				0
-			);
-
 			Draw.Rectangle(
 				this,
 				fvg.Tag,
@@ -165,5 +155,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				fvgOpacity
 			);
 		}
+
+		#region Properties
+		[NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "ShowInvalidatedFvgs", GroupName = "NinjaScriptParameters", Order = 0)]
+		public bool ShowInvalidatedFvgs
+		{
+			get { return showInvalidatedFvgs; }
+			set { showInvalidatedFvgs = value; }
+		}
+		#endregion
 	}
 }
