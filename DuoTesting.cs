@@ -472,7 +472,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // New York
                 NewYork_Contracts     = 1;
                 NewYork_MinC12Body  = 19;
-                NewYork_MinCandlePoints = 1.5;
+                NewYork_MinCandlePoints = 0.75;
                 NewYork_MaxC12Body  = 132;
                 NewYork_OffsetPerc  = 0.2;
                 NewYork_TpPerc      = 28.3;
