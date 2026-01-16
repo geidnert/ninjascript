@@ -117,7 +117,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LondonSessionEnd = londonSessionEnd;
 				fvgDrawLimit = 2;
 				sessionDrawLimit = 2;
-				swingStrength = 5;
+				swingStrength = 10;
 				swingDrawBars = 300;
 			}
 			else if (State == State.Configure)
