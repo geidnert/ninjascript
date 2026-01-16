@@ -632,7 +632,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
-			string signalName = direction == TradeDirection.Long ? "IFVG_Long" : "IFVG_Short";
+			string signalName = direction == TradeDirection.Long ? "Long" : "Short";
 			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
 			SetProfitTarget(signalName, CalculationMode.Price, targetPrice);
 
