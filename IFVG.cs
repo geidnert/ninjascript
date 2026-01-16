@@ -72,6 +72,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			public string Name;
 			public bool InSession;
 			public int SessionStartBarIndex;
+			public int SessionHighBarIndex;
+			public int SessionLowBarIndex;
 			public double SessionHigh;
 			public double SessionLow;
 			public DateTime SessionStartDate;
@@ -158,6 +160,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				state.InSession = true;
 				state.SessionStartDate = GetSessionStartDate(barTime, sessionStart, sessionEnd);
 				state.SessionStartBarIndex = CurrentBar;
+				state.SessionHighBarIndex = CurrentBar;
+				state.SessionLowBarIndex = CurrentBar;
 				state.SessionHigh = High[0];
 				state.SessionLow = Low[0];
 				state.HighLine = CreateLiquidityLine(state, true, lineBrush);
@@ -169,15 +173,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (High[0] > state.SessionHigh)
 				{
 					state.SessionHigh = High[0];
+					state.SessionHighBarIndex = CurrentBar;
 					if (state.HighLine != null)
+					{
 						state.HighLine.Price = state.SessionHigh;
+						state.HighLine.StartBarIndex = state.SessionHighBarIndex;
+					}
 				}
 
 				if (Low[0] < state.SessionLow)
 				{
 					state.SessionLow = Low[0];
+					state.SessionLowBarIndex = CurrentBar;
 					if (state.LowLine != null)
+					{
 						state.LowLine.Price = state.SessionLow;
+						state.LowLine.StartBarIndex = state.SessionLowBarIndex;
+					}
 				}
 
 				if (state.HighLine != null)
@@ -209,7 +221,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Tag = tag,
 				Label = GetLiquidityLabel(state.Name, isHigh),
 				Price = isHigh ? state.SessionHigh : state.SessionLow,
-				StartBarIndex = state.SessionStartBarIndex,
+				StartBarIndex = isHigh ? state.SessionHighBarIndex : state.SessionLowBarIndex,
 				EndBarIndex = CurrentBar,
 				IsActive = true,
 				IsArmed = false,
