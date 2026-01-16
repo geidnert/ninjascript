@@ -524,50 +524,54 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return best;
 		}
 
-		private double? GetNthBullishPivotHighAboveEntry(double entryPrice, int occurrence)
+		private bool TryGetNthBullishPivotHighAboveEntry(double entryPrice, int occurrence, out double price, out int barsAgo)
 		{
+			price = 0;
+			barsAgo = -1;
 			int found = 0;
 
-			for (int barsAgo = 1; barsAgo < CurrentBar; barsAgo++)
+			for (int i = 1; i + 1 <= CurrentBar; i++)
 			{
-				if (barsAgo + 1 > CurrentBar)
-					break;
-				if (Close[barsAgo] <= Open[barsAgo])
+				if (High[i] <= High[i - 1] || High[i] <= High[i + 1])
 					continue;
-				if (High[barsAgo] <= High[barsAgo - 1] || High[barsAgo] <= High[barsAgo + 1])
-					continue;
-				if (High[barsAgo] <= entryPrice)
+				if (High[i] <= entryPrice)
 					continue;
 
 				found++;
 				if (found == occurrence)
-					return High[barsAgo];
+				{
+					price = High[i];
+					barsAgo = i;
+					return true;
+				}
 			}
 
-			return null;
+			return false;
 		}
 
-		private double? GetNthBearishPivotLowBelowEntry(double entryPrice, int occurrence)
+		private bool TryGetNthBearishPivotLowBelowEntry(double entryPrice, int occurrence, out double price, out int barsAgo)
 		{
+			price = 0;
+			barsAgo = -1;
 			int found = 0;
 
-			for (int barsAgo = 1; barsAgo < CurrentBar; barsAgo++)
+			for (int i = 1; i + 1 <= CurrentBar; i++)
 			{
-				if (barsAgo + 1 > CurrentBar)
-					break;
-				if (Close[barsAgo] >= Open[barsAgo])
+				if (Low[i] >= Low[i - 1] || Low[i] >= Low[i + 1])
 					continue;
-				if (Low[barsAgo] >= Low[barsAgo - 1] || Low[barsAgo] >= Low[barsAgo + 1])
-					continue;
-				if (Low[barsAgo] >= entryPrice)
+				if (Low[i] >= entryPrice)
 					continue;
 
 				found++;
 				if (found == occurrence)
-					return Low[barsAgo];
+				{
+					price = Low[i];
+					barsAgo = i;
+					return true;
+				}
 			}
 
-			return null;
+			return false;
 		}
 
 		private void TryEnterFromIfvg(TradeDirection direction)
@@ -595,34 +599,40 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double entryPrice = Close[0];
 			const int tpOccurrence = 1;
 			const int slOccurrence = 1;
-			double? targetPrice = direction == TradeDirection.Long
-				? GetNthBullishPivotHighAboveEntry(entryPrice, tpOccurrence)
-				: GetNthBearishPivotLowBelowEntry(entryPrice, tpOccurrence);
-			if (!targetPrice.HasValue)
+			double targetPrice;
+			int targetBarsAgo;
+			bool hasTarget = direction == TradeDirection.Long
+				? TryGetNthBullishPivotHighAboveEntry(entryPrice, tpOccurrence, out targetPrice, out targetBarsAgo)
+				: TryGetNthBearishPivotLowBelowEntry(entryPrice, tpOccurrence, out targetPrice, out targetBarsAgo);
+			if (!hasTarget)
 			{
 				LogDebug(string.Format("Entry blocked: no pivot target for {0} at {1}", direction, entryPrice));
 				return;
 			}
 
-			double? stopPrice = direction == TradeDirection.Long
-				? GetNthBearishPivotLowBelowEntry(entryPrice, slOccurrence)
-				: GetNthBullishPivotHighAboveEntry(entryPrice, slOccurrence);
-			if (!stopPrice.HasValue)
+			double stopPrice;
+			int stopBarsAgo;
+			bool hasStop = direction == TradeDirection.Long
+				? TryGetNthBearishPivotLowBelowEntry(entryPrice, slOccurrence, out stopPrice, out stopBarsAgo)
+				: TryGetNthBullishPivotHighAboveEntry(entryPrice, slOccurrence, out stopPrice, out stopBarsAgo);
+			if (!hasStop)
 			{
 				LogDebug(string.Format("Entry blocked: no pivot stop for {0} at {1}", direction, entryPrice));
 				return;
 			}
 
 			string signalName = direction == TradeDirection.Long ? "IFVG_Long" : "IFVG_Short";
-			SetStopLoss(signalName, CalculationMode.Price, stopPrice.Value, false);
-			SetProfitTarget(signalName, CalculationMode.Price, targetPrice.Value);
+			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
+			SetProfitTarget(signalName, CalculationMode.Price, targetPrice);
 
 			LogDebug(string.Format(
-				"Placing {0} entry at {1} stop={2} target={3}",
+				"Placing {0} entry at {1} stop={2} target={3} stopBarsAgo={4} targetBarsAgo={5}",
 				direction,
 				entryPrice,
-				stopPrice.Value,
-				targetPrice.Value));
+				stopPrice,
+				targetPrice,
+				stopBarsAgo,
+				targetBarsAgo));
 
 			if (direction == TradeDirection.Long)
 				EnterLong(signalName);
