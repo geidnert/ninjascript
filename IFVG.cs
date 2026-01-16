@@ -71,6 +71,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool debugLogging;
 		private bool verboseDebugLogging;
 		private bool invalidateIfTargetHitBeforeEntry;
+		private double minTpSlDistancePoints;
 		private MarketPosition lastMarketPosition;
 		private int intrabarTargetBarIndex;
 		private bool intrabarTargetHitLong;
@@ -158,6 +159,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				debugLogging = false;
 				verboseDebugLogging = false;
 				invalidateIfTargetHitBeforeEntry = false;
+				minTpSlDistancePoints = 0;
 				lastMarketPosition = MarketPosition.Flat;
 				intrabarTargetBarIndex = -1;
 			}
@@ -549,7 +551,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return best;
 		}
 
-		private bool TryGetNthBullishPivotHighAboveEntry(double entryPrice, int occurrence, out double price, out int barsAgo)
+		private bool TryGetNthBullishPivotHighAboveEntry(double entryPrice, int occurrence, double minDistancePoints, out double price, out int barsAgo)
 		{
 			price = 0;
 			barsAgo = -1;
@@ -560,6 +562,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (Highs[0][i] <= Highs[0][i - 1] || Highs[0][i] <= Highs[0][i + 1])
 					continue;
 				if (Highs[0][i] <= entryPrice)
+					continue;
+				if (minDistancePoints > 0 && (Highs[0][i] - entryPrice) < minDistancePoints)
 					continue;
 
 				found++;
@@ -574,7 +578,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return false;
 		}
 
-		private bool TryGetNthBearishPivotLowBelowEntry(double entryPrice, int occurrence, out double price, out int barsAgo)
+		private bool TryGetNthBearishPivotLowBelowEntry(double entryPrice, int occurrence, double minDistancePoints, out double price, out int barsAgo)
 		{
 			price = 0;
 			barsAgo = -1;
@@ -585,6 +589,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (Lows[0][i] >= Lows[0][i - 1] || Lows[0][i] >= Lows[0][i + 1])
 					continue;
 				if (Lows[0][i] >= entryPrice)
+					continue;
+				if (minDistancePoints > 0 && (entryPrice - Lows[0][i]) < minDistancePoints)
 					continue;
 
 				found++;
@@ -599,7 +605,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return false;
 		}
 
-		private void TryEnterFromIfvg(TradeDirection direction)
+		private void TryEnterFromIfvg(TradeDirection direction, double fvgLower, double fvgUpper)
 		{
 			if (State == State.Historical && !EnableHistoricalTrading)
 			{
@@ -627,8 +633,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double targetPrice;
 			int targetBarsAgo;
 			bool hasTarget = direction == TradeDirection.Long
-				? TryGetNthBullishPivotHighAboveEntry(entryPrice, tpOccurrence, out targetPrice, out targetBarsAgo)
-				: TryGetNthBearishPivotLowBelowEntry(entryPrice, tpOccurrence, out targetPrice, out targetBarsAgo);
+				? TryGetNthBullishPivotHighAboveEntry(entryPrice, tpOccurrence, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo)
+				: TryGetNthBearishPivotLowBelowEntry(entryPrice, tpOccurrence, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo);
 			if (!hasTarget)
 			{
 				LogDebug(string.Format("Entry blocked: no pivot target for {0} at {1}", direction, entryPrice));
@@ -664,15 +670,61 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
-			double stopPrice;
-			int stopBarsAgo;
-			bool hasStop = direction == TradeDirection.Long
-				? TryGetNthBearishPivotLowBelowEntry(entryPrice, slOccurrence, out stopPrice, out stopBarsAgo)
-				: TryGetNthBullishPivotHighAboveEntry(entryPrice, slOccurrence, out stopPrice, out stopBarsAgo);
+			double stopPrice = 0;
+			int stopBarsAgo = -1;
+			bool hasStop = false;
+			bool hasAnyStop = false;
+			double fallbackStopPrice = 0;
+			int fallbackStopBarsAgo = -1;
+			int stopOccurrence = slOccurrence;
+			while (true)
+			{
+				bool foundStop = direction == TradeDirection.Long
+					? TryGetNthBearishPivotLowBelowEntry(entryPrice, stopOccurrence, MinTpSlDistancePoints, out stopPrice, out stopBarsAgo)
+					: TryGetNthBullishPivotHighAboveEntry(entryPrice, stopOccurrence, MinTpSlDistancePoints, out stopPrice, out stopBarsAgo);
+
+				if (!foundStop)
+					break;
+
+				if (!hasAnyStop)
+				{
+					hasAnyStop = true;
+					fallbackStopPrice = stopPrice;
+					fallbackStopBarsAgo = stopBarsAgo;
+				}
+
+				bool outsideFvg = direction == TradeDirection.Long ? stopPrice < fvgLower : stopPrice > fvgUpper;
+				if (outsideFvg)
+				{
+					hasStop = true;
+					break;
+				}
+
+				stopOccurrence++;
+			}
+
 			if (!hasStop)
 			{
-				LogDebug(string.Format("Entry blocked: no pivot stop for {0} at {1}", direction, entryPrice));
-				return;
+				if (hasAnyStop)
+				{
+					stopPrice = fallbackStopPrice;
+					stopBarsAgo = fallbackStopBarsAgo;
+					LogDebug(string.Format(
+						"Using stop inside FVG for {0} at {1} stop={2} fvgLower={3} fvgUpper={4}",
+						direction,
+						entryPrice,
+						stopPrice,
+						fvgLower,
+						fvgUpper));
+				}
+				else
+				{
+					LogDebug(string.Format(
+						"Entry blocked: no pivot stop for {0} at {1}",
+						direction,
+						entryPrice));
+					return;
+				}
 			}
 
 			stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
@@ -897,7 +949,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 						fvg.Lower,
 						fvg.Upper));
 					TradeDirection ifvgDirection = fvg.IsBullish ? TradeDirection.Short : TradeDirection.Long;
-					TryEnterFromIfvg(ifvgDirection);
+					TryEnterFromIfvg(ifvgDirection, fvg.Lower, fvg.Upper);
 					fvg.IsActive = false;
 					if (!ShowInvalidatedFvgs)
 						RemoveDrawObject(fvg.Tag);
@@ -1079,7 +1131,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			int targetBarsAgo;
 
 			if (!intrabarTargetHitLong &&
-				TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, out targetPrice, out targetBarsAgo))
+				TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo))
 			{
 				targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
 				intrabarTargetPriceLong = targetPrice;
@@ -1088,7 +1140,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			if (!intrabarTargetHitShort &&
-				TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, out targetPrice, out targetBarsAgo))
+				TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo))
 			{
 				targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
 				intrabarTargetPriceShort = targetPrice;
@@ -1238,6 +1290,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return invalidateIfTargetHitBeforeEntry; }
 			set { invalidateIfTargetHitBeforeEntry = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Min TP/SL Distance (Points)", GroupName = "Trade Config", Order = 7)]
+		public double MinTpSlDistancePoints
+		{
+			get { return minTpSlDistancePoints; }
+			set { minTpSlDistancePoints = value; }
 		}
 
 		[NinjaScriptProperty]
