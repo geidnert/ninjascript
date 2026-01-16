@@ -38,6 +38,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int fvgCounter;
 		private Brush fvgFill;
 		private int fvgOpacity;
+		private Brush invalidatedFill;
+		private int invalidatedOpacity;
 		private bool showInvalidatedFvgs;
 
 		protected override void OnStateChange()
@@ -48,6 +50,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Name = "IFVG";
 				IsOverlay = true;
 				fvgOpacity = 10;
+				invalidatedOpacity = 5;
 				showInvalidatedFvgs = true;
 			}
 			else if (State == State.Configure)
@@ -62,6 +65,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				fvgFill = Brushes.DodgerBlue;
 				if (fvgFill.CanFreeze)
 					fvgFill.Freeze();
+				invalidatedFill = Brushes.Gray;
+				if (invalidatedFill.CanFreeze)
+					invalidatedFill.Freeze();
 			}
 		}
 
@@ -118,6 +124,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 					fvg.IsActive = false;
 					if (!ShowInvalidatedFvgs)
 						RemoveDrawObject(fvg.Tag);
+					else
+						Draw.Rectangle(
+							this,
+							fvg.Tag,
+							false,
+							startBarsAgo,
+							fvg.Lower,
+							endBarsAgo,
+							fvg.Upper,
+							Brushes.Transparent,
+							invalidatedFill,
+							invalidatedOpacity
+						);
 				}
 			}
 		}
@@ -158,7 +177,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		#region Properties
 		[NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "ShowInvalidatedFvgs", GroupName = "NinjaScriptParameters", Order = 0)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Show Inversed FVGs", GroupName = "NinjaScriptParameters", Order = 0)]
 		public bool ShowInvalidatedFvgs
 		{
 			get { return showInvalidatedFvgs; }
