@@ -523,7 +523,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Asia Session Start", GroupName = "Liquidity", Order = 0)]
+		[Display(Name = "Asia Session Start", GroupName = "Session Liquidity", Order = 0)]
 		public TimeSpan AsiaSessionStart
 		{
 			get { return asiaSessionStart; }
@@ -531,7 +531,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Asia Session End", GroupName = "Liquidity", Order = 1)]
+		[Display(Name = "Asia Session End", GroupName = "Session Liquidity", Order = 1)]
 		public TimeSpan AsiaSessionEnd
 		{
 			get { return asiaSessionEnd; }
@@ -539,7 +539,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "London Session Start", GroupName = "Liquidity", Order = 2)]
+		[Display(Name = "London Session Start", GroupName = "Session Liquidity", Order = 2)]
 		public TimeSpan LondonSessionStart
 		{
 			get { return londonSessionStart; }
@@ -547,7 +547,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "London Session End", GroupName = "Liquidity", Order = 3)]
+		[Display(Name = "London Session End", GroupName = "Session Liquidity", Order = 3)]
 		public TimeSpan LondonSessionEnd
 		{
 			get { return londonSessionEnd; }
@@ -555,7 +555,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Session Draw Limit", GroupName = "Liquidity", Order = 4)]
+		[Display(Name = "Session Draw Limit", GroupName = "Session Liquidity", Order = 4)]
 		public int SessionDrawLimit
 		{
 			get { return sessionDrawLimit; }
