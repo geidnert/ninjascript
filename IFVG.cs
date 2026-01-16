@@ -524,6 +524,52 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return best;
 		}
 
+		private double? GetNthBullishPivotHighAboveEntry(double entryPrice, int occurrence)
+		{
+			int found = 0;
+
+			for (int barsAgo = 1; barsAgo < CurrentBar; barsAgo++)
+			{
+				if (barsAgo + 1 > CurrentBar)
+					break;
+				if (Close[barsAgo] <= Open[barsAgo])
+					continue;
+				if (High[barsAgo] <= High[barsAgo - 1] || High[barsAgo] <= High[barsAgo + 1])
+					continue;
+				if (High[barsAgo] <= entryPrice)
+					continue;
+
+				found++;
+				if (found == occurrence)
+					return High[barsAgo];
+			}
+
+			return null;
+		}
+
+		private double? GetNthBearishPivotLowBelowEntry(double entryPrice, int occurrence)
+		{
+			int found = 0;
+
+			for (int barsAgo = 1; barsAgo < CurrentBar; barsAgo++)
+			{
+				if (barsAgo + 1 > CurrentBar)
+					break;
+				if (Close[barsAgo] >= Open[barsAgo])
+					continue;
+				if (Low[barsAgo] >= Low[barsAgo - 1] || Low[barsAgo] >= Low[barsAgo + 1])
+					continue;
+				if (Low[barsAgo] >= entryPrice)
+					continue;
+
+				found++;
+				if (found == occurrence)
+					return Low[barsAgo];
+			}
+
+			return null;
+		}
+
 		private void TryEnterFromIfvg(TradeDirection direction)
 		{
 			if (State == State.Historical && !EnableHistoricalTrading)
@@ -547,17 +593,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 
 			double entryPrice = Close[0];
-			double? targetPrice = GetClosestLiquidityTarget(direction, entryPrice);
+			const int tpOccurrence = 1;
+			const int slOccurrence = 1;
+			double? targetPrice = direction == TradeDirection.Long
+				? GetNthBullishPivotHighAboveEntry(entryPrice, tpOccurrence)
+				: GetNthBearishPivotLowBelowEntry(entryPrice, tpOccurrence);
 			if (!targetPrice.HasValue)
 			{
-				LogDebug(string.Format("Entry blocked: no target for {0} at {1}", direction, entryPrice));
+				LogDebug(string.Format("Entry blocked: no pivot target for {0} at {1}", direction, entryPrice));
 				return;
 			}
 
-			double? stopPrice = GetClosestStopLevel(direction, entryPrice);
+			double? stopPrice = direction == TradeDirection.Long
+				? GetNthBearishPivotLowBelowEntry(entryPrice, slOccurrence)
+				: GetNthBullishPivotHighAboveEntry(entryPrice, slOccurrence);
 			if (!stopPrice.HasValue)
 			{
-				LogDebug(string.Format("Entry blocked: no stop for {0} at {1}", direction, entryPrice));
+				LogDebug(string.Format("Entry blocked: no pivot stop for {0} at {1}", direction, entryPrice));
 				return;
 			}
 
