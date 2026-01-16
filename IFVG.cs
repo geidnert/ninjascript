@@ -46,6 +46,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double minFvgSizePoints;
 		private double maxFvgSizePoints;
 		private int fvgDrawLimit;
+		private bool combineFvgSeries;
 		private TimeSpan asiaSessionStart = new TimeSpan(20, 0, 0);
 		private TimeSpan asiaSessionEnd = new TimeSpan(0, 0, 0);
 		private TimeSpan londonSessionStart = new TimeSpan(2, 0, 0);
@@ -136,6 +137,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LondonSessionStart = londonSessionStart;
 				LondonSessionEnd = londonSessionEnd;
 				fvgDrawLimit = 2;
+				combineFvgSeries = false;
 				sessionDrawLimit = 2;
 				swingStrength = 10;
 				swingDrawBars = 300;
@@ -745,6 +747,50 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 		}
 
+		private bool TryCombineWithPreviousFvg(FvgBox newFvg)
+		{
+			if (!CombineFvgSeries)
+				return false;
+			if (activeFvgs.Count == 0)
+				return false;
+
+			FvgBox lastFvg = activeFvgs[activeFvgs.Count - 1];
+			if (!lastFvg.IsActive)
+				return false;
+			if (lastFvg.IsBullish != newFvg.IsBullish)
+				return false;
+			if (lastFvg.SessionDate != newFvg.SessionDate)
+				return false;
+			if (newFvg.StartBarIndex != lastFvg.StartBarIndex + 1)
+				return false;
+
+			lastFvg.Lower = Math.Min(lastFvg.Lower, newFvg.Lower);
+			lastFvg.Upper = Math.Max(lastFvg.Upper, newFvg.Upper);
+			lastFvg.EndBarIndex = newFvg.EndBarIndex;
+
+			int startBarsAgo = CurrentBar - lastFvg.StartBarIndex;
+			int endBarsAgo = CurrentBar - lastFvg.EndBarIndex;
+			if (startBarsAgo < 0)
+				startBarsAgo = 0;
+			if (endBarsAgo < 0)
+				endBarsAgo = 0;
+
+			Draw.Rectangle(
+				this,
+				lastFvg.Tag,
+				false,
+				startBarsAgo,
+				lastFvg.Lower,
+				endBarsAgo,
+				lastFvg.Upper,
+				Brushes.Transparent,
+				fvgFill,
+				fvgOpacity
+			);
+
+			return true;
+		}
+
 		private void DetectNewFvg()
 		{
 			// FVG detection uses the 3-bar displacement: bar[2] -> bar[0].
@@ -768,6 +814,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
 				return;
 			if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
+				return;
+
+			if (TryCombineWithPreviousFvg(fvg))
 				return;
 
 			activeFvgs.Add(fvg);
@@ -834,6 +883,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return fvgDrawLimit; }
 			set { fvgDrawLimit = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Combine FVG Series", GroupName = "FVG", Order = 4)]
+		public bool CombineFvgSeries
+		{
+			get { return combineFvgSeries; }
+			set { combineFvgSeries = value; }
 		}
 
 		[NinjaScriptProperty]
