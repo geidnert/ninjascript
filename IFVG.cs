@@ -142,7 +142,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				useSwingLiquiditySweep = true;
 				useSessionLiquiditySweep = true;
 				maxBarsBetweenSweepAndIfvg = 20;
-				enableHistoricalTrading = true;
+				enableHistoricalTrading = false;
 				lastEntryBar = -1;
 			}
 			else if (State == State.Configure)
