@@ -424,19 +424,55 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LiquidityLine line = liquidityLines[i];
 				if (!line.IsActive)
 					continue;
-				if (direction == TradeDirection.Long && !line.IsHigh)
-					continue;
-				if (direction == TradeDirection.Short && line.IsHigh)
-					continue;
-
-				if (direction == TradeDirection.Long && line.Price > entryPrice)
+				if (direction == TradeDirection.Long && line.IsHigh)
 				{
-					if (!best.HasValue || line.Price < best.Value)
+					if (line.Price > entryPrice && (!best.HasValue || line.Price < best.Value))
 						best = line.Price;
 				}
-				else if (direction == TradeDirection.Short && line.Price < entryPrice)
+				else if (direction == TradeDirection.Short && !line.IsHigh)
 				{
-					if (!best.HasValue || line.Price > best.Value)
+					if (line.Price < entryPrice && (!best.HasValue || line.Price > best.Value))
+						best = line.Price;
+				}
+			}
+
+			for (int i = 0; i < swingLines.Count; i++)
+			{
+				SwingLine line = swingLines[i];
+				if (!line.IsActive)
+					continue;
+				if (direction == TradeDirection.Long && line.IsHigh)
+				{
+					if (line.Price > entryPrice && (!best.HasValue || line.Price < best.Value))
+						best = line.Price;
+				}
+				else if (direction == TradeDirection.Short && !line.IsHigh)
+				{
+					if (line.Price < entryPrice && (!best.HasValue || line.Price > best.Value))
+						best = line.Price;
+				}
+			}
+
+			return best;
+		}
+
+		private double? GetClosestStopLevel(TradeDirection direction, double entryPrice)
+		{
+			double? best = null;
+
+			for (int i = 0; i < liquidityLines.Count; i++)
+			{
+				LiquidityLine line = liquidityLines[i];
+				if (!line.IsActive)
+					continue;
+				if (direction == TradeDirection.Long && !line.IsHigh)
+				{
+					if (line.Price < entryPrice && (!best.HasValue || line.Price > best.Value))
+						best = line.Price;
+				}
+				else if (direction == TradeDirection.Short && line.IsHigh)
+				{
+					if (line.Price > entryPrice && (!best.HasValue || line.Price < best.Value))
 						best = line.Price;
 				}
 			}
@@ -447,18 +483,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (!line.IsActive)
 					continue;
 				if (direction == TradeDirection.Long && !line.IsHigh)
-					continue;
-				if (direction == TradeDirection.Short && line.IsHigh)
-					continue;
-
-				if (direction == TradeDirection.Long && line.Price > entryPrice)
 				{
-					if (!best.HasValue || line.Price < best.Value)
+					if (line.Price < entryPrice && (!best.HasValue || line.Price > best.Value))
 						best = line.Price;
 				}
-				else if (direction == TradeDirection.Short && line.Price < entryPrice)
+				else if (direction == TradeDirection.Short && line.IsHigh)
 				{
-					if (!best.HasValue || line.Price > best.Value)
+					if (line.Price > entryPrice && (!best.HasValue || line.Price < best.Value))
 						best = line.Price;
 				}
 			}
@@ -484,14 +515,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!targetPrice.HasValue)
 				return;
 
-			double stopPrice = sweep.Price;
-			if (direction == TradeDirection.Long && stopPrice >= entryPrice)
-				return;
-			if (direction == TradeDirection.Short && stopPrice <= entryPrice)
+			double? stopPrice = GetClosestStopLevel(direction, entryPrice);
+			if (!stopPrice.HasValue)
 				return;
 
 			string signalName = direction == TradeDirection.Long ? "IFVG_Long" : "IFVG_Short";
-			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
+			SetStopLoss(signalName, CalculationMode.Price, stopPrice.Value, false);
 			SetProfitTarget(signalName, CalculationMode.Price, targetPrice.Value);
 
 			if (direction == TradeDirection.Long)
