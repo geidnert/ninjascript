@@ -50,6 +50,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double London_MinC12Body { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Minimum Candle Body (Points)", Description = "Minimum body size per candle for the two entry candles", GroupName = "London Parameters", Order = 2)]
+        [Range(0, double.MaxValue)]
+        public double London_MinCandlePoints { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Maximum 1st+2nd Candle Body", GroupName = "London Parameters", Order = 2)]
         public double London_MaxC12Body { get; set; }
 
@@ -137,6 +142,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 1)]
         public double NewYork_MinC12Body { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Minimum Candle Body (Points)", Description = "Minimum body size per candle for the two entry candles", GroupName = "New York Parameters", Order = 2)]
+        [Range(0, double.MaxValue)]
+        public double NewYork_MinCandlePoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Maximum 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 2)]
@@ -348,6 +358,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool activeAutoShiftTimes;
         private double activeMinC12Body;
         private double activeMaxC12Body;
+        private double activeMinCandlePoints;
         private double activeOffsetPerc;
         private double activeTpPerc;
         private double activeCancelPerc;
@@ -439,6 +450,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // London
                 London_Contracts     = 2;
                 London_MinC12Body  = 13;
+                London_MinCandlePoints = 0;
                 London_MaxC12Body  = 112.5;
                 London_OffsetPerc  = 5.7;
                 London_TpPerc      = 31.7;
@@ -460,6 +472,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // New York
                 NewYork_Contracts     = 1;
                 NewYork_MinC12Body  = 19;
+                NewYork_MinCandlePoints = 1.5;
                 NewYork_MaxC12Body  = 132;
                 NewYork_OffsetPerc  = 0.2;
                 NewYork_TpPerc      = 28.3;
@@ -474,7 +487,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
                 NewYork_SkipStart = new TimeSpan(11, 45, 0);
-                NewYork_SkipEnd = new TimeSpan(13, 20, 0);
+                NewYork_SkipEnd = new TimeSpan(13, 15, 0);
                 NewYork_Skip2Start = new TimeSpan(0, 0, 0);
                 NewYork_Skip2End = new TimeSpan(0, 0, 0);
 
@@ -496,12 +509,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
-                heartbeatId = BuildHeartbeatId();
-                //--- Heartbeat timer setup ---
-                heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
-                heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
-                heartbeatTimer.AutoReset = true;
-                heartbeatTimer.Start();
+                // heartbeatId = BuildHeartbeatId();
+                // //--- Heartbeat timer setup ---
+                // heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
+                // heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
+                // heartbeatTimer.AutoReset = true;
+                // heartbeatTimer.Start();
 
                 ApplyStopLossPreset(London_SLPresetSetting);
             }
@@ -512,12 +525,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (State == State.Terminated)
             {
                 //--- Clean up heartbeat timer ---
-                if (heartbeatTimer != null)
-                {
-                    heartbeatTimer.Stop();
-                    heartbeatTimer.Dispose();
-                    heartbeatTimer = null;
-                }
+                // if (heartbeatTimer != null)
+                // {
+                //     heartbeatTimer.Stop();
+                //     heartbeatTimer.Dispose();
+                //     heartbeatTimer = null;
+                // }
             }
         }
 
@@ -798,6 +811,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 				bool shouldLog = debug && (validBull || validBear);
                 if (!validBull && !validBear)
                     return;
+
+                double c1Body = Math.Abs(c1Close - c1Open);
+                double c2Body = Math.Abs(c2Close - c2Open);
+                if (activeMinCandlePoints > 0 && (c1Body < activeMinCandlePoints || c2Body < activeMinCandlePoints))
+                {
+                    Print($"\n{Time[0]} - 🚫 Skipping signals: candle body below min {activeMinCandlePoints:0.00}. C1={c1Body:0.00}, C2={c2Body:0.00}");
+                    return;
+                }
 
                 double c12Body = Math.Abs(c2Close - c1Open);
 
@@ -2307,7 +2328,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? $"{BarsPeriod.BarsPeriodType}-{BarsPeriod.Value}"
                 : "NoBars";
 
-            string configKey = $"{activeContracts}-{activeOffsetPerc}-{activeTpPerc}-{activeCancelPerc}-{activeDeviationPerc}-{activeSLPadding}-{activeSLPresetSetting}";
+            string configKey = $"{activeContracts}-{activeOffsetPerc}-{activeTpPerc}-{activeCancelPerc}-{activeDeviationPerc}-{activeSLPadding}-{activeSLPresetSetting}-{activeMinCandlePoints}";
 
             string raw = $"{baseName}-{instrumentName}-{barsInfo}-{accountName}-{configKey}";
             return raw.Replace(",", "_").Replace(Environment.NewLine, " ").Trim();
@@ -2552,6 +2573,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeContracts = London_Contracts;
                     activeMinC12Body  = London_MinC12Body;
                     activeMaxC12Body  = London_MaxC12Body;
+                    activeMinCandlePoints = London_MinCandlePoints;
                     activeOffsetPerc  = London_OffsetPerc;
                     activeTpPerc      = London_TpPerc;
                     activeCancelPerc  = London_CancelPerc;
@@ -2575,6 +2597,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeContracts = NewYork_Contracts;
                     activeMinC12Body  = NewYork_MinC12Body;
                     activeMaxC12Body  = NewYork_MaxC12Body;
+                    activeMinCandlePoints = NewYork_MinCandlePoints;
                     activeOffsetPerc  = NewYork_OffsetPerc;
                     activeTpPerc      = NewYork_TpPerc;
                     activeCancelPerc  = NewYork_CancelPerc;
