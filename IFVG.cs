@@ -12,6 +12,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using System.Xml.Serialization;
+using NinjaTrader.Gui;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript.Indicators;
 using NinjaTrader.NinjaScript.DrawingTools;
@@ -43,6 +44,40 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool showInvalidatedFvgs;
 		private double minFvgSizePoints;
 		private double maxFvgSizePoints;
+		private TimeSpan asiaSessionStart = new TimeSpan(18, 0, 0);
+		private TimeSpan asiaSessionEnd = new TimeSpan(0, 0, 0);
+		private TimeSpan londonSessionStart = new TimeSpan(0, 0, 0);
+		private TimeSpan londonSessionEnd = new TimeSpan(6, 0, 0);
+		private Brush asiaLineBrush;
+		private Brush londonLineBrush;
+		private List<LiquidityLine> liquidityLines;
+		private SessionLiquidityState asiaState;
+		private SessionLiquidityState londonState;
+
+		private class LiquidityLine
+		{
+			public string Tag;
+			public string Label;
+			public double Price;
+			public int StartBarIndex;
+			public int EndBarIndex;
+			public bool IsActive;
+			public bool IsArmed;
+			public bool IsHigh;
+			public Brush Brush;
+		}
+
+		private class SessionLiquidityState
+		{
+			public string Name;
+			public bool InSession;
+			public int SessionStartBarIndex;
+			public double SessionHigh;
+			public double SessionLow;
+			public DateTime SessionStartDate;
+			public LiquidityLine HighLine;
+			public LiquidityLine LowLine;
+		}
 
 		protected override void OnStateChange()
 		{
@@ -56,6 +91,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				showInvalidatedFvgs = false;
 				minFvgSizePoints = 0;
 				maxFvgSizePoints = 0;
+				AsiaSessionStart = asiaSessionStart;
+				AsiaSessionEnd = asiaSessionEnd;
+				LondonSessionStart = londonSessionStart;
+				LondonSessionEnd = londonSessionEnd;
 			}
 			else if (State == State.Configure)
 			{
@@ -72,6 +111,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				invalidatedFill = Brushes.Gray;
 				if (invalidatedFill.CanFreeze)
 					invalidatedFill.Freeze();
+				asiaLineBrush = Brushes.DarkCyan;
+				if (asiaLineBrush.CanFreeze)
+					asiaLineBrush.Freeze();
+				londonLineBrush = Brushes.DarkOrange;
+				if (londonLineBrush.CanFreeze)
+					londonLineBrush.Freeze();
+				liquidityLines = new List<LiquidityLine>();
+				asiaState = new SessionLiquidityState { Name = "Asia" };
+				londonState = new SessionLiquidityState { Name = "London" };
 			}
 		}
 
@@ -83,8 +131,173 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (CurrentBar < 2)
 				return;
 
+			UpdateLiquidity();
 			UpdateActiveFvgs();
 			DetectNewFvg();
+		}
+
+		private void UpdateLiquidity()
+		{
+			DateTime barTime = Time[0];
+			ProcessSession(asiaState, barTime, AsiaSessionStart, AsiaSessionEnd, asiaLineBrush);
+			ProcessSession(londonState, barTime, LondonSessionStart, LondonSessionEnd, londonLineBrush);
+			UpdateLiquidityLines();
+		}
+
+		private void ProcessSession(
+			SessionLiquidityState state,
+			DateTime barTime,
+			TimeSpan sessionStart,
+			TimeSpan sessionEnd,
+			Brush lineBrush)
+		{
+			bool inSession = IsTimeInRange(barTime.TimeOfDay, sessionStart, sessionEnd);
+
+			if (!state.InSession && inSession)
+			{
+				state.InSession = true;
+				state.SessionStartDate = GetSessionStartDate(barTime, sessionStart, sessionEnd);
+				state.SessionStartBarIndex = CurrentBar;
+				state.SessionHigh = High[0];
+				state.SessionLow = Low[0];
+				state.HighLine = CreateLiquidityLine(state, true, lineBrush);
+				state.LowLine = CreateLiquidityLine(state, false, lineBrush);
+			}
+
+			if (inSession)
+			{
+				if (High[0] > state.SessionHigh)
+				{
+					state.SessionHigh = High[0];
+					if (state.HighLine != null)
+						state.HighLine.Price = state.SessionHigh;
+				}
+
+				if (Low[0] < state.SessionLow)
+				{
+					state.SessionLow = Low[0];
+					if (state.LowLine != null)
+						state.LowLine.Price = state.SessionLow;
+				}
+
+				if (state.HighLine != null)
+					state.HighLine.EndBarIndex = CurrentBar;
+				if (state.LowLine != null)
+					state.LowLine.EndBarIndex = CurrentBar;
+			}
+
+			if (state.InSession && !inSession)
+			{
+				state.InSession = false;
+				if (state.HighLine != null)
+					state.HighLine.IsArmed = true;
+				if (state.LowLine != null)
+					state.LowLine.IsArmed = true;
+			}
+		}
+
+		private LiquidityLine CreateLiquidityLine(SessionLiquidityState state, bool isHigh, Brush lineBrush)
+		{
+			string tag = string.Format(
+				"IFVG_{0}_{1}_{2:yyyyMMdd}",
+				state.Name,
+				isHigh ? "High" : "Low",
+				state.SessionStartDate);
+
+			LiquidityLine line = new LiquidityLine
+			{
+				Tag = tag,
+				Label = GetLiquidityLabel(state.Name, isHigh),
+				Price = isHigh ? state.SessionHigh : state.SessionLow,
+				StartBarIndex = state.SessionStartBarIndex,
+				EndBarIndex = CurrentBar,
+				IsActive = true,
+				IsArmed = false,
+				IsHigh = isHigh,
+				Brush = lineBrush
+			};
+
+			liquidityLines.Add(line);
+			return line;
+		}
+
+		private void UpdateLiquidityLines()
+		{
+			for (int i = 0; i < liquidityLines.Count; i++)
+			{
+				LiquidityLine line = liquidityLines[i];
+				if (!line.IsActive)
+					continue;
+
+				bool hit = line.IsArmed &&
+					(line.IsHigh ? High[0] >= line.Price : Low[0] <= line.Price);
+
+				line.EndBarIndex = CurrentBar;
+
+				int startBarsAgo = CurrentBar - line.StartBarIndex;
+				int endBarsAgo = CurrentBar - line.EndBarIndex;
+				if (startBarsAgo < 0)
+					startBarsAgo = 0;
+				if (endBarsAgo < 0)
+					endBarsAgo = 0;
+
+				Draw.Line(
+					this,
+					line.Tag,
+					false,
+					startBarsAgo,
+					line.Price,
+					endBarsAgo,
+					line.Price,
+					line.Brush,
+					DashStyleHelper.Solid,
+					1
+				);
+
+				Draw.Text(
+					this,
+					line.Tag + "_Lbl",
+					false,
+					line.Label,
+					endBarsAgo,
+					line.Price,
+					0,
+					line.Brush,
+					new SimpleFont("Arial", 10),
+					TextAlignment.Left,
+					Brushes.Transparent,
+					Brushes.Transparent,
+					0
+				);
+
+				if (hit)
+					line.IsActive = false;
+			}
+		}
+
+		private static bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
+		{
+			if (start == end)
+				return false;
+			if (start < end)
+				return now >= start && now < end;
+			return now >= start || now < end;
+		}
+
+		private static DateTime GetSessionStartDate(DateTime barTime, TimeSpan start, TimeSpan end)
+		{
+			if (start < end)
+				return barTime.Date;
+			return barTime.TimeOfDay < end ? barTime.Date.AddDays(-1) : barTime.Date;
+		}
+
+		private static string GetLiquidityLabel(string sessionName, bool isHigh)
+		{
+			if (string.Equals(sessionName, "Asia", StringComparison.OrdinalIgnoreCase))
+				return isHigh ? "AH" : "AL";
+			if (string.Equals(sessionName, "London", StringComparison.OrdinalIgnoreCase))
+				return isHigh ? "LH" : "LL";
+			return isHigh ? "H" : "L";
 		}
 
 		private void UpdateActiveFvgs()
@@ -208,6 +421,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return maxFvgSizePoints; }
 			set { maxFvgSizePoints = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Asia Session Start", GroupName = "Liquidity", Order = 0)]
+		public TimeSpan AsiaSessionStart
+		{
+			get { return asiaSessionStart; }
+			set { asiaSessionStart = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Asia Session End", GroupName = "Liquidity", Order = 1)]
+		public TimeSpan AsiaSessionEnd
+		{
+			get { return asiaSessionEnd; }
+			set { asiaSessionEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "London Session Start", GroupName = "Liquidity", Order = 2)]
+		public TimeSpan LondonSessionStart
+		{
+			get { return londonSessionStart; }
+			set { londonSessionStart = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "London Session End", GroupName = "Liquidity", Order = 3)]
+		public TimeSpan LondonSessionEnd
+		{
+			get { return londonSessionEnd; }
+			set { londonSessionEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
 		}
 
 		#endregion
