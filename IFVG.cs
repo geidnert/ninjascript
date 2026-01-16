@@ -69,6 +69,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private SweepEvent lastSwingSweep;
 		private SweepEvent lastSessionSweep;
 		private bool debugLogging;
+		private bool verboseDebugLogging;
+		private MarketPosition lastMarketPosition;
 
 		private enum TradeDirection
 		{
@@ -148,6 +150,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				enableHistoricalTrading = false;
 				lastEntryBar = -1;
 				debugLogging = false;
+				verboseDebugLogging = false;
+				lastMarketPosition = MarketPosition.Flat;
 			}
 			else if (State == State.Configure)
 			{
@@ -383,6 +387,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void RegisterSweep(TradeDirection direction, double price, bool isSession)
 		{
+			SweepEvent existing = isSession ? lastSessionSweep : lastSwingSweep;
+			if (existing != null &&
+				existing.Direction == direction &&
+				existing.Price == price &&
+				existing.BarIndex == CurrentBar)
+				return;
+
 			SweepEvent sweep = new SweepEvent
 			{
 				Direction = direction,
@@ -834,8 +845,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (invalidated)
 				{
-					LogDebug(string.Format(
-						"IFVG invalidated {0} tag={1} lower={2} upper={3}",
+					LogTradeSeparator(string.Format(
+						"ENTRY ATTEMPT {0} tag={1} lower={2} upper={3}",
 						fvg.IsBullish ? "bullish" : "bearish",
 						fvg.Tag,
 						fvg.Lower,
@@ -883,7 +894,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			lastFvg.Upper = Math.Max(lastFvg.Upper, newFvg.Upper);
 			lastFvg.EndBarIndex = newFvg.EndBarIndex;
 
-			LogDebug(string.Format(
+			LogVerbose(string.Format(
 				"Combined FVGs into tag={0} lower={1} upper={2} endBar={3}",
 				lastFvg.Tag,
 				lastFvg.Lower,
@@ -922,7 +933,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!bullishFvg && !bearishFvg)
 				return;
 
-			LogDebug(string.Format(
+			LogVerbose(string.Format(
 				"FVG detected {0} low0={1} high2={2} high0={3} low2={4}",
 				bullishFvg ? "bullish" : "bearish",
 				Low[0],
@@ -943,12 +954,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
 			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
 			{
-				LogDebug(string.Format("FVG rejected: size {0} < min {1}", fvgSizePoints, MinFvgSizePoints));
+				LogVerbose(string.Format("FVG rejected: size {0} < min {1}", fvgSizePoints, MinFvgSizePoints));
 				return;
 			}
 			if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
 			{
-				LogDebug(string.Format("FVG rejected: size {0} > max {1}", fvgSizePoints, MaxFvgSizePoints));
+				LogVerbose(string.Format("FVG rejected: size {0} > max {1}", fvgSizePoints, MaxFvgSizePoints));
 				return;
 			}
 
@@ -970,7 +981,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				fvgOpacity
 			);
 
-			LogDebug(string.Format(
+			LogVerbose(string.Format(
 				"FVG added tag={0} lower={1} upper={2} startBar={3} endBar={4}",
 				fvg.Tag,
 				fvg.Lower,
@@ -984,6 +995,50 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!DebugLogging)
 				return;
 			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
+		}
+
+		private void LogVerbose(string message)
+		{
+			if (!DebugLogging || !VerboseDebugLogging)
+				return;
+			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
+		}
+
+		private void LogTradeSeparator(string message)
+		{
+			if (!DebugLogging)
+				return;
+			Print(string.Empty);
+			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
+		}
+
+		protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
+		{
+			if (!DebugLogging)
+				return;
+
+			if (lastMarketPosition != marketPosition)
+			{
+				if (marketPosition == MarketPosition.Flat)
+				{
+					LogTradeSeparator(string.Format(
+						"EXIT filled price={0} qty={1} order={2}",
+						price,
+						quantity,
+						execution != null && execution.Order != null ? execution.Order.Name : "n/a"));
+				}
+				else
+				{
+					LogTradeSeparator(string.Format(
+						"ENTRY filled {0} price={1} qty={2} order={3}",
+						marketPosition,
+						price,
+						quantity,
+						execution != null && execution.Order != null ? execution.Order.Name : "n/a"));
+				}
+			}
+
+			lastMarketPosition = marketPosition;
 		}
 
 		private void PruneFvgs(int drawLimitDays)
@@ -1082,6 +1137,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return debugLogging; }
 			set { debugLogging = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Verbose Debug Logging", GroupName = "Trade Config", Order = 5)]
+		public bool VerboseDebugLogging
+		{
+			get { return verboseDebugLogging; }
+			set { verboseDebugLogging = value; }
 		}
 
 		[NinjaScriptProperty]
