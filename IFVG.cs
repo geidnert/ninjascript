@@ -70,6 +70,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private SweepEvent lastSessionSweep;
 		private bool debugLogging;
 		private bool verboseDebugLogging;
+		private bool invalidateIfTargetHitBeforeEntry;
 		private MarketPosition lastMarketPosition;
 
 		private enum TradeDirection
@@ -151,6 +152,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				lastEntryBar = -1;
 				debugLogging = false;
 				verboseDebugLogging = false;
+				invalidateIfTargetHitBeforeEntry = false;
 				lastMarketPosition = MarketPosition.Flat;
 			}
 			else if (State == State.Configure)
@@ -618,6 +620,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!hasTarget)
 			{
 				LogDebug(string.Format("Entry blocked: no pivot target for {0} at {1}", direction, entryPrice));
+				return;
+			}
+
+			if (InvalidateIfTargetHitBeforeEntry &&
+				(direction == TradeDirection.Long ? High[0] >= targetPrice : Low[0] <= targetPrice))
+			{
+				LogDebug(string.Format(
+					"Entry blocked: target hit before close for {0} at {1} target={2}",
+					direction,
+					entryPrice,
+					targetPrice));
 				return;
 			}
 
@@ -1145,6 +1158,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return verboseDebugLogging; }
 			set { verboseDebugLogging = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Invalidate If Target Hit Before Entry", GroupName = "Trade Config", Order = 6)]
+		public bool InvalidateIfTargetHitBeforeEntry
+		{
+			get { return invalidateIfTargetHitBeforeEntry; }
+			set { invalidateIfTargetHitBeforeEntry = value; }
 		}
 
 		[NinjaScriptProperty]
