@@ -128,7 +128,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				IsOverlay = true;
 				fvgOpacity = 10;
 				invalidatedOpacity = 5;
-				showInvalidatedFvgs = false;
+				showInvalidatedFvgs = true;
 				minFvgSizePoints = 10;
 				maxFvgSizePoints = 50;
 				AsiaSessionStart = asiaSessionStart;
