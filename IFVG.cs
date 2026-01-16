@@ -56,6 +56,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private SessionLiquidityState asiaState;
 		private SessionLiquidityState londonState;
 		private int sessionDrawLimit;
+		private int swingStrength;
+		private int swingDrawBars;
+		private Brush swingLineBrush;
+		private List<SwingLine> swingLines;
 
 		private class LiquidityLine
 		{
@@ -85,6 +89,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 			public LiquidityLine LowLine;
 		}
 
+		private class SwingLine
+		{
+			public string Tag;
+			public double Price;
+			public int StartBarIndex;
+			public int EndBarIndex;
+			public bool IsActive;
+			public bool IsHigh;
+		}
+
 		protected override void OnStateChange()
 		{
 			if (State == State.SetDefaults)
@@ -103,6 +117,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LondonSessionEnd = londonSessionEnd;
 				fvgDrawLimit = 2;
 				sessionDrawLimit = 2;
+				swingStrength = 5;
+				swingDrawBars = 300;
 			}
 			else if (State == State.Configure)
 			{
@@ -128,6 +144,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				liquidityLines = new List<LiquidityLine>();
 				asiaState = new SessionLiquidityState { Name = "Asia" };
 				londonState = new SessionLiquidityState { Name = "London" };
+				swingLineBrush = Brushes.DimGray;
+				if (swingLineBrush.CanFreeze)
+					swingLineBrush.Freeze();
+				swingLines = new List<SwingLine>();
 			}
 		}
 
@@ -141,6 +161,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			UpdateLiquidity();
 			UpdateFvgs();
+			UpdateSwingLiquidity();
 		}
 
 		private void UpdateFvgs()
@@ -373,6 +394,114 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return isHigh ? "H" : "L";
 		}
 
+		private void UpdateSwingLiquidity()
+		{
+			if (SwingDrawBars <= 0)
+			{
+				if (swingLines.Count > 0)
+				{
+					for (int i = 0; i < swingLines.Count; i++)
+						RemoveDrawObject(swingLines[i].Tag);
+					swingLines.Clear();
+				}
+				return;
+			}
+
+			if (CurrentBar < SwingStrength * 2)
+				return;
+
+			int pivotBarsAgo = SwingStrength;
+			if (IsSwingHigh(pivotBarsAgo))
+				AddSwingLine(true, pivotBarsAgo, High[pivotBarsAgo]);
+			if (IsSwingLow(pivotBarsAgo))
+				AddSwingLine(false, pivotBarsAgo, Low[pivotBarsAgo]);
+
+			UpdateSwingLines();
+			PruneSwingLines();
+		}
+
+		private bool IsSwingHigh(int barsAgo)
+		{
+			int span = barsAgo * 2 + 1;
+			double max = MAX(High, span)[0];
+			return High[barsAgo] >= max;
+		}
+
+		private bool IsSwingLow(int barsAgo)
+		{
+			int span = barsAgo * 2 + 1;
+			double min = MIN(Low, span)[0];
+			return Low[barsAgo] <= min;
+		}
+
+		private void AddSwingLine(bool isHigh, int barsAgo, double price)
+		{
+			int startBarIndex = CurrentBar - barsAgo;
+			string tag = string.Format("IFVG_Swing_{0}_{1}", isHigh ? "H" : "L", startBarIndex);
+
+			SwingLine line = new SwingLine
+			{
+				Tag = tag,
+				Price = price,
+				StartBarIndex = startBarIndex,
+				EndBarIndex = CurrentBar,
+				IsActive = true,
+				IsHigh = isHigh
+			};
+
+			swingLines.Add(line);
+		}
+
+		private void UpdateSwingLines()
+		{
+			for (int i = 0; i < swingLines.Count; i++)
+			{
+				SwingLine line = swingLines[i];
+				if (!line.IsActive)
+					continue;
+
+				bool hit = line.IsHigh ? High[0] >= line.Price : Low[0] <= line.Price;
+				line.EndBarIndex = CurrentBar;
+
+				int startBarsAgo = CurrentBar - line.StartBarIndex;
+				int endBarsAgo = CurrentBar - line.EndBarIndex;
+				if (startBarsAgo < 0)
+					startBarsAgo = 0;
+				if (endBarsAgo < 0)
+					endBarsAgo = 0;
+
+				Draw.Line(
+					this,
+					line.Tag,
+					false,
+					startBarsAgo,
+					line.Price,
+					endBarsAgo,
+					line.Price,
+					swingLineBrush,
+					DashStyleHelper.Solid,
+					1
+				);
+
+				if (hit)
+					line.IsActive = false;
+			}
+		}
+
+		private void PruneSwingLines()
+		{
+			int cutoffIndex = CurrentBar - SwingDrawBars;
+			for (int i = swingLines.Count - 1; i >= 0; i--)
+			{
+				SwingLine line = swingLines[i];
+				if (line.StartBarIndex < cutoffIndex)
+				{
+					RemoveDrawObject(line.Tag);
+					swingLines.RemoveAt(i);
+				}
+			}
+		}
+
 		private void UpdateActiveFvgs()
 		{
 			double bodyHigh = Math.Max(Open[0], Close[0]);
@@ -560,6 +689,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return sessionDrawLimit; }
 			set { sessionDrawLimit = value; }
+		}
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Swings", GroupName = "Liquidity", Order = 0)]
+		public int SwingStrength
+		{
+			get { return swingStrength; }
+			set { swingStrength = value; }
+		}
+
+		[Range(0, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Swing Draw Bars", GroupName = "Liquidity", Order = 1)]
+		public int SwingDrawBars
+		{
+			get { return swingDrawBars; }
+			set { swingDrawBars = value; }
 		}
 
 		#endregion
