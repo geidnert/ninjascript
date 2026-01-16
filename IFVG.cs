@@ -46,10 +46,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double minFvgSizePoints;
 		private double maxFvgSizePoints;
 		private int fvgDrawLimit;
-		private TimeSpan asiaSessionStart = new TimeSpan(18, 0, 0);
+		private TimeSpan asiaSessionStart = new TimeSpan(20, 0, 0);
 		private TimeSpan asiaSessionEnd = new TimeSpan(0, 0, 0);
-		private TimeSpan londonSessionStart = new TimeSpan(0, 0, 0);
-		private TimeSpan londonSessionEnd = new TimeSpan(6, 0, 0);
+		private TimeSpan londonSessionStart = new TimeSpan(2, 0, 0);
+		private TimeSpan londonSessionEnd = new TimeSpan(5, 0, 0);
 		private Brush asiaLineBrush;
 		private Brush londonLineBrush;
 		private List<LiquidityLine> liquidityLines;
@@ -60,6 +60,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int swingDrawBars;
 		private Brush swingLineBrush;
 		private List<SwingLine> swingLines;
+		private bool useSwingLiquiditySweep;
+		private bool useSessionLiquiditySweep;
+		private int maxBarsBetweenSweepAndIfvg;
+		private bool enableHistoricalTrading;
+		private int lastEntryBar;
+		private SweepEvent lastSwingSweep;
+		private SweepEvent lastSessionSweep;
+
+		private enum TradeDirection
+		{
+			Long,
+			Short
+		}
+
+		private class SweepEvent
+		{
+			public TradeDirection Direction;
+			public double Price;
+			public int BarIndex;
+		}
 
 		private class LiquidityLine
 		{
@@ -119,6 +139,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				sessionDrawLimit = 2;
 				swingStrength = 10;
 				swingDrawBars = 300;
+				useSwingLiquiditySweep = true;
+				useSessionLiquiditySweep = true;
+				maxBarsBetweenSweepAndIfvg = 20;
+				enableHistoricalTrading = false;
+				lastEntryBar = -1;
 			}
 			else if (State == State.Configure)
 			{
@@ -345,10 +370,136 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (hit)
 				{
+					RegisterSweep(line.IsHigh ? TradeDirection.Short : TradeDirection.Long, line.Price, true);
 					line.IsActive = false;
 					RemoveDrawObject(line.Tag + "_Lbl");
 				}
 			}
+		}
+
+		private void RegisterSweep(TradeDirection direction, double price, bool isSession)
+		{
+			SweepEvent sweep = new SweepEvent
+			{
+				Direction = direction,
+				Price = price,
+				BarIndex = CurrentBar
+			};
+
+			if (isSession)
+				lastSessionSweep = sweep;
+			else
+				lastSwingSweep = sweep;
+		}
+
+		private SweepEvent GetEligibleSweep(TradeDirection direction)
+		{
+			SweepEvent best = null;
+
+			if (useSessionLiquiditySweep && lastSessionSweep != null && lastSessionSweep.Direction == direction)
+				best = lastSessionSweep;
+
+			if (useSwingLiquiditySweep && lastSwingSweep != null && lastSwingSweep.Direction == direction)
+			{
+				if (best == null || lastSwingSweep.BarIndex > best.BarIndex)
+					best = lastSwingSweep;
+			}
+
+			if (best == null)
+				return null;
+
+			int barsSince = CurrentBar - best.BarIndex;
+			if (barsSince < 0 || barsSince > maxBarsBetweenSweepAndIfvg)
+				return null;
+
+			return best;
+		}
+
+		private double? GetClosestLiquidityTarget(TradeDirection direction, double entryPrice)
+		{
+			double? best = null;
+
+			for (int i = 0; i < liquidityLines.Count; i++)
+			{
+				LiquidityLine line = liquidityLines[i];
+				if (!line.IsActive)
+					continue;
+				if (direction == TradeDirection.Long && !line.IsHigh)
+					continue;
+				if (direction == TradeDirection.Short && line.IsHigh)
+					continue;
+
+				if (direction == TradeDirection.Long && line.Price > entryPrice)
+				{
+					if (!best.HasValue || line.Price < best.Value)
+						best = line.Price;
+				}
+				else if (direction == TradeDirection.Short && line.Price < entryPrice)
+				{
+					if (!best.HasValue || line.Price > best.Value)
+						best = line.Price;
+				}
+			}
+
+			for (int i = 0; i < swingLines.Count; i++)
+			{
+				SwingLine line = swingLines[i];
+				if (!line.IsActive)
+					continue;
+				if (direction == TradeDirection.Long && !line.IsHigh)
+					continue;
+				if (direction == TradeDirection.Short && line.IsHigh)
+					continue;
+
+				if (direction == TradeDirection.Long && line.Price > entryPrice)
+				{
+					if (!best.HasValue || line.Price < best.Value)
+						best = line.Price;
+				}
+				else if (direction == TradeDirection.Short && line.Price < entryPrice)
+				{
+					if (!best.HasValue || line.Price > best.Value)
+						best = line.Price;
+				}
+			}
+
+			return best;
+		}
+
+		private void TryEnterFromIfvg(TradeDirection direction)
+		{
+			if (State == State.Historical && !EnableHistoricalTrading)
+				return;
+			if (lastEntryBar == CurrentBar)
+				return;
+			if (Position.MarketPosition != MarketPosition.Flat)
+				return;
+
+			SweepEvent sweep = GetEligibleSweep(direction);
+			if (sweep == null)
+				return;
+
+			double entryPrice = Close[0];
+			double? targetPrice = GetClosestLiquidityTarget(direction, entryPrice);
+			if (!targetPrice.HasValue)
+				return;
+
+			double stopPrice = sweep.Price;
+			if (direction == TradeDirection.Long && stopPrice >= entryPrice)
+				return;
+			if (direction == TradeDirection.Short && stopPrice <= entryPrice)
+				return;
+
+			string signalName = direction == TradeDirection.Long ? "IFVG_Long" : "IFVG_Short";
+			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
+			SetProfitTarget(signalName, CalculationMode.Price, targetPrice.Value);
+
+			if (direction == TradeDirection.Long)
+				EnterLong(signalName);
+			else
+				EnterShort(signalName);
+
+			lastEntryBar = CurrentBar;
 		}
 
 		private void PruneLiquidityLines(int drawLimitDays)
@@ -484,7 +635,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				);
 
 				if (hit)
+				{
+					RegisterSweep(line.IsHigh ? TradeDirection.Short : TradeDirection.Long, line.Price, false);
 					line.IsActive = false;
+				}
 			}
 		}
 
@@ -540,6 +694,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (invalidated)
 				{
+					TradeDirection ifvgDirection = fvg.IsBullish ? TradeDirection.Short : TradeDirection.Long;
+					TryEnterFromIfvg(ifvgDirection);
 					fvg.IsActive = false;
 					if (!ShowInvalidatedFvgs)
 						RemoveDrawObject(fvg.Tag);
@@ -649,6 +805,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return fvgDrawLimit; }
 			set { fvgDrawLimit = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Use Swing Liquidity Sweep", GroupName = "Trade Config", Order = 0)]
+		public bool UseSwingLiquiditySweep
+		{
+			get { return useSwingLiquiditySweep; }
+			set { useSwingLiquiditySweep = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Use Session Liquidity Sweep", GroupName = "Trade Config", Order = 1)]
+		public bool UseSessionLiquiditySweep
+		{
+			get { return useSessionLiquiditySweep; }
+			set { useSessionLiquiditySweep = value; }
+		}
+
+		[Range(0, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Max Bars Between Sweep And IFVG", GroupName = "Trade Config", Order = 2)]
+		public int MaxBarsBetweenSweepAndIfvg
+		{
+			get { return maxBarsBetweenSweepAndIfvg; }
+			set { maxBarsBetweenSweepAndIfvg = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Enable Historical Trading", GroupName = "Trade Config", Order = 3)]
+		public bool EnableHistoricalTrading
+		{
+			get { return enableHistoricalTrading; }
+			set { enableHistoricalTrading = value; }
 		}
 
 		[NinjaScriptProperty]
