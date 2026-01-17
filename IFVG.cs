@@ -82,6 +82,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double entryIfvgLower;
 		private double entryIfvgUpper;
 		private TradeDirection? entryIfvgDirection;
+		private string pendingTradeTag;
+		private string activeTradeTag;
+		private string lastTradeLabelPrinted;
 
 		private enum TradeDirection
 		{
@@ -170,6 +173,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				entryIfvgLower = 0;
 				entryIfvgUpper = 0;
 				entryIfvgDirection = null;
+				pendingTradeTag = null;
+				activeTradeTag = null;
+				lastTradeLabelPrinted = null;
 			}
 			else if (State == State.Configure)
 			{
@@ -431,7 +437,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			else
 				lastSwingSweep = sweep;
 
-			LogDebug(string.Format(
+			LogVerbose(string.Format(
 				"Sweep registered {0} price={1} bar={2} source={3}",
 				direction,
 				price,
@@ -439,7 +445,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				isSession ? "session" : "swing"));
 		}
 
-		private SweepEvent GetEligibleSweep(TradeDirection direction)
+		private SweepEvent GetEligibleSweep(TradeDirection direction, string fvgTag)
 		{
 			SweepEvent best = null;
 
@@ -454,27 +460,27 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (best == null)
 			{
-				LogDebug(string.Format("No eligible sweep for {0}: none available", direction));
+				LogTrade(fvgTag, string.Format("BLOCKED (SweepMissing: {0})", direction), false);
 				return null;
 			}
 
 			int barsSince = CurrentBar - best.BarIndex;
 			if (barsSince < 0 || barsSince > maxBarsBetweenSweepAndIfvg)
 			{
-				LogDebug(string.Format(
-					"No eligible sweep for {0}: barsSince={1} max={2}",
+				LogTrade(fvgTag, string.Format(
+					"BLOCKED (SweepExpired: {0} barsSince={1} max={2})",
 					direction,
 					barsSince,
-					maxBarsBetweenSweepAndIfvg));
+					maxBarsBetweenSweepAndIfvg), false);
 				return null;
 			}
 
-			LogDebug(string.Format(
-				"Eligible sweep for {0}: price={1} bar={2} barsSince={3}",
+			LogTrade(fvgTag, string.Format(
+				"Eligible sweep {0} price={1} bar={2} barsSince={3}",
 				direction,
 				best.Price,
 				best.BarIndex,
-				barsSince));
+				barsSince), false);
 			return best;
 		}
 
@@ -614,25 +620,25 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return false;
 		}
 
-		private void TryEnterFromIfvg(TradeDirection direction, double fvgLower, double fvgUpper)
+		private void TryEnterFromIfvg(TradeDirection direction, double fvgLower, double fvgUpper, string fvgTag)
 		{
 			if (State == State.Historical && !EnableHistoricalTrading)
 			{
-				LogDebug("Entry blocked: historical trading disabled");
+				LogTrade(fvgTag, "BLOCKED (HistoricalDisabled)", false);
 				return;
 			}
 			if (lastEntryBar == CurrentBar)
 			{
-				LogDebug("Entry blocked: already entered this bar");
+				LogTrade(fvgTag, "BLOCKED (AlreadyEnteredThisBar)", false);
 				return;
 			}
 			if (Position.MarketPosition != MarketPosition.Flat)
 			{
-				LogDebug(string.Format("Entry blocked: position not flat ({0})", Position.MarketPosition));
+				LogTrade(fvgTag, string.Format("BLOCKED (PositionNotFlat: {0})", Position.MarketPosition), false);
 				return;
 			}
 
-			SweepEvent sweep = GetEligibleSweep(direction);
+			SweepEvent sweep = GetEligibleSweep(direction, fvgTag);
 			if (sweep == null)
 				return;
 
@@ -646,7 +652,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				: TryGetNthBearishPivotLowBelowEntry(entryPrice, tpOccurrence, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo);
 			if (!hasTarget)
 			{
-				LogDebug(string.Format("Entry blocked: no pivot target for {0} at {1}", direction, entryPrice));
+				LogTrade(fvgTag, string.Format("BLOCKED (NoTarget: {0} entry={1})", direction, entryPrice), false);
 				return;
 			}
 
@@ -658,11 +664,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 					? (intrabarTargetHitLong && Math.Abs(intrabarTargetPriceLong - targetPrice) <= Instrument.MasterInstrument.TickSize / 2.0)
 					: (intrabarTargetHitShort && Math.Abs(intrabarTargetPriceShort - targetPrice) <= Instrument.MasterInstrument.TickSize / 2.0)))
 			{
-				LogDebug(string.Format(
-					"Entry blocked: target hit intrabar before close for {0} at {1} target={2}",
+				LogTrade(fvgTag, string.Format(
+					"BLOCKED (TargetHitIntrabar: {0} entry={1} target={2})",
 					direction,
 					entryPrice,
-					targetPrice));
+					targetPrice), false);
 				return;
 			}
 
@@ -671,11 +677,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 					? (High[0] >= targetPrice || Close[0] >= targetPrice)
 					: (Low[0] <= targetPrice || Close[0] <= targetPrice)))
 			{
-				LogDebug(string.Format(
-					"Entry blocked: target hit before close for {0} at {1} target={2}",
+				LogTrade(fvgTag, string.Format(
+					"BLOCKED (TargetHitBeforeClose: {0} entry={1} target={2})",
 					direction,
 					entryPrice,
-					targetPrice));
+					targetPrice), false);
 				return;
 			}
 
@@ -718,20 +724,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 				{
 					stopPrice = fallbackStopPrice;
 					stopBarsAgo = fallbackStopBarsAgo;
-					LogDebug(string.Format(
-						"Using stop inside FVG for {0} at {1} stop={2} fvgLower={3} fvgUpper={4}",
+					LogTrade(fvgTag, string.Format(
+						"WARN StopInsideFVG {0} entry={1} stop={2} fvgLower={3} fvgUpper={4}",
 						direction,
 						entryPrice,
 						stopPrice,
 						fvgLower,
-						fvgUpper));
+						fvgUpper), false);
 				}
 				else
 				{
-					LogDebug(string.Format(
-						"Entry blocked: no pivot stop for {0} at {1}",
+					LogTrade(fvgTag, string.Format(
+						"BLOCKED (NoStop: {0} entry={1})",
 						direction,
-						entryPrice));
+						entryPrice), false);
 					return;
 				}
 			}
@@ -742,18 +748,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
 			SetProfitTarget(signalName, CalculationMode.Price, targetPrice);
 
-			LogDebug(string.Format(
-				"Placing {0} entry at {1} stop={2} target={3} stopBarsAgo={4} targetBarsAgo={5}",
+			LogTrade(fvgTag, string.Format(
+				"ENTRY SENT {0} entry={1} stop={2} target={3} stopBarsAgo={4} targetBarsAgo={5} sweepPrice={6} sweepBar={7}",
 				direction,
 				entryPrice,
 				stopPrice,
 				targetPrice,
 				stopBarsAgo,
-				targetBarsAgo));
+				targetBarsAgo,
+				sweep.Price,
+				sweep.BarIndex), false);
 
 			entryIfvgLower = fvgLower;
 			entryIfvgUpper = fvgUpper;
 			entryIfvgDirection = direction;
+			pendingTradeTag = fvgTag;
 
 			if (direction == TradeDirection.Long)
 				EnterLong(signalName);
@@ -955,14 +964,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				if (invalidated)
 				{
-					LogTradeSeparator(string.Format(
-						"ENTRY ATTEMPT {0} tag={1} lower={2} upper={3}",
+					LogTrade(fvg.Tag, string.Format(
+						"ENTRY ATTEMPT {0} fvgLower={1} fvgUpper={2} close={3}",
 						fvg.IsBullish ? "bullish" : "bearish",
-						fvg.Tag,
 						fvg.Lower,
-						fvg.Upper));
+						fvg.Upper,
+						Close[0]), true);
 					TradeDirection ifvgDirection = fvg.IsBullish ? TradeDirection.Short : TradeDirection.Long;
-					TryEnterFromIfvg(ifvgDirection, fvg.Lower, fvg.Upper);
+					TryEnterFromIfvg(ifvgDirection, fvg.Lower, fvg.Upper, fvg.Tag);
 					fvg.IsActive = false;
 					if (!ShowInvalidatedFvgs)
 						RemoveDrawObject(fvg.Tag);
@@ -1104,22 +1113,56 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			if (!DebugLogging)
 				return;
-			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
+			Print(string.Format("{0} - {1}", Time[0], message));
 		}
 
 		private void LogVerbose(string message)
 		{
 			if (!DebugLogging || !VerboseDebugLogging)
 				return;
-			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
+			Print(string.Format("{0} - {1}", Time[0], message));
 		}
 
-		private void LogTradeSeparator(string message)
+		private void LogTrade(string tradeTag, string message, bool addSeparator)
 		{
 			if (!DebugLogging)
 				return;
-			Print(string.Empty);
-			Print(string.Format("IFVG DEBUG [{0}] {1}", Time[0], message));
+			string label = FormatTradeLabel(tradeTag);
+			if (!string.IsNullOrEmpty(label) && label != lastTradeLabelPrinted)
+			{
+				if (!string.IsNullOrEmpty(lastTradeLabelPrinted))
+					Print(string.Empty);
+				lastTradeLabelPrinted = label;
+			}
+			if (!string.IsNullOrEmpty(label))
+				Print(string.Format("{0} - {1} {2}", Time[0], label, message));
+			else
+				Print(string.Format("{0} - {1}", Time[0], message));
+		}
+
+		private string FormatTradeLabel(string tradeTag)
+		{
+			if (string.IsNullOrEmpty(tradeTag))
+				return string.Empty;
+
+			string[] parts = tradeTag.Split('_');
+			if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
+				return "T" + parts[1];
+
+			return string.Empty;
+		}
+
+		private string FormatExitReason(string orderName)
+		{
+			if (string.IsNullOrEmpty(orderName))
+				return "Exit";
+			if (orderName.IndexOf("Profit", StringComparison.OrdinalIgnoreCase) >= 0)
+				return "Profit target";
+			if (orderName.IndexOf("Stop", StringComparison.OrdinalIgnoreCase) >= 0)
+				return "Stop loss";
+			if (orderName.IndexOf("IFVGCloseExit", StringComparison.OrdinalIgnoreCase) >= 0)
+				return "IFVG close exit";
+			return orderName;
 		}
 
 		private void CheckExitOnCloseBeyondEntryIfvg()
@@ -1138,12 +1181,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!shouldExit)
 				return;
 
-			LogTradeSeparator(string.Format(
-				"Exit on close beyond entry IFVG {0} close={1} fvgLower={2} fvgUpper={3}",
+			LogTrade(activeTradeTag, string.Format(
+				"EXIT SIGNAL (IFVGClose) {0} close={1} fvgLower={2} fvgUpper={3}",
 				entryIfvgDirection,
 				Close[0],
 				entryIfvgLower,
-				entryIfvgUpper));
+				entryIfvgUpper), true);
 
 			if (entryIfvgDirection == TradeDirection.Long)
 				ExitLong("IFVGCloseExit", "Long");
@@ -1200,21 +1243,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				if (marketPosition == MarketPosition.Flat)
 				{
-					LogTradeSeparator(string.Format(
-						"EXIT filled price={0} qty={1} order={2}",
+					string orderName = execution != null && execution.Order != null ? execution.Order.Name : "n/a";
+					LogTrade(activeTradeTag, string.Format(
+						"EXIT FILLED reason={0} price={1} qty={2} order={3}",
+						FormatExitReason(orderName),
 						price,
 						quantity,
-						execution != null && execution.Order != null ? execution.Order.Name : "n/a"));
+						orderName), true);
 					entryIfvgDirection = null;
+					activeTradeTag = null;
+					pendingTradeTag = null;
 				}
 				else
 				{
-					LogTradeSeparator(string.Format(
-						"ENTRY filled {0} price={1} qty={2} order={3}",
+					if (!string.IsNullOrEmpty(pendingTradeTag))
+						activeTradeTag = pendingTradeTag;
+					string orderName = execution != null && execution.Order != null ? execution.Order.Name : "n/a";
+					LogTrade(activeTradeTag, string.Format(
+						"ENTRY FILLED {0} price={1} qty={2} order={3}",
 						marketPosition,
 						price,
 						quantity,
-						execution != null && execution.Order != null ? execution.Order.Name : "n/a"));
+						orderName), true);
+					pendingTradeTag = null;
 				}
 			}
 
