@@ -13,6 +13,7 @@ using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript.Indicators;
 using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.Cbi;
+using NinjaTrader.Data;
 #endregion
 
 // This namespace holds all strategies and is required. Do not change it.
@@ -33,10 +34,27 @@ namespace NinjaTrader.NinjaScript.Strategies
 			public DateTime SessionDate;
 		}
 
+		private class HtfFvgBox
+		{
+			public string Tag;
+			public DateTime StartTime;
+			public DateTime EndTime;
+			public DateTime CreatedTime;
+			public double Upper;
+			public double Lower;
+			public bool IsBullish;
+			public bool IsActive;
+			public DateTime SessionDate;
+		}
+
 		private List<FvgBox> activeFvgs;
+		private List<HtfFvgBox> activeHtfFvgs;
 		private int fvgCounter;
+		private int htfFvgCounter;
 		private Brush fvgFill;
 		private int fvgOpacity;
+		private Brush htfFvgFill;
+		private Brush htfLabelBrush;
 		private Brush invalidatedFill;
 		private int invalidatedOpacity;
 		private bool showInvalidatedFvgs;
@@ -61,6 +79,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool useSwingLiquiditySweep;
 		private bool useSessionLiquiditySweep;
 		private bool useDeliverFromFvg;
+		private bool useDeliverFromHtfFvg;
+		private int htfBarsInProgress = -1;
+		private BarsPeriodType htfBarsPeriodType = BarsPeriodType.Minute;
+		private int htfBarsPeriodValue = 5;
 		private int maxBarsBetweenSweepAndIfvg;
 		private bool enableHistoricalTrading;
 		private int lastEntryBar;
@@ -173,6 +195,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				maxBarsBetweenSweepAndIfvg = 20;
 				enableHistoricalTrading = false;
 				useDeliverFromFvg = false;
+				useDeliverFromHtfFvg = false;
 				lastEntryBar = -1;
 				debugLogging = false;
 				verboseDebugLogging = false;
@@ -203,14 +226,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				// Mirror SampleIntrabarBacktest style: add a 1-tick secondary series.
 				AddDataSeries(Data.BarsPeriodType.Tick, 1);
+				ConfigureHtfSeries();
 			}
 			else if (State == State.DataLoaded)
 			{
 				activeFvgs = new List<FvgBox>();
+				activeHtfFvgs = new List<HtfFvgBox>();
 				// Match DR.cs style: transparent outline, DodgerBlue fill, opacity handled by Draw.Rectangle.
 				fvgFill = Brushes.DodgerBlue;
 				if (fvgFill.CanFreeze)
 					fvgFill.Freeze();
+				htfFvgFill = Brushes.DarkCyan;
+				if (htfFvgFill.CanFreeze)
+					htfFvgFill.Freeze();
+				htfLabelBrush = Brushes.DarkCyan;
+				if (htfLabelBrush.CanFreeze)
+					htfLabelBrush.Freeze();
 				invalidatedFill = Brushes.Gray;
 				if (invalidatedFill.CanFreeze)
 					invalidatedFill.Freeze();
@@ -242,6 +273,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 				CheckBreakEvenTrigger();
 				return;
 			}
+			if (BarsInProgress == htfBarsInProgress)
+			{
+				if (UseDeliverFromHtfFvg)
+					UpdateHtfFvgs();
+				return;
+			}
 
 			if (BarsInProgress != 0)
 				return;
@@ -251,6 +288,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			UpdateLiquidity();
 			UpdateFvgs();
+			if (UseDeliverFromHtfFvg)
+				DrawActiveHtfFvgs();
 			UpdateSwingLiquidity();
 			UpdateBreakEvenLine();
 			CheckExitOnCloseBeyondEntryIfvg();
@@ -272,6 +311,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 			PruneFvgs(FvgDrawLimit);
 			UpdateActiveFvgs();
 			DetectNewFvg();
+		}
+
+		private void UpdateHtfFvgs()
+		{
+			if (!UseDeliverFromHtfFvg)
+				return;
+			if (htfBarsInProgress < 0 || CurrentBars[htfBarsInProgress] < 2)
+				return;
+
+			if (FvgDrawLimit > 0)
+				PruneHtfFvgs(FvgDrawLimit);
+
+			UpdateActiveHtfFvgs();
+			DetectNewHtfFvg();
 		}
 
 		private void UpdateLiquidity()
@@ -296,6 +349,54 @@ namespace NinjaTrader.NinjaScript.Strategies
 			ProcessSession(asiaState, barTime, AsiaSessionStart, AsiaSessionEnd, asiaLineBrush);
 			ProcessSession(londonState, barTime, LondonSessionStart, LondonSessionEnd, londonLineBrush);
 			UpdateLiquidityLines();
+		}
+
+		private void ConfigureHtfSeries()
+		{
+			int primaryMinutes = BarsPeriod.BarsPeriodType == BarsPeriodType.Minute ? BarsPeriod.Value : 1;
+			HtfMapping mapping = ResolveHtfMapping(primaryMinutes);
+			htfBarsPeriodType = BarsPeriodType.Minute;
+			htfBarsPeriodValue = mapping.HtfMinutes;
+			if (htfBarsPeriodValue > 0)
+			{
+				AddDataSeries(htfBarsPeriodType, htfBarsPeriodValue);
+				htfBarsInProgress = BarsArray.Length - 1;
+			}
+		}
+
+		private class HtfMapping
+		{
+			public int MaxPrimaryMinutes;
+			public int HtfMinutes;
+		}
+
+		private HtfMapping ResolveHtfMapping(int primaryMinutes)
+		{
+			HtfMapping[] mappings = new[]
+			{
+				new HtfMapping { MaxPrimaryMinutes = 1, HtfMinutes = 5 },
+				new HtfMapping { MaxPrimaryMinutes = int.MaxValue, HtfMinutes = 60 }
+			};
+
+			for (int i = 0; i < mappings.Length; i++)
+			{
+				if (primaryMinutes <= mappings[i].MaxPrimaryMinutes)
+					return mappings[i];
+			}
+
+			return mappings[mappings.Length - 1];
+		}
+
+		private string GetHtfLabel()
+		{
+			if (htfBarsPeriodType != BarsPeriodType.Minute || htfBarsPeriodValue <= 0)
+				return string.Empty;
+			if (htfBarsPeriodValue >= 60 && htfBarsPeriodValue % 60 == 0)
+			{
+				int hours = htfBarsPeriodValue / 60;
+				return string.Format("{0}H", hours);
+			}
+			return string.Format("{0}m", htfBarsPeriodValue);
 		}
 
 		private void ProcessSession(
@@ -621,6 +722,37 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return false;
 		}
 
+		private bool TryGetDeliveringHtfFvg(SweepEvent sweep, out HtfFvgBox delivering)
+		{
+			delivering = null;
+			if (sweep == null || activeHtfFvgs == null || activeHtfFvgs.Count == 0)
+				return false;
+
+			int barsAgo = CurrentBar - sweep.BarIndex;
+			if (barsAgo < 0 || barsAgo > CurrentBar)
+				return false;
+
+			DateTime sweepTime = Times[0][barsAgo];
+
+			for (int i = 0; i < activeHtfFvgs.Count; i++)
+			{
+				HtfFvgBox fvg = activeHtfFvgs[i];
+				if (!fvg.IsActive)
+					continue;
+				if (sweepTime < fvg.CreatedTime)
+					continue;
+				if (sweepTime < fvg.StartTime)
+					continue;
+				if (sweep.Price < fvg.Lower || sweep.Price > fvg.Upper)
+					continue;
+
+				delivering = fvg;
+				return true;
+			}
+
+			return false;
+		}
+
 		private void UpdateBreakEvenLine()
 		{
 			if (!UseBreakEvenWickLine)
@@ -871,6 +1003,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 					return;
 				}
 				LogTrade(fvgTag, string.Format("Filter DeliverFromFVG ok tag={0} sweep={1} bar={2}", deliveringFvg.Tag, sweep.Price, sweep.BarIndex), false);
+			}
+
+			if (UseDeliverFromHtfFvg)
+			{
+				HtfFvgBox deliveringHtf;
+				if (!TryGetDeliveringHtfFvg(sweep, out deliveringHtf))
+				{
+					LogTrade(fvgTag, string.Format("BLOCKED (DeliverFromHTF: sweep={0} bar={1})", sweep.Price, sweep.BarIndex), false);
+					return;
+				}
+				LogTrade(fvgTag, string.Format("Filter DeliverFromHTF ok tag={0} sweep={1} bar={2}", deliveringHtf.Tag, sweep.Price, sweep.BarIndex), false);
 			}
 
 			double entryPrice = Close[0];
@@ -1270,6 +1413,84 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 		}
 
+		private void UpdateActiveHtfFvgs()
+		{
+			double close = Closes[htfBarsInProgress][0];
+			double open = Opens[htfBarsInProgress][0];
+			for (int i = 0; i < activeHtfFvgs.Count; i++)
+			{
+				HtfFvgBox fvg = activeHtfFvgs[i];
+				if (!fvg.IsActive)
+					continue;
+
+				bool invalidated = fvg.IsBullish
+					? (close < fvg.Lower && close < open)
+					: (close > fvg.Upper && close > open);
+
+				fvg.EndTime = Times[htfBarsInProgress][0];
+
+				if (invalidated)
+					fvg.IsActive = false;
+			}
+		}
+
+		private void DrawActiveHtfFvgs()
+		{
+			if (!UseDeliverFromHtfFvg)
+				return;
+			if (htfBarsInProgress < 0 || activeHtfFvgs == null || activeHtfFvgs.Count == 0)
+				return;
+
+			DateTime endTime = Time[0];
+			string htfLabel = GetHtfLabel();
+			for (int i = 0; i < activeHtfFvgs.Count; i++)
+			{
+				HtfFvgBox fvg = activeHtfFvgs[i];
+				if (!fvg.IsActive && !ShowInvalidatedFvgs)
+				{
+					RemoveDrawObject(fvg.Tag);
+					RemoveDrawObject(fvg.Tag + "_Lbl");
+					continue;
+				}
+
+				Brush fill = fvg.IsActive ? htfFvgFill : invalidatedFill;
+				int opacity = fvg.IsActive ? fvgOpacity : invalidatedOpacity;
+				DateTime end = fvg.IsActive ? endTime : fvg.EndTime;
+
+				Draw.Rectangle(
+					this,
+					fvg.Tag,
+					false,
+					fvg.StartTime,
+					fvg.Lower,
+					end,
+					fvg.Upper,
+					Brushes.Transparent,
+					fill,
+					opacity
+				);
+
+				if (!string.IsNullOrEmpty(htfLabel))
+				{
+					Draw.Text(
+						this,
+						fvg.Tag + "_Lbl",
+						false,
+						htfLabel,
+						end,
+						fvg.Upper,
+						0,
+						htfLabelBrush,
+						new SimpleFont("Arial", 10),
+						TextAlignment.Left,
+						Brushes.Transparent,
+						Brushes.Transparent,
+						0
+					);
+				}
+			}
+		}
+
 		private bool TryCombineWithPreviousFvg(FvgBox newFvg)
 		{
 			if (!CombineFvgSeries)
@@ -1386,6 +1607,39 @@ namespace NinjaTrader.NinjaScript.Strategies
 				fvg.Upper,
 				fvg.StartBarIndex,
 				fvg.EndBarIndex));
+		}
+
+		private void DetectNewHtfFvg()
+		{
+			// FVG detection uses the 3-bar displacement: bar[2] -> bar[0].
+			double low0 = Lows[htfBarsInProgress][0];
+			double high0 = Highs[htfBarsInProgress][0];
+			double low2 = Lows[htfBarsInProgress][2];
+			double high2 = Highs[htfBarsInProgress][2];
+			bool bullishFvg = low0 > high2;
+			bool bearishFvg = high0 < low2;
+
+			if (!bullishFvg && !bearishFvg)
+				return;
+
+			HtfFvgBox fvg = new HtfFvgBox();
+			fvg.IsBullish = bullishFvg;
+			fvg.Lower = bullishFvg ? high2 : high0;
+			fvg.Upper = bullishFvg ? low0 : low2;
+			fvg.StartTime = Times[htfBarsInProgress][2];
+			fvg.EndTime = Times[htfBarsInProgress][0];
+			fvg.CreatedTime = Times[htfBarsInProgress][0];
+			fvg.IsActive = true;
+			fvg.SessionDate = Times[htfBarsInProgress][0].Date;
+			fvg.Tag = string.Format("IFVG_HTF_{0}_{1:yyyyMMdd_HHmmss}", htfFvgCounter++, Times[htfBarsInProgress][0]);
+
+			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
+			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
+				return;
+			if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
+				return;
+
+			activeHtfFvgs.Add(fvg);
 		}
 
 		private void LogDebug(string message)
@@ -1579,6 +1833,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 		}
 
+		private void PruneHtfFvgs(int drawLimitDays)
+		{
+			if (drawLimitDays <= 0)
+				return;
+
+			DateTime cutoffDate = Time[0].Date.AddDays(-(drawLimitDays - 1));
+			for (int i = activeHtfFvgs.Count - 1; i >= 0; i--)
+			{
+				HtfFvgBox fvg = activeHtfFvgs[i];
+				if (fvg.SessionDate < cutoffDate)
+				{
+					RemoveDrawObject(fvg.Tag);
+					activeHtfFvgs.RemoveAt(i);
+				}
+			}
+		}
+
 		#region Properties
 		[NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "Show Inversed FVGs", Description = "Draw invalidated FVGs using the inverted color.", GroupName = "FVG", Order = 0)]
@@ -1644,8 +1915,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 			set { useDeliverFromFvg = value; }
 		}
 
+		[NinjaScriptProperty]
+		[Display(Name = "Use Deliver From HTF FVG", Description = "Require the qualifying sweep to originate inside a prior active higher timeframe FVG (not inversed).", GroupName = "Trade Config", Order = 3)]
+		public bool UseDeliverFromHtfFvg
+		{
+			get { return useDeliverFromHtfFvg; }
+			set { useDeliverFromHtfFvg = value; }
+		}
+
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 3)]
+		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 4)]
 		public int MaxBarsBetweenSweepAndIfvg
 		{
 			get { return maxBarsBetweenSweepAndIfvg; }
@@ -1653,7 +1932,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 4)]
+		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 5)]
 		public bool EnableHistoricalTrading
 		{
 			get { return enableHistoricalTrading; }
@@ -1661,7 +1940,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 5)]
+		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 6)]
 		public bool DebugLogging
 		{
 			get { return debugLogging; }
@@ -1669,7 +1948,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 6)]
+		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 7)]
 		public bool VerboseDebugLogging
 		{
 			get { return verboseDebugLogging; }
@@ -1677,7 +1956,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 7)]
+		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 8)]
 		public bool InvalidateIfTargetHitBeforeEntry
 		{
 			get { return invalidateIfTargetHitBeforeEntry; }
@@ -1685,7 +1964,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 8)]
+		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 9)]
 		public double MinTpSlDistancePoints
 		{
 			get { return minTpSlDistancePoints; }
@@ -1693,7 +1972,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 9)]
+		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 10)]
 		public bool ExitOnCloseBeyondEntryIfvg
 		{
 			get { return exitOnCloseBeyondEntryIfvg; }
@@ -1701,7 +1980,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 10)]
+		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 11)]
 		public bool UseBreakEvenWickLine
 		{
 			get { return useBreakEvenWickLine; }
