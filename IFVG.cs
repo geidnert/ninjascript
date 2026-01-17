@@ -82,11 +82,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool useBreakEvenWickLine;
 		private bool breakEvenActive;
 		private bool breakEvenTriggered;
+		private bool breakEvenArmed;
 		private double breakEvenPrice;
 		private int breakEvenStartBarIndex;
+		private int breakEvenEndBarIndex;
 		private TradeDirection? breakEvenDirection;
 		private string breakEvenTag;
 		private string breakEvenLabelTag;
+		private List<string> breakEvenTags;
 		private Brush breakEvenLineBrush;
 		private double entryIfvgLower;
 		private double entryIfvgUpper;
@@ -185,11 +188,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 				entryIfvgDirection = null;
 				breakEvenActive = false;
 				breakEvenTriggered = false;
+				breakEvenArmed = false;
 				breakEvenPrice = 0;
 				breakEvenStartBarIndex = -1;
+				breakEvenEndBarIndex = -1;
 				breakEvenDirection = null;
 				breakEvenTag = null;
 				breakEvenLabelTag = null;
+				breakEvenTags = null;
 				pendingTradeTag = null;
 				activeTradeTag = null;
 				lastTradeLabelPrinted = null;
@@ -225,6 +231,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				breakEvenLineBrush = Brushes.SeaGreen;
 				if (breakEvenLineBrush.CanFreeze)
 					breakEvenLineBrush.Freeze();
+				breakEvenTags = new List<string>();
 			}
 		}
 
@@ -596,6 +603,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 					ClearBreakEvenLine();
 				return;
 			}
+			if (breakEvenEndBarIndex >= 0)
+				return;
 			if (!breakEvenActive || string.IsNullOrEmpty(breakEvenTag))
 				return;
 
@@ -635,28 +644,95 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void ClearBreakEvenLine()
 		{
+			RemoveBreakEvenDrawObjects();
+			breakEvenActive = false;
+			breakEvenTriggered = false;
+			breakEvenArmed = false;
+			breakEvenPrice = 0;
+			breakEvenStartBarIndex = -1;
+			breakEvenEndBarIndex = -1;
+			breakEvenDirection = null;
+			breakEvenTag = null;
+			breakEvenLabelTag = null;
+		}
+
+		private void RemoveBreakEvenDrawObjects()
+		{
 			if (!string.IsNullOrEmpty(breakEvenTag))
 				RemoveDrawObject(breakEvenTag);
 			if (!string.IsNullOrEmpty(breakEvenLabelTag))
 				RemoveDrawObject(breakEvenLabelTag);
-			breakEvenActive = false;
-			breakEvenTriggered = false;
-			breakEvenPrice = 0;
-			breakEvenStartBarIndex = -1;
-			breakEvenDirection = null;
-			breakEvenTag = null;
-			breakEvenLabelTag = null;
+			if (breakEvenTags == null || breakEvenTags.Count == 0)
+				return;
+			for (int i = 0; i < breakEvenTags.Count; i++)
+				RemoveDrawObject(breakEvenTags[i]);
+			breakEvenTags.Clear();
+		}
+
+		private void DrawBreakEvenLineFixed(DateTime endTime)
+		{
+			if (string.IsNullOrEmpty(breakEvenTag))
+				return;
+
+			int startBarsAgo = CurrentBar - breakEvenStartBarIndex;
+			if (startBarsAgo < 0)
+				startBarsAgo = 0;
+
+			DateTime startTime = Times[0][startBarsAgo];
+
+			Draw.Line(
+				this,
+				breakEvenTag,
+				false,
+				startTime,
+				breakEvenPrice,
+				endTime,
+				breakEvenPrice,
+				breakEvenLineBrush,
+				DashStyleHelper.Solid,
+				1
+			);
+
+			Draw.Text(
+				this,
+				breakEvenLabelTag,
+				false,
+				"BE",
+				endTime,
+				breakEvenPrice,
+				0,
+				breakEvenLineBrush,
+				new SimpleFont("Arial", 10),
+				TextAlignment.Left,
+				Brushes.Transparent,
+				Brushes.Transparent,
+				0
+			);
+		}
+
+		private void FinalizeBreakEvenLine()
+		{
+			if (!breakEvenActive)
+				return;
+			ClearBreakEvenLine();
 		}
 
 		private void ActivateBreakEvenLine(string fvgTag, TradeDirection direction, double price, int barsAgo)
 		{
 			breakEvenActive = true;
 			breakEvenTriggered = false;
+			breakEvenArmed = true;
 			breakEvenPrice = price;
 			breakEvenStartBarIndex = CurrentBar - barsAgo;
+			breakEvenEndBarIndex = -1;
 			breakEvenDirection = direction;
 			breakEvenTag = string.Format("{0}_BE", fvgTag);
 			breakEvenLabelTag = breakEvenTag + "_Lbl";
+			if (breakEvenTags != null)
+			{
+				breakEvenTags.Add(breakEvenTag);
+				breakEvenTags.Add(breakEvenLabelTag);
+			}
 			UpdateBreakEvenLine();
 		}
 
@@ -778,41 +854,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (UseBreakEvenWickLine)
 			{
-				double nextTargetPrice;
-				int nextTargetBarsAgo;
-				bool hasNextTarget = direction == TradeDirection.Long
-					? TryGetNthBullishPivotHighAboveEntry(entryPrice, 2, MinTpSlDistancePoints, out nextTargetPrice, out nextTargetBarsAgo)
-					: TryGetNthBearishPivotLowBelowEntry(entryPrice, 2, MinTpSlDistancePoints, out nextTargetPrice, out nextTargetBarsAgo);
-
-				if (!hasNextTarget)
-				{
-					LogTrade(fvgTag, string.Format("BLOCKED (NoNextTarget: {0} entry={1})", direction, entryPrice), false);
-					return;
-				}
-
 				double minBeGap = MinTpSlDistancePoints;
-				if (minBeGap > 0 && Math.Abs(nextTargetPrice - firstTargetPrice) < minBeGap)
+				bool foundTarget = false;
+				for (int occurrence = 2; occurrence <= 10; occurrence++)
 				{
-					double fartherTargetPrice;
-					int fartherTargetBarsAgo;
-					bool hasFartherTarget = direction == TradeDirection.Long
-						? TryGetNthBullishPivotHighAboveEntry(entryPrice, 3, MinTpSlDistancePoints, out fartherTargetPrice, out fartherTargetBarsAgo)
-						: TryGetNthBearishPivotLowBelowEntry(entryPrice, 3, MinTpSlDistancePoints, out fartherTargetPrice, out fartherTargetBarsAgo);
+					double candidatePrice;
+					int candidateBarsAgo;
+					bool hasCandidate = direction == TradeDirection.Long
+						? TryGetNthBullishPivotHighAboveEntry(entryPrice, occurrence, MinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo)
+						: TryGetNthBearishPivotLowBelowEntry(entryPrice, occurrence, MinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo);
+					if (!hasCandidate)
+						break;
 
-					if (!hasFartherTarget)
+					bool beyondBe = direction == TradeDirection.Long
+						? candidatePrice > firstTargetPrice
+						: candidatePrice < firstTargetPrice;
+					bool farEnough = minBeGap <= 0 || Math.Abs(candidatePrice - firstTargetPrice) >= minBeGap;
+
+					if (beyondBe && farEnough)
 					{
-						LogTrade(fvgTag, string.Format("BLOCKED (NoFartherTargetForBE: {0} entry={1})", direction, entryPrice), false);
-						return;
+						targetPrice = candidatePrice;
+						targetBarsAgo = candidateBarsAgo;
+						if (occurrence > 2)
+							LogTrade(fvgTag, string.Format("TP adjusted (Pivot {0}) price={1} barsAgo={2}", occurrence, candidatePrice, candidateBarsAgo), false);
+						foundTarget = true;
+						break;
 					}
-
-					LogTrade(fvgTag, string.Format("TP adjusted (FartherPivot) price={0} barsAgo={1}", fartherTargetPrice, fartherTargetBarsAgo), false);
-					targetPrice = fartherTargetPrice;
-					targetBarsAgo = fartherTargetBarsAgo;
 				}
-				else
+
+				if (!foundTarget)
 				{
-					targetPrice = nextTargetPrice;
-					targetBarsAgo = nextTargetBarsAgo;
+					LogTrade(fvgTag, string.Format("BLOCKED (NoTargetBeyondBE: {0} entry={1})", direction, entryPrice), false);
+					return;
 				}
 			}
 
@@ -1407,11 +1480,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!DebugLogging)
 				return;
 
+			string orderName = execution != null && execution.Order != null ? execution.Order.Name : "n/a";
+			if (breakEvenActive)
+			{
+				if (marketPosition == MarketPosition.Flat && !breakEvenArmed)
+					ClearBreakEvenLine();
+				else if (breakEvenDirection == TradeDirection.Long && marketPosition == MarketPosition.Short)
+					ClearBreakEvenLine();
+				else if (breakEvenDirection == TradeDirection.Short && marketPosition == MarketPosition.Long)
+					ClearBreakEvenLine();
+			}
+
 			if (lastMarketPosition != marketPosition)
 			{
 				if (marketPosition == MarketPosition.Flat)
 				{
-					string orderName = execution != null && execution.Order != null ? execution.Order.Name : "n/a";
 					LogTrade(activeTradeTag, string.Format(
 						"EXIT FILLED reason={0} price={1} qty={2} order={3}",
 						FormatExitReason(orderName),
@@ -1421,13 +1504,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 					entryIfvgDirection = null;
 					activeTradeTag = null;
 					pendingTradeTag = null;
-					ClearBreakEvenLine();
+					FinalizeBreakEvenLine();
 				}
 				else
 				{
 					if (!string.IsNullOrEmpty(pendingTradeTag))
 						activeTradeTag = pendingTradeTag;
-					string orderName = execution != null && execution.Order != null ? execution.Order.Name : "n/a";
+					breakEvenArmed = false;
 					LogTrade(activeTradeTag, string.Format(
 						"ENTRY FILLED {0} price={1} qty={2} order={3}",
 						marketPosition,
