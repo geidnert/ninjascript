@@ -394,9 +394,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (htfBarsPeriodValue >= 60 && htfBarsPeriodValue % 60 == 0)
 			{
 				int hours = htfBarsPeriodValue / 60;
-				return string.Format("{0}H", hours);
+				return string.Format("{0}H FVG", hours);
 			}
-			return string.Format("{0}m", htfBarsPeriodValue);
+			return string.Format("{0}m FVG", htfBarsPeriodValue);
 		}
 
 		private void ProcessSession(
