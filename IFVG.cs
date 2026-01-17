@@ -25,6 +25,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			public string Tag;
 			public int StartBarIndex;
 			public int EndBarIndex;
+			public int CreatedBarIndex;
 			public double Upper;
 			public double Lower;
 			public bool IsBullish;
@@ -59,6 +60,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private List<SwingLine> swingLines;
 		private bool useSwingLiquiditySweep;
 		private bool useSessionLiquiditySweep;
+		private bool useDeliverFromFvg;
 		private int maxBarsBetweenSweepAndIfvg;
 		private bool enableHistoricalTrading;
 		private int lastEntryBar;
@@ -170,6 +172,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				useSessionLiquiditySweep = true;
 				maxBarsBetweenSweepAndIfvg = 20;
 				enableHistoricalTrading = false;
+				useDeliverFromFvg = false;
 				lastEntryBar = -1;
 				debugLogging = false;
 				verboseDebugLogging = false;
@@ -591,6 +594,33 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return best;
 		}
 
+		private bool TryGetDeliveringFvg(SweepEvent sweep, string excludedFvgTag, out FvgBox delivering)
+		{
+			delivering = null;
+			if (sweep == null || activeFvgs == null || activeFvgs.Count == 0)
+				return false;
+
+			for (int i = 0; i < activeFvgs.Count; i++)
+			{
+				FvgBox fvg = activeFvgs[i];
+				if (!fvg.IsActive)
+					continue;
+				if (!string.IsNullOrEmpty(excludedFvgTag) && fvg.Tag == excludedFvgTag)
+					continue;
+				if (sweep.BarIndex < fvg.CreatedBarIndex)
+					continue;
+				if (sweep.BarIndex < fvg.StartBarIndex || sweep.BarIndex > fvg.EndBarIndex)
+					continue;
+				if (sweep.Price < fvg.Lower || sweep.Price > fvg.Upper)
+					continue;
+
+				delivering = fvg;
+				return true;
+			}
+
+			return false;
+		}
+
 		private void UpdateBreakEvenLine()
 		{
 			if (!UseBreakEvenWickLine)
@@ -831,6 +861,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 			SweepEvent sweep = GetEligibleSweep(direction, fvgTag);
 			if (sweep == null)
 				return;
+
+			if (UseDeliverFromFvg)
+			{
+				FvgBox deliveringFvg;
+				if (!TryGetDeliveringFvg(sweep, fvgTag, out deliveringFvg))
+				{
+					LogTrade(fvgTag, string.Format("BLOCKED (DeliverFromFVG: sweep={0} bar={1})", sweep.Price, sweep.BarIndex), false);
+					return;
+				}
+				LogTrade(fvgTag, string.Format("Filter DeliverFromFVG ok tag={0} sweep={1} bar={2}", deliveringFvg.Tag, sweep.Price, sweep.BarIndex), false);
+			}
 
 			double entryPrice = Close[0];
 			const int slOccurrence = 1;
@@ -1303,6 +1344,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			fvg.Upper = bullishFvg ? Low[0] : Low[2];
 			fvg.StartBarIndex = CurrentBar - 2;
 			fvg.EndBarIndex = CurrentBar;
+			fvg.CreatedBarIndex = CurrentBar;
 			fvg.IsActive = true;
 			fvg.SessionDate = Time[0].Date;
 			fvg.Tag = string.Format("IFVG_{0}_{1:yyyyMMdd_HHmmss}", fvgCounter++, Time[0]);
@@ -1594,8 +1636,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 			set { useSessionLiquiditySweep = value; }
 		}
 
+		[NinjaScriptProperty]
+		[Display(Name = "Use Deliver From FVG", Description = "Require the qualifying sweep to originate inside a prior active FVG (not inversed).", GroupName = "Trade Config", Order = 2)]
+		public bool UseDeliverFromFvg
+		{
+			get { return useDeliverFromFvg; }
+			set { useDeliverFromFvg = value; }
+		}
+
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 2)]
+		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 3)]
 		public int MaxBarsBetweenSweepAndIfvg
 		{
 			get { return maxBarsBetweenSweepAndIfvg; }
@@ -1603,7 +1653,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 3)]
+		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 4)]
 		public bool EnableHistoricalTrading
 		{
 			get { return enableHistoricalTrading; }
@@ -1611,7 +1661,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 4)]
+		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 5)]
 		public bool DebugLogging
 		{
 			get { return debugLogging; }
@@ -1619,7 +1669,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 5)]
+		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 6)]
 		public bool VerboseDebugLogging
 		{
 			get { return verboseDebugLogging; }
@@ -1627,7 +1677,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 6)]
+		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 7)]
 		public bool InvalidateIfTargetHitBeforeEntry
 		{
 			get { return invalidateIfTargetHitBeforeEntry; }
@@ -1635,7 +1685,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 7)]
+		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 8)]
 		public double MinTpSlDistancePoints
 		{
 			get { return minTpSlDistancePoints; }
@@ -1643,7 +1693,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 8)]
+		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 9)]
 		public bool ExitOnCloseBeyondEntryIfvg
 		{
 			get { return exitOnCloseBeyondEntryIfvg; }
@@ -1651,7 +1701,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 9)]
+		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 10)]
 		public bool UseBreakEvenWickLine
 		{
 			get { return useBreakEvenWickLine; }
