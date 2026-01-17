@@ -79,6 +79,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool intrabarTargetHitShort;
 		private double intrabarTargetPriceLong;
 		private double intrabarTargetPriceShort;
+		private bool useBreakEvenWickLine;
+		private bool breakEvenActive;
+		private bool breakEvenTriggered;
+		private double breakEvenPrice;
+		private int breakEvenStartBarIndex;
+		private TradeDirection? breakEvenDirection;
+		private string breakEvenTag;
+		private string breakEvenLabelTag;
+		private Brush breakEvenLineBrush;
 		private double entryIfvgLower;
 		private double entryIfvgUpper;
 		private TradeDirection? entryIfvgDirection;
@@ -168,11 +177,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 				invalidateIfTargetHitBeforeEntry = false;
 				minTpSlDistancePoints = 0;
 				exitOnCloseBeyondEntryIfvg = false;
+				useBreakEvenWickLine = false;
 				lastMarketPosition = MarketPosition.Flat;
 				intrabarTargetBarIndex = -1;
 				entryIfvgLower = 0;
 				entryIfvgUpper = 0;
 				entryIfvgDirection = null;
+				breakEvenActive = false;
+				breakEvenTriggered = false;
+				breakEvenPrice = 0;
+				breakEvenStartBarIndex = -1;
+				breakEvenDirection = null;
+				breakEvenTag = null;
+				breakEvenLabelTag = null;
 				pendingTradeTag = null;
 				activeTradeTag = null;
 				lastTradeLabelPrinted = null;
@@ -205,6 +222,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (swingLineBrush.CanFreeze)
 					swingLineBrush.Freeze();
 				swingLines = new List<SwingLine>();
+				breakEvenLineBrush = Brushes.SeaGreen;
+				if (breakEvenLineBrush.CanFreeze)
+					breakEvenLineBrush.Freeze();
 			}
 		}
 
@@ -213,6 +233,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (BarsInProgress == 1)
 			{
 				UpdateIntrabarTargetHit();
+				CheckBreakEvenTrigger();
 				return;
 			}
 
@@ -225,6 +246,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			UpdateLiquidity();
 			UpdateFvgs();
 			UpdateSwingLiquidity();
+			UpdateBreakEvenLine();
 			CheckExitOnCloseBeyondEntryIfvg();
 		}
 
@@ -566,6 +588,101 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return best;
 		}
 
+		private void UpdateBreakEvenLine()
+		{
+			if (!UseBreakEvenWickLine)
+			{
+				if (breakEvenActive)
+					ClearBreakEvenLine();
+				return;
+			}
+			if (!breakEvenActive || string.IsNullOrEmpty(breakEvenTag))
+				return;
+
+			int startBarsAgo = CurrentBar - breakEvenStartBarIndex;
+			if (startBarsAgo < 0)
+				startBarsAgo = 0;
+
+			Draw.Line(
+				this,
+				breakEvenTag,
+				false,
+				startBarsAgo,
+				breakEvenPrice,
+				0,
+				breakEvenPrice,
+				breakEvenLineBrush,
+				DashStyleHelper.Solid,
+				1
+			);
+
+			Draw.Text(
+				this,
+				breakEvenLabelTag,
+				false,
+				"BE",
+				0,
+				breakEvenPrice,
+				0,
+				breakEvenLineBrush,
+				new SimpleFont("Arial", 10),
+				TextAlignment.Left,
+				Brushes.Transparent,
+				Brushes.Transparent,
+				0
+			);
+		}
+
+		private void ClearBreakEvenLine()
+		{
+			if (!string.IsNullOrEmpty(breakEvenTag))
+				RemoveDrawObject(breakEvenTag);
+			if (!string.IsNullOrEmpty(breakEvenLabelTag))
+				RemoveDrawObject(breakEvenLabelTag);
+			breakEvenActive = false;
+			breakEvenTriggered = false;
+			breakEvenPrice = 0;
+			breakEvenStartBarIndex = -1;
+			breakEvenDirection = null;
+			breakEvenTag = null;
+			breakEvenLabelTag = null;
+		}
+
+		private void ActivateBreakEvenLine(string fvgTag, TradeDirection direction, double price, int barsAgo)
+		{
+			breakEvenActive = true;
+			breakEvenTriggered = false;
+			breakEvenPrice = price;
+			breakEvenStartBarIndex = CurrentBar - barsAgo;
+			breakEvenDirection = direction;
+			breakEvenTag = string.Format("{0}_BE", fvgTag);
+			breakEvenLabelTag = breakEvenTag + "_Lbl";
+			UpdateBreakEvenLine();
+		}
+
+		private void CheckBreakEvenTrigger()
+		{
+			if (!UseBreakEvenWickLine || !breakEvenActive || breakEvenTriggered)
+				return;
+			if (Position.MarketPosition == MarketPosition.Flat || breakEvenDirection == null)
+				return;
+
+			double high = BarsInProgress == 1 ? Highs[1][0] : High[0];
+			double low = BarsInProgress == 1 ? Lows[1][0] : Low[0];
+			bool hit = breakEvenDirection == TradeDirection.Long
+				? high >= breakEvenPrice
+				: low <= breakEvenPrice;
+
+			if (!hit)
+				return;
+
+			breakEvenTriggered = true;
+			string signalName = breakEvenDirection == TradeDirection.Long ? "Long" : "Short";
+			double entryPrice = Position.AveragePrice;
+			SetStopLoss(signalName, CalculationMode.Price, entryPrice, false);
+			LogTrade(activeTradeTag, string.Format("BE HIT move SL to entry={0}", entryPrice), true);
+		}
+
 		private bool TryGetNthBullishPivotHighAboveEntry(double entryPrice, int occurrence, double minDistancePoints, out double price, out int barsAgo)
 		{
 			price = 0;
@@ -620,6 +737,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return false;
 		}
 
+
 		private void TryEnterFromIfvg(TradeDirection direction, double fvgLower, double fvgUpper, string fvgTag)
 		{
 			if (State == State.Historical && !EnableHistoricalTrading)
@@ -643,17 +761,59 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 
 			double entryPrice = Close[0];
-			const int tpOccurrence = 1;
 			const int slOccurrence = 1;
-			double targetPrice;
-			int targetBarsAgo;
-			bool hasTarget = direction == TradeDirection.Long
-				? TryGetNthBullishPivotHighAboveEntry(entryPrice, tpOccurrence, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo)
-				: TryGetNthBearishPivotLowBelowEntry(entryPrice, tpOccurrence, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo);
-			if (!hasTarget)
+			double firstTargetPrice;
+			int firstTargetBarsAgo;
+			bool hasFirstTarget = direction == TradeDirection.Long
+				? TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, MinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo)
+				: TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, MinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo);
+			if (!hasFirstTarget)
 			{
 				LogTrade(fvgTag, string.Format("BLOCKED (NoTarget: {0} entry={1})", direction, entryPrice), false);
 				return;
+			}
+
+			double targetPrice = firstTargetPrice;
+			int targetBarsAgo = firstTargetBarsAgo;
+
+			if (UseBreakEvenWickLine)
+			{
+				double nextTargetPrice;
+				int nextTargetBarsAgo;
+				bool hasNextTarget = direction == TradeDirection.Long
+					? TryGetNthBullishPivotHighAboveEntry(entryPrice, 2, MinTpSlDistancePoints, out nextTargetPrice, out nextTargetBarsAgo)
+					: TryGetNthBearishPivotLowBelowEntry(entryPrice, 2, MinTpSlDistancePoints, out nextTargetPrice, out nextTargetBarsAgo);
+
+				if (!hasNextTarget)
+				{
+					LogTrade(fvgTag, string.Format("BLOCKED (NoNextTarget: {0} entry={1})", direction, entryPrice), false);
+					return;
+				}
+
+				double minBeGap = MinTpSlDistancePoints;
+				if (minBeGap > 0 && Math.Abs(nextTargetPrice - firstTargetPrice) < minBeGap)
+				{
+					double fartherTargetPrice;
+					int fartherTargetBarsAgo;
+					bool hasFartherTarget = direction == TradeDirection.Long
+						? TryGetNthBullishPivotHighAboveEntry(entryPrice, 3, MinTpSlDistancePoints, out fartherTargetPrice, out fartherTargetBarsAgo)
+						: TryGetNthBearishPivotLowBelowEntry(entryPrice, 3, MinTpSlDistancePoints, out fartherTargetPrice, out fartherTargetBarsAgo);
+
+					if (!hasFartherTarget)
+					{
+						LogTrade(fvgTag, string.Format("BLOCKED (NoFartherTargetForBE: {0} entry={1})", direction, entryPrice), false);
+						return;
+					}
+
+					LogTrade(fvgTag, string.Format("TP adjusted (FartherPivot) price={0} barsAgo={1}", fartherTargetPrice, fartherTargetBarsAgo), false);
+					targetPrice = fartherTargetPrice;
+					targetBarsAgo = fartherTargetBarsAgo;
+				}
+				else
+				{
+					targetPrice = nextTargetPrice;
+					targetBarsAgo = nextTargetBarsAgo;
+				}
 			}
 
 			targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
@@ -742,18 +902,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			if (UseBreakEvenWickLine)
+			{
+				ActivateBreakEvenLine(fvgTag, direction, firstTargetPrice, firstTargetBarsAgo);
+				LogTrade(fvgTag, string.Format("BE LINE price={0} barsAgo={1}", firstTargetPrice, firstTargetBarsAgo), false);
+			}
+
 			stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
 
 			string signalName = direction == TradeDirection.Long ? "Long" : "Short";
 			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
 			SetProfitTarget(signalName, CalculationMode.Price, targetPrice);
 
+			string beInfo = UseBreakEvenWickLine ? string.Format(" be={0}", Instrument.MasterInstrument.RoundToTickSize(firstTargetPrice)) : string.Empty;
 			LogTrade(fvgTag, string.Format(
-				"ENTRY SENT {0} entry={1} stop={2} target={3} stopBarsAgo={4} targetBarsAgo={5} sweepPrice={6} sweepBar={7}",
+				"ENTRY SENT {0} entry={1} stop={2} target={3}{4} stopBarsAgo={5} targetBarsAgo={6} sweepPrice={7} sweepBar={8}",
 				direction,
 				entryPrice,
 				stopPrice,
 				targetPrice,
+				beInfo,
 				stopBarsAgo,
 				targetBarsAgo,
 				sweep.Price,
@@ -1253,6 +1421,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					entryIfvgDirection = null;
 					activeTradeTag = null;
 					pendingTradeTag = null;
+					ClearBreakEvenLine();
 				}
 				else
 				{
@@ -1400,6 +1569,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return exitOnCloseBeyondEntryIfvg; }
 			set { exitOnCloseBeyondEntryIfvg = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 9)]
+		public bool UseBreakEvenWickLine
+		{
+			get { return useBreakEvenWickLine; }
+			set { useBreakEvenWickLine = value; }
 		}
 
 		[NinjaScriptProperty]
