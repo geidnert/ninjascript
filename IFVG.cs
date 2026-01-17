@@ -1,7 +1,3 @@
-//
-// Copyright (C) 2015, NinjaTrader LLC <www.ninjatrader.com>.
-// NinjaTrader reserves the right to modify or overwrite this NinjaScript component with each release.
-//
 #region Using declarations
 using System;
 using System.Collections.Generic;
