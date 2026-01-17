@@ -1637,7 +1637,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Deliver From FVG", Description = "Require the qualifying sweep to originate inside a prior active FVG (not inversed).", GroupName = "Trade Config", Order = 2)]
+		[Display(Name = "Use Deliver From Current FVG", Description = "Require the qualifying sweep to originate inside a prior active FVG on the current timeframe (not inversed).", GroupName = "Trade Config", Order = 2)]
 		public bool UseDeliverFromFvg
 		{
 			get { return useDeliverFromFvg; }
