@@ -118,6 +118,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private BarsPeriodType htfBarsPeriodType = BarsPeriodType.Minute;
 		private int htfBarsPeriodValue = 5;
 		private int smtBarsInProgress = -1;
+		private bool htfSeriesAdded;
+		private bool smtSeriesAdded;
+		private string smtInstrumentName;
 		private int maxBarsBetweenSweepAndIfvg;
 		private bool enableHistoricalTrading;
 		private int lastEntryBar;
@@ -329,6 +332,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				breakEvenTags = new List<string>();
 				volumeFastSma = SMA(Volume, VolumeFastSmaPeriod);
 				volumeSlowSma = SMA(Volume, VolumeSlowSmaPeriod);
+				ResolveSecondarySeriesIndexes();
 			}
 		}
 
@@ -457,6 +461,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void ConfigureHtfSeries()
 		{
+			if (BarsPeriod == null)
+				return;
+
 			int primaryMinutes = BarsPeriod.BarsPeriodType == BarsPeriodType.Minute ? BarsPeriod.Value : 1;
 			HtfMapping mapping = ResolveHtfMapping(primaryMinutes);
 			htfBarsPeriodType = BarsPeriodType.Minute;
@@ -464,18 +471,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (htfBarsPeriodValue > 0)
 			{
 				AddDataSeries(htfBarsPeriodType, htfBarsPeriodValue);
-				htfBarsInProgress = BarsArray.Length - 1;
+				htfSeriesAdded = true;
 			}
 		}
 
 		private void ConfigureSmtSeries()
 		{
-			if (!string.Equals(Instrument.MasterInstrument.Name, "MNQ", StringComparison.OrdinalIgnoreCase))
+			string masterName = Instrument?.MasterInstrument?.Name;
+			if (string.IsNullOrEmpty(masterName))
+				return;
+
+			if (!string.Equals(masterName, "MNQ", StringComparison.OrdinalIgnoreCase))
 				return;
 
 			string mesInstrument = ResolveMesInstrumentName();
 			AddDataSeries(mesInstrument, BarsPeriod.BarsPeriodType, BarsPeriod.Value);
-			smtBarsInProgress = BarsArray.Length - 1;
+			smtInstrumentName = mesInstrument;
+			smtSeriesAdded = true;
 		}
 
 		private string ResolveMesInstrumentName()
@@ -492,6 +504,49 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			return "MES";
+		}
+
+		private void ResolveSecondarySeriesIndexes()
+		{
+			if (BarsArray == null || BarsArray.Length == 0)
+				return;
+
+			string masterName = Instrument?.MasterInstrument?.Name;
+
+			htfBarsInProgress = -1;
+			smtBarsInProgress = -1;
+
+			for (int i = 0; i < BarsArray.Length; i++)
+			{
+				Bars bars = BarsArray[i];
+				if (bars == null)
+					continue;
+
+				if (htfSeriesAdded && htfBarsInProgress < 0)
+				{
+					if (bars.BarsPeriod.BarsPeriodType == htfBarsPeriodType
+						&& bars.BarsPeriod.Value == htfBarsPeriodValue
+						&& !string.IsNullOrEmpty(masterName)
+						&& string.Equals(bars.Instrument?.MasterInstrument?.Name, masterName, StringComparison.OrdinalIgnoreCase))
+					{
+						htfBarsInProgress = i;
+					}
+				}
+
+				if (smtSeriesAdded && smtBarsInProgress < 0)
+				{
+					if (bars.BarsPeriod.BarsPeriodType == BarsPeriod.BarsPeriodType
+						&& bars.BarsPeriod.Value == BarsPeriod.Value
+						&& !string.IsNullOrEmpty(smtInstrumentName)
+						&& string.Equals(bars.Instrument?.MasterInstrument?.Name, smtInstrumentName, StringComparison.OrdinalIgnoreCase))
+					{
+						smtBarsInProgress = i;
+					}
+				}
+			}
+
+			if (DebugLogging && (htfSeriesAdded || smtSeriesAdded) && (htfBarsInProgress < 0 || smtBarsInProgress < 0))
+				Print(string.Format("IFVG: secondary series index not resolved (HTF={0}, SMT={1}).", htfBarsInProgress, smtBarsInProgress));
 		}
 
 		private class HtfMapping
