@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Media;
 using System.Xml.Serialization;
@@ -81,6 +82,32 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool useDeliverFromFvg;
 		private bool useDeliverFromHtfFvg;
 		private bool useSmt;
+		private bool useSession1;
+		private bool useSession2;
+		private bool autoShiftSession1;
+		private bool autoShiftSession2;
+		private bool closeAtSessionEnd;
+		private Brush sessionBrush;
+		private TimeSpan sessionStart;
+		private TimeSpan sessionEnd;
+		private TimeSpan noTradesAfter;
+		private TimeSpan session2SessionStart;
+		private TimeSpan session2SessionEnd;
+		private TimeSpan session2NoTradesAfter;
+		private TimeSpan activeSessionStart;
+		private TimeSpan activeSessionEnd;
+		private TimeSpan activeNoTradesAfter;
+		private TimeSpan effectiveSessionStart;
+		private TimeSpan effectiveSessionEnd;
+		private TimeSpan effectiveNoTradesAfter;
+		private DateTime effectiveTimesDate;
+		private DateTime lastSessionEvalTime;
+		private bool sessionClosed;
+		private bool sessionInitialized;
+		private bool activeAutoShiftTimes;
+		private SessionSlot activeSession;
+		private TimeZoneInfo targetTimeZone;
+		private TimeZoneInfo londonTimeZone;
 		private bool useVolumeSmaFilter;
 		private int volumeFastSmaPeriod;
 		private int volumeSlowSmaPeriod;
@@ -130,6 +157,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			Long,
 			Short
+		}
+
+		private enum SessionSlot
+		{
+			None,
+			Session1,
+			Session2
 		}
 
 		private class SweepEvent
@@ -205,6 +239,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 				useDeliverFromFvg = false;
 				useDeliverFromHtfFvg = false;
 				useSmt = false;
+				useSession1 = true;
+				useSession2 = true;
+				autoShiftSession1 = true;
+				autoShiftSession2 = false;
+				closeAtSessionEnd = true;
+				SessionBrush = Brushes.Gold;
+				London_SessionStart = new TimeSpan(1, 30, 0);
+				London_SessionEnd = new TimeSpan(5, 30, 0);
+				London_NoTradesAfter = new TimeSpan(5, 0, 0);
+				NewYork_SessionStart = new TimeSpan(9, 40, 0);
+				NewYork_SessionEnd = new TimeSpan(15, 0, 0);
+				NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
 				useVolumeSmaFilter = false;
 				volumeFastSmaPeriod = 5;
 				volumeSlowSmaPeriod = 100;
@@ -234,6 +280,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				pendingTradeTag = null;
 				activeTradeTag = null;
 				lastTradeLabelPrinted = null;
+				sessionClosed = false;
+				sessionInitialized = false;
+				activeSession = SessionSlot.None;
+				lastSessionEvalTime = DateTime.MinValue;
+				effectiveTimesDate = DateTime.MinValue;
 			}
 			else if (State == State.Configure)
 			{
@@ -303,6 +354,41 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (CurrentBar < 2)
 				return;
+
+			EnsureActiveSession(Time[0]);
+			EnsureEffectiveTimes(Time[0], false);
+
+			if (IsFirstTickOfBar && TimeInSession(Time[0]) && sessionClosed)
+			{
+				sessionClosed = false;
+				LogDebug("New session started, state reset.");
+			}
+
+			DrawSessionBackground();
+
+			bool crossedSessionEnd = CrossedSessionEnd(Time[1], Time[0]);
+			bool isLastBarOfTradingSession = Bars.IsLastBarOfSession && !sessionClosed;
+
+			if (crossedSessionEnd || isLastBarOfTradingSession)
+			{
+				if (CloseAtSessionEnd)
+					FlattenAndCancel("SessionEnd");
+				else if (Position.MarketPosition == MarketPosition.Flat)
+					CancelAllOrders();
+
+				sessionClosed = true;
+			}
+
+			bool crossedNoTradesAfter =
+				activeSession != SessionSlot.None
+				&& Time[1].TimeOfDay <= effectiveNoTradesAfter
+				&& Time[0].TimeOfDay > effectiveNoTradesAfter;
+
+			if (crossedNoTradesAfter)
+			{
+				LogDebug("NoTradesAfter crossed, canceling orders.");
+				CancelAllOrders();
+			}
 
 			UpdateLiquidity();
 			UpdateFvgs();
@@ -1258,6 +1344,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
+			if (!TimeInSession(Time[0]))
+			{
+				LogTrade(fvgTag, "BLOCKED (OutsideSession)", false);
+				return;
+			}
+
+			if (TimeInNoTradesAfter(Time[0]))
+			{
+				LogTrade(fvgTag, "BLOCKED (NoTradesAfter)", false);
+				return;
+			}
+
 			SweepEvent sweep = GetEligibleSweep(direction, fvgTag);
 			if (sweep == null)
 				return;
@@ -1560,6 +1658,384 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (string.Equals(sessionName, "London", StringComparison.OrdinalIgnoreCase))
 				return isHigh ? "LO.H" : "LO.L";
 			return isHigh ? "H" : "L";
+		}
+
+		private void FlattenAndCancel(string reason)
+		{
+			CancelAllOrders();
+
+			if (Position.MarketPosition == MarketPosition.Long)
+			{
+				LogDebug(string.Format("Flattening LONG due to {0}", reason));
+				ExitLong("Exit_" + reason, "Long");
+			}
+			else if (Position.MarketPosition == MarketPosition.Short)
+			{
+				LogDebug(string.Format("Flattening SHORT due to {0}", reason));
+				ExitShort("Exit_" + reason, "Short");
+			}
+		}
+
+		private void CancelAllOrders()
+		{
+			if (Account == null)
+				return;
+
+			foreach (Order order in Account.Orders)
+			{
+				if (order == null)
+					continue;
+				if (order.Instrument != Instrument)
+					continue;
+				if (order.OrderState == OrderState.Working ||
+					order.OrderState == OrderState.Submitted ||
+					order.OrderState == OrderState.Accepted ||
+					order.OrderState == OrderState.ChangePending)
+				{
+					CancelOrder(order);
+				}
+			}
+		}
+
+		private bool TimeInSession(DateTime time)
+		{
+			EnsureActiveSession(time);
+			if (activeSession == SessionSlot.None)
+				return false;
+			EnsureEffectiveTimes(time, false);
+			TimeSpan now = time.TimeOfDay;
+
+			if (effectiveSessionStart < effectiveSessionEnd)
+				return now >= effectiveSessionStart && now < effectiveSessionEnd;
+
+			return now >= effectiveSessionStart || now < effectiveSessionEnd;
+		}
+
+		private bool TimeInNoTradesAfter(DateTime time)
+		{
+			EnsureActiveSession(time);
+			if (activeSession == SessionSlot.None)
+				return false;
+			EnsureEffectiveTimes(time, false);
+			TimeSpan now = time.TimeOfDay;
+
+			if (effectiveSessionStart < effectiveSessionEnd)
+				return now >= effectiveNoTradesAfter && now < effectiveSessionEnd;
+
+			return now >= effectiveNoTradesAfter || now < effectiveSessionEnd;
+		}
+
+		private void EnsureActiveSession(DateTime time)
+		{
+			if (time <= lastSessionEvalTime)
+				return;
+			lastSessionEvalTime = time;
+
+			SessionSlot desired = DetermineSessionForTime(time);
+			if (!sessionInitialized || desired != activeSession)
+			{
+				activeSession = desired;
+				if (activeSession != SessionSlot.None)
+					ApplyInputsForSession(activeSession);
+				effectiveTimesDate = DateTime.MinValue;
+				sessionInitialized = true;
+			}
+		}
+
+		private SessionSlot DetermineSessionForTime(DateTime time)
+		{
+			TimeSpan now = time.TimeOfDay;
+
+			GetSessionWindowForSession(SessionSlot.Session1, time.Date, out TimeSpan session1Start, out TimeSpan session1End);
+			GetSessionWindowForSession(SessionSlot.Session2, time.Date, out TimeSpan session2Start, out TimeSpan session2End);
+
+			bool session1Configured = IsSessionConfigured(SessionSlot.Session1);
+			bool session2Configured = IsSessionConfigured(SessionSlot.Session2);
+
+			if (session1Configured && IsTimeInRange(now, session1Start, session1End))
+				return SessionSlot.Session1;
+			if (session2Configured && IsTimeInRange(now, session2Start, session2End))
+				return SessionSlot.Session2;
+
+			if (!session1Configured && !session2Configured)
+				return SessionSlot.None;
+
+			DateTime nextSession1Start = DateTime.MaxValue;
+			DateTime nextSession2Start = DateTime.MaxValue;
+
+			if (session1Configured)
+			{
+				nextSession1Start = time.Date + session1Start;
+				if (nextSession1Start <= time)
+					nextSession1Start = nextSession1Start.AddDays(1);
+			}
+
+			if (session2Configured)
+			{
+				nextSession2Start = time.Date + session2Start;
+				if (nextSession2Start <= time)
+					nextSession2Start = nextSession2Start.AddDays(1);
+			}
+
+			return nextSession1Start <= nextSession2Start
+				? SessionSlot.Session1
+				: SessionSlot.Session2;
+		}
+
+		private bool CrossedSessionEnd(DateTime previousTime, DateTime currentTime)
+		{
+			return CrossedSessionEndForSession(SessionSlot.Session1, previousTime, currentTime)
+				|| CrossedSessionEndForSession(SessionSlot.Session2, previousTime, currentTime);
+		}
+
+		private bool CrossedSessionEndForSession(SessionSlot session, DateTime previousTime, DateTime currentTime)
+		{
+			if (!IsSessionConfigured(session))
+				return false;
+
+			GetSessionWindowForSession(session, currentTime.Date, out TimeSpan start, out TimeSpan end);
+
+			bool wasInSession = IsTimeInRange(previousTime.TimeOfDay, start, end);
+			bool nowInSession = IsTimeInRange(currentTime.TimeOfDay, start, end);
+			return wasInSession && !nowInSession;
+		}
+
+		private void GetSessionWindowForSession(SessionSlot session, DateTime date, out TimeSpan start, out TimeSpan end)
+		{
+			start = TimeSpan.Zero;
+			end = TimeSpan.Zero;
+			bool autoShift = false;
+
+			switch (session)
+			{
+				case SessionSlot.Session1:
+					start = London_SessionStart;
+					end = London_SessionEnd;
+					autoShift = AutoShiftSession1;
+					break;
+				case SessionSlot.Session2:
+					start = NewYork_SessionStart;
+					end = NewYork_SessionEnd;
+					autoShift = AutoShiftSession2;
+					break;
+			}
+
+			if (autoShift)
+			{
+				TimeSpan shift = GetLondonSessionShiftForDate(date);
+				start = ShiftTime(start, shift);
+				end = ShiftTime(end, shift);
+			}
+		}
+
+		private bool IsSessionConfigured(SessionSlot session)
+		{
+			switch (session)
+			{
+				case SessionSlot.Session1:
+					return UseSession1 && London_SessionStart != London_SessionEnd;
+				case SessionSlot.Session2:
+					return UseSession2 && NewYork_SessionStart != NewYork_SessionEnd;
+				default:
+					return false;
+			}
+		}
+
+		private void ApplyInputsForSession(SessionSlot session)
+		{
+			switch (session)
+			{
+				case SessionSlot.Session1:
+					activeAutoShiftTimes = AutoShiftSession1;
+					activeSessionStart = London_SessionStart;
+					activeSessionEnd = London_SessionEnd;
+					activeNoTradesAfter = London_NoTradesAfter;
+					break;
+				case SessionSlot.Session2:
+					activeAutoShiftTimes = AutoShiftSession2;
+					activeSessionStart = NewYork_SessionStart;
+					activeSessionEnd = NewYork_SessionEnd;
+					activeNoTradesAfter = NewYork_NoTradesAfter;
+					break;
+			}
+		}
+
+		private void EnsureEffectiveTimes(DateTime barTime, bool log)
+		{
+			if (activeSession == SessionSlot.None)
+			{
+				effectiveSessionStart = TimeSpan.Zero;
+				effectiveSessionEnd = TimeSpan.Zero;
+				effectiveNoTradesAfter = TimeSpan.Zero;
+				return;
+			}
+
+			if (!activeAutoShiftTimes)
+			{
+				effectiveSessionStart = activeSessionStart;
+				effectiveSessionEnd = activeSessionEnd;
+				effectiveNoTradesAfter = activeNoTradesAfter;
+				return;
+			}
+
+			DateTime date = barTime.Date;
+			if (date == effectiveTimesDate)
+				return;
+
+			effectiveTimesDate = date;
+
+			TimeSpan shift = GetLondonSessionShiftForDate(date);
+			effectiveSessionStart = ShiftTime(activeSessionStart, shift);
+			effectiveSessionEnd = ShiftTime(activeSessionEnd, shift);
+			effectiveNoTradesAfter = ShiftTime(activeNoTradesAfter, shift);
+
+			if (DebugLogging && log)
+			{
+				LogDebug(string.Format(
+					"AutoShift recompute base {0}-{1} nta={2} effective {3}-{4} nta={5} shift={6}h",
+					activeSessionStart,
+					activeSessionEnd,
+					activeNoTradesAfter,
+					effectiveSessionStart,
+					effectiveSessionEnd,
+					effectiveNoTradesAfter,
+					shift.TotalHours));
+			}
+		}
+
+		private TimeSpan GetLondonSessionShiftForDate(DateTime date)
+		{
+			DateTime utcSample = new DateTime(date.Year, date.Month, date.Day, 12, 0, 0, DateTimeKind.Utc);
+			DateTime utcRef = new DateTime(date.Year, 1, 15, 12, 0, 0, DateTimeKind.Utc);
+
+			TimeZoneInfo londonTz = GetLondonTimeZone();
+			TimeZoneInfo targetTz = GetTargetTimeZone();
+
+			TimeSpan baseline = londonTz.GetUtcOffset(utcRef) - targetTz.GetUtcOffset(utcRef);
+			TimeSpan actual = londonTz.GetUtcOffset(utcSample) - targetTz.GetUtcOffset(utcSample);
+
+			return baseline - actual;
+		}
+
+		private TimeSpan ShiftTime(TimeSpan baseTime, TimeSpan shift)
+		{
+			long ticks = (baseTime.Ticks + shift.Ticks) % TimeSpan.TicksPerDay;
+			if (ticks < 0)
+				ticks += TimeSpan.TicksPerDay;
+			return new TimeSpan(ticks);
+		}
+
+		private TimeZoneInfo GetTargetTimeZone()
+		{
+			if (targetTimeZone != null)
+				return targetTimeZone;
+
+			try
+			{
+				var bars = Bars;
+				if (bars != null)
+				{
+					var timeZoneProp = bars.GetType().GetProperty(
+						"TimeZoneInfo",
+						BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+					if (timeZoneProp != null && typeof(TimeZoneInfo).IsAssignableFrom(timeZoneProp.PropertyType))
+						targetTimeZone = (TimeZoneInfo)timeZoneProp.GetValue(bars, null);
+				}
+
+				if (targetTimeZone == null)
+					targetTimeZone = Bars?.TradingHours?.TimeZoneInfo;
+			}
+			catch
+			{
+				targetTimeZone = null;
+			}
+
+			if (targetTimeZone == null)
+				targetTimeZone = TimeZoneInfo.Local;
+
+			return targetTimeZone;
+		}
+
+		private TimeZoneInfo GetLondonTimeZone()
+		{
+			if (londonTimeZone != null)
+				return londonTimeZone;
+
+			try
+			{
+				londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
+			}
+			catch
+			{
+				try
+				{
+					londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/London");
+				}
+				catch
+				{
+					londonTimeZone = TimeZoneInfo.Utc;
+				}
+			}
+
+			return londonTimeZone;
+		}
+
+		private void DrawSessionBackground()
+		{
+			if (CurrentBar < 1)
+				return;
+
+			DateTime barTime = Time[0];
+			EnsureActiveSession(barTime);
+			if (activeSession == SessionSlot.None)
+				return;
+			EnsureEffectiveTimes(barTime, false);
+
+			bool isOvernight = effectiveSessionStart > effectiveSessionEnd;
+			DateTime sessionStartTime = barTime.Date + effectiveSessionStart;
+			DateTime sessionEndTime = isOvernight
+				? sessionStartTime.AddDays(1).Date + effectiveSessionEnd
+				: sessionStartTime.Date + effectiveSessionEnd;
+
+			int startBarsAgo = Bars.GetBar(sessionStartTime);
+			int endBarsAgo = Bars.GetBar(sessionEndTime);
+
+			if (startBarsAgo < 0 || endBarsAgo < 0)
+				return;
+
+			string tag = string.Format("IFVG_SessionFill_{0}_{1:yyyyMMdd_HHmm}", activeSession, sessionStartTime);
+			if (DrawObjects[tag] == null)
+			{
+				Draw.Rectangle(
+					this,
+					tag,
+					false,
+					sessionStartTime,
+					0,
+					sessionEndTime,
+					30000,
+					Brushes.Transparent,
+					SessionBrush ?? Brushes.DarkSlateGray,
+					10
+				).ZOrder = -1;
+			}
+
+			var lineBrush = new SolidColorBrush(Color.FromArgb(70, 255, 0, 0));
+			if (lineBrush.CanFreeze)
+				lineBrush.Freeze();
+
+			DateTime noTradesAfterTime = barTime.Date + effectiveNoTradesAfter;
+			if (isOvernight && effectiveNoTradesAfter < effectiveSessionStart)
+				noTradesAfterTime = noTradesAfterTime.AddDays(1);
+
+			Draw.VerticalLine(
+				this,
+				string.Format("IFVG_NoTradesAfter_{0}_{1:yyyyMMdd_HHmm}", activeSession, sessionStartTime),
+				noTradesAfterTime,
+				lineBrush,
+				DashStyleHelper.Solid,
+				2);
 		}
 
 		private void UpdateSwingLiquidity()
@@ -2255,6 +2731,102 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return useSmt; }
 			set { useSmt = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Use Session 1", Description = "Allow trading during the first session window.", GroupName = "Sessions", Order = 0)]
+		public bool UseSession1
+		{
+			get { return useSession1; }
+			set { useSession1 = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Use Session 2", Description = "Allow trading during the second session window.", GroupName = "Sessions", Order = 1)]
+		public bool UseSession2
+		{
+			get { return useSession2; }
+			set { useSession2 = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Auto Shift Session 1", Description = "Apply London DST auto-shift to Session 1 times.", GroupName = "Sessions", Order = 2)]
+		public bool AutoShiftSession1
+		{
+			get { return autoShiftSession1; }
+			set { autoShiftSession1 = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Auto Shift Session 2", Description = "Apply London DST auto-shift to Session 2 times.", GroupName = "Sessions", Order = 3)]
+		public bool AutoShiftSession2
+		{
+			get { return autoShiftSession2; }
+			set { autoShiftSession2 = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Close At Session End", Description = "Flatten positions and cancel orders when the session ends.", GroupName = "Sessions", Order = 4)]
+		public bool CloseAtSessionEnd
+		{
+			get { return closeAtSessionEnd; }
+			set { closeAtSessionEnd = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Session Fill", Description = "Color of the session background.", GroupName = "Sessions", Order = 5)]
+		public Brush SessionBrush
+		{
+			get { return sessionBrush; }
+			set { sessionBrush = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Session Start", Description = "When session 1 is starting.", GroupName = "London Time", Order = 0)]
+		public TimeSpan London_SessionStart
+		{
+			get { return sessionStart; }
+			set { sessionStart = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Session End", Description = "When session 1 is ending.", GroupName = "London Time", Order = 1)]
+		public TimeSpan London_SessionEnd
+		{
+			get { return sessionEnd; }
+			set { sessionEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "London Time", Order = 2)]
+		public TimeSpan London_NoTradesAfter
+		{
+			get { return noTradesAfter; }
+			set { noTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Session Start", Description = "When session 2 is starting.", GroupName = "New York Time", Order = 0)]
+		public TimeSpan NewYork_SessionStart
+		{
+			get { return session2SessionStart; }
+			set { session2SessionStart = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Session End", Description = "When session 2 is ending.", GroupName = "New York Time", Order = 1)]
+		public TimeSpan NewYork_SessionEnd
+		{
+			get { return session2SessionEnd; }
+			set { session2SessionEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "New York Time", Order = 2)]
+		public TimeSpan NewYork_NoTradesAfter
+		{
+			get { return session2NoTradesAfter; }
+			set { session2NoTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0); }
 		}
 
 		[NinjaScriptProperty]
