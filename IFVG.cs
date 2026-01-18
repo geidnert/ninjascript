@@ -81,6 +81,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool useDeliverFromFvg;
 		private bool useDeliverFromHtfFvg;
 		private bool useSmt;
+		private bool useVolumeSmaFilter;
+		private int volumeFastSmaPeriod;
+		private int volumeSlowSmaPeriod;
+		private double volumeSmaMultiplier;
+		private SMA volumeFastSma;
+		private SMA volumeSlowSma;
 		private int htfBarsInProgress = -1;
 		private BarsPeriodType htfBarsPeriodType = BarsPeriodType.Minute;
 		private int htfBarsPeriodValue = 5;
@@ -199,6 +205,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				useDeliverFromFvg = false;
 				useDeliverFromHtfFvg = false;
 				useSmt = false;
+				useVolumeSmaFilter = false;
+				volumeFastSmaPeriod = 5;
+				volumeSlowSmaPeriod = 100;
+				volumeSmaMultiplier = 2.0;
 				lastEntryBar = -1;
 				debugLogging = false;
 				verboseDebugLogging = false;
@@ -266,6 +276,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (breakEvenLineBrush.CanFreeze)
 					breakEvenLineBrush.Freeze();
 				breakEvenTags = new List<string>();
+				volumeFastSma = SMA(Volume, VolumeFastSmaPeriod);
+				volumeSlowSma = SMA(Volume, VolumeSlowSmaPeriod);
 			}
 		}
 
@@ -1283,6 +1295,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LogTrade(fvgTag, smtDetails, false);
 			}
 
+			if (!PassesVolumeSmaFilter(fvgTag))
+				return;
+
 			double entryPrice = Close[0];
 			const int slOccurrence = 1;
 			double firstTargetPrice;
@@ -1458,6 +1473,50 @@ namespace NinjaTrader.NinjaScript.Strategies
 				EnterShort(signalName);
 
 			lastEntryBar = CurrentBar;
+		}
+
+		private bool PassesVolumeSmaFilter(string fvgTag)
+		{
+			if (!UseVolumeSmaFilter)
+				return true;
+
+			int requiredBars = Math.Max(VolumeFastSmaPeriod, VolumeSlowSmaPeriod);
+			if (CurrentBar < requiredBars - 1)
+			{
+				LogTrade(fvgTag, string.Format(
+					"BLOCKED (VolumeSmaWarmup: bars={0} need={1})",
+					CurrentBar + 1,
+					requiredBars), false);
+				return false;
+			}
+
+			double fast = volumeFastSma[0];
+			double slow = volumeSlowSma[0];
+			if (slow <= 0)
+			{
+				LogTrade(fvgTag, string.Format(
+					"BLOCKED (VolumeSmaInvalid: fast={0} slow={1})",
+					fast,
+					slow), false);
+				return false;
+			}
+
+			if (fast <= slow * VolumeSmaMultiplier)
+			{
+				LogTrade(fvgTag, string.Format(
+					"BLOCKED (VolumeSma: fast={0} slow={1} mult={2})",
+					fast,
+					slow,
+					VolumeSmaMultiplier), false);
+				return false;
+			}
+
+			LogTrade(fvgTag, string.Format(
+				"Filter VolumeSma ok fast={0} slow={1} mult={2}",
+				fast,
+				slow,
+				VolumeSmaMultiplier), false);
+			return true;
 		}
 
 		private void PruneLiquidityLines(int drawLimitDays)
@@ -2198,8 +2257,40 @@ namespace NinjaTrader.NinjaScript.Strategies
 			set { useSmt = value; }
 		}
 
+		[NinjaScriptProperty]
+		[Display(Name = "Use Volume SMA Filter", Description = "Require fast volume SMA to exceed slow volume SMA by a multiplier.", GroupName = "Trade Config", Order = 5)]
+		public bool UseVolumeSmaFilter
+		{
+			get { return useVolumeSmaFilter; }
+			set { useVolumeSmaFilter = value; }
+		}
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Volume SMA Fast Period", Description = "Fast period for the volume SMA filter.", GroupName = "Trade Config", Order = 6)]
+		public int VolumeFastSmaPeriod
+		{
+			get { return volumeFastSmaPeriod; }
+			set { volumeFastSmaPeriod = value; }
+		}
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Volume SMA Slow Period", Description = "Slow period for the volume SMA filter.", GroupName = "Trade Config", Order = 7)]
+		public int VolumeSlowSmaPeriod
+		{
+			get { return volumeSlowSmaPeriod; }
+			set { volumeSlowSmaPeriod = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Volume SMA Multiplier", Description = "Fast volume SMA must be greater than slow SMA times this multiplier.", GroupName = "Trade Config", Order = 8)]
+		public double VolumeSmaMultiplier
+		{
+			get { return volumeSmaMultiplier; }
+			set { volumeSmaMultiplier = value; }
+		}
+
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 5)]
+		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 9)]
 		public int MaxBarsBetweenSweepAndIfvg
 		{
 			get { return maxBarsBetweenSweepAndIfvg; }
@@ -2207,7 +2298,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 6)]
+		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 10)]
 		public bool EnableHistoricalTrading
 		{
 			get { return enableHistoricalTrading; }
@@ -2215,7 +2306,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 7)]
+		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 11)]
 		public bool DebugLogging
 		{
 			get { return debugLogging; }
@@ -2223,7 +2314,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 8)]
+		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 12)]
 		public bool VerboseDebugLogging
 		{
 			get { return verboseDebugLogging; }
@@ -2231,7 +2322,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 9)]
+		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 13)]
 		public bool InvalidateIfTargetHitBeforeEntry
 		{
 			get { return invalidateIfTargetHitBeforeEntry; }
@@ -2239,7 +2330,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 10)]
+		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 14)]
 		public double MinTpSlDistancePoints
 		{
 			get { return minTpSlDistancePoints; }
@@ -2247,7 +2338,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 11)]
+		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 15)]
 		public bool ExitOnCloseBeyondEntryIfvg
 		{
 			get { return exitOnCloseBeyondEntryIfvg; }
@@ -2255,7 +2346,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 12)]
+		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 16)]
 		public bool UseBreakEvenWickLine
 		{
 			get { return useBreakEvenWickLine; }
