@@ -80,9 +80,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool useSessionLiquiditySweep;
 		private bool useDeliverFromFvg;
 		private bool useDeliverFromHtfFvg;
+		private bool useSmt;
 		private int htfBarsInProgress = -1;
 		private BarsPeriodType htfBarsPeriodType = BarsPeriodType.Minute;
 		private int htfBarsPeriodValue = 5;
+		private int smtBarsInProgress = -1;
 		private int maxBarsBetweenSweepAndIfvg;
 		private bool enableHistoricalTrading;
 		private int lastEntryBar;
@@ -196,6 +198,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				enableHistoricalTrading = false;
 				useDeliverFromFvg = false;
 				useDeliverFromHtfFvg = false;
+				useSmt = false;
 				lastEntryBar = -1;
 				debugLogging = false;
 				verboseDebugLogging = false;
@@ -227,6 +230,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// Mirror SampleIntrabarBacktest style: add a 1-tick secondary series.
 				AddDataSeries(Data.BarsPeriodType.Tick, 1);
 				ConfigureHtfSeries();
+				ConfigureSmtSeries();
 			}
 			else if (State == State.DataLoaded)
 			{
@@ -279,6 +283,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 					UpdateHtfFvgs();
 				return;
 			}
+			if (BarsInProgress == smtBarsInProgress)
+				return;
 
 			if (BarsInProgress != 0)
 				return;
@@ -362,6 +368,32 @@ namespace NinjaTrader.NinjaScript.Strategies
 				AddDataSeries(htfBarsPeriodType, htfBarsPeriodValue);
 				htfBarsInProgress = BarsArray.Length - 1;
 			}
+		}
+
+		private void ConfigureSmtSeries()
+		{
+			if (!string.Equals(Instrument.MasterInstrument.Name, "MNQ", StringComparison.OrdinalIgnoreCase))
+				return;
+
+			string mesInstrument = ResolveMesInstrumentName();
+			AddDataSeries(mesInstrument, BarsPeriod.BarsPeriodType, BarsPeriod.Value);
+			smtBarsInProgress = BarsArray.Length - 1;
+		}
+
+		private string ResolveMesInstrumentName()
+		{
+			string fullName = Instrument.FullName;
+			if (string.IsNullOrEmpty(fullName))
+				return "MES";
+
+			if (fullName.StartsWith("MNQ", StringComparison.OrdinalIgnoreCase))
+			{
+				if (fullName.Length > 3)
+					return "MES" + fullName.Substring(3);
+				return "MES";
+			}
+
+			return "MES";
 		}
 
 		private class HtfMapping
@@ -753,6 +785,230 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return false;
 		}
 
+		private bool TryGetLastTwoSwingHighs(int barsInProgress, int strength, out double lastHigh, out double prevHigh, out int lastBarsAgo, out int prevBarsAgo, out int foundCount)
+		{
+			lastHigh = 0;
+			prevHigh = 0;
+			lastBarsAgo = -1;
+			prevBarsAgo = -1;
+			foundCount = 0;
+
+			if (CurrentBars[barsInProgress] < strength * 2)
+				return false;
+
+			int found = 0;
+			for (int barsAgo = strength; barsAgo + strength <= CurrentBars[barsInProgress]; barsAgo++)
+			{
+				double value = Highs[barsInProgress][barsAgo];
+				bool isSwing = true;
+				for (int i = 1; i <= strength; i++)
+				{
+					if (value <= Highs[barsInProgress][barsAgo - i] || value <= Highs[barsInProgress][barsAgo + i])
+					{
+						isSwing = false;
+						break;
+					}
+				}
+				if (!isSwing)
+					continue;
+
+				if (found == 0)
+				{
+					lastHigh = value;
+					lastBarsAgo = barsAgo;
+					found++;
+					foundCount = found;
+				}
+				else
+				{
+					prevHigh = value;
+					prevBarsAgo = barsAgo;
+					foundCount = 2;
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		private bool TryGetLastTwoSwingLows(int barsInProgress, int strength, out double lastLow, out double prevLow, out int lastBarsAgo, out int prevBarsAgo, out int foundCount)
+		{
+			lastLow = 0;
+			prevLow = 0;
+			lastBarsAgo = -1;
+			prevBarsAgo = -1;
+			foundCount = 0;
+
+			if (CurrentBars[barsInProgress] < strength * 2)
+				return false;
+
+			int found = 0;
+			for (int barsAgo = strength; barsAgo + strength <= CurrentBars[barsInProgress]; barsAgo++)
+			{
+				double value = Lows[barsInProgress][barsAgo];
+				bool isSwing = true;
+				for (int i = 1; i <= strength; i++)
+				{
+					if (value >= Lows[barsInProgress][barsAgo - i] || value >= Lows[barsInProgress][barsAgo + i])
+					{
+						isSwing = false;
+						break;
+					}
+				}
+				if (!isSwing)
+					continue;
+
+				if (found == 0)
+				{
+					lastLow = value;
+					lastBarsAgo = barsAgo;
+					found++;
+					foundCount = found;
+				}
+				else
+				{
+					prevLow = value;
+					prevBarsAgo = barsAgo;
+					foundCount = 2;
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		private bool TryGetSmtSignal(TradeDirection direction, out string details)
+		{
+			details = string.Empty;
+			if (smtBarsInProgress < 0)
+			{
+				details = "SMT missing MES series";
+				return false;
+			}
+
+			double mnqLast;
+			double mnqPrev;
+			double mesLast;
+			double mesPrev;
+			int mnqLastAgo;
+			int mnqPrevAgo;
+			int mesLastAgo;
+			int mesPrevAgo;
+			int mnqCount;
+			int mesCount;
+
+			if (direction == TradeDirection.Short)
+			{
+				bool hasMnq = TryGetLastTwoSwingHighs(0, SwingStrength, out mnqLast, out mnqPrev, out mnqLastAgo, out mnqPrevAgo, out mnqCount);
+				bool hasMes = TryGetLastTwoSwingHighs(smtBarsInProgress, SwingStrength, out mesLast, out mesPrev, out mesLastAgo, out mesPrevAgo, out mesCount);
+				if (!hasMnq || !hasMes)
+				{
+					details = string.Format("SMT insufficient swing highs (MNQ={0} MES={1})", mnqCount, mesCount);
+					return false;
+				}
+
+				bool mesHigherHigh = mesLast > mesPrev;
+				bool mnqHigherHigh = mnqLast > mnqPrev;
+				if (mesHigherHigh && !mnqHigherHigh)
+				{
+					details = string.Format("SMT bearish MES {0}>{1} MNQ {2}<={3}", mesLast, mesPrev, mnqLast, mnqPrev);
+					DrawSmtLines(direction, mnqLast, mnqLastAgo, mnqPrev, mnqPrevAgo, mesLast, mesLastAgo, mesPrev, mesPrevAgo);
+					return true;
+				}
+
+				details = string.Format("SMT no bearish MES {0}>{1} MNQ {2}>{3}", mesLast, mesPrev, mnqLast, mnqPrev);
+				return false;
+			}
+
+			bool hasMnqLow = TryGetLastTwoSwingLows(0, SwingStrength, out mnqLast, out mnqPrev, out mnqLastAgo, out mnqPrevAgo, out mnqCount);
+			bool hasMesLow = TryGetLastTwoSwingLows(smtBarsInProgress, SwingStrength, out mesLast, out mesPrev, out mesLastAgo, out mesPrevAgo, out mesCount);
+			if (!hasMnqLow || !hasMesLow)
+			{
+				details = string.Format("SMT insufficient swing lows (MNQ={0} MES={1})", mnqCount, mesCount);
+				return false;
+			}
+
+			bool mesLowerLow = mesLast < mesPrev;
+			bool mnqLowerLow = mnqLast < mnqPrev;
+			if (mesLowerLow && !mnqLowerLow)
+			{
+				details = string.Format("SMT bullish MES {0}<{1} MNQ {2}>={3}", mesLast, mesPrev, mnqLast, mnqPrev);
+				DrawSmtLines(direction, mnqLast, mnqLastAgo, mnqPrev, mnqPrevAgo, mesLast, mesLastAgo, mesPrev, mesPrevAgo);
+				return true;
+			}
+
+			details = string.Format("SMT no bullish MES {0}<{1} MNQ {2}<{3}", mesLast, mesPrev, mnqLast, mnqPrev);
+			return false;
+		}
+
+		private void DrawSmtLines(TradeDirection direction, double mnqLastPrice, int mnqLastBarsAgo, double mnqPrevPrice, int mnqPrevBarsAgo, double mesLastPrice, int mesLastBarsAgo, double mesPrevPrice, int mesPrevBarsAgo)
+		{
+			if (mnqLastBarsAgo < 0 || mnqPrevBarsAgo < 0 || mesLastBarsAgo < 0 || mesPrevBarsAgo < 0)
+				return;
+
+			Color smtColor = Color.FromArgb(140, 255, 140, 0);
+			SolidColorBrush smtBrush = new SolidColorBrush(smtColor);
+			smtBrush.Freeze();
+
+			int mnqMidBarsAgo = (mnqPrevBarsAgo + mnqLastBarsAgo) / 2;
+			double mnqMidPrice = (mnqPrevPrice + mnqLastPrice) / 2.0;
+
+			DateTime mesLastTime = Times[smtBarsInProgress][mesLastBarsAgo];
+			DateTime mesPrevTime = Times[smtBarsInProgress][mesPrevBarsAgo];
+			int mesLastPrimaryBar = BarsArray[0].GetBar(mesLastTime);
+			int mesPrevPrimaryBar = BarsArray[0].GetBar(mesPrevTime);
+			if (mesLastPrimaryBar < 0 || mesPrevPrimaryBar < 0)
+				return;
+			int mesLastBarsAgoPrimary = CurrentBar - mesLastPrimaryBar;
+			int mesPrevBarsAgoPrimary = CurrentBar - mesPrevPrimaryBar;
+			if (mesLastBarsAgoPrimary < 0 || mesPrevBarsAgoPrimary < 0)
+				return;
+
+			string tagBase = string.Format("IFVG_SMT_{0}_{1:yyyyMMdd_HHmmss}", direction, Time[0]);
+
+			Draw.Line(
+				this,
+				tagBase + "_MNQ",
+				false,
+				mnqPrevBarsAgo,
+				mnqPrevPrice,
+				mnqLastBarsAgo,
+				mnqLastPrice,
+				smtBrush,
+				DashStyleHelper.Dot,
+				2
+			);
+
+			Draw.Line(
+				this,
+				tagBase + "_MES",
+				false,
+				mesPrevBarsAgoPrimary,
+				mesPrevPrice,
+				mesLastBarsAgoPrimary,
+				mesLastPrice,
+				smtBrush,
+				DashStyleHelper.Dot,
+				2
+			);
+
+			Draw.Text(
+				this,
+				tagBase + "_Lbl",
+				false,
+				"SMT",
+				Time[mnqMidBarsAgo],
+				mnqMidPrice,
+				0,
+				smtBrush,
+				new SimpleFont("Arial", 10),
+				TextAlignment.Center,
+				Brushes.Transparent,
+				Brushes.Transparent,
+				0
+			);
+		}
+
 		private void UpdateBreakEvenLine()
 		{
 			if (!UseBreakEvenWickLine)
@@ -1014,6 +1270,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 					return;
 				}
 				LogTrade(fvgTag, string.Format("Filter DeliverFromHTF ok tag={0} sweep={1} bar={2}", deliveringHtf.Tag, sweep.Price, sweep.BarIndex), false);
+			}
+
+			if (UseSmt)
+			{
+				string smtDetails;
+				if (!TryGetSmtSignal(direction, out smtDetails))
+				{
+					LogTrade(fvgTag, string.Format("BLOCKED ({0})", smtDetails), false);
+					return;
+				}
+				LogTrade(fvgTag, smtDetails, false);
 			}
 
 			double entryPrice = Close[0];
@@ -1923,8 +2190,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 			set { useDeliverFromHtfFvg = value; }
 		}
 
+		[NinjaScriptProperty]
+		[Display(Name = "Use SMT", Description = "Require SMT divergence versus MES (MNQ only) to qualify entries.", GroupName = "Trade Config", Order = 4)]
+		public bool UseSmt
+		{
+			get { return useSmt; }
+			set { useSmt = value; }
+		}
+
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 4)]
+		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 5)]
 		public int MaxBarsBetweenSweepAndIfvg
 		{
 			get { return maxBarsBetweenSweepAndIfvg; }
@@ -1932,7 +2207,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 5)]
+		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 6)]
 		public bool EnableHistoricalTrading
 		{
 			get { return enableHistoricalTrading; }
@@ -1940,7 +2215,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 6)]
+		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 7)]
 		public bool DebugLogging
 		{
 			get { return debugLogging; }
@@ -1948,7 +2223,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 7)]
+		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 8)]
 		public bool VerboseDebugLogging
 		{
 			get { return verboseDebugLogging; }
@@ -1956,7 +2231,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 8)]
+		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 9)]
 		public bool InvalidateIfTargetHitBeforeEntry
 		{
 			get { return invalidateIfTargetHitBeforeEntry; }
@@ -1964,7 +2239,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 9)]
+		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 10)]
 		public double MinTpSlDistancePoints
 		{
 			get { return minTpSlDistancePoints; }
@@ -1972,7 +2247,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 10)]
+		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 11)]
 		public bool ExitOnCloseBeyondEntryIfvg
 		{
 			get { return exitOnCloseBeyondEntryIfvg; }
@@ -1980,7 +2255,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 11)]
+		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 12)]
 		public bool UseBreakEvenWickLine
 		{
 			get { return useBreakEvenWickLine; }
