@@ -49,6 +49,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		private List<FvgBox> activeFvgs;
+		private List<FvgBox> breakEvenFvgs;
 		private List<HtfFvgBox> activeHtfFvgs;
 		private int fvgCounter;
 		private int htfFvgCounter;
@@ -317,6 +318,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			else if (State == State.DataLoaded)
 			{
 				activeFvgs = new List<FvgBox>();
+				breakEvenFvgs = new List<FvgBox>();
 				activeHtfFvgs = new List<HtfFvgBox>();
 				// Match DR.cs style: transparent outline, DodgerBlue fill, opacity handled by Draw.Rectangle.
 				fvgFill = Brushes.DodgerBlue;
@@ -448,7 +450,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			PruneFvgs(FvgDrawLimit);
+			PruneBreakEvenFvgs(FvgDrawLimit);
 			UpdateActiveFvgs();
+			UpdateBreakEvenFvgs();
 			DetectNewFvg();
 		}
 
@@ -1411,6 +1415,57 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return false;
 		}
 
+		private bool TryGetBreakEvenFromFvg(TradeDirection direction, double entryPrice, double pivotPrice, out double bePrice, out int beBarsAgo)
+		{
+			bePrice = 0;
+			beBarsAgo = -1;
+
+			if (breakEvenFvgs == null || breakEvenFvgs.Count == 0)
+				return false;
+
+			bool found = false;
+			double bestPrice = 0;
+			int bestBarsAgo = -1;
+
+			for (int i = 0; i < breakEvenFvgs.Count; i++)
+			{
+				FvgBox fvg = breakEvenFvgs[i];
+				if (!fvg.IsActive)
+					continue;
+
+				double candidatePrice = direction == TradeDirection.Long ? fvg.Lower : fvg.Upper;
+				if (direction == TradeDirection.Long)
+				{
+					if (candidatePrice <= entryPrice || candidatePrice >= pivotPrice)
+						continue;
+					if (!found || candidatePrice < bestPrice)
+					{
+						found = true;
+						bestPrice = candidatePrice;
+						bestBarsAgo = CurrentBar - fvg.CreatedBarIndex;
+					}
+				}
+				else
+				{
+					if (candidatePrice >= entryPrice || candidatePrice <= pivotPrice)
+						continue;
+					if (!found || candidatePrice > bestPrice)
+					{
+						found = true;
+						bestPrice = candidatePrice;
+						bestBarsAgo = CurrentBar - fvg.CreatedBarIndex;
+					}
+				}
+			}
+
+			if (!found)
+				return false;
+
+			bePrice = Instrument.MasterInstrument.RoundToTickSize(bestPrice);
+			beBarsAgo = bestBarsAgo;
+			return true;
+		}
+
 
 		private void TryEnterFromIfvg(TradeDirection direction, double fvgLower, double fvgUpper, string fvgTag)
 		{
@@ -1631,10 +1686,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			double bePrice = firstTargetPrice;
+			int beBarsAgo = firstTargetBarsAgo;
 			if (UseBreakEvenWickLine)
 			{
-				ActivateBreakEvenLine(fvgTag, direction, firstTargetPrice, firstTargetBarsAgo);
-				LogTrade(fvgTag, string.Format("BE LINE price={0} barsAgo={1}", firstTargetPrice, firstTargetBarsAgo), false);
+				double fvgBePrice;
+				int fvgBeBarsAgo;
+				if (TryGetBreakEvenFromFvg(direction, entryPrice, firstTargetPrice, out fvgBePrice, out fvgBeBarsAgo))
+				{
+					bePrice = fvgBePrice;
+					beBarsAgo = fvgBeBarsAgo;
+					LogTrade(fvgTag, string.Format("BE LINE from FVG price={0} barsAgo={1}", bePrice, beBarsAgo), false);
+				}
+
+				ActivateBreakEvenLine(fvgTag, direction, bePrice, beBarsAgo);
+				if (bePrice == firstTargetPrice)
+					LogTrade(fvgTag, string.Format("BE LINE price={0} barsAgo={1}", bePrice, beBarsAgo), false);
 			}
 
 			stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
@@ -1643,7 +1710,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
 			SetProfitTarget(signalName, CalculationMode.Price, targetPrice);
 
-			string beInfo = UseBreakEvenWickLine ? string.Format(" be={0}", Instrument.MasterInstrument.RoundToTickSize(firstTargetPrice)) : string.Empty;
+			string beInfo = UseBreakEvenWickLine ? string.Format(" be={0}", Instrument.MasterInstrument.RoundToTickSize(bePrice)) : string.Empty;
 			LogTrade(fvgTag, string.Format(
 				"ENTRY SENT {0} entry={1} stop={2} target={3}{4} stopBarsAgo={5} targetBarsAgo={6} sweepPrice={7} sweepBar={8}",
 				direction,
@@ -2335,6 +2402,25 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 		}
 
+		private void UpdateBreakEvenFvgs()
+		{
+			for (int i = 0; i < breakEvenFvgs.Count; i++)
+			{
+				FvgBox fvg = breakEvenFvgs[i];
+				if (!fvg.IsActive)
+					continue;
+
+				bool invalidated = fvg.IsBullish
+					? (Close[0] < fvg.Lower && Close[0] < Open[0])
+					: (Close[0] > fvg.Upper && Close[0] > Open[0]);
+
+				fvg.EndBarIndex = CurrentBar;
+
+				if (invalidated)
+					fvg.IsActive = false;
+			}
+		}
+
 		private void UpdateActiveHtfFvgs()
 		{
 			double close = Closes[htfBarsInProgress][0];
@@ -2491,6 +2577,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			fvg.IsActive = true;
 			fvg.SessionDate = Time[0].Date;
 			fvg.Tag = string.Format("iFVG_{0}_{1:yyyyMMdd_HHmmss}", fvgCounter++, Time[0]);
+			breakEvenFvgs.Add(fvg);
 
 			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
 			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
@@ -2752,6 +2839,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 					RemoveDrawObject(fvg.Tag);
 					activeFvgs.RemoveAt(i);
 				}
+			}
+		}
+
+		private void PruneBreakEvenFvgs(int drawLimitDays)
+		{
+			if (drawLimitDays <= 0)
+				return;
+
+			DateTime cutoffDate = Time[0].Date.AddDays(-(drawLimitDays - 1));
+			for (int i = breakEvenFvgs.Count - 1; i >= 0; i--)
+			{
+				FvgBox fvg = breakEvenFvgs[i];
+				if (fvg.SessionDate < cutoffDate)
+					breakEvenFvgs.RemoveAt(i);
 			}
 		}
 
