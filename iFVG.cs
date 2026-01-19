@@ -20,7 +20,7 @@ using NinjaTrader.Data;
 // This namespace holds all strategies and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-	public class IFVG : Strategy
+	public class iFVG : Strategy
 	{
 		private class FvgBox
 		{
@@ -63,6 +63,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double maxFvgSizePoints;
 		private int fvgDrawLimit;
 		private bool combineFvgSeries;
+		private int contracts;
+		private bool tradeMonday;
+		private bool tradeTuesday;
+		private bool tradeWednesday;
+		private bool tradeThursday;
+		private bool tradeFriday;
+		private TimeSpan skipStart;
+		private TimeSpan skipEnd;
+		private bool closeAtSkipStart;
 		private TimeSpan asiaSessionStart = new TimeSpan(20, 0, 0);
 		private TimeSpan asiaSessionEnd = new TimeSpan(0, 0, 0);
 		private TimeSpan londonSessionStart = new TimeSpan(2, 0, 0);
@@ -219,7 +228,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (State == State.SetDefaults)
 			{
 				Calculate = Calculate.OnBarClose;
-				Name = "IFVG";
+				Name = "iFVG";
 				IsOverlay = true;
 				fvgOpacity = 10;
 				invalidatedOpacity = 10;
@@ -232,6 +241,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LondonSessionEnd = londonSessionEnd;
 				fvgDrawLimit = 2;
 				combineFvgSeries = false;
+				contracts = 1;
+				tradeMonday = true;
+				tradeTuesday = true;
+				tradeWednesday = true;
+				tradeThursday = true;
+				tradeFriday = true;
+				skipStart = new TimeSpan(0, 0, 0);
+				skipEnd = new TimeSpan(0, 0, 0);
+				closeAtSkipStart = true;
 				sessionDrawLimit = 2;
 				swingStrength = 10;
 				swingDrawBars = 300;
@@ -394,6 +412,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 				CancelAllOrders();
 			}
 
+			bool crossedSkipWindow =
+				(!TimeInSkip(Time[1]) && TimeInSkip(Time[0]))
+				|| (TimeInSkip(Time[1]) && !TimeInSkip(Time[0]));
+
+			if (crossedSkipWindow && TimeInSkip(Time[0]) && CloseAtSkipStart)
+			{
+				LogDebug("Skip window started, flattening/canceling.");
+				if (Position.MarketPosition != MarketPosition.Flat)
+					FlattenAndCancel("SkipWindow");
+				else
+					CancelAllOrders();
+			}
+
 			UpdateLiquidity();
 			UpdateFvgs();
 			if (UseDeliverFromHtfFvg)
@@ -546,7 +577,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			if (DebugLogging && (htfSeriesAdded || smtSeriesAdded) && (htfBarsInProgress < 0 || smtBarsInProgress < 0))
-				Print(string.Format("IFVG: secondary series index not resolved (HTF={0}, SMT={1}).", htfBarsInProgress, smtBarsInProgress));
+				Print(string.Format("iFVG: secondary series index not resolved (HTF={0}, SMT={1}).", htfBarsInProgress, smtBarsInProgress));
 		}
 
 		private class HtfMapping
@@ -649,7 +680,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private LiquidityLine CreateLiquidityLine(SessionLiquidityState state, bool isHigh, Brush lineBrush)
 		{
 			string tag = string.Format(
-				"IFVG_{0}_{1}_{2:yyyyMMdd}",
+				"iFVG_{0}_{1}_{2:yyyyMMdd}",
 				state.Name,
 				isHigh ? "High" : "Low",
 				state.SessionStartDate);
@@ -1117,7 +1148,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (mesLastBarsAgoPrimary < 0 || mesPrevBarsAgoPrimary < 0)
 				return;
 
-			string tagBase = string.Format("IFVG_SMT_{0}_{1:yyyyMMdd_HHmmss}", direction, Time[0]);
+			string tagBase = string.Format("iFVG_SMT_{0}_{1:yyyyMMdd_HHmmss}", direction, Time[0]);
 
 			Draw.Line(
 				this,
@@ -1388,6 +1419,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LogTrade(fvgTag, "BLOCKED (HistoricalDisabled)", false);
 				return;
 			}
+			if (!IsTradingDayAllowed(Time[0]))
+			{
+				LogTrade(fvgTag, "BLOCKED (DayDisabled)", false);
+				return;
+			}
 			if (lastEntryBar == CurrentBar)
 			{
 				LogTrade(fvgTag, "BLOCKED (AlreadyEnteredThisBar)", false);
@@ -1408,6 +1444,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (TimeInNoTradesAfter(Time[0]))
 			{
 				LogTrade(fvgTag, "BLOCKED (NoTradesAfter)", false);
+				return;
+			}
+			if (TimeInSkip(Time[0]))
+			{
+				LogTrade(fvgTag, "BLOCKED (SkipWindow)", false);
 				return;
 			}
 
@@ -1621,9 +1662,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			pendingTradeTag = fvgTag;
 
 			if (direction == TradeDirection.Long)
-				EnterLong(signalName);
+				EnterLong(Contracts, signalName);
 			else
-				EnterShort(signalName);
+				EnterShort(Contracts, signalName);
 
 			lastEntryBar = CurrentBar;
 		}
@@ -1699,11 +1740,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return now >= start || now < end;
 		}
 
+		private bool TimeInSkip(DateTime time)
+		{
+			return IsTimeInRange(time.TimeOfDay, SkipStart, SkipEnd);
+		}
+
 		private static DateTime GetSessionStartDate(DateTime barTime, TimeSpan start, TimeSpan end)
 		{
 			if (start < end)
 				return barTime.Date;
 			return barTime.TimeOfDay < end ? barTime.Date.AddDays(-1) : barTime.Date;
+		}
+
+		private bool IsTradingDayAllowed(DateTime time)
+		{
+			switch (time.DayOfWeek)
+			{
+				case DayOfWeek.Monday:
+					return tradeMonday;
+				case DayOfWeek.Tuesday:
+					return tradeTuesday;
+				case DayOfWeek.Wednesday:
+					return tradeWednesday;
+				case DayOfWeek.Thursday:
+					return tradeThursday;
+				case DayOfWeek.Friday:
+					return tradeFriday;
+				default:
+					return true;
+			}
 		}
 
 		private static string GetLiquidityLabel(string sessionName, bool isHigh)
@@ -2059,7 +2124,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (startBarsAgo < 0 || endBarsAgo < 0)
 				return;
 
-			string tag = string.Format("IFVG_SessionFill_{0}_{1:yyyyMMdd_HHmm}", activeSession, sessionStartTime);
+			string tag = string.Format("iFVG_SessionFill_{0}_{1:yyyyMMdd_HHmm}", activeSession, sessionStartTime);
 			if (DrawObjects[tag] == null)
 			{
 				Draw.Rectangle(
@@ -2086,7 +2151,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			Draw.VerticalLine(
 				this,
-				string.Format("IFVG_NoTradesAfter_{0}_{1:yyyyMMdd_HHmm}", activeSession, sessionStartTime),
+				string.Format("iFVG_NoTradesAfter_{0}_{1:yyyyMMdd_HHmm}", activeSession, sessionStartTime),
 				noTradesAfterTime,
 				lineBrush,
 				DashStyleHelper.Solid,
@@ -2136,7 +2201,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private void AddSwingLine(bool isHigh, int barsAgo, double price)
 		{
 			int startBarIndex = CurrentBar - barsAgo;
-			string tag = string.Format("IFVG_Swing_{0}_{1}", isHigh ? "H" : "L", startBarIndex);
+			string tag = string.Format("iFVG_Swing_{0}_{1}", isHigh ? "H" : "L", startBarIndex);
 
 			SwingLine line = new SwingLine
 			{
@@ -2425,7 +2490,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			fvg.CreatedBarIndex = CurrentBar;
 			fvg.IsActive = true;
 			fvg.SessionDate = Time[0].Date;
-			fvg.Tag = string.Format("IFVG_{0}_{1:yyyyMMdd_HHmmss}", fvgCounter++, Time[0]);
+			fvg.Tag = string.Format("iFVG_{0}_{1:yyyyMMdd_HHmmss}", fvgCounter++, Time[0]);
 
 			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
 			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
@@ -2488,7 +2553,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			fvg.CreatedTime = Times[htfBarsInProgress][0];
 			fvg.IsActive = true;
 			fvg.SessionDate = Times[htfBarsInProgress][0].Date;
-			fvg.Tag = string.Format("IFVG_HTF_{0}_{1:yyyyMMdd_HHmmss}", htfFvgCounter++, Times[htfBarsInProgress][0]);
+			fvg.Tag = string.Format("iFVG_HTF_{0}_{1:yyyyMMdd_HHmmss}", htfFvgCounter++, Times[htfBarsInProgress][0]);
 
 			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
 			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
@@ -2550,8 +2615,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return "Profit target";
 			if (orderName.IndexOf("Stop", StringComparison.OrdinalIgnoreCase) >= 0)
 				return "Stop loss";
-			if (orderName.IndexOf("IFVGCloseExit", StringComparison.OrdinalIgnoreCase) >= 0)
-				return "IFVG close exit";
+			if (orderName.IndexOf("iFVGCloseExit", StringComparison.OrdinalIgnoreCase) >= 0)
+				return "iFVG close exit";
 			return orderName;
 		}
 
@@ -2572,16 +2637,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 
 			LogTrade(activeTradeTag, string.Format(
-				"EXIT SIGNAL (IFVGClose) {0} close={1} fvgLower={2} fvgUpper={3}",
+				"EXIT SIGNAL (iFVGClose) {0} close={1} fvgLower={2} fvgUpper={3}",
 				entryIfvgDirection,
 				Close[0],
 				entryIfvgLower,
 				entryIfvgUpper), true);
 
 			if (entryIfvgDirection == TradeDirection.Long)
-				ExitLong("IFVGCloseExit", "Long");
+				ExitLong("iFVGCloseExit", "Long");
 			else
-				ExitShort("IFVGCloseExit", "Short");
+				ExitShort("iFVGCloseExit", "Short");
 		}
 
 		private void UpdateIntrabarTargetHit()
@@ -2917,7 +2982,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Max Bars Between Sweep And IFVG", Description = "Maximum bars allowed between the sweep and the IFVG invalidation.", GroupName = "Trade Config", Order = 9)]
+		[Display(Name = "Max Bars Between Sweep And iFVG", Description = "Maximum bars allowed between the sweep and the iFVG invalidation.", GroupName = "Trade Config", Order = 9)]
 		public int MaxBarsBetweenSweepAndIfvg
 		{
 			get { return maxBarsBetweenSweepAndIfvg; }
@@ -2965,7 +3030,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Exit On Close Beyond Entry IFVG", Description = "Exit if a bar closes beyond the IFVG that triggered the entry.", GroupName = "Trade Config", Order = 15)]
+		[Display(Name = "Exit On Close Beyond Entry iFVG", Description = "Exit if a bar closes beyond the iFVG that triggered the entry.", GroupName = "Trade Config", Order = 15)]
 		public bool ExitOnCloseBeyondEntryIfvg
 		{
 			get { return exitOnCloseBeyondEntryIfvg; }
@@ -2978,6 +3043,78 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return useBreakEvenWickLine; }
 			set { useBreakEvenWickLine = value; }
+		}
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Contracts", Description = "Number of contracts to trade per entry.", GroupName = "Trade Config", Order = 17)]
+		public int Contracts
+		{
+			get { return contracts; }
+			set { contracts = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Monday", Description = "Allow trading on Mondays.", GroupName = "Trade Days", Order = 0)]
+		public bool TradeMonday
+		{
+			get { return tradeMonday; }
+			set { tradeMonday = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Tuesday", Description = "Allow trading on Tuesdays.", GroupName = "Trade Days", Order = 1)]
+		public bool TradeTuesday
+		{
+			get { return tradeTuesday; }
+			set { tradeTuesday = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Wednesday", Description = "Allow trading on Wednesdays.", GroupName = "Trade Days", Order = 2)]
+		public bool TradeWednesday
+		{
+			get { return tradeWednesday; }
+			set { tradeWednesday = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Thursday", Description = "Allow trading on Thursdays.", GroupName = "Trade Days", Order = 3)]
+		public bool TradeThursday
+		{
+			get { return tradeThursday; }
+			set { tradeThursday = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Friday", Description = "Allow trading on Fridays.", GroupName = "Trade Days", Order = 4)]
+		public bool TradeFriday
+		{
+			get { return tradeFriday; }
+			set { tradeFriday = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Skip Start", Description = "Start of skip window (chart time).", GroupName = "Skip Times", Order = 0)]
+		public TimeSpan SkipStart
+		{
+			get { return skipStart; }
+			set { skipStart = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Skip End", Description = "End of skip window (chart time).", GroupName = "Skip Times", Order = 1)]
+		public TimeSpan SkipEnd
+		{
+			get { return skipEnd; }
+			set { skipEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Close At Skip Start", Description = "Flatten positions and cancel orders when skip window starts.", GroupName = "Skip Times", Order = 2)]
+		public bool CloseAtSkipStart
+		{
+			get { return closeAtSkipStart; }
+			set { closeAtSkipStart = value; }
 		}
 
 		[NinjaScriptProperty]
