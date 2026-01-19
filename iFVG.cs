@@ -159,6 +159,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private string breakEvenLabelTag;
 		private List<string> breakEvenTags;
 		private Brush breakEvenLineBrush;
+		private bool targetLineActive;
+		private bool stopLineActive;
+		private double targetLinePrice;
+		private double stopLinePrice;
+		private int targetLineStartBarIndex;
+		private int stopLineStartBarIndex;
+		private string targetLineTag;
+		private string targetLineLabelTag;
+		private string stopLineTag;
+		private string stopLineLabelTag;
+		private List<string> targetStopTags;
+		private Brush targetLineBrush;
+		private Brush stopLineBrush;
 		private double entryIfvgLower;
 		private double entryIfvgUpper;
 		private TradeDirection? entryIfvgDirection;
@@ -299,6 +312,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 				breakEvenTag = null;
 				breakEvenLabelTag = null;
 				breakEvenTags = null;
+				targetLineActive = false;
+				stopLineActive = false;
+				targetLinePrice = 0;
+				stopLinePrice = 0;
+				targetLineStartBarIndex = -1;
+				stopLineStartBarIndex = -1;
+				targetLineTag = null;
+				targetLineLabelTag = null;
+				stopLineTag = null;
+				stopLineLabelTag = null;
+				targetStopTags = null;
 				pendingTradeTag = null;
 				activeTradeTag = null;
 				lastTradeLabelPrinted = null;
@@ -346,10 +370,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (swingLineBrush.CanFreeze)
 					swingLineBrush.Freeze();
 				swingLines = new List<SwingLine>();
-				breakEvenLineBrush = Brushes.SeaGreen;
+				breakEvenLineBrush = new SolidColorBrush(Color.FromArgb(128, 255, 165, 0));
 				if (breakEvenLineBrush.CanFreeze)
 					breakEvenLineBrush.Freeze();
 				breakEvenTags = new List<string>();
+				targetLineBrush = new SolidColorBrush(Color.FromArgb(128, 0, 128, 0));
+				if (targetLineBrush.CanFreeze)
+					targetLineBrush.Freeze();
+				stopLineBrush = new SolidColorBrush(Color.FromArgb(128, 255, 0, 0));
+				if (stopLineBrush.CanFreeze)
+					stopLineBrush.Freeze();
+				targetStopTags = new List<string>();
 				volumeFastSma = SMA(Volume, VolumeFastSmaPeriod);
 				volumeSlowSma = SMA(Volume, VolumeSlowSmaPeriod);
 				ResolveSecondarySeriesIndexes();
@@ -433,6 +464,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				DrawActiveHtfFvgs();
 			UpdateSwingLiquidity();
 			UpdateBreakEvenLine();
+			UpdateTargetStopLines();
 			CheckExitOnCloseBeyondEntryIfvg();
 		}
 
@@ -1244,6 +1276,84 @@ namespace NinjaTrader.NinjaScript.Strategies
 			);
 		}
 
+		private void UpdateTargetStopLines()
+		{
+			if (!targetLineActive && !stopLineActive)
+				return;
+
+			if (targetLineActive && !string.IsNullOrEmpty(targetLineTag))
+			{
+				int startBarsAgo = CurrentBar - targetLineStartBarIndex;
+				if (startBarsAgo < 0)
+					startBarsAgo = 0;
+
+				Draw.Line(
+					this,
+					targetLineTag,
+					false,
+					startBarsAgo,
+					targetLinePrice,
+					0,
+					targetLinePrice,
+					targetLineBrush,
+					DashStyleHelper.Solid,
+					1
+				);
+
+				Draw.Text(
+					this,
+					targetLineLabelTag,
+					false,
+					"TP",
+					0,
+					targetLinePrice,
+					0,
+					targetLineBrush,
+					new SimpleFont("Arial", 10),
+					TextAlignment.Left,
+					Brushes.Transparent,
+					Brushes.Transparent,
+					0
+				);
+			}
+
+			if (stopLineActive && !string.IsNullOrEmpty(stopLineTag))
+			{
+				int startBarsAgo = CurrentBar - stopLineStartBarIndex;
+				if (startBarsAgo < 0)
+					startBarsAgo = 0;
+
+				Draw.Line(
+					this,
+					stopLineTag,
+					false,
+					startBarsAgo,
+					stopLinePrice,
+					0,
+					stopLinePrice,
+					stopLineBrush,
+					DashStyleHelper.Solid,
+					1
+				);
+
+				Draw.Text(
+					this,
+					stopLineLabelTag,
+					false,
+					"SL",
+					0,
+					stopLinePrice,
+					0,
+					stopLineBrush,
+					new SimpleFont("Arial", 10),
+					TextAlignment.Left,
+					Brushes.Transparent,
+					Brushes.Transparent,
+					0
+				);
+			}
+		}
+
 		private void ClearBreakEvenLine()
 		{
 			RemoveBreakEvenDrawObjects();
@@ -1258,6 +1368,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 			breakEvenLabelTag = null;
 		}
 
+		private void ClearTargetStopLines()
+		{
+			RemoveTargetStopDrawObjects();
+			targetLineActive = false;
+			stopLineActive = false;
+			targetLinePrice = 0;
+			stopLinePrice = 0;
+			targetLineStartBarIndex = -1;
+			stopLineStartBarIndex = -1;
+			targetLineTag = null;
+			targetLineLabelTag = null;
+			stopLineTag = null;
+			stopLineLabelTag = null;
+		}
+
 		private void RemoveBreakEvenDrawObjects()
 		{
 			if (!string.IsNullOrEmpty(breakEvenTag))
@@ -1269,6 +1394,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 			for (int i = 0; i < breakEvenTags.Count; i++)
 				RemoveDrawObject(breakEvenTags[i]);
 			breakEvenTags.Clear();
+		}
+
+		private void RemoveTargetStopDrawObjects()
+		{
+			if (!string.IsNullOrEmpty(targetLineTag))
+				RemoveDrawObject(targetLineTag);
+			if (!string.IsNullOrEmpty(targetLineLabelTag))
+				RemoveDrawObject(targetLineLabelTag);
+			if (!string.IsNullOrEmpty(stopLineTag))
+				RemoveDrawObject(stopLineTag);
+			if (!string.IsNullOrEmpty(stopLineLabelTag))
+				RemoveDrawObject(stopLineLabelTag);
+			if (targetStopTags == null || targetStopTags.Count == 0)
+				return;
+			for (int i = 0; i < targetStopTags.Count; i++)
+				RemoveDrawObject(targetStopTags[i]);
+			targetStopTags.Clear();
 		}
 
 		private void DrawBreakEvenLineFixed(DateTime endTime)
@@ -1336,6 +1478,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 				breakEvenTags.Add(breakEvenLabelTag);
 			}
 			UpdateBreakEvenLine();
+		}
+
+		private void ActivateTargetStopLines(string fvgTag, double targetPrice, int targetBarsAgo, double stopPrice, int stopBarsAgo)
+		{
+			ClearTargetStopLines();
+			targetLineActive = true;
+			stopLineActive = true;
+			targetLinePrice = targetPrice;
+			stopLinePrice = stopPrice;
+			targetLineStartBarIndex = CurrentBar - targetBarsAgo;
+			stopLineStartBarIndex = CurrentBar - stopBarsAgo;
+			targetLineTag = string.Format("{0}_TP", fvgTag);
+			targetLineLabelTag = targetLineTag + "_Lbl";
+			stopLineTag = string.Format("{0}_SL", fvgTag);
+			stopLineLabelTag = stopLineTag + "_Lbl";
+			if (targetStopTags != null)
+			{
+				targetStopTags.Add(targetLineTag);
+				targetStopTags.Add(targetLineLabelTag);
+				targetStopTags.Add(stopLineTag);
+				targetStopTags.Add(stopLineLabelTag);
+			}
+			UpdateTargetStopLines();
 		}
 
 		private void CheckBreakEvenTrigger()
@@ -1705,6 +1870,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+			ActivateTargetStopLines(fvgTag, targetPrice, targetBarsAgo, stopPrice, stopBarsAgo);
 
 			string signalName = direction == TradeDirection.Long ? "Long" : "Short";
 			SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
@@ -2778,9 +2944,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
 		{
-			if (!DebugLogging)
-				return;
-
 			string orderName = execution != null && execution.Order != null ? execution.Order.Name : "n/a";
 			if (breakEvenActive)
 			{
@@ -2792,16 +2955,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 					ClearBreakEvenLine();
 			}
 
+			if (marketPosition == MarketPosition.Flat)
+				ClearTargetStopLines();
+			else if (lastMarketPosition == MarketPosition.Long && marketPosition == MarketPosition.Short)
+				ClearTargetStopLines();
+			else if (lastMarketPosition == MarketPosition.Short && marketPosition == MarketPosition.Long)
+				ClearTargetStopLines();
+
 			if (lastMarketPosition != marketPosition)
 			{
 				if (marketPosition == MarketPosition.Flat)
 				{
-					LogTrade(activeTradeTag, string.Format(
-						"EXIT FILLED reason={0} price={1} qty={2} order={3}",
-						FormatExitReason(orderName),
-						price,
-						quantity,
-						orderName), true);
+					if (DebugLogging)
+						LogTrade(activeTradeTag, string.Format(
+							"EXIT FILLED reason={0} price={1} qty={2} order={3}",
+							FormatExitReason(orderName),
+							price,
+							quantity,
+							orderName), true);
 					entryIfvgDirection = null;
 					activeTradeTag = null;
 					pendingTradeTag = null;
@@ -2812,12 +2983,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 					if (!string.IsNullOrEmpty(pendingTradeTag))
 						activeTradeTag = pendingTradeTag;
 					breakEvenArmed = false;
-					LogTrade(activeTradeTag, string.Format(
-						"ENTRY FILLED {0} price={1} qty={2} order={3}",
-						marketPosition,
-						price,
-						quantity,
-						orderName), true);
+					if (DebugLogging)
+						LogTrade(activeTradeTag, string.Format(
+							"ENTRY FILLED {0} price={1} qty={2} order={3}",
+							marketPosition,
+							price,
+							quantity,
+							orderName), true);
 					pendingTradeTag = null;
 				}
 			}
