@@ -174,6 +174,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double intrabarTargetPriceLong;
 		private double intrabarTargetPriceShort;
 		private bool useBreakEvenWickLine;
+		private bool antiHedge;
+		private bool blockWhenInPosition;
 		private bool breakEvenActive;
 		private bool breakEvenTriggered;
 		private bool breakEvenArmed;
@@ -344,6 +346,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				newYorkMinTpSlDistancePoints = 0;
 				exitOnCloseBeyondEntryIfvg = false;
 				useBreakEvenWickLine = false;
+				antiHedge = false;
+				blockWhenInPosition = false;
 				lastMarketPosition = MarketPosition.Flat;
 				intrabarTargetBarIndex = -1;
 				entryIfvgLower = 0;
@@ -1703,14 +1707,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LogTrade(fvgTag, "BLOCKED (DayDisabled)", false);
 				return;
 			}
+			if (ShouldBlockForHedge(direction, fvgTag))
+				return;
 			if (lastEntryBar == CurrentBar)
 			{
 				LogTrade(fvgTag, "BLOCKED (AlreadyEnteredThisBar)", false);
-				return;
-			}
-			if (Position.MarketPosition != MarketPosition.Flat)
-			{
-				LogTrade(fvgTag, string.Format("BLOCKED (PositionNotFlat: {0})", Position.MarketPosition), false);
 				return;
 			}
 
@@ -2054,6 +2055,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (start < end)
 				return barTime.Date;
 			return barTime.TimeOfDay < end ? barTime.Date.AddDays(-1) : barTime.Date;
+		}
+
+		private bool ShouldBlockForHedge(TradeDirection direction, string fvgTag)
+		{
+			if (blockWhenInPosition && Position.MarketPosition != MarketPosition.Flat)
+			{
+				LogTrade(fvgTag, string.Format("BLOCKED (ActivePosition: {0})", Position.MarketPosition), false);
+				return true;
+			}
+
+			if (!antiHedge || Position.MarketPosition == MarketPosition.Flat)
+				return false;
+
+			bool opposite = direction == TradeDirection.Long
+				? Position.MarketPosition == MarketPosition.Short
+				: Position.MarketPosition == MarketPosition.Long;
+
+			if (!opposite)
+				return false;
+
+			LogTrade(fvgTag, string.Format("BLOCKED (AntiHedge: {0})", Position.MarketPosition), false);
+			return true;
 		}
 
 		private bool IsTradingDayAllowed(DateTime time)
@@ -3652,6 +3675,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return useBreakEvenWickLine; }
 			set { useBreakEvenWickLine = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Anti Hedge", Description = "Prevent entries that would open an opposite-direction position.", GroupName = "B - Trade Config", Order = 14)]
+		public bool AntiHedge
+		{
+			get { return antiHedge; }
+			set { antiHedge = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Block When In Position", Description = "Prevent entries if any position is already open.", GroupName = "B - Trade Config", Order = 15)]
+		public bool BlockWhenInPosition
+		{
+			get { return blockWhenInPosition; }
+			set { blockWhenInPosition = value; }
 		}
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
