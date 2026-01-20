@@ -106,6 +106,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private TimeSpan session2SessionStart;
 		private TimeSpan session2SessionEnd;
 		private TimeSpan session2NoTradesAfter;
+		private TimeSpan newYorkSkipStart;
+		private TimeSpan newYorkSkipEnd;
+		private bool newYorkCloseAtSkipStart;
 		private TimeSpan session3SessionStart;
 		private TimeSpan session3SessionEnd;
 		private TimeSpan session3NoTradesAfter;
@@ -294,6 +297,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				NewYork_SessionStart = new TimeSpan(9, 40, 0);
 				NewYork_SessionEnd = new TimeSpan(15, 0, 0);
 				NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
+				NewYork_SkipStart = new TimeSpan(11, 45, 0);
+				NewYork_SkipEnd = new TimeSpan(13, 15, 0);
+				NewYork_CloseAtSkipStart = true;
 				Asia_SessionStart = new TimeSpan(20, 0, 0);
 				Asia_SessionEnd = new TimeSpan(0, 0, 0);
 				Asia_NoTradesAfter = new TimeSpan(23, 30, 0);
@@ -456,11 +462,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 				CancelAllOrders();
 			}
 
-			bool crossedSkipWindow =
-				(!TimeInSkip(Time[1]) && TimeInSkip(Time[0]))
-				|| (TimeInSkip(Time[1]) && !TimeInSkip(Time[0]));
+			bool wasInGlobalSkip = IsInGlobalSkip(Time[1]);
+			bool nowInGlobalSkip = IsInGlobalSkip(Time[0]);
+			bool wasInNewYorkSkip = IsInNewYorkSkip(Time[1]);
+			bool nowInNewYorkSkip = IsInNewYorkSkip(Time[0]);
 
-			if (crossedSkipWindow && TimeInSkip(Time[0]) && CloseAtSkipStart)
+			bool crossedSkipWindow =
+				(wasInGlobalSkip != nowInGlobalSkip)
+				|| (wasInNewYorkSkip != nowInNewYorkSkip);
+
+			bool enteredGlobalSkip = !wasInGlobalSkip && nowInGlobalSkip;
+			bool enteredNewYorkSkip = !wasInNewYorkSkip && nowInNewYorkSkip;
+			bool shouldFlatten =
+				(enteredGlobalSkip && CloseAtSkipStart)
+				|| (enteredNewYorkSkip && NewYork_CloseAtSkipStart);
+
+			if (crossedSkipWindow && shouldFlatten)
 			{
 				LogDebug("Skip window started, flattening/canceling.");
 				if (Position.MarketPosition != MarketPosition.Flat)
@@ -1986,7 +2003,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private bool TimeInSkip(DateTime time)
 		{
+			return IsInGlobalSkip(time) || IsInNewYorkSkip(time);
+		}
+
+		private bool IsInGlobalSkip(DateTime time)
+		{
 			return IsTimeInRange(time.TimeOfDay, SkipStart, SkipEnd);
+		}
+
+		private bool IsInNewYorkSkip(DateTime time)
+		{
+			if (activeSession != SessionSlot.Session3)
+				return false;
+			return IsTimeInRange(time.TimeOfDay, NewYork_SkipStart, NewYork_SkipEnd);
 		}
 
 		private static DateTime GetSessionStartDate(DateTime barTime, TimeSpan start, TimeSpan end)
@@ -2445,6 +2474,54 @@ namespace NinjaTrader.NinjaScript.Strategies
 				lineBrush,
 				DashStyleHelper.Solid,
 				2);
+
+			if (activeSession == SessionSlot.Session3)
+				DrawSkipWindow("NY", NewYork_SkipStart, NewYork_SkipEnd);
+		}
+
+		private void DrawSkipWindow(string tagPrefix, TimeSpan start, TimeSpan end)
+		{
+			if (start == TimeSpan.Zero || end == TimeSpan.Zero || start == end)
+				return;
+
+			DateTime barDate = Time[0].Date;
+			DateTime windowStart = barDate + start;
+			DateTime windowEnd = barDate + end;
+
+			if (start > end)
+				windowEnd = windowEnd.AddDays(1);
+
+			int startBarsAgo = Bars.GetBar(windowStart);
+			int endBarsAgo = Bars.GetBar(windowEnd);
+			if (startBarsAgo < 0 || endBarsAgo < 0)
+				return;
+
+			var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+			if (areaBrush.CanFreeze)
+				areaBrush.Freeze();
+			var outlineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+			if (outlineBrush.CanFreeze)
+				outlineBrush.Freeze();
+
+			string rectTag = string.Format("iFVG_{0}_Skip_Rect_{1:yyyyMMdd}", tagPrefix, windowStart);
+			Draw.Rectangle(
+				this,
+				rectTag,
+				false,
+				windowStart,
+				0,
+				windowEnd,
+				30000,
+				outlineBrush,
+				areaBrush,
+				2
+			).ZOrder = -1;
+
+			string startTag = string.Format("iFVG_{0}_Skip_Start_{1:yyyyMMdd_HHmm}", tagPrefix, windowStart);
+			Draw.VerticalLine(this, startTag, windowStart, outlineBrush, DashStyleHelper.Solid, 2);
+
+			string endTag = string.Format("iFVG_{0}_Skip_End_{1:yyyyMMdd_HHmm}", tagPrefix, windowEnd);
+			Draw.VerticalLine(this, endTag, windowEnd, outlineBrush, DashStyleHelper.Solid, 2);
 		}
 
 		private void UpdateSwingLiquidity()
@@ -3292,6 +3369,30 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return session2NoTradesAfter; }
 			set { session2NoTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Skip Start", Description = "Start of New York skip window.", GroupName = "I - Session 3 (New York) Time", Order = 3)]
+		public TimeSpan NewYork_SkipStart
+		{
+			get { return newYorkSkipStart; }
+			set { newYorkSkipStart = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Skip End", Description = "End of New York skip window.", GroupName = "I - Session 3 (New York) Time", Order = 4)]
+		public TimeSpan NewYork_SkipEnd
+		{
+			get { return newYorkSkipEnd; }
+			set { newYorkSkipEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Close At Skip Start", Description = "Flatten positions and cancel orders when New York skip window starts.", GroupName = "I - Session 3 (New York) Time", Order = 5)]
+		public bool NewYork_CloseAtSkipStart
+		{
+			get { return newYorkCloseAtSkipStart; }
+			set { newYorkCloseAtSkipStart = value; }
 		}
 
 		[NinjaScriptProperty]
