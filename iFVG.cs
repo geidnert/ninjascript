@@ -3103,7 +3103,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		#region Properties
 		[NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "Show Inversed FVGs", Description = "Draw invalidated FVGs using the inverted color.", GroupName = "FVG", Order = 0)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Show Inversed FVGs", Description = "Draw invalidated FVGs using the inverted color.", GroupName = "C - FVG", Order = 0)]
 		public bool ShowInvalidatedFvgs
 		{
 			get { return showInvalidatedFvgs; }
@@ -3111,7 +3111,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", Description = "Minimum FVG size in points required to draw and track.", GroupName = "FVG", Order = 1)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", Description = "Minimum FVG size in points required to draw and track.", GroupName = "C - FVG", Order = 1)]
 		public double MinFvgSizePoints
 		{
 			get { return minFvgSizePoints; }
@@ -3119,7 +3119,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "Max FVG Size (Points)", Description = "Maximum FVG size in points allowed for drawing and tracking.", GroupName = "FVG", Order = 2)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Max FVG Size (Points)", Description = "Maximum FVG size in points allowed for drawing and tracking.", GroupName = "C - FVG", Order = 2)]
 		public double MaxFvgSizePoints
 		{
 			get { return maxFvgSizePoints; }
@@ -3127,7 +3127,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "FVG Draw Limit", Description = "Number of days of FVGs to keep on the chart.", GroupName = "FVG", Order = 3)]
+		[Display(Name = "FVG Draw Limit", Description = "Number of days of FVGs to keep on the chart.", GroupName = "C - FVG", Order = 3)]
 		public int FvgDrawLimit
 		{
 			get { return fvgDrawLimit; }
@@ -3135,7 +3135,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Combine FVG Series", Description = "Merge back-to-back FVGs into a single combined zone.", GroupName = "FVG", Order = 4)]
+		[Display(Name = "Combine FVG Series", Description = "Merge back-to-back FVGs into a single combined zone.", GroupName = "C - FVG", Order = 4)]
 		public bool CombineFvgSeries
 		{
 			get { return combineFvgSeries; }
@@ -3143,7 +3143,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Swing Liquidity Sweep", Description = "Require a swing sweep to qualify entries.", GroupName = "Trade Config", Order = 0)]
+		[Display(Name = "Use Swing Liquidity Sweep", Description = "Require a swing sweep to qualify entries.", GroupName = "B - Trade Config", Order = 0)]
 		public bool UseSwingLiquiditySweep
 		{
 			get { return useSwingLiquiditySweep; }
@@ -3151,7 +3151,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Session Liquidity Sweep", Description = "Require a session sweep to qualify entries.", GroupName = "Trade Config", Order = 1)]
+		[Display(Name = "Use Session Liquidity Sweep", Description = "Require a session sweep to qualify entries.", GroupName = "B - Trade Config", Order = 1)]
 		public bool UseSessionLiquiditySweep
 		{
 			get { return useSessionLiquiditySweep; }
@@ -3159,7 +3159,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Deliver From Current FVG", Description = "Require the qualifying sweep to originate inside a prior active FVG on the current timeframe (not inversed).", GroupName = "Trade Config", Order = 2)]
+		[Display(Name = "Use Deliver From Current FVG", Description = "Require the qualifying sweep to originate inside a prior active FVG on the current timeframe (not inversed).", GroupName = "B - Trade Config", Order = 2)]
 		public bool UseDeliverFromFvg
 		{
 			get { return useDeliverFromFvg; }
@@ -3167,7 +3167,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Deliver From HTF FVG", Description = "Require the qualifying sweep to originate inside a prior active higher timeframe FVG (not inversed).", GroupName = "Trade Config", Order = 3)]
+		[Display(Name = "Use Deliver From HTF FVG", Description = "Require the qualifying sweep to originate inside a prior active higher timeframe FVG (not inversed).", GroupName = "B - Trade Config", Order = 3)]
 		public bool UseDeliverFromHtfFvg
 		{
 			get { return useDeliverFromHtfFvg; }
@@ -3175,7 +3175,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use SMT", Description = "Require SMT divergence versus MES (MNQ only) to qualify entries.", GroupName = "Trade Config", Order = 4)]
+		[Display(Name = "Use SMT", Description = "Require SMT divergence versus MES (MNQ only) to qualify entries.", GroupName = "B - Trade Config", Order = 4)]
 		public bool UseSmt
 		{
 			get { return useSmt; }
@@ -3183,7 +3183,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Session 1", Description = "Allow trading during the first session window.", GroupName = "Sessions", Order = 0)]
+		[Display(Name = "Use Session 1", Description = "Allow trading during the first session window.", GroupName = "F - Sessions", Order = 0)]
 		public bool UseSession1
 		{
 			get { return useSession1; }
@@ -3191,7 +3191,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Session 2", Description = "Allow trading during the second session window.", GroupName = "Sessions", Order = 1)]
+		[Display(Name = "Use Session 2", Description = "Allow trading during the second session window.", GroupName = "F - Sessions", Order = 1)]
 		public bool UseSession2
 		{
 			get { return useSession2; }
@@ -3199,7 +3199,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Session 3", Description = "Allow trading during the third session window.", GroupName = "Sessions", Order = 2)]
+		[Display(Name = "Use Session 3", Description = "Allow trading during the third session window.", GroupName = "F - Sessions", Order = 2)]
 		public bool UseSession3
 		{
 			get { return useSession3; }
@@ -3207,7 +3207,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Auto Shift Session 1", Description = "Apply DST auto-shift to Session 1 times.", GroupName = "Sessions", Order = 3)]
+		[Display(Name = "Auto Shift Session 1", Description = "Apply DST auto-shift to Session 1 times.", GroupName = "F - Sessions", Order = 3)]
 		public bool AutoShiftSession1
 		{
 			get { return autoShiftSession1; }
@@ -3215,7 +3215,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Auto Shift Session 2", Description = "Apply DST auto-shift to Session 2 times.", GroupName = "Sessions", Order = 4)]
+		[Display(Name = "Auto Shift Session 2", Description = "Apply DST auto-shift to Session 2 times.", GroupName = "F - Sessions", Order = 4)]
 		public bool AutoShiftSession2
 		{
 			get { return autoShiftSession2; }
@@ -3223,7 +3223,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Auto Shift Session 3", Description = "Apply DST auto-shift to Session 3 times.", GroupName = "Sessions", Order = 5)]
+		[Display(Name = "Auto Shift Session 3", Description = "Apply DST auto-shift to Session 3 times.", GroupName = "F - Sessions", Order = 5)]
 		public bool AutoShiftSession3
 		{
 			get { return autoShiftSession3; }
@@ -3231,7 +3231,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Close At Session End", Description = "Flatten positions and cancel orders when the session ends.", GroupName = "Sessions", Order = 6)]
+		[Display(Name = "Close At Session End", Description = "Flatten positions and cancel orders when the session ends.", GroupName = "F - Sessions", Order = 6)]
 		public bool CloseAtSessionEnd
 		{
 			get { return closeAtSessionEnd; }
@@ -3239,7 +3239,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Fill", Description = "Color of the session background.", GroupName = "Sessions", Order = 7)]
+		[Display(Name = "Session Fill", Description = "Color of the session background.", GroupName = "F - Sessions", Order = 7)]
 		public Brush SessionBrush
 		{
 			get { return sessionBrush; }
@@ -3247,7 +3247,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Start", Description = "When session 2 is starting.", GroupName = "London Time", Order = 0)]
+		[Display(Name = "Session Start", Description = "When session 2 is starting.", GroupName = "H - Session 2 (London) Time", Order = 0)]
 		public TimeSpan London_SessionStart
 		{
 			get { return sessionStart; }
@@ -3255,7 +3255,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session End", Description = "When session 2 is ending.", GroupName = "London Time", Order = 1)]
+		[Display(Name = "Session End", Description = "When session 2 is ending.", GroupName = "H - Session 2 (London) Time", Order = 1)]
 		public TimeSpan London_SessionEnd
 		{
 			get { return sessionEnd; }
@@ -3263,7 +3263,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "London Time", Order = 2)]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "H - Session 2 (London) Time", Order = 2)]
 		public TimeSpan London_NoTradesAfter
 		{
 			get { return noTradesAfter; }
@@ -3271,7 +3271,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Start", Description = "When session 3 is starting.", GroupName = "New York Time", Order = 0)]
+		[Display(Name = "Session Start", Description = "When session 3 is starting.", GroupName = "I - Session 3 (New York) Time", Order = 0)]
 		public TimeSpan NewYork_SessionStart
 		{
 			get { return session2SessionStart; }
@@ -3279,7 +3279,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session End", Description = "When session 3 is ending.", GroupName = "New York Time", Order = 1)]
+		[Display(Name = "Session End", Description = "When session 3 is ending.", GroupName = "I - Session 3 (New York) Time", Order = 1)]
 		public TimeSpan NewYork_SessionEnd
 		{
 			get { return session2SessionEnd; }
@@ -3287,7 +3287,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "New York Time", Order = 2)]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "I - Session 3 (New York) Time", Order = 2)]
 		public TimeSpan NewYork_NoTradesAfter
 		{
 			get { return session2NoTradesAfter; }
@@ -3295,7 +3295,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Start", Description = "When session 1 is starting.", GroupName = "Asia Time", Order = 0)]
+		[Display(Name = "Session Start", Description = "When session 1 is starting.", GroupName = "G - Session 1 (Asia) Time", Order = 0)]
 		public TimeSpan Asia_SessionStart
 		{
 			get { return session3SessionStart; }
@@ -3303,7 +3303,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session End", Description = "When session 1 is ending.", GroupName = "Asia Time", Order = 1)]
+		[Display(Name = "Session End", Description = "When session 1 is ending.", GroupName = "G - Session 1 (Asia) Time", Order = 1)]
 		public TimeSpan Asia_SessionEnd
 		{
 			get { return session3SessionEnd; }
@@ -3311,7 +3311,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "Asia Time", Order = 2)]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "G - Session 1 (Asia) Time", Order = 2)]
 		public TimeSpan Asia_NoTradesAfter
 		{
 			get { return session3NoTradesAfter; }
@@ -3319,7 +3319,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Volume SMA Filter", Description = "Require fast volume SMA to exceed slow volume SMA by a multiplier.", GroupName = "Trade Config", Order = 5)]
+		[Display(Name = "Use Volume SMA Filter", Description = "Require fast volume SMA to exceed slow volume SMA by a multiplier.", GroupName = "B - Trade Config", Order = 5)]
 		public bool UseVolumeSmaFilter
 		{
 			get { return useVolumeSmaFilter; }
@@ -3327,7 +3327,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Volume SMA Fast Period", Description = "Fast period for the volume SMA filter.", GroupName = "Trade Config", Order = 6)]
+		[Display(Name = "Volume SMA Fast Period", Description = "Fast period for the volume SMA filter.", GroupName = "B - Trade Config", Order = 6)]
 		public int VolumeFastSmaPeriod
 		{
 			get { return volumeFastSmaPeriod; }
@@ -3335,7 +3335,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Volume SMA Slow Period", Description = "Slow period for the volume SMA filter.", GroupName = "Trade Config", Order = 7)]
+		[Display(Name = "Volume SMA Slow Period", Description = "Slow period for the volume SMA filter.", GroupName = "B - Trade Config", Order = 7)]
 		public int VolumeSlowSmaPeriod
 		{
 			get { return volumeSlowSmaPeriod; }
@@ -3343,7 +3343,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Volume SMA Multiplier", Description = "Fast volume SMA must be greater than slow SMA times this multiplier.", GroupName = "Trade Config", Order = 8)]
+		[Display(Name = "Volume SMA Multiplier", Description = "Fast volume SMA must be greater than slow SMA times this multiplier.", GroupName = "B - Trade Config", Order = 8)]
 		public double VolumeSmaMultiplier
 		{
 			get { return volumeSmaMultiplier; }
@@ -3351,7 +3351,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Max Bars Between Sweep And iFVG", Description = "Maximum bars allowed between the sweep and the iFVG invalidation.", GroupName = "Trade Config", Order = 9)]
+		[Display(Name = "Max Bars Between Sweep And iFVG", Description = "Maximum bars allowed between the sweep and the iFVG invalidation.", GroupName = "B - Trade Config", Order = 9)]
 		public int MaxBarsBetweenSweepAndIfvg
 		{
 			get { return maxBarsBetweenSweepAndIfvg; }
@@ -3359,7 +3359,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "Trade Config", Order = 10)]
+		[Display(Name = "Enable Historical Trading", Description = "Allow entries during historical or playback bars.", GroupName = "A - General", Order = 1)]
 		public bool EnableHistoricalTrading
 		{
 			get { return enableHistoricalTrading; }
@@ -3367,7 +3367,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "Trade Config", Order = 11)]
+		[Display(Name = "Debug Logging", Description = "Log key entry and exit decisions to the Output window.", GroupName = "A - General", Order = 2)]
 		public bool DebugLogging
 		{
 			get { return debugLogging; }
@@ -3375,7 +3375,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "Trade Config", Order = 12)]
+		[Display(Name = "Verbose Debug Logging", Description = "Include FVG detection and filtering logs in debug output.", GroupName = "A - General", Order = 3)]
 		public bool VerboseDebugLogging
 		{
 			get { return verboseDebugLogging; }
@@ -3383,7 +3383,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "Trade Config", Order = 13)]
+		[Display(Name = "Invalidate If Target Hit Before Entry", Description = "Skip entries if the target is already hit before the bar closes.", GroupName = "B - Trade Config", Order = 10)]
 		public bool InvalidateIfTargetHitBeforeEntry
 		{
 			get { return invalidateIfTargetHitBeforeEntry; }
@@ -3391,7 +3391,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "Trade Config", Order = 14)]
+		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "B - Trade Config", Order = 11)]
 		public double MinTpSlDistancePoints
 		{
 			get { return minTpSlDistancePoints; }
@@ -3399,7 +3399,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Exit On Close Beyond Entry iFVG", Description = "Exit if a bar closes beyond the iFVG that triggered the entry.", GroupName = "Trade Config", Order = 15)]
+		[Display(Name = "Exit On Close Beyond Entry iFVG", Description = "Exit if a bar closes beyond the iFVG that triggered the entry.", GroupName = "B - Trade Config", Order = 12)]
 		public bool ExitOnCloseBeyondEntryIfvg
 		{
 			get { return exitOnCloseBeyondEntryIfvg; }
@@ -3407,7 +3407,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "Trade Config", Order = 16)]
+		[Display(Name = "Use BE Wick Line", Description = "Draw a BE line at the first TP wick and move SL to entry when hit; TP uses the next pivot.", GroupName = "B - Trade Config", Order = 13)]
 		public bool UseBreakEvenWickLine
 		{
 			get { return useBreakEvenWickLine; }
@@ -3415,7 +3415,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Contracts", Description = "Number of contracts to trade per entry.", GroupName = "Trade Config", Order = 17)]
+		[Display(Name = "Contracts", Description = "Number of contracts to trade per entry.", GroupName = "A - General", Order = 0)]
 		public int Contracts
 		{
 			get { return contracts; }
@@ -3423,7 +3423,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Monday", Description = "Allow trading on Mondays.", GroupName = "Trade Days", Order = 0)]
+		[Display(Name = "Monday", Description = "Allow trading on Mondays.", GroupName = "D - Trade Days", Order = 0)]
 		public bool TradeMonday
 		{
 			get { return tradeMonday; }
@@ -3431,7 +3431,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Tuesday", Description = "Allow trading on Tuesdays.", GroupName = "Trade Days", Order = 1)]
+		[Display(Name = "Tuesday", Description = "Allow trading on Tuesdays.", GroupName = "D - Trade Days", Order = 1)]
 		public bool TradeTuesday
 		{
 			get { return tradeTuesday; }
@@ -3439,7 +3439,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Wednesday", Description = "Allow trading on Wednesdays.", GroupName = "Trade Days", Order = 2)]
+		[Display(Name = "Wednesday", Description = "Allow trading on Wednesdays.", GroupName = "D - Trade Days", Order = 2)]
 		public bool TradeWednesday
 		{
 			get { return tradeWednesday; }
@@ -3447,7 +3447,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Thursday", Description = "Allow trading on Thursdays.", GroupName = "Trade Days", Order = 3)]
+		[Display(Name = "Thursday", Description = "Allow trading on Thursdays.", GroupName = "D - Trade Days", Order = 3)]
 		public bool TradeThursday
 		{
 			get { return tradeThursday; }
@@ -3455,7 +3455,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Friday", Description = "Allow trading on Fridays.", GroupName = "Trade Days", Order = 4)]
+		[Display(Name = "Friday", Description = "Allow trading on Fridays.", GroupName = "D - Trade Days", Order = 4)]
 		public bool TradeFriday
 		{
 			get { return tradeFriday; }
@@ -3463,7 +3463,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Skip Start", Description = "Start of skip window (chart time).", GroupName = "Skip Times", Order = 0)]
+		[Display(Name = "Skip Start", Description = "Start of skip window (chart time).", GroupName = "E - Skip Times", Order = 0)]
 		public TimeSpan SkipStart
 		{
 			get { return skipStart; }
@@ -3471,7 +3471,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Skip End", Description = "End of skip window (chart time).", GroupName = "Skip Times", Order = 1)]
+		[Display(Name = "Skip End", Description = "End of skip window (chart time).", GroupName = "E - Skip Times", Order = 1)]
 		public TimeSpan SkipEnd
 		{
 			get { return skipEnd; }
@@ -3479,7 +3479,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Close At Skip Start", Description = "Flatten positions and cancel orders when skip window starts.", GroupName = "Skip Times", Order = 2)]
+		[Display(Name = "Close At Skip Start", Description = "Flatten positions and cancel orders when skip window starts.", GroupName = "E - Skip Times", Order = 2)]
 		public bool CloseAtSkipStart
 		{
 			get { return closeAtSkipStart; }
@@ -3487,7 +3487,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Asia Session Start", Description = "Session start time for Asia liquidity tracking.", GroupName = "Session Liquidity", Order = 0)]
+		[Display(Name = "Asia Session Start", Description = "Session start time for Asia liquidity tracking.", GroupName = "J - Session Liquidity", Order = 0)]
 		public TimeSpan AsiaSessionStart
 		{
 			get { return asiaSessionStart; }
@@ -3495,7 +3495,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Asia Session End", Description = "Session end time for Asia liquidity tracking.", GroupName = "Session Liquidity", Order = 1)]
+		[Display(Name = "Asia Session End", Description = "Session end time for Asia liquidity tracking.", GroupName = "J - Session Liquidity", Order = 1)]
 		public TimeSpan AsiaSessionEnd
 		{
 			get { return asiaSessionEnd; }
@@ -3503,7 +3503,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "London Session Start", Description = "Session start time for London liquidity tracking.", GroupName = "Session Liquidity", Order = 2)]
+		[Display(Name = "London Session Start", Description = "Session start time for London liquidity tracking.", GroupName = "J - Session Liquidity", Order = 2)]
 		public TimeSpan LondonSessionStart
 		{
 			get { return londonSessionStart; }
@@ -3511,7 +3511,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "London Session End", Description = "Session end time for London liquidity tracking.", GroupName = "Session Liquidity", Order = 3)]
+		[Display(Name = "London Session End", Description = "Session end time for London liquidity tracking.", GroupName = "J - Session Liquidity", Order = 3)]
 		public TimeSpan LondonSessionEnd
 		{
 			get { return londonSessionEnd; }
@@ -3519,7 +3519,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Session Draw Limit", Description = "Number of days of session liquidity lines to keep.", GroupName = "Session Liquidity", Order = 4)]
+		[Display(Name = "Session Draw Limit", Description = "Number of days of session liquidity lines to keep.", GroupName = "J - Session Liquidity", Order = 4)]
 		public int SessionDrawLimit
 		{
 			get { return sessionDrawLimit; }
@@ -3527,7 +3527,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Swings", Description = "Bars on each side required to form a swing pivot.", GroupName = "Liquidity", Order = 0)]
+		[Display(Name = "Swings", Description = "Bars on each side required to form a swing pivot.", GroupName = "K - Swing Liquidity", Order = 0)]
 		public int SwingStrength
 		{
 			get { return swingStrength; }
@@ -3535,7 +3535,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Swing Draw Bars", Description = "Number of bars to keep swing lines visible.", GroupName = "Liquidity", Order = 1)]
+		[Display(Name = "Swing Draw Bars", Description = "Number of bars to keep swing lines visible.", GroupName = "K - Swing Liquidity", Order = 1)]
 		public int SwingDrawBars
 		{
 			get { return swingDrawBars; }
