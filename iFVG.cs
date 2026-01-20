@@ -64,6 +64,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double maxFvgSizePoints;
 		private int fvgDrawLimit;
 		private bool combineFvgSeries;
+		private double londonMinFvgSizePoints;
+		private double londonMaxFvgSizePoints;
+		private int londonFvgDrawLimit;
+		private bool londonCombineFvgSeries;
+		private double newYorkMinFvgSizePoints;
+		private double newYorkMaxFvgSizePoints;
+		private int newYorkFvgDrawLimit;
+		private bool newYorkCombineFvgSeries;
+		private double activeMinFvgSizePoints;
+		private double activeMaxFvgSizePoints;
+		private int activeFvgDrawLimit;
+		private bool activeCombineFvgSeries;
 		private int contracts;
 		private bool tradeMonday;
 		private bool tradeTuesday;
@@ -84,6 +96,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private SessionLiquidityState londonState;
 		private int sessionDrawLimit;
 		private int swingStrength;
+		private int londonSwingStrength;
+		private int newYorkSwingStrength;
+		private int activeSwingStrength;
 		private int swingDrawBars;
 		private Brush swingLineBrush;
 		private List<SwingLine> swingLines;
@@ -148,6 +163,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool verboseDebugLogging;
 		private bool invalidateIfTargetHitBeforeEntry;
 		private double minTpSlDistancePoints;
+		private double londonMinTpSlDistancePoints;
+		private double newYorkMinTpSlDistancePoints;
+		private double activeMinTpSlDistancePoints;
 		private bool exitOnCloseBeyondEntryIfvg;
 		private MarketPosition lastMarketPosition;
 		private int intrabarTargetBarIndex;
@@ -258,12 +276,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 				showInvalidatedFvgs = true;
 				minFvgSizePoints = 10;
 				maxFvgSizePoints = 50;
+				londonMinFvgSizePoints = 10;
+				londonMaxFvgSizePoints = 50;
+				newYorkMinFvgSizePoints = 10;
+				newYorkMaxFvgSizePoints = 50;
 				AsiaSessionStart = asiaSessionStart;
 				AsiaSessionEnd = asiaSessionEnd;
 				LondonSessionStart = londonSessionStart;
 				LondonSessionEnd = londonSessionEnd;
 				fvgDrawLimit = 2;
 				combineFvgSeries = false;
+				londonFvgDrawLimit = 2;
+				londonCombineFvgSeries = false;
+				newYorkFvgDrawLimit = 2;
+				newYorkCombineFvgSeries = false;
 				contracts = 1;
 				tradeMonday = true;
 				tradeTuesday = true;
@@ -275,6 +301,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				closeAtSkipStart = true;
 				sessionDrawLimit = 2;
 				swingStrength = 10;
+				londonSwingStrength = 10;
+				newYorkSwingStrength = 10;
 				swingDrawBars = 300;
 				useSwingLiquiditySweep = true;
 				useSessionLiquiditySweep = true;
@@ -312,6 +340,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				verboseDebugLogging = false;
 				invalidateIfTargetHitBeforeEntry = false;
 				minTpSlDistancePoints = 0;
+				londonMinTpSlDistancePoints = 0;
+				newYorkMinTpSlDistancePoints = 0;
 				exitOnCloseBeyondEntryIfvg = false;
 				useBreakEvenWickLine = false;
 				lastMarketPosition = MarketPosition.Flat;
@@ -434,6 +464,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				sessionClosed = false;
 				LogDebug("New session started, state reset.");
+				LogDebug(string.Format("Session start ({0})", activeSession));
 			}
 
 			DrawSessionBackground();
@@ -498,7 +529,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void UpdateFvgs()
 		{
-			if (FvgDrawLimit <= 0)
+			if (activeFvgDrawLimit <= 0)
 			{
 				if (activeFvgs.Count > 0)
 				{
@@ -509,8 +540,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
-			PruneFvgs(FvgDrawLimit);
-			PruneBreakEvenFvgs(FvgDrawLimit);
+			PruneFvgs(activeFvgDrawLimit);
+			PruneBreakEvenFvgs(activeFvgDrawLimit);
 			UpdateActiveFvgs();
 			UpdateBreakEvenFvgs();
 			DetectNewFvg();
@@ -523,8 +554,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (htfBarsInProgress < 0 || CurrentBars[htfBarsInProgress] < 2)
 				return;
 
-			if (FvgDrawLimit > 0)
-				PruneHtfFvgs(FvgDrawLimit);
+			if (activeFvgDrawLimit > 0)
+				PruneHtfFvgs(activeFvgDrawLimit);
 
 			UpdateActiveHtfFvgs();
 			DetectNewHtfFvg();
@@ -1147,8 +1178,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (direction == TradeDirection.Short)
 			{
-				bool hasMnq = TryGetLastTwoSwingHighs(0, SwingStrength, out mnqLast, out mnqPrev, out mnqLastAgo, out mnqPrevAgo, out mnqCount);
-				bool hasMes = TryGetLastTwoSwingHighs(smtBarsInProgress, SwingStrength, out mesLast, out mesPrev, out mesLastAgo, out mesPrevAgo, out mesCount);
+				bool hasMnq = TryGetLastTwoSwingHighs(0, activeSwingStrength, out mnqLast, out mnqPrev, out mnqLastAgo, out mnqPrevAgo, out mnqCount);
+				bool hasMes = TryGetLastTwoSwingHighs(smtBarsInProgress, activeSwingStrength, out mesLast, out mesPrev, out mesLastAgo, out mesPrevAgo, out mesCount);
 				if (!hasMnq || !hasMes)
 				{
 					details = string.Format("SMT insufficient swing highs (MNQ={0} MES={1})", mnqCount, mesCount);
@@ -1168,8 +1199,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return false;
 			}
 
-			bool hasMnqLow = TryGetLastTwoSwingLows(0, SwingStrength, out mnqLast, out mnqPrev, out mnqLastAgo, out mnqPrevAgo, out mnqCount);
-			bool hasMesLow = TryGetLastTwoSwingLows(smtBarsInProgress, SwingStrength, out mesLast, out mesPrev, out mesLastAgo, out mesPrevAgo, out mesCount);
+			bool hasMnqLow = TryGetLastTwoSwingLows(0, activeSwingStrength, out mnqLast, out mnqPrev, out mnqLastAgo, out mnqPrevAgo, out mnqCount);
+			bool hasMesLow = TryGetLastTwoSwingLows(smtBarsInProgress, activeSwingStrength, out mesLast, out mesPrev, out mesLastAgo, out mesPrevAgo, out mesCount);
 			if (!hasMnqLow || !hasMesLow)
 			{
 				details = string.Format("SMT insufficient swing lows (MNQ={0} MES={1})", mnqCount, mesCount);
@@ -1745,8 +1776,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double firstTargetPrice;
 			int firstTargetBarsAgo;
 			bool hasFirstTarget = direction == TradeDirection.Long
-				? TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, MinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo)
-				: TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, MinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo);
+				? TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, activeMinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo)
+				: TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, activeMinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo);
 			if (!hasFirstTarget)
 			{
 				LogTrade(fvgTag, string.Format("BLOCKED (NoTarget: {0} entry={1})", direction, entryPrice), false);
@@ -1758,15 +1789,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (UseBreakEvenWickLine)
 			{
-				double minBeGap = MinTpSlDistancePoints;
+				double minBeGap = activeMinTpSlDistancePoints;
 				bool foundTarget = false;
 				for (int occurrence = 2; occurrence <= 10; occurrence++)
 				{
 					double candidatePrice;
 					int candidateBarsAgo;
 					bool hasCandidate = direction == TradeDirection.Long
-						? TryGetNthBullishPivotHighAboveEntry(entryPrice, occurrence, MinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo)
-						: TryGetNthBearishPivotLowBelowEntry(entryPrice, occurrence, MinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo);
+						? TryGetNthBullishPivotHighAboveEntry(entryPrice, occurrence, activeMinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo)
+						: TryGetNthBearishPivotLowBelowEntry(entryPrice, occurrence, activeMinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo);
 					if (!hasCandidate)
 						break;
 
@@ -1832,8 +1863,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			while (true)
 			{
 				bool foundStop = direction == TradeDirection.Long
-					? TryGetNthBearishPivotLowBelowEntry(entryPrice, stopOccurrence, MinTpSlDistancePoints, out stopPrice, out stopBarsAgo)
-					: TryGetNthBullishPivotHighAboveEntry(entryPrice, stopOccurrence, MinTpSlDistancePoints, out stopPrice, out stopBarsAgo);
+					? TryGetNthBearishPivotLowBelowEntry(entryPrice, stopOccurrence, activeMinTpSlDistancePoints, out stopPrice, out stopBarsAgo)
+					: TryGetNthBullishPivotHighAboveEntry(entryPrice, stopOccurrence, activeMinTpSlDistancePoints, out stopPrice, out stopBarsAgo);
 
 				if (!foundStop)
 					break;
@@ -2282,20 +2313,48 @@ namespace NinjaTrader.NinjaScript.Strategies
 					activeSessionStart = Asia_SessionStart;
 					activeSessionEnd = Asia_SessionEnd;
 					activeNoTradesAfter = Asia_NoTradesAfter;
+					activeMinFvgSizePoints = MinFvgSizePoints;
+					activeMaxFvgSizePoints = MaxFvgSizePoints;
+					activeFvgDrawLimit = FvgDrawLimit;
+					activeCombineFvgSeries = CombineFvgSeries;
+					activeSwingStrength = SwingStrength;
+					activeMinTpSlDistancePoints = MinTpSlDistancePoints;
 					break;
 				case SessionSlot.Session2:
 					activeAutoShiftTimes = AutoShiftSession2;
 					activeSessionStart = London_SessionStart;
 					activeSessionEnd = London_SessionEnd;
 					activeNoTradesAfter = London_NoTradesAfter;
+					activeMinFvgSizePoints = London_MinFvgSizePoints;
+					activeMaxFvgSizePoints = London_MaxFvgSizePoints;
+					activeFvgDrawLimit = London_FvgDrawLimit;
+					activeCombineFvgSeries = London_CombineFvgSeries;
+					activeSwingStrength = London_SwingStrength;
+					activeMinTpSlDistancePoints = London_MinTpSlDistancePoints;
 					break;
 				case SessionSlot.Session3:
 					activeAutoShiftTimes = AutoShiftSession3;
 					activeSessionStart = NewYork_SessionStart;
 					activeSessionEnd = NewYork_SessionEnd;
 					activeNoTradesAfter = NewYork_NoTradesAfter;
+					activeMinFvgSizePoints = NewYork_MinFvgSizePoints;
+					activeMaxFvgSizePoints = NewYork_MaxFvgSizePoints;
+					activeFvgDrawLimit = NewYork_FvgDrawLimit;
+					activeCombineFvgSeries = NewYork_CombineFvgSeries;
+					activeSwingStrength = NewYork_SwingStrength;
+					activeMinTpSlDistancePoints = NewYork_MinTpSlDistancePoints;
 					break;
 			}
+
+			LogDebug(string.Format(
+				"Session settings applied ({0}): minFvg={1} maxFvg={2} drawLimit={3} combine={4} swingStrength={5} minTpSl={6}",
+				session,
+				activeMinFvgSizePoints,
+				activeMaxFvgSizePoints,
+				activeFvgDrawLimit,
+				activeCombineFvgSeries,
+				activeSwingStrength,
+				activeMinTpSlDistancePoints));
 		}
 
 		private void EnsureEffectiveTimes(DateTime barTime, bool log)
@@ -2537,10 +2596,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
-			if (CurrentBar < SwingStrength * 2)
+			if (CurrentBar < activeSwingStrength * 2)
 				return;
 
-			int pivotBarsAgo = SwingStrength;
+			int pivotBarsAgo = activeSwingStrength;
 			if (IsSwingHigh(pivotBarsAgo))
 				AddSwingLine(true, pivotBarsAgo, High[pivotBarsAgo]);
 			if (IsSwingLow(pivotBarsAgo))
@@ -2800,7 +2859,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private bool TryCombineWithPreviousFvg(FvgBox newFvg)
 		{
-			if (!CombineFvgSeries)
+			if (!activeCombineFvgSeries)
 				return false;
 			if (activeFvgs.Count == 0)
 				return false;
@@ -2879,14 +2938,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 			breakEvenFvgs.Add(fvg);
 
 			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
-			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
+			if (activeMinFvgSizePoints > 0 && fvgSizePoints < activeMinFvgSizePoints)
 			{
-				LogVerbose(string.Format("FVG rejected: size {0} < min {1}", fvgSizePoints, MinFvgSizePoints));
+				LogVerbose(string.Format("FVG rejected: size {0} < min {1}", fvgSizePoints, activeMinFvgSizePoints));
 				return;
 			}
-			if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
+			if (activeMaxFvgSizePoints > 0 && fvgSizePoints > activeMaxFvgSizePoints)
 			{
-				LogVerbose(string.Format("FVG rejected: size {0} > max {1}", fvgSizePoints, MaxFvgSizePoints));
+				LogVerbose(string.Format("FVG rejected: size {0} > max {1}", fvgSizePoints, activeMaxFvgSizePoints));
 				return;
 			}
 
@@ -2942,9 +3001,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			fvg.Tag = string.Format("iFVG_HTF_{0}_{1:yyyyMMdd_HHmmss}", htfFvgCounter++, Times[htfBarsInProgress][0]);
 
 			double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
-			if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
+			if (activeMinFvgSizePoints > 0 && fvgSizePoints < activeMinFvgSizePoints)
 				return;
-			if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
+			if (activeMaxFvgSizePoints > 0 && fvgSizePoints > activeMaxFvgSizePoints)
 				return;
 
 			activeHtfFvgs.Add(fvg);
@@ -3057,7 +3116,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			int targetBarsAgo;
 
 			if (!intrabarTargetHitLong &&
-				TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo))
+				TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, activeMinTpSlDistancePoints, out targetPrice, out targetBarsAgo))
 			{
 				targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
 				intrabarTargetPriceLong = targetPrice;
@@ -3066,7 +3125,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			if (!intrabarTargetHitShort &&
-				TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, MinTpSlDistancePoints, out targetPrice, out targetBarsAgo))
+				TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, activeMinTpSlDistancePoints, out targetPrice, out targetBarsAgo))
 			{
 				targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
 				intrabarTargetPriceShort = targetPrice;
@@ -3188,7 +3247,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", Description = "Minimum FVG size in points required to draw and track.", GroupName = "C - FVG", Order = 1)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", Description = "Minimum FVG size in points required to draw and track.", GroupName = "G - Session 1 (Asia)", Order = 10)]
 		public double MinFvgSizePoints
 		{
 			get { return minFvgSizePoints; }
@@ -3196,7 +3255,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "Max FVG Size (Points)", Description = "Maximum FVG size in points allowed for drawing and tracking.", GroupName = "C - FVG", Order = 2)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Max FVG Size (Points)", Description = "Maximum FVG size in points allowed for drawing and tracking.", GroupName = "G - Session 1 (Asia)", Order = 11)]
 		public double MaxFvgSizePoints
 		{
 			get { return maxFvgSizePoints; }
@@ -3204,7 +3263,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "FVG Draw Limit", Description = "Number of days of FVGs to keep on the chart.", GroupName = "C - FVG", Order = 3)]
+		[Display(Name = "FVG Draw Limit", Description = "Number of days of FVGs to keep on the chart.", GroupName = "G - Session 1 (Asia)", Order = 12)]
 		public int FvgDrawLimit
 		{
 			get { return fvgDrawLimit; }
@@ -3212,11 +3271,75 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Combine FVG Series", Description = "Merge back-to-back FVGs into a single combined zone.", GroupName = "C - FVG", Order = 4)]
+		[Display(Name = "Combine FVG Series", Description = "Merge back-to-back FVGs into a single combined zone.", GroupName = "G - Session 1 (Asia)", Order = 13)]
 		public bool CombineFvgSeries
 		{
 			get { return combineFvgSeries; }
 			set { combineFvgSeries = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", Description = "Minimum FVG size in points required to draw and track.", GroupName = "H - Session 2 (London)", Order = 10)]
+		public double London_MinFvgSizePoints
+		{
+			get { return londonMinFvgSizePoints; }
+			set { londonMinFvgSizePoints = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Max FVG Size (Points)", Description = "Maximum FVG size in points allowed for drawing and tracking.", GroupName = "H - Session 2 (London)", Order = 11)]
+		public double London_MaxFvgSizePoints
+		{
+			get { return londonMaxFvgSizePoints; }
+			set { londonMaxFvgSizePoints = value; }
+		}
+
+		[Range(0, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "FVG Draw Limit", Description = "Number of days of FVGs to keep on the chart.", GroupName = "H - Session 2 (London)", Order = 12)]
+		public int London_FvgDrawLimit
+		{
+			get { return londonFvgDrawLimit; }
+			set { londonFvgDrawLimit = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Combine FVG Series", Description = "Merge back-to-back FVGs into a single combined zone.", GroupName = "H - Session 2 (London)", Order = 13)]
+		public bool London_CombineFvgSeries
+		{
+			get { return londonCombineFvgSeries; }
+			set { londonCombineFvgSeries = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", Description = "Minimum FVG size in points required to draw and track.", GroupName = "I - Session 3 (New York)", Order = 10)]
+		public double NewYork_MinFvgSizePoints
+		{
+			get { return newYorkMinFvgSizePoints; }
+			set { newYorkMinFvgSizePoints = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Max FVG Size (Points)", Description = "Maximum FVG size in points allowed for drawing and tracking.", GroupName = "I - Session 3 (New York)", Order = 11)]
+		public double NewYork_MaxFvgSizePoints
+		{
+			get { return newYorkMaxFvgSizePoints; }
+			set { newYorkMaxFvgSizePoints = value; }
+		}
+
+		[Range(0, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "FVG Draw Limit", Description = "Number of days of FVGs to keep on the chart.", GroupName = "I - Session 3 (New York)", Order = 12)]
+		public int NewYork_FvgDrawLimit
+		{
+			get { return newYorkFvgDrawLimit; }
+			set { newYorkFvgDrawLimit = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Combine FVG Series", Description = "Merge back-to-back FVGs into a single combined zone.", GroupName = "I - Session 3 (New York)", Order = 13)]
+		public bool NewYork_CombineFvgSeries
+		{
+			get { return newYorkCombineFvgSeries; }
+			set { newYorkCombineFvgSeries = value; }
 		}
 
 		[NinjaScriptProperty]
@@ -3324,7 +3447,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Start", Description = "When session 2 is starting.", GroupName = "H - Session 2 (London) Time", Order = 0)]
+		[Display(Name = "Session Start", Description = "When session 2 is starting.", GroupName = "H - Session 2 (London)", Order = 0)]
 		public TimeSpan London_SessionStart
 		{
 			get { return sessionStart; }
@@ -3332,7 +3455,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session End", Description = "When session 2 is ending.", GroupName = "H - Session 2 (London) Time", Order = 1)]
+		[Display(Name = "Session End", Description = "When session 2 is ending.", GroupName = "H - Session 2 (London)", Order = 1)]
 		public TimeSpan London_SessionEnd
 		{
 			get { return sessionEnd; }
@@ -3340,7 +3463,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "H - Session 2 (London) Time", Order = 2)]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "H - Session 2 (London)", Order = 2)]
 		public TimeSpan London_NoTradesAfter
 		{
 			get { return noTradesAfter; }
@@ -3348,7 +3471,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Start", Description = "When session 3 is starting.", GroupName = "I - Session 3 (New York) Time", Order = 0)]
+		[Display(Name = "Session Start", Description = "When session 3 is starting.", GroupName = "I - Session 3 (New York)", Order = 0)]
 		public TimeSpan NewYork_SessionStart
 		{
 			get { return session2SessionStart; }
@@ -3356,7 +3479,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session End", Description = "When session 3 is ending.", GroupName = "I - Session 3 (New York) Time", Order = 1)]
+		[Display(Name = "Session End", Description = "When session 3 is ending.", GroupName = "I - Session 3 (New York)", Order = 1)]
 		public TimeSpan NewYork_SessionEnd
 		{
 			get { return session2SessionEnd; }
@@ -3364,7 +3487,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "I - Session 3 (New York) Time", Order = 2)]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "I - Session 3 (New York)", Order = 2)]
 		public TimeSpan NewYork_NoTradesAfter
 		{
 			get { return session2NoTradesAfter; }
@@ -3372,7 +3495,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Skip Start", Description = "Start of New York skip window.", GroupName = "I - Session 3 (New York) Time", Order = 3)]
+		[Display(Name = "Skip Start", Description = "Start of New York skip window.", GroupName = "I - Session 3 (New York)", Order = 3)]
 		public TimeSpan NewYork_SkipStart
 		{
 			get { return newYorkSkipStart; }
@@ -3380,7 +3503,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Skip End", Description = "End of New York skip window.", GroupName = "I - Session 3 (New York) Time", Order = 4)]
+		[Display(Name = "Skip End", Description = "End of New York skip window.", GroupName = "I - Session 3 (New York)", Order = 4)]
 		public TimeSpan NewYork_SkipEnd
 		{
 			get { return newYorkSkipEnd; }
@@ -3388,7 +3511,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Close At Skip Start", Description = "Flatten positions and cancel orders when New York skip window starts.", GroupName = "I - Session 3 (New York) Time", Order = 5)]
+		[Display(Name = "Close At Skip Start", Description = "Flatten positions and cancel orders when New York skip window starts.", GroupName = "I - Session 3 (New York)", Order = 5)]
 		public bool NewYork_CloseAtSkipStart
 		{
 			get { return newYorkCloseAtSkipStart; }
@@ -3396,7 +3519,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Start", Description = "When session 1 is starting.", GroupName = "G - Session 1 (Asia) Time", Order = 0)]
+		[Display(Name = "Session Start", Description = "When session 1 is starting.", GroupName = "G - Session 1 (Asia)", Order = 0)]
 		public TimeSpan Asia_SessionStart
 		{
 			get { return session3SessionStart; }
@@ -3404,7 +3527,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session End", Description = "When session 1 is ending.", GroupName = "G - Session 1 (Asia) Time", Order = 1)]
+		[Display(Name = "Session End", Description = "When session 1 is ending.", GroupName = "G - Session 1 (Asia)", Order = 1)]
 		public TimeSpan Asia_SessionEnd
 		{
 			get { return session3SessionEnd; }
@@ -3412,7 +3535,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "G - Session 1 (Asia) Time", Order = 2)]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "G - Session 1 (Asia)", Order = 2)]
 		public TimeSpan Asia_NoTradesAfter
 		{
 			get { return session3NoTradesAfter; }
@@ -3492,11 +3615,27 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "B - Trade Config", Order = 11)]
+		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "G - Session 1 (Asia)", Order = 14)]
 		public double MinTpSlDistancePoints
 		{
 			get { return minTpSlDistancePoints; }
 			set { minTpSlDistancePoints = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "H - Session 2 (London)", Order = 14)]
+		public double London_MinTpSlDistancePoints
+		{
+			get { return londonMinTpSlDistancePoints; }
+			set { londonMinTpSlDistancePoints = value; }
+		}
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Min TP/SL Distance (Points)", Description = "Minimum distance from entry for TP/SL pivot selection.", GroupName = "I - Session 3 (New York)", Order = 14)]
+		public double NewYork_MinTpSlDistancePoints
+		{
+			get { return newYorkMinTpSlDistancePoints; }
+			set { newYorkMinTpSlDistancePoints = value; }
 		}
 
 		[NinjaScriptProperty]
@@ -3628,11 +3767,27 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Swings", Description = "Bars on each side required to form a swing pivot.", GroupName = "K - Swing Liquidity", Order = 0)]
+		[Display(Name = "Swings", Description = "Bars on each side required to form a swing pivot.", GroupName = "G - Session 1 (Asia)", Order = 15)]
 		public int SwingStrength
 		{
 			get { return swingStrength; }
 			set { swingStrength = value; }
+		}
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Swings", Description = "Bars on each side required to form a swing pivot.", GroupName = "H - Session 2 (London)", Order = 15)]
+		public int London_SwingStrength
+		{
+			get { return londonSwingStrength; }
+			set { londonSwingStrength = value; }
+		}
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Swings", Description = "Bars on each side required to form a swing pivot.", GroupName = "I - Session 3 (New York)", Order = 15)]
+		public int NewYork_SwingStrength
+		{
+			get { return newYorkSwingStrength; }
+			set { newYorkSwingStrength = value; }
 		}
 
 		[Range(0, int.MaxValue), NinjaScriptProperty]
