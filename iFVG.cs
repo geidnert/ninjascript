@@ -94,8 +94,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool useSmt;
 		private bool useSession1;
 		private bool useSession2;
+		private bool useSession3;
 		private bool autoShiftSession1;
 		private bool autoShiftSession2;
+		private bool autoShiftSession3;
 		private bool closeAtSessionEnd;
 		private Brush sessionBrush;
 		private TimeSpan sessionStart;
@@ -104,6 +106,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private TimeSpan session2SessionStart;
 		private TimeSpan session2SessionEnd;
 		private TimeSpan session2NoTradesAfter;
+		private TimeSpan session3SessionStart;
+		private TimeSpan session3SessionEnd;
+		private TimeSpan session3NoTradesAfter;
 		private TimeSpan activeSessionStart;
 		private TimeSpan activeSessionEnd;
 		private TimeSpan activeNoTradesAfter;
@@ -189,7 +194,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			None,
 			Session1,
-			Session2
+			Session2,
+			Session3
 		}
 
 		private class SweepEvent
@@ -276,8 +282,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				useSmt = false;
 				useSession1 = true;
 				useSession2 = true;
-				autoShiftSession1 = true;
-				autoShiftSession2 = false;
+				useSession3 = true;
+				autoShiftSession1 = false;
+				autoShiftSession2 = true;
+				autoShiftSession3 = false;
 				closeAtSessionEnd = true;
 				SessionBrush = Brushes.Gold;
 				London_SessionStart = new TimeSpan(1, 30, 0);
@@ -286,6 +294,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				NewYork_SessionStart = new TimeSpan(9, 40, 0);
 				NewYork_SessionEnd = new TimeSpan(15, 0, 0);
 				NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
+				Asia_SessionStart = new TimeSpan(20, 0, 0);
+				Asia_SessionEnd = new TimeSpan(0, 0, 0);
+				Asia_NoTradesAfter = new TimeSpan(23, 30, 0);
 				useVolumeSmaFilter = false;
 				volumeFastSmaPeriod = 5;
 				volumeSlowSmaPeriod = 100;
@@ -2101,20 +2112,25 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			GetSessionWindowForSession(SessionSlot.Session1, time.Date, out TimeSpan session1Start, out TimeSpan session1End);
 			GetSessionWindowForSession(SessionSlot.Session2, time.Date, out TimeSpan session2Start, out TimeSpan session2End);
+			GetSessionWindowForSession(SessionSlot.Session3, time.Date, out TimeSpan session3Start, out TimeSpan session3End);
 
 			bool session1Configured = IsSessionConfigured(SessionSlot.Session1);
 			bool session2Configured = IsSessionConfigured(SessionSlot.Session2);
+			bool session3Configured = IsSessionConfigured(SessionSlot.Session3);
 
 			if (session1Configured && IsTimeInRange(now, session1Start, session1End))
 				return SessionSlot.Session1;
 			if (session2Configured && IsTimeInRange(now, session2Start, session2End))
 				return SessionSlot.Session2;
+			if (session3Configured && IsTimeInRange(now, session3Start, session3End))
+				return SessionSlot.Session3;
 
-			if (!session1Configured && !session2Configured)
+			if (!session1Configured && !session2Configured && !session3Configured)
 				return SessionSlot.None;
 
 			DateTime nextSession1Start = DateTime.MaxValue;
 			DateTime nextSession2Start = DateTime.MaxValue;
+			DateTime nextSession3Start = DateTime.MaxValue;
 
 			if (session1Configured)
 			{
@@ -2130,15 +2146,42 @@ namespace NinjaTrader.NinjaScript.Strategies
 					nextSession2Start = nextSession2Start.AddDays(1);
 			}
 
-			return nextSession1Start <= nextSession2Start
-				? SessionSlot.Session1
-				: SessionSlot.Session2;
+			if (session3Configured)
+			{
+				nextSession3Start = time.Date + session3Start;
+				if (nextSession3Start <= time)
+					nextSession3Start = nextSession3Start.AddDays(1);
+			}
+
+			SessionSlot nextSession = SessionSlot.None;
+			DateTime nextStart = DateTime.MaxValue;
+
+			if (session1Configured && nextSession1Start < nextStart)
+			{
+				nextStart = nextSession1Start;
+				nextSession = SessionSlot.Session1;
+			}
+
+			if (session2Configured && nextSession2Start < nextStart)
+			{
+				nextStart = nextSession2Start;
+				nextSession = SessionSlot.Session2;
+			}
+
+			if (session3Configured && nextSession3Start < nextStart)
+			{
+				nextStart = nextSession3Start;
+				nextSession = SessionSlot.Session3;
+			}
+
+			return nextSession;
 		}
 
 		private bool CrossedSessionEnd(DateTime previousTime, DateTime currentTime)
 		{
 			return CrossedSessionEndForSession(SessionSlot.Session1, previousTime, currentTime)
-				|| CrossedSessionEndForSession(SessionSlot.Session2, previousTime, currentTime);
+				|| CrossedSessionEndForSession(SessionSlot.Session2, previousTime, currentTime)
+				|| CrossedSessionEndForSession(SessionSlot.Session3, previousTime, currentTime);
 		}
 
 		private bool CrossedSessionEndForSession(SessionSlot session, DateTime previousTime, DateTime currentTime)
@@ -2162,14 +2205,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 			switch (session)
 			{
 				case SessionSlot.Session1:
-					start = London_SessionStart;
-					end = London_SessionEnd;
+					start = Asia_SessionStart;
+					end = Asia_SessionEnd;
 					autoShift = AutoShiftSession1;
 					break;
 				case SessionSlot.Session2:
+					start = London_SessionStart;
+					end = London_SessionEnd;
+					autoShift = AutoShiftSession2;
+					break;
+				case SessionSlot.Session3:
 					start = NewYork_SessionStart;
 					end = NewYork_SessionEnd;
-					autoShift = AutoShiftSession2;
+					autoShift = AutoShiftSession3;
 					break;
 			}
 
@@ -2186,9 +2234,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			switch (session)
 			{
 				case SessionSlot.Session1:
-					return UseSession1 && London_SessionStart != London_SessionEnd;
+					return UseSession1 && Asia_SessionStart != Asia_SessionEnd;
 				case SessionSlot.Session2:
-					return UseSession2 && NewYork_SessionStart != NewYork_SessionEnd;
+					return UseSession2 && London_SessionStart != London_SessionEnd;
+				case SessionSlot.Session3:
+					return UseSession3 && NewYork_SessionStart != NewYork_SessionEnd;
 				default:
 					return false;
 			}
@@ -2200,12 +2250,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				case SessionSlot.Session1:
 					activeAutoShiftTimes = AutoShiftSession1;
+					activeSessionStart = Asia_SessionStart;
+					activeSessionEnd = Asia_SessionEnd;
+					activeNoTradesAfter = Asia_NoTradesAfter;
+					break;
+				case SessionSlot.Session2:
+					activeAutoShiftTimes = AutoShiftSession2;
 					activeSessionStart = London_SessionStart;
 					activeSessionEnd = London_SessionEnd;
 					activeNoTradesAfter = London_NoTradesAfter;
 					break;
-				case SessionSlot.Session2:
-					activeAutoShiftTimes = AutoShiftSession2;
+				case SessionSlot.Session3:
+					activeAutoShiftTimes = AutoShiftSession3;
 					activeSessionStart = NewYork_SessionStart;
 					activeSessionEnd = NewYork_SessionEnd;
 					activeNoTradesAfter = NewYork_NoTradesAfter;
@@ -3143,7 +3199,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Auto Shift Session 1", Description = "Apply London DST auto-shift to Session 1 times.", GroupName = "Sessions", Order = 2)]
+		[Display(Name = "Use Session 3", Description = "Allow trading during the third session window.", GroupName = "Sessions", Order = 2)]
+		public bool UseSession3
+		{
+			get { return useSession3; }
+			set { useSession3 = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Auto Shift Session 1", Description = "Apply DST auto-shift to Session 1 times.", GroupName = "Sessions", Order = 3)]
 		public bool AutoShiftSession1
 		{
 			get { return autoShiftSession1; }
@@ -3151,7 +3215,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Auto Shift Session 2", Description = "Apply London DST auto-shift to Session 2 times.", GroupName = "Sessions", Order = 3)]
+		[Display(Name = "Auto Shift Session 2", Description = "Apply DST auto-shift to Session 2 times.", GroupName = "Sessions", Order = 4)]
 		public bool AutoShiftSession2
 		{
 			get { return autoShiftSession2; }
@@ -3159,7 +3223,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Close At Session End", Description = "Flatten positions and cancel orders when the session ends.", GroupName = "Sessions", Order = 4)]
+		[Display(Name = "Auto Shift Session 3", Description = "Apply DST auto-shift to Session 3 times.", GroupName = "Sessions", Order = 5)]
+		public bool AutoShiftSession3
+		{
+			get { return autoShiftSession3; }
+			set { autoShiftSession3 = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Close At Session End", Description = "Flatten positions and cancel orders when the session ends.", GroupName = "Sessions", Order = 6)]
 		public bool CloseAtSessionEnd
 		{
 			get { return closeAtSessionEnd; }
@@ -3167,7 +3239,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Fill", Description = "Color of the session background.", GroupName = "Sessions", Order = 5)]
+		[Display(Name = "Session Fill", Description = "Color of the session background.", GroupName = "Sessions", Order = 7)]
 		public Brush SessionBrush
 		{
 			get { return sessionBrush; }
@@ -3175,7 +3247,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Start", Description = "When session 1 is starting.", GroupName = "London Time", Order = 0)]
+		[Display(Name = "Session Start", Description = "When session 2 is starting.", GroupName = "London Time", Order = 0)]
 		public TimeSpan London_SessionStart
 		{
 			get { return sessionStart; }
@@ -3183,7 +3255,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session End", Description = "When session 1 is ending.", GroupName = "London Time", Order = 1)]
+		[Display(Name = "Session End", Description = "When session 2 is ending.", GroupName = "London Time", Order = 1)]
 		public TimeSpan London_SessionEnd
 		{
 			get { return sessionEnd; }
@@ -3199,7 +3271,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session Start", Description = "When session 2 is starting.", GroupName = "New York Time", Order = 0)]
+		[Display(Name = "Session Start", Description = "When session 3 is starting.", GroupName = "New York Time", Order = 0)]
 		public TimeSpan NewYork_SessionStart
 		{
 			get { return session2SessionStart; }
@@ -3207,7 +3279,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(Name = "Session End", Description = "When session 2 is ending.", GroupName = "New York Time", Order = 1)]
+		[Display(Name = "Session End", Description = "When session 3 is ending.", GroupName = "New York Time", Order = 1)]
 		public TimeSpan NewYork_SessionEnd
 		{
 			get { return session2SessionEnd; }
@@ -3220,6 +3292,30 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return session2NoTradesAfter; }
 			set { session2NoTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Session Start", Description = "When session 1 is starting.", GroupName = "Asia Time", Order = 0)]
+		public TimeSpan Asia_SessionStart
+		{
+			get { return session3SessionStart; }
+			set { session3SessionStart = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Session End", Description = "When session 1 is ending.", GroupName = "Asia Time", Order = 1)]
+		public TimeSpan Asia_SessionEnd
+		{
+			get { return session3SessionEnd; }
+			set { session3SessionEnd = new TimeSpan(value.Hours, value.Minutes, 0); }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "No Trades After", Description = "No new trades between this time and session end.", GroupName = "Asia Time", Order = 2)]
+		public TimeSpan Asia_NoTradesAfter
+		{
+			get { return session3NoTradesAfter; }
+			set { session3NoTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0); }
 		}
 
 		[NinjaScriptProperty]
