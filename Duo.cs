@@ -51,6 +51,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // [NinjaScriptProperty]
         // [Display(Name = "Minimum Candle Body (Points)", Description = "Minimum body size per candle for the two entry candles", GroupName = "London Parameters", Order = 2)]
+        // [Range(0, double.MaxValue)]
         internal double London_MinCandlePoints { get; set; }
 
         // [NinjaScriptProperty]
@@ -103,6 +104,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal double London_MaxSLPoints { get; set; }
 
         // [NinjaScriptProperty]
+        // [Display(Name = "Max Session Gain (Points)", Description = "Pause trading for the rest of the London session after this realized gain in points. 0 = disabled.", Order = 14, GroupName = "London Parameters")]
+        internal double London_MaxSessionGain { get; set; }
+
+        // [NinjaScriptProperty]
         // [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "London Time")]
         internal TimeSpan London_SessionStart
         {
@@ -144,6 +149,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // [NinjaScriptProperty]
         // [Display(Name = "Minimum Candle Body (Points)", Description = "Minimum body size per candle for the two entry candles", GroupName = "New York Parameters", Order = 2)]
+        // [Range(0, double.MaxValue)]
         internal double NewYork_MinCandlePoints { get; set; }
 
         // [NinjaScriptProperty]
@@ -194,6 +200,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [NinjaScriptProperty]
         // [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "New York Parameters")]
         internal double NewYork_MaxSLPoints { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Max Session Gain (Points)", Description = "Pause trading for the rest of the New York session after this realized gain in points. 0 = disabled.", Order = 14, GroupName = "New York Parameters")]
+        internal double NewYork_MaxSessionGain { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Flatten On Max Session Gain", Description = "If true, flatten open positions when max session gain is reached.", Order = 1, GroupName = "Session Limits")]
+        internal bool FlattenOnMaxSessionGain { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "New York Time")]
@@ -304,6 +318,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [Display(Name = "FOMC Skip End", Description = "End of FOMC skip window (chart time)", Order = 8, GroupName = "Skip Times")]
         internal TimeSpan FomcSkipEnd { get; set; }
 
+        // [NinjaScriptProperty]
+        // [Display(Name = "Swing Strength", Description = "Bars on each side required to form a swing pivot.", Order = 1, GroupName = "London Swing Filter")]
+        // [Range(1, int.MaxValue)]
+        internal int London_SwingStrength { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Swing Draw Bars", Description = "Number of bars to keep swing lines visible.", Order = 2, GroupName = "London Swing Filter")]
+        // [Range(0, int.MaxValue)]
+        internal int London_SwingDrawBars { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Swing Sweep Lookback Bars", Description = "Bars after a swing sweep during which same-direction trades are blocked. 0 = disabled.", Order = 3, GroupName = "London Swing Filter")]
+        // [Range(0, int.MaxValue)]
+        internal int London_SwingSweepLookbackBars { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Use Swing Filter", Description = "Enable swing detection, drawing, and sweep-based entry filter.", Order = 4, GroupName = "London Swing Filter")]
+        internal bool London_UseSwingFilter { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Swing Strength", Description = "Bars on each side required to form a swing pivot.", Order = 1, GroupName = "New York Swing Filter")]
+        // [Range(1, int.MaxValue)]
+        internal int NewYork_SwingStrength { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Swing Draw Bars", Description = "Number of bars to keep swing lines visible.", Order = 2, GroupName = "New York Swing Filter")]
+        // [Range(0, int.MaxValue)]
+        internal int NewYork_SwingDrawBars { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Swing Sweep Lookback Bars", Description = "Bars after a swing sweep during which same-direction trades are blocked. 0 = disabled.", Order = 3, GroupName = "New York Swing Filter")]
+        // [Range(0, int.MaxValue)]
+        internal int NewYork_SwingSweepLookbackBars { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Use Swing Filter", Description = "Enable swing detection, drawing, and sweep-based entry filter.", Order = 4, GroupName = "New York Swing Filter")]
+        internal bool NewYork_UseSwingFilter { get; set; }
+
         // State tracking
         private bool longOrderPlaced = false;
         private bool shortOrderPlaced = false;
@@ -366,6 +418,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private SLPreset activeSLPresetSetting;
         private double activeSLPercentFirstCandle;
         private double activeMaxSLPoints;
+        private double activeMaxSessionGain;
         private int activeContracts;
         private TimeSpan activeSessionStart;
         private TimeSpan activeSessionEnd;
@@ -374,6 +427,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan activeSkipEnd;
         private TimeSpan activeSkip2Start;
         private TimeSpan activeSkip2End;
+        private int activeSwingStrength;
+        private int activeSwingDrawBars;
+        private int activeSwingSweepLookbackBars;
+        private bool activeUseSwingFilter;
 		private TimeZoneInfo targetTimeZone;
 		private TimeZoneInfo londonTimeZone;
         private int lineTagCounter = 0;
@@ -399,6 +456,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private HashSet<DateTime> fomcDates;
         private bool fomcDatesInitialized;
         private TimeZoneInfo easternTimeZone;
+        private List<SwingLine> swingLines;
+        private Brush swingLineBrush;
+        private SwingSweepEvent lastSwingSweep;
 
         // --- Webhook state (send entry only after order Accepted/Working) ---
         private bool pendingLongWebhook;
@@ -434,6 +494,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // === Shared Anti-Hedge Lock System ===
         private static readonly object hedgeLockSync = new object();
         private static readonly string hedgeLockFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "AntiHedgeLock.csv");
+        private double sessionStartCumProfit;
+        private bool sessionGainLimitReached;
+
+        private class SwingLine
+        {
+            public string Tag;
+            public double Price;
+            public int StartBarIndex;
+            public int EndBarIndex;
+            public bool IsActive;
+            public bool IsHigh;
+        }
+
+        private class SwingSweepEvent
+        {
+            public int BarIndex;
+            public MarketPosition Direction;
+            public double Price;
+            public bool IsHigh;
+        }
 
         protected override void OnStateChange()
         {
@@ -458,7 +538,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_MaxSLTPRatioPerc = 445;
                 London_SLPresetSetting = SLPreset.First_Candle_High_Low;
                 London_SLPercentFirstCandle = 100;
-                London_MaxSLPoints = 140;
+                London_MaxSLPoints = 112;
+                London_MaxSessionGain = 160;
                 London_SessionStart  = new TimeSpan(1, 30, 0);
                 London_SessionEnd    = new TimeSpan(5, 30, 0);
                 London_NoTradesAfter = new TimeSpan(5, 00, 0);
@@ -466,11 +547,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_SkipEnd       = new TimeSpan(0, 0, 0);
                 London_Skip2Start     = new TimeSpan(0, 0, 0);
                 London_Skip2End       = new TimeSpan(0, 0, 0);
+                London_SwingStrength = 45;
+                London_SwingDrawBars = 300;
+                London_SwingSweepLookbackBars = 21;
+                London_UseSwingFilter = true;
 
                 // New York
                 NewYork_Contracts     = 1;
                 NewYork_MinC12Body  = 19;
-                NewYork_MinCandlePoints = 1;
+                NewYork_MinCandlePoints = 0.75;
                 NewYork_MaxC12Body  = 132;
                 NewYork_OffsetPerc  = 0.2;
                 NewYork_TpPerc      = 28.3;
@@ -480,7 +565,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_MaxSLTPRatioPerc = 479;
                 NewYork_SLPresetSetting = SLPreset.First_Candle_High_Low;
                 NewYork_SLPercentFirstCandle = 100;
-                NewYork_MaxSLPoints = 154;
+                NewYork_MaxSLPoints = 139;
+                NewYork_MaxSessionGain = 145;
                 NewYork_SessionStart = new TimeSpan(9, 40, 0);
                 NewYork_SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
@@ -488,6 +574,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_SkipEnd = new TimeSpan(13, 15, 0);
                 NewYork_Skip2Start = new TimeSpan(0, 0, 0);
                 NewYork_Skip2End = new TimeSpan(0, 0, 0);
+                NewYork_SwingStrength = 45;
+                NewYork_SwingDrawBars = 300;
+                NewYork_SwingSweepLookbackBars = 21;
+                NewYork_UseSwingFilter = false;
 
                 // Other defaults
                 SessionBrush  = Brushes.Gold;
@@ -504,6 +594,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AntiHedge = false;
                 WebhookUrl = "";
                 ReverseOnSignal = true;
+                FlattenOnMaxSessionGain = false;
             }
             else if (State == State.DataLoaded)
             {
@@ -515,6 +606,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 heartbeatTimer.Start();
 
                 ApplyStopLossPreset(London_SLPresetSetting);
+                swingLines = new List<SwingLine>();
+                swingLineBrush = Brushes.DimGray;
+                if (swingLineBrush.CanFreeze)
+                    swingLineBrush.Freeze();
             }
             else if (State == State.Configure)
             {
@@ -545,6 +640,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			if (IsFirstTickOfBar && TimeInSession(Time[0]) && sessionClosed)
 			{
 			    sessionClosed = false;
+                sessionStartCumProfit = GetTotalCumProfitPoints();
+                sessionGainLimitReached = false;
 			
 			    longOrderPlaced = false;
 			    shortOrderPlaced = false;
@@ -576,6 +673,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             DrawSessionBackground();
             UpdateInfo();
+            UpdateSwingLiquidity();
 
 			// === Skip window cross detection ===
 			bool crossedSkipWindow =
@@ -695,6 +793,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 				CancelEntryIfAfterNoTrades();
 				return;
 			}
+
+            if (HasReachedSessionGainLimit())
+            {
+                CancelOrder(shortEntryOrder);
+                CancelOrder(longEntryOrder);
+                SendWebhookCancelSafe();
+                return;
+            }
 
             // 🔒 HARD GUARD: no signal/order logic while a position is open
             if (Position.MarketPosition != MarketPosition.Flat)
@@ -945,6 +1051,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (debug)
                         Print($"{Time[0]} - 📈 Valid long signal detected. Entry={longEntry:0.00}, SL={paddedLongSL:0.00}, TP={longTP:0.00}");
 
+                    string swingBlockReason;
+                    if (ShouldBlockTradeDueToSwingSweep(MarketPosition.Long, out swingBlockReason))
+                    {
+                        if (debug)
+                            Print($"{Time[0]} - 🚫 Skipping LONG trade: {swingBlockReason}");
+                        return;
+                    }
+
                     // Anti Hedge
                     string otherSymbol = GetOtherInstrument();
                     if (AntiHedge && (HasOppositePosition(otherSymbol, MarketPosition.Long) || HasOppositeOrder(otherSymbol, MarketPosition.Long)))
@@ -1066,6 +1180,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     
                     if (debug)
                         Print($"{Time[0]} - 📉 Valid short signal detected. Entry={shortEntry:0.00}, SL={paddedShortSL:0.00}, TP={shortTP:0.00}");
+
+                    string swingBlockReason;
+                    if (ShouldBlockTradeDueToSwingSweep(MarketPosition.Short, out swingBlockReason))
+                    {
+                        if (debug)
+                            Print($"{Time[0]} - 🚫 Skipping SHORT trade: {swingBlockReason}");
+                        return;
+                    }
 
                     // Anti Hedge
                     string otherSymbol = GetOtherInstrument();
@@ -1307,6 +1429,239 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string FormatPriceInvariant(double price)
         {
             return price.ToString("0.########", CultureInfo.InvariantCulture);
+        }
+
+        private double GetTotalCumProfit()
+        {
+            if (SystemPerformance == null || SystemPerformance.AllTrades == null || SystemPerformance.AllTrades.TradesPerformance == null)
+                return 0;
+
+            return SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
+        }
+
+        private double GetTotalCumProfitPoints()
+        {
+            double currencyProfit = GetTotalCumProfit();
+            if (Instrument == null || Instrument.MasterInstrument == null || Instrument.MasterInstrument.PointValue <= 0)
+                return currencyProfit;
+
+            return currencyProfit / Instrument.MasterInstrument.PointValue;
+        }
+
+        private bool HasReachedSessionGainLimit()
+        {
+            if (activeSession == SessionSlot.None)
+                return false;
+
+            if (activeMaxSessionGain <= 0)
+                return false;
+
+            if (sessionGainLimitReached)
+            {
+                if (FlattenOnMaxSessionGain && Position.MarketPosition != MarketPosition.Flat)
+                    Flatten("SessionGainLimit");
+                return true;
+            }
+
+            double sessionProfit = GetTotalCumProfitPoints() - sessionStartCumProfit;
+            if (sessionProfit >= activeMaxSessionGain)
+            {
+                sessionGainLimitReached = true;
+                if (debug)
+                    Print($"{Time[0]} - ⛔ Max session gain reached ({sessionProfit:0.00} pts >= {activeMaxSessionGain:0.00} pts). Pausing entries for session.");
+                if (FlattenOnMaxSessionGain && Position.MarketPosition != MarketPosition.Flat)
+                    Flatten("SessionGainLimit");
+                return true;
+            }
+
+            return false;
+        }
+
+        private void UpdateSwingLiquidity()
+        {
+            if (!activeUseSwingFilter)
+                return;
+
+            if (activeSwingDrawBars <= 0)
+            {
+                if (swingLines != null && swingLines.Count > 0)
+                {
+                    for (int i = 0; i < swingLines.Count; i++)
+                        RemoveDrawObject(swingLines[i].Tag);
+                    swingLines.Clear();
+                }
+                return;
+            }
+
+            if (swingLines == null)
+                swingLines = new List<SwingLine>();
+
+            if (CurrentBar < activeSwingStrength * 2)
+                return;
+
+            int pivotBarsAgo = activeSwingStrength;
+            if (IsSwingHigh(pivotBarsAgo))
+                AddSwingLine(true, pivotBarsAgo, High[pivotBarsAgo]);
+            if (IsSwingLow(pivotBarsAgo))
+                AddSwingLine(false, pivotBarsAgo, Low[pivotBarsAgo]);
+
+            UpdateSwingLines();
+            PruneSwingLines();
+        }
+
+        private void ResetSwingState()
+        {
+            if (swingLines != null && swingLines.Count > 0)
+            {
+                for (int i = 0; i < swingLines.Count; i++)
+                    RemoveDrawObject(swingLines[i].Tag);
+                swingLines.Clear();
+            }
+
+            lastSwingSweep = null;
+        }
+
+        private bool IsSwingHigh(int barsAgo)
+        {
+            int span = barsAgo * 2 + 1;
+            double max = MAX(High, span)[0];
+            return High[barsAgo] >= max;
+        }
+
+        private bool IsSwingLow(int barsAgo)
+        {
+            int span = barsAgo * 2 + 1;
+            double min = MIN(Low, span)[0];
+            return Low[barsAgo] <= min;
+        }
+
+        private void AddSwingLine(bool isHigh, int barsAgo, double price)
+        {
+            int startBarIndex = CurrentBar - barsAgo;
+            string tag = string.Format("Duo_Swing_{0}_{1}", isHigh ? "H" : "L", startBarIndex);
+
+            SwingLine line = new SwingLine
+            {
+                Tag = tag,
+                Price = price,
+                StartBarIndex = startBarIndex,
+                EndBarIndex = CurrentBar,
+                IsActive = true,
+                IsHigh = isHigh
+            };
+
+            swingLines.Add(line);
+        }
+
+        private void UpdateSwingLines()
+        {
+            if (swingLines == null)
+                return;
+
+            for (int i = 0; i < swingLines.Count; i++)
+            {
+                SwingLine line = swingLines[i];
+                if (!line.IsActive)
+                    continue;
+
+                bool hit = line.IsHigh ? High[0] >= line.Price : Low[0] <= line.Price;
+                line.EndBarIndex = CurrentBar;
+
+                int startBarsAgo = CurrentBar - line.StartBarIndex;
+                int endBarsAgo = CurrentBar - line.EndBarIndex;
+                if (startBarsAgo < 0)
+                    startBarsAgo = 0;
+                if (endBarsAgo < 0)
+                    endBarsAgo = 0;
+
+                Draw.Line(
+                    this,
+                    line.Tag,
+                    false,
+                    startBarsAgo,
+                    line.Price,
+                    endBarsAgo,
+                    line.Price,
+                    swingLineBrush ?? Brushes.DimGray,
+                    DashStyleHelper.Solid,
+                    1
+                );
+
+                if (hit)
+                {
+                    RegisterSwingSweep(line.IsHigh, line.Price);
+                    line.IsActive = false;
+                }
+            }
+        }
+
+        private void PruneSwingLines()
+        {
+            if (swingLines == null)
+                return;
+
+            int cutoffIndex = CurrentBar - activeSwingDrawBars;
+            for (int i = swingLines.Count - 1; i >= 0; i--)
+            {
+                SwingLine line = swingLines[i];
+                if (line.StartBarIndex < cutoffIndex)
+                {
+                    RemoveDrawObject(line.Tag);
+                    swingLines.RemoveAt(i);
+                }
+            }
+        }
+
+        private void RegisterSwingSweep(bool isHigh, double price)
+        {
+            MarketPosition direction = MarketPosition.Flat;
+            if (Close[0] > Open[0])
+                direction = MarketPosition.Long;
+            else if (Close[0] < Open[0])
+                direction = MarketPosition.Short;
+
+            if (direction == MarketPosition.Flat)
+                return;
+
+            lastSwingSweep = new SwingSweepEvent
+            {
+                BarIndex = CurrentBar,
+                Direction = direction,
+                Price = price,
+                IsHigh = isHigh
+            };
+        }
+
+        private bool ShouldBlockTradeDueToSwingSweep(MarketPosition desiredDirection, out string reason)
+        {
+            reason = string.Empty;
+            if (!activeUseSwingFilter)
+                return false;
+
+            if (activeSwingSweepLookbackBars <= 0 || lastSwingSweep == null)
+                return false;
+
+            int barsAgo = CurrentBar - lastSwingSweep.BarIndex;
+            if (barsAgo < 0)
+                return false;
+
+            if (barsAgo > activeSwingSweepLookbackBars)
+            {
+                lastSwingSweep = null;
+                return false;
+            }
+
+            if (lastSwingSweep.Direction == desiredDirection)
+            {
+                reason = string.Format(
+                    "Swing sweep {0} bars ago (price={1:0.00}, dir={2})",
+                    barsAgo,
+                    lastSwingSweep.Price,
+                    lastSwingSweep.Direction);
+                return true;
+            }
+
+            return false;
         }
 
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
@@ -2427,9 +2782,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Print($"{time} - Session switch: desired={desired} | S1={s1Start:hh\\:mm}-{s1End:hh\\:mm} (AutoShift={AutoShiftSession1}) | S2={s2Start:hh\\:mm}-{s2End:hh\\:mm} (AutoShift={AutoShiftSession2})");
                 }
 
+                if (sessionInitialized && desired != activeSession)
+                    ResetSwingState();
+
                 activeSession = desired;
                 if (activeSession != SessionSlot.None)
+                {
                     ApplyInputsForSession(activeSession);
+                    sessionStartCumProfit = GetTotalCumProfitPoints();
+                    sessionGainLimitReached = false;
+                }
                 effectiveTimesDate = DateTime.MinValue;
                 sessionInitialized = true;
             }
@@ -2581,6 +2943,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeSLPresetSetting = London_SLPresetSetting;
                     activeSLPercentFirstCandle = London_SLPercentFirstCandle;
                     activeMaxSLPoints = London_MaxSLPoints;
+                    activeMaxSessionGain = London_MaxSessionGain;
 
                     activeSessionStart  = London_SessionStart;
                     activeSessionEnd    = London_SessionEnd;
@@ -2589,6 +2952,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeSkipEnd = London_SkipEnd;
                     activeSkip2Start = London_Skip2Start;
                     activeSkip2End = London_Skip2End;
+                    activeSwingStrength = London_SwingStrength;
+                    activeSwingDrawBars = London_SwingDrawBars;
+                    activeSwingSweepLookbackBars = London_SwingSweepLookbackBars;
+                    activeUseSwingFilter = London_UseSwingFilter;
                     break;
                 case SessionSlot.Session2:
                     activeAutoShiftTimes = AutoShiftSession2;
@@ -2605,6 +2972,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeSLPresetSetting = NewYork_SLPresetSetting;
                     activeSLPercentFirstCandle = NewYork_SLPercentFirstCandle;
                     activeMaxSLPoints = NewYork_MaxSLPoints;
+                    activeMaxSessionGain = NewYork_MaxSessionGain;
 
                     activeSessionStart  = NewYork_SessionStart;
                     activeSessionEnd    = NewYork_SessionEnd;
@@ -2613,6 +2981,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeSkipEnd = NewYork_SkipEnd;
                     activeSkip2Start = NewYork_Skip2Start;
                     activeSkip2End = NewYork_Skip2End;
+                    activeSwingStrength = NewYork_SwingStrength;
+                    activeSwingDrawBars = NewYork_SwingDrawBars;
+                    activeSwingSweepLookbackBars = NewYork_SwingSweepLookbackBars;
+                    activeUseSwingFilter = NewYork_UseSwingFilter;
                     break;
             }
         }
