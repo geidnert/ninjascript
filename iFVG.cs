@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Reflection;
@@ -22,6 +23,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public class iFVG : Strategy
 	{
+		private static readonly object hedgeLockSync = new object();
+		private static readonly string hedgeLockFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "AntiHedgeLock.csv");
+
 		private class FvgBox
 		{
 			public string Tag;
@@ -1953,6 +1957,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			entryIfvgUpper = fvgUpper;
 			entryIfvgDirection = direction;
 			pendingTradeTag = fvgTag;
+			SetHedgeLock(GetInstrumentKey(), direction == TradeDirection.Long ? MarketPosition.Long : MarketPosition.Short);
 
 			if (direction == TradeDirection.Long)
 				EnterLong(Contracts, signalName);
@@ -2057,25 +2062,120 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return barTime.TimeOfDay < end ? barTime.Date.AddDays(-1) : barTime.Date;
 		}
 
+		private string GetInstrumentKey()
+		{
+			return Instrument != null ? Instrument.MasterInstrument.Name : string.Empty;
+		}
+
+		private void SetHedgeLock(string instrument, MarketPosition direction)
+		{
+			if (string.IsNullOrWhiteSpace(instrument))
+				return;
+
+			lock (hedgeLockSync)
+			{
+				var lines = File.Exists(hedgeLockFile)
+					? File.ReadAllLines(hedgeLockFile).ToList()
+					: new List<string>();
+
+				bool updated = false;
+				for (int i = 0; i < lines.Count; i++)
+				{
+					if (lines[i].StartsWith(instrument + ",", StringComparison.OrdinalIgnoreCase))
+					{
+						lines[i] = $"{instrument},{direction}";
+						updated = true;
+						break;
+					}
+				}
+				if (!updated)
+					lines.Add($"{instrument},{direction}");
+
+				File.WriteAllLines(hedgeLockFile, lines);
+			}
+		}
+
+		private MarketPosition GetHedgeLock(string instrument)
+		{
+			if (string.IsNullOrWhiteSpace(instrument))
+				return MarketPosition.Flat;
+
+			lock (hedgeLockSync)
+			{
+				if (!File.Exists(hedgeLockFile))
+					return MarketPosition.Flat;
+
+				foreach (var line in File.ReadAllLines(hedgeLockFile))
+				{
+					var parts = line.Split(',');
+					if (parts.Length == 2 && parts[0].Equals(instrument, StringComparison.OrdinalIgnoreCase))
+					{
+						if (Enum.TryParse(parts[1], out MarketPosition pos))
+							return pos;
+					}
+				}
+			}
+
+			return MarketPosition.Flat;
+		}
+
+		private void ClearHedgeLock(string instrument)
+		{
+			if (string.IsNullOrWhiteSpace(instrument))
+				return;
+
+			lock (hedgeLockSync)
+			{
+				if (!File.Exists(hedgeLockFile))
+					return;
+
+				var lines = File.ReadAllLines(hedgeLockFile).ToList();
+				lines.RemoveAll(l => l.StartsWith(instrument + ",", StringComparison.OrdinalIgnoreCase));
+				File.WriteAllLines(hedgeLockFile, lines);
+			}
+		}
+
+		private MarketPosition GetAccountPosition()
+		{
+			if (Account == null || Instrument == null)
+				return MarketPosition.Flat;
+
+			foreach (var pos in Account.Positions)
+			{
+				if (pos.Instrument.MasterInstrument.Name.Equals(Instrument.MasterInstrument.Name, StringComparison.OrdinalIgnoreCase))
+					return pos.MarketPosition;
+			}
+
+			return MarketPosition.Flat;
+		}
+
 		private bool ShouldBlockForHedge(TradeDirection direction, string fvgTag)
 		{
-			if (blockWhenInPosition && Position.MarketPosition != MarketPosition.Flat)
+			string instrument = GetInstrumentKey();
+			MarketPosition accountPosition = GetAccountPosition();
+			MarketPosition strategyPosition = Position.MarketPosition;
+			MarketPosition lockPosition = GetHedgeLock(instrument);
+			MarketPosition activePosition = lockPosition != MarketPosition.Flat
+				? lockPosition
+				: (accountPosition != MarketPosition.Flat ? accountPosition : strategyPosition);
+
+			if (blockWhenInPosition && (lockPosition != MarketPosition.Flat || accountPosition != MarketPosition.Flat || strategyPosition != MarketPosition.Flat))
 			{
-				LogTrade(fvgTag, string.Format("BLOCKED (ActivePosition: {0})", Position.MarketPosition), false);
+				LogTrade(fvgTag, string.Format("BLOCKED (ActivePosition: {0})", activePosition), false);
 				return true;
 			}
 
-			if (!antiHedge || Position.MarketPosition == MarketPosition.Flat)
+			if (!antiHedge)
 				return false;
 
 			bool opposite = direction == TradeDirection.Long
-				? Position.MarketPosition == MarketPosition.Short
-				: Position.MarketPosition == MarketPosition.Long;
+				? (lockPosition == MarketPosition.Short || accountPosition == MarketPosition.Short || strategyPosition == MarketPosition.Short)
+				: (lockPosition == MarketPosition.Long || accountPosition == MarketPosition.Long || strategyPosition == MarketPosition.Long);
 
 			if (!opposite)
 				return false;
 
-			LogTrade(fvgTag, string.Format("BLOCKED (AntiHedge: {0})", Position.MarketPosition), false);
+			LogTrade(fvgTag, string.Format("BLOCKED (AntiHedge: {0})", activePosition), false);
 			return true;
 		}
 
@@ -3181,6 +3281,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				if (marketPosition == MarketPosition.Flat)
 				{
+					ClearHedgeLock(GetInstrumentKey());
 					if (DebugLogging)
 						LogTrade(activeTradeTag, string.Format(
 							"EXIT FILLED reason={0} price={1} qty={2} order={3}",
