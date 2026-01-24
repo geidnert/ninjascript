@@ -22,10 +22,19 @@ namespace NinjaTrader.NinjaScript.Strategies
     public class Heiken : Strategy
     {
         private EMA ema;
+        private Swing swing;
         private Series<double> haOpen;
         private Series<double> haClose;
         private Series<double> haHigh;
         private Series<double> haLow;
+        private double lastSwingHigh;
+        private double lastSwingLow;
+        private bool pullbackSeenLong;
+        private bool pullbackSeenShort;
+        private double longTargetPrice;
+        private double shortTargetPrice;
+        private bool longTargetSubmitted;
+        private bool shortTargetSubmitted;
         private bool sessionClosed;
         private bool sessionInitialized;
         private SessionSlot activeSession = SessionSlot.None;
@@ -70,6 +79,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ExitOnFirstOppositeCandle = false;
                 SkipEntryOnExitBar = false;
                 RequireEmaCrossOnEntry = false;
+                PivotStrength = 3;
+                UsePivotTarget = true;
+                PullbackTicks = 4;
+                TargetOffsetTicks = 0;
+                ExitOnEmaCloseThrough = true;
 
                 SessionBrush = Brushes.Gold;
                 UseSession1 = true;
@@ -99,6 +113,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 AddDataSeries(BarsPeriodType.Tick, 1);
                 ema = EMA(EmaPeriod);
+                swing = Swing(PivotStrength);
                 AddChartIndicator(ema);
                 ema.Plots[0].Brush = Brushes.DodgerBlue;
             }
@@ -192,11 +207,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             haHigh[0] = haHighValue;
             haLow[0] = haLowValue;
 
-            if (CurrentBar < Math.Max(1, EmaPeriod))
+            if (CurrentBar < Math.Max(2, EmaPeriod))
                 return;
 
             double emaValue = ema[0];
-            double wickEpsilon = 0.0;
+            double wickEpsilon = TickSize * 0.25;
+            double pullbackBand = PullbackTicks * TickSize;
 
             bool isBull = haCloseValue > haOpenValue;
             bool isBear = haCloseValue < haOpenValue;
@@ -204,22 +220,61 @@ namespace NinjaTrader.NinjaScript.Strategies
             double haBodyBottom = Math.Min(haOpenValue, haCloseValue);
             bool noLowerWick = (haBodyBottom - haLowValue) <= wickEpsilon;
             bool noUpperWick = (haHighValue - haBodyTop) <= wickEpsilon;
-            bool hasLowerWick = isBear && (haCloseValue - haLowValue) > wickEpsilon;
-            bool hasUpperWick = isBull && (haHighValue - haCloseValue) > wickEpsilon;
+            bool emaUp = ema[0] > ema[1];
+            bool emaDown = ema[0] < ema[1];
+            bool exitedThisBar = false;
 
-            bool fullyAboveEma = haLowValue > emaValue;
-            bool fullyBelowEma = haHighValue < emaValue;
-            bool longSignal = isBull && noLowerWick && haCloseValue > emaValue
-                && (!RequireEmaCrossOnEntry || fullyAboveEma);
-            bool shortSignal = isBear && noUpperWick && haCloseValue < emaValue
-                && (!RequireEmaCrossOnEntry || fullyBelowEma);
+            double swingHigh = swing != null ? swing.SwingHigh[0] : double.NaN;
+            if (!double.IsNaN(swingHigh))
+                lastSwingHigh = swingHigh;
+
+            double swingLow = swing != null ? swing.SwingLow[0] : double.NaN;
+            if (!double.IsNaN(swingLow))
+                lastSwingLow = swingLow;
+
+            if (!emaUp)
+                pullbackSeenLong = false;
+            if (!emaDown)
+                pullbackSeenShort = false;
+
+            if (emaUp && (isBear || haLowValue <= emaValue + pullbackBand))
+                pullbackSeenLong = true;
+            if (emaDown && (isBull || haHighValue >= emaValue - pullbackBand))
+                pullbackSeenShort = true;
+
+            bool longTrigger = emaUp
+                && pullbackSeenLong
+                && isBull
+                && noLowerWick
+                && haCloseValue >= emaValue;
+            bool shortTrigger = emaDown
+                && pullbackSeenShort
+                && isBear
+                && noUpperWick
+                && haCloseValue <= emaValue;
+
             bool exitLongSignal = ExitOnFirstOppositeCandle
                 ? isBear
-                : (isBear && noUpperWick && hasLowerWick);
+                : (isBear && noUpperWick);
             bool exitShortSignal = ExitOnFirstOppositeCandle
                 ? isBull
-                : (isBull && noLowerWick && hasUpperWick);
-            bool exitedThisBar = false;
+                : (isBull && noLowerWick);
+
+            if (ExitOnEmaCloseThrough)
+            {
+                if (haCloseValue < emaValue)
+                    exitLongSignal = true;
+                if (haCloseValue > emaValue)
+                    exitShortSignal = true;
+            }
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                longTargetSubmitted = false;
+                shortTargetSubmitted = false;
+                longTargetPrice = 0;
+                shortTargetPrice = 0;
+            }
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
@@ -228,11 +283,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                     ExitLong(1, "ExitLong", "LongEntry");
                     exitedThisBar = true;
                 }
-                if (!exitedThisBar && !SkipEntryOnExitBar && shortSignal)
+
+                if (UsePivotTarget && !longTargetSubmitted && lastSwingHigh > 0)
                 {
-                    ExitLong(1, "ExitLong", "LongEntry");
-                    EnterShort(1, Contracts, "ShortEntry");
-                    exitedThisBar = true;
+                    longTargetPrice = lastSwingHigh + TargetOffsetTicks * TickSize;
+                    if (longTargetPrice > Close[0])
+                    {
+                        ExitLongLimit(1, true, Position.Quantity, longTargetPrice, "PivotTargetLong", "LongEntry");
+                        longTargetSubmitted = true;
+                    }
                 }
                 return;
             }
@@ -244,11 +303,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                     ExitShort(1, "ExitShort", "ShortEntry");
                     exitedThisBar = true;
                 }
-                if (!exitedThisBar && !SkipEntryOnExitBar && longSignal)
+
+                if (UsePivotTarget && !shortTargetSubmitted && lastSwingLow > 0)
                 {
-                    ExitShort(1, "ExitShort", "ShortEntry");
-                    EnterLong(1, Contracts, "LongEntry");
-                    exitedThisBar = true;
+                    shortTargetPrice = lastSwingLow - TargetOffsetTicks * TickSize;
+                    if (shortTargetPrice < Close[0])
+                    {
+                        ExitShortLimit(1, true, Position.Quantity, shortTargetPrice, "PivotTargetShort", "ShortEntry");
+                        shortTargetSubmitted = true;
+                    }
                 }
                 return;
             }
@@ -256,10 +319,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (SkipEntryOnExitBar && exitedThisBar)
                 return;
 
-            if (longSignal)
+            if (longTrigger)
+            {
                 EnterLong(1, Contracts, "LongEntry");
-            else if (shortSignal)
+                pullbackSeenLong = false;
+            }
+            else if (shortTrigger)
+            {
                 EnterShort(1, Contracts, "ShortEntry");
+                pullbackSeenShort = false;
+            }
         }
 
         private void Flatten(string reason)
@@ -732,6 +801,26 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Require EMA Cross On Entry", GroupName = "Parameters", Order = 4)]
         public bool RequireEmaCrossOnEntry { get; set; }
+
+        [Range(1, int.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Pivot Strength", GroupName = "Parameters", Order = 5)]
+        public int PivotStrength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Pivot Target", GroupName = "Parameters", Order = 6)]
+        public bool UsePivotTarget { get; set; }
+
+        [Range(0, int.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Pullback Ticks", GroupName = "Parameters", Order = 7)]
+        public int PullbackTicks { get; set; }
+
+        [Range(0, int.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Target Offset Ticks", GroupName = "Parameters", Order = 8)]
+        public int TargetOffsetTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Exit On EMA Close Through", GroupName = "Parameters", Order = 9)]
+        public bool ExitOnEmaCloseThrough { get; set; }
 
         [XmlIgnore]
         [NinjaScriptProperty]
