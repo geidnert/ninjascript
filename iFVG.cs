@@ -3563,11 +3563,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
+		[XmlIgnore]
 		[Display(Name = "Session Fill", Description = "Color of the session background.", GroupName = "F - Sessions", Order = 7)]
 		public Brush SessionBrush
 		{
 			get { return sessionBrush; }
 			set { sessionBrush = value; }
+		}
+
+		[Browsable(false)]
+		public string SessionBrushSerializable
+		{
+			get { return Serialize.BrushToString(sessionBrush); }
+			set { sessionBrush = Serialize.StringToBrush(value); }
 		}
 
 		[NinjaScriptProperty]
