@@ -80,7 +80,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double activeMaxFvgSizePoints;
 		private int activeFvgDrawLimit;
 		private bool activeCombineFvgSeries;
-		private int contracts;
+		private int asiaContracts;
+		private int londonContracts;
+		private int newYorkContracts;
+		private int activeContracts;
 		private bool tradeMonday;
 		private bool tradeTuesday;
 		private bool tradeWednesday;
@@ -296,7 +299,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				londonCombineFvgSeries = false;
 				newYorkFvgDrawLimit = 2;
 				newYorkCombineFvgSeries = false;
-				contracts = 1;
+				asiaContracts = 1;
+				londonContracts = 1;
+				newYorkContracts = 1;
+				activeContracts = 1;
 				tradeMonday = true;
 				tradeTuesday = true;
 				tradeWednesday = true;
@@ -1960,9 +1966,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			SetHedgeLock(GetInstrumentKey(), direction == TradeDirection.Long ? MarketPosition.Long : MarketPosition.Short);
 
 			if (direction == TradeDirection.Long)
-				EnterLong(Contracts, signalName);
+				EnterLong(activeContracts, signalName);
 			else
-				EnterShort(Contracts, signalName);
+				EnterShort(activeContracts, signalName);
 
 			lastEntryBar = CurrentBar;
 		}
@@ -2442,6 +2448,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					activeCombineFvgSeries = CombineFvgSeries;
 					activeSwingStrength = SwingStrength;
 					activeMinTpSlDistancePoints = MinTpSlDistancePoints;
+					activeContracts = Asia_Contracts;
 					break;
 				case SessionSlot.Session2:
 					activeAutoShiftTimes = AutoShiftSession2;
@@ -2454,6 +2461,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					activeCombineFvgSeries = London_CombineFvgSeries;
 					activeSwingStrength = London_SwingStrength;
 					activeMinTpSlDistancePoints = London_MinTpSlDistancePoints;
+					activeContracts = London_Contracts;
 					break;
 				case SessionSlot.Session3:
 					activeAutoShiftTimes = AutoShiftSession3;
@@ -2466,18 +2474,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 					activeCombineFvgSeries = NewYork_CombineFvgSeries;
 					activeSwingStrength = NewYork_SwingStrength;
 					activeMinTpSlDistancePoints = NewYork_MinTpSlDistancePoints;
+					activeContracts = NewYork_Contracts;
 					break;
 			}
 
 			LogDebug(string.Format(
-				"Session settings applied ({0}): minFvg={1} maxFvg={2} drawLimit={3} combine={4} swingStrength={5} minTpSl={6}",
+				"Session settings applied ({0}): minFvg={1} maxFvg={2} drawLimit={3} combine={4} swingStrength={5} minTpSl={6} contracts={7}",
 				session,
 				activeMinFvgSizePoints,
 				activeMaxFvgSizePoints,
 				activeFvgDrawLimit,
 				activeCombineFvgSeries,
 				activeSwingStrength,
-				activeMinTpSlDistancePoints));
+				activeMinTpSlDistancePoints,
+				activeContracts));
 		}
 
 		private void EnsureEffectiveTimes(DateTime barTime, bool log)
@@ -3370,6 +3380,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 			set { showInvalidatedFvgs = value; }
 		}
 
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Contracts", Description = "Contracts to trade in Session 1.", GroupName = "G - Session 1 (Asia)", Order = 9)]
+		public int Asia_Contracts
+		{
+			get { return asiaContracts; }
+			set { asiaContracts = value; }
+		}
+
 		[Range(0, double.MaxValue), NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", Description = "Minimum FVG size in points required to draw and track.", GroupName = "G - Session 1 (Asia)", Order = 10)]
 		public double MinFvgSizePoints
@@ -3402,6 +3420,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 			set { combineFvgSeries = value; }
 		}
 
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Contracts", Description = "Contracts to trade in Session 2.", GroupName = "H - Session 2 (London)", Order = 9)]
+		public int London_Contracts
+		{
+			get { return londonContracts; }
+			set { londonContracts = value; }
+		}
+
 		[Range(0, double.MaxValue), NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "Min FVG Size (Points)", Description = "Minimum FVG size in points required to draw and track.", GroupName = "H - Session 2 (London)", Order = 10)]
 		public double London_MinFvgSizePoints
@@ -3432,6 +3458,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return londonCombineFvgSeries; }
 			set { londonCombineFvgSeries = value; }
+		}
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(Name = "Contracts", Description = "Contracts to trade in Session 3.", GroupName = "I - Session 3 (New York)", Order = 9)]
+		public int NewYork_Contracts
+		{
+			get { return newYorkContracts; }
+			set { newYorkContracts = value; }
 		}
 
 		[Range(0, double.MaxValue), NinjaScriptProperty]
@@ -3800,14 +3834,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return blockWhenInPosition; }
 			set { blockWhenInPosition = value; }
-		}
-
-		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(Name = "Contracts", Description = "Number of contracts to trade per entry.", GroupName = "A - General", Order = 0)]
-		public int Contracts
-		{
-			get { return contracts; }
-			set { contracts = value; }
 		}
 
 		[NinjaScriptProperty]
