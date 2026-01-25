@@ -79,6 +79,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ExitOnFirstOppositeCandle = false;
                 SkipEntryOnExitBar = false;
                 AllowCrossingEmaOnEntry = false;
+                IntrabarPullbackDetection = false;
+                IntrabarExitOnEmaCloseThrough = false;
                 PivotStrength = 3;
                 UsePivotTarget = true;
                 PullbackTicks = 4;
@@ -128,6 +130,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         protected override void OnBarUpdate()
         {
+            if (BarsInProgress == 1)
+            {
+                if (!IntrabarPullbackDetection && !IntrabarExitOnEmaCloseThrough)
+                    return;
+                if (CurrentBars[0] < Math.Max(2, EmaPeriod) || CurrentBars[1] < 0)
+                    return;
+
+                double emaValueIntrabar = ema[0];
+                double pullbackBandIntrabar = PullbackTicks * TickSize;
+                double lastPrice = Closes[1][0];
+                bool emaUpIntrabar = ema[0] > ema[1];
+                bool emaDownIntrabar = ema[0] < ema[1];
+
+                if (IntrabarPullbackDetection)
+                {
+                    if (emaUpIntrabar && lastPrice <= emaValueIntrabar + pullbackBandIntrabar)
+                        pullbackSeenLong = true;
+                    if (emaDownIntrabar && lastPrice >= emaValueIntrabar - pullbackBandIntrabar)
+                        pullbackSeenShort = true;
+                }
+
+                if (IntrabarExitOnEmaCloseThrough)
+                {
+                    if (Position.MarketPosition == MarketPosition.Long && lastPrice < emaValueIntrabar)
+                        ExitLong(1, "ExitLong", "LongEntry");
+                    else if (Position.MarketPosition == MarketPosition.Short && lastPrice > emaValueIntrabar)
+                        ExitShort(1, "ExitShort", "ShortEntry");
+                }
+
+                return;
+            }
+
             if (BarsInProgress != 0)
                 return;
 
@@ -831,28 +865,36 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "Allow EMA Cross Through On Entry", Description = "Allow entries when the candle opens on the wrong side of the EMA but closes on the correct side.", GroupName = "Parameters", Order = 4)]
         public bool AllowCrossingEmaOnEntry { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Intrabar Pullback Detection", Description = "Mark pullback touches using intrabar tick price instead of waiting for bar close.", GroupName = "Parameters", Order = 5)]
+        public bool IntrabarPullbackDetection { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Intrabar EMA Close Through Exit", Description = "Exit intrabar when price crosses the EMA; independent of the bar-close EMA exit.", GroupName = "Parameters", Order = 6)]
+        public bool IntrabarExitOnEmaCloseThrough { get; set; }
+
         [Range(1, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Pivot Strength", Description = "Swing strength used to detect pivot highs/lows for targets.", GroupName = "Parameters", Order = 5)]
+        [Display(Name = "Pivot Strength", Description = "Swing strength used to detect pivot highs/lows for targets.", GroupName = "Parameters", Order = 7)]
         public int PivotStrength { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Pivot Target", Description = "Place a target at the most recent swing high/low when available.", GroupName = "Parameters", Order = 6)]
+        [Display(Name = "Use Pivot Target", Description = "Place a target at the most recent swing high/low when available.", GroupName = "Parameters", Order = 8)]
         public bool UsePivotTarget { get; set; }
 
         [Range(0, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Pullback Ticks", Description = "Ticks from the EMA to qualify a pullback.", GroupName = "Parameters", Order = 7)]
+        [Display(Name = "Pullback Ticks", Description = "Ticks from the EMA to qualify a pullback.", GroupName = "Parameters", Order = 9)]
         public int PullbackTicks { get; set; }
 
         [Range(0, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Target Offset Ticks", Description = "Offset added to the pivot target price in ticks.", GroupName = "Parameters", Order = 8)]
+        [Display(Name = "Target Offset Ticks", Description = "Offset added to the pivot target price in ticks.", GroupName = "Parameters", Order = 10)]
         public int TargetOffsetTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Exit On EMA Close Through", Description = "Exit if the close crosses to the other side of the EMA.", GroupName = "Parameters", Order = 9)]
+        [Display(Name = "Exit On EMA Close Through", Description = "Exit if the close crosses to the other side of the EMA.", GroupName = "Parameters", Order = 11)]
         public bool ExitOnEmaCloseThrough { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Debug Logging", Description = "Print diagnostic messages to the output window.", GroupName = "Parameters", Order = 10)]
+        [Display(Name = "Debug Logging", Description = "Print diagnostic messages to the output window.", GroupName = "Parameters", Order = 12)]
         public bool DebugLogging { get; set; }
 
         [XmlIgnore]
