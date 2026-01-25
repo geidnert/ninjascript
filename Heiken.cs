@@ -78,7 +78,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Contracts = 1;
                 ExitOnFirstOppositeCandle = false;
                 SkipEntryOnExitBar = false;
-                RequireEmaCrossOnEntry = false;
+                AllowCrossingEmaOnEntry = false;
                 PivotStrength = 3;
                 UsePivotTarget = true;
                 PullbackTicks = 4;
@@ -231,6 +231,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool emaUp = ema[0] > ema[1];
             bool emaDown = ema[0] < ema[1];
             bool exitedThisBar = false;
+            bool longEmaSideOk = haCloseValue >= emaValue && (AllowCrossingEmaOnEntry || haOpenValue >= emaValue);
+            bool shortEmaSideOk = haCloseValue <= emaValue && (AllowCrossingEmaOnEntry || haOpenValue <= emaValue);
 
             try
             {
@@ -262,12 +264,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 && pullbackSeenLong
                 && isBull
                 && noLowerWick
-                && haCloseValue >= emaValue;
+                && longEmaSideOk;
             bool shortTrigger = emaDown
                 && pullbackSeenShort
                 && isBear
                 && noUpperWick
-                && haCloseValue <= emaValue;
+                && shortEmaSideOk;
 
             bool exitLongSignal = ExitOnFirstOppositeCandle
                 ? isBear
@@ -810,47 +812,47 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "EMA Period", GroupName = "Parameters", Order = 0)]
+        [Display(Name = "EMA Period", Description = "Period used by the EMA for trend and entry checks.", GroupName = "Parameters", Order = 0)]
         public int EmaPeriod { get; set; }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Contracts", GroupName = "Parameters", Order = 1)]
+        [Display(Name = "Contracts", Description = "Order quantity per entry.", GroupName = "Parameters", Order = 1)]
         public int Contracts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Exit On First Opposite Candle", GroupName = "Parameters", Order = 2)]
+        [Display(Name = "Exit On First Opposite Candle", Description = "Exit on the first opposite-color Heiken candle (ignores wick rule).", GroupName = "Parameters", Order = 2)]
         public bool ExitOnFirstOppositeCandle { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Skip Entry On Exit Bar", GroupName = "Parameters", Order = 3)]
+        [Display(Name = "Skip Entry On Exit Bar", Description = "Do not enter on a bar where an exit was triggered.", GroupName = "Parameters", Order = 3)]
         public bool SkipEntryOnExitBar { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Require EMA Cross On Entry", GroupName = "Parameters", Order = 4)]
-        public bool RequireEmaCrossOnEntry { get; set; }
+        [Display(Name = "Allow EMA Cross Through On Entry", Description = "Allow entries when the candle opens on the wrong side of the EMA but closes on the correct side.", GroupName = "Parameters", Order = 4)]
+        public bool AllowCrossingEmaOnEntry { get; set; }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Pivot Strength", GroupName = "Parameters", Order = 5)]
+        [Display(Name = "Pivot Strength", Description = "Swing strength used to detect pivot highs/lows for targets.", GroupName = "Parameters", Order = 5)]
         public int PivotStrength { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Pivot Target", GroupName = "Parameters", Order = 6)]
+        [Display(Name = "Use Pivot Target", Description = "Place a target at the most recent swing high/low when available.", GroupName = "Parameters", Order = 6)]
         public bool UsePivotTarget { get; set; }
 
         [Range(0, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Pullback Ticks", GroupName = "Parameters", Order = 7)]
+        [Display(Name = "Pullback Ticks", Description = "Ticks from the EMA to qualify a pullback.", GroupName = "Parameters", Order = 7)]
         public int PullbackTicks { get; set; }
 
         [Range(0, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Target Offset Ticks", GroupName = "Parameters", Order = 8)]
+        [Display(Name = "Target Offset Ticks", Description = "Offset added to the pivot target price in ticks.", GroupName = "Parameters", Order = 8)]
         public int TargetOffsetTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Exit On EMA Close Through", GroupName = "Parameters", Order = 9)]
+        [Display(Name = "Exit On EMA Close Through", Description = "Exit if the close crosses to the other side of the EMA.", GroupName = "Parameters", Order = 9)]
         public bool ExitOnEmaCloseThrough { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Debug Logging", GroupName = "Parameters", Order = 10)]
+        [Display(Name = "Debug Logging", Description = "Print diagnostic messages to the output window.", GroupName = "Parameters", Order = 10)]
         public bool DebugLogging { get; set; }
 
         [XmlIgnore]
@@ -859,27 +861,27 @@ namespace NinjaTrader.NinjaScript.Strategies
         public Brush SessionBrush { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade London (1:30-5:30)", Description = "Allow trading during London", Order = 1, GroupName = "Sessions")]
+        [Display(Name = "Trade London (1:30-5:30)", Description = "Allow trading during the London session.", Order = 1, GroupName = "Sessions")]
         public bool UseSession1 { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade New York (9:40-15:00)", Description = "Allow trading during New York", Order = 2, GroupName = "Sessions")]
+        [Display(Name = "Trade New York (9:40-15:00)", Description = "Allow trading during the New York session.", Order = 2, GroupName = "Sessions")]
         public bool UseSession2 { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Auto Shift London", Description = "Apply London DST auto-shift to London times", Order = 3, GroupName = "Sessions")]
+        [Display(Name = "Auto Shift London", Description = "Apply London DST auto-shift to London times.", Order = 3, GroupName = "Sessions")]
         public bool AutoShiftSession1 { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Auto Shift NewYork", Description = "Apply London DST auto-shift to New York times", Order = 4, GroupName = "Sessions")]
+        [Display(Name = "Auto Shift NewYork", Description = "Apply London DST auto-shift to New York times.", Order = 4, GroupName = "Sessions")]
         public bool AutoShiftSession2 { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Close at Session End", Description = "If true, open trades will be closed and working orders canceled at session end", Order = 5, GroupName = "Sessions")]
+        [Display(Name = "Close at Session End", Description = "If true, open trades will be closed and working orders canceled at session end.", Order = 5, GroupName = "Sessions")]
         public bool CloseAtSessionEnd { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "London Time")]
+        [Display(Name = "Session Start", Description = "London session start time.", Order = 1, GroupName = "London Time")]
         public TimeSpan London_SessionStart
         {
             get { return session1Start; }
@@ -887,7 +889,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "When session is ending, all positions and orders will be canceled when this time is passed", Order = 2, GroupName = "London Time")]
+        [Display(Name = "Session End", Description = "London session end time; open positions/orders are closed after this time if enabled.", Order = 2, GroupName = "London Time")]
         public TimeSpan London_SessionEnd
         {
             get { return session1End; }
@@ -895,7 +897,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "No Trades After", Description = "No more orders is being placed between this time and session end,", Order = 3, GroupName = "London Time")]
+        [Display(Name = "No Trades After", Description = "Stop new entries after this time until session end.", Order = 3, GroupName = "London Time")]
         public TimeSpan London_NoTradesAfter
         {
             get { return session1NoTradesAfter; }
@@ -903,7 +905,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "New York Time")]
+        [Display(Name = "Session Start", Description = "New York session start time.", Order = 1, GroupName = "New York Time")]
         public TimeSpan NewYork_SessionStart
         {
             get { return session2Start; }
@@ -911,7 +913,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "When session is ending, all positions and orders will be canceled when this time is passed", Order = 2, GroupName = "New York Time")]
+        [Display(Name = "Session End", Description = "New York session end time; open positions/orders are closed after this time if enabled.", Order = 2, GroupName = "New York Time")]
         public TimeSpan NewYork_SessionEnd
         {
             get { return session2End; }
@@ -919,7 +921,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "No Trades After", Description = "No more orders is being placed between this time and session end,", Order = 3, GroupName = "New York Time")]
+        [Display(Name = "No Trades After", Description = "Stop new entries after this time until session end.", Order = 3, GroupName = "New York Time")]
         public TimeSpan NewYork_NoTradesAfter
         {
             get { return session2NoTradesAfter; }
