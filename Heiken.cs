@@ -84,6 +84,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 PullbackTicks = 4;
                 TargetOffsetTicks = 0;
                 ExitOnEmaCloseThrough = true;
+                DebugLogging = false;
 
                 SessionBrush = Brushes.Gold;
                 UseSession1 = true;
@@ -113,7 +114,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 AddDataSeries(BarsPeriodType.Tick, 1);
                 ema = EMA(EmaPeriod);
-                swing = Swing(PivotStrength);
                 AddChartIndicator(ema);
                 ema.Plots[0].Brush = Brushes.DodgerBlue;
             }
@@ -180,6 +180,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (TimeInNoTradesAfter(Time[0]))
                 return;
 
+            if (DebugLogging && CurrentBar < 5)
+                LogDebug("Warmup: bar count small, ensure indicators are ready.");
+
             double haCloseValue;
             double haOpenValue;
             double haHighValue;
@@ -210,6 +213,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar < Math.Max(2, EmaPeriod))
                 return;
 
+            int swingStrength = Math.Max(1, PivotStrength);
+            int swingReadyBars = swingStrength * 2 + 1;
+            if (UsePivotTarget && swing == null && CurrentBar >= swingReadyBars)
+                swing = Swing(swingStrength);
+
             double emaValue = ema[0];
             double wickEpsilon = TickSize * 0.25;
             double pullbackBand = PullbackTicks * TickSize;
@@ -224,13 +232,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool emaDown = ema[0] < ema[1];
             bool exitedThisBar = false;
 
-            double swingHigh = swing != null ? swing.SwingHigh[0] : double.NaN;
-            if (!double.IsNaN(swingHigh))
-                lastSwingHigh = swingHigh;
+            try
+            {
+                double swingHigh = (swing != null && CurrentBar >= swingReadyBars) ? swing.SwingHigh[0] : double.NaN;
+                if (!double.IsNaN(swingHigh))
+                    lastSwingHigh = swingHigh;
 
-            double swingLow = swing != null ? swing.SwingLow[0] : double.NaN;
-            if (!double.IsNaN(swingLow))
-                lastSwingLow = swingLow;
+                double swingLow = (swing != null && CurrentBar >= swingReadyBars) ? swing.SwingLow[0] : double.NaN;
+                if (!double.IsNaN(swingLow))
+                    lastSwingLow = swingLow;
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Swing read failed: {ex.Message} | bars={Bars.Count} current={CurrentBar} ready={swingReadyBars} strength={swingStrength}");
+                return;
+            }
 
             if (!emaUp)
                 pullbackSeenLong = false;
@@ -334,9 +350,20 @@ namespace NinjaTrader.NinjaScript.Strategies
         private void Flatten(string reason)
         {
             if (Position.MarketPosition == MarketPosition.Long)
+            {
                 ExitLong(1, "Exit_" + reason, "LongEntry");
+            }
             else if (Position.MarketPosition == MarketPosition.Short)
+            {
                 ExitShort(1, "Exit_" + reason, "ShortEntry");
+            }
+        }
+
+        private void LogDebug(string message)
+        {
+            if (!DebugLogging)
+                return;
+            Print($"{Time[0]} | {Name} | bar={CurrentBar} | {message}");
         }
 
         private bool TimeInSkip(DateTime time)
@@ -821,6 +848,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Exit On EMA Close Through", GroupName = "Parameters", Order = 9)]
         public bool ExitOnEmaCloseThrough { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Debug Logging", GroupName = "Parameters", Order = 10)]
+        public bool DebugLogging { get; set; }
 
         [XmlIgnore]
         [NinjaScriptProperty]
