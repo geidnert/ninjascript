@@ -455,7 +455,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (effectiveSessionStart < effectiveSessionEnd)
                 return now >= effectiveNoTradesAfter && now < effectiveSessionEnd;
 
-            return (now >= effectiveNoTradesAfter || now < effectiveSessionEnd);
+            if (effectiveNoTradesAfter >= effectiveSessionStart)
+                return now >= effectiveNoTradesAfter || now < effectiveSessionEnd;
+
+            return now >= effectiveNoTradesAfter && now < effectiveSessionEnd;
         }
 
         private void DrawSessionBackground()
