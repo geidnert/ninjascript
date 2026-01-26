@@ -100,6 +100,34 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool ShowHistoricalDRs { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "When session is starting", GroupName = "06. Session Time", Order = 0)]
+        public TimeSpan SessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "When session is ending", GroupName = "06. Session Time", Order = 1)]
+        public TimeSpan SessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "No Trades After", Description = "No new entries after this time until session end", GroupName = "06. Session Time", Order = 2)]
+        public TimeSpan NoTradesAfter { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Close At Session End", Description = "If true, flatten/cancel at session end", GroupName = "06. Session Time", Order = 3)]
+        public bool CloseAtSessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [XmlIgnore]
+        [Display(Name = "Session Fill", Description = "Color of the session background", GroupName = "06. Session Time", Order = 4)]
+        public Brush SessionBrush { get; set; }
+
+        [Browsable(false)]
+        public string SessionBrushSerializable
+        {
+            get { return Serialize.BrushToString(SessionBrush); }
+            set { SessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
         [Display(Name = "Show Invalidated FVGs", Description = "If false, remove FVGs once invalidated", GroupName = "04. FVG", Order = 0)]
         public bool ShowInvalidatedFvgs { get; set; }
 
@@ -211,6 +239,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private DateTime sweepSetupStartTime;
         private DateTime sweepSetupEndTime;
         private double sweepSetupStopPrice;
+        private bool sessionClosed;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -246,6 +275,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LineOpacity = 30;
                 DebugLogging = false;
                 ShowHistoricalDRs = true;
+
+                SessionStart = new TimeSpan(9, 30, 0);
+                SessionEnd = new TimeSpan(16, 0, 0);
+                NoTradesAfter = new TimeSpan(15, 30, 0);
+                CloseAtSessionEnd = true;
+                SessionBrush = Brushes.Gold;
 
                 ShowInvalidatedFvgs = true;
                 MinFvgSizePoints = 0;
@@ -304,6 +339,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 sweepSetupStartTime = Core.Globals.MinDate;
                 sweepSetupEndTime = Core.Globals.MinDate;
                 sweepSetupStopPrice = 0;
+                sessionClosed = false;
 
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
                     DrBoxBrush.Freeze();
@@ -322,6 +358,53 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (BarsInProgress == 0)
             {
+                DrawSessionBackground();
+
+                if (CurrentBar < 1)
+                    return;
+
+                bool inSessionNow = TimeInSession(Time[0]);
+                bool inSessionPrev = CurrentBar > 0 ? TimeInSession(Time[1]) : inSessionNow;
+
+                if (inSessionNow && !inSessionPrev)
+                {
+                    sessionClosed = false;
+                    LogDebug("Session start.");
+                }
+
+                if (inSessionPrev && !inSessionNow && !sessionClosed)
+                {
+                    if (CloseAtSessionEnd)
+                    {
+                        if (Position.MarketPosition == MarketPosition.Long)
+                            ExitLong();
+                        else if (Position.MarketPosition == MarketPosition.Short)
+                            ExitShort();
+                    }
+
+                    CancelAllOrders();
+                    sweepSetupActive = false;
+                    sessionClosed = true;
+                    LogDebug("Session end — flatten/cancel.");
+                }
+
+                bool crossedNoTrades =
+                    (Time[1].TimeOfDay <= NoTradesAfter && Time[0].TimeOfDay > NoTradesAfter);
+
+                if (crossedNoTrades)
+                {
+                    CancelAllOrders();
+                    sweepSetupActive = false;
+                    LogDebug("NoTradesAfter crossed — canceling orders.");
+                }
+
+                if (!inSessionNow || TimeInNoTradesAfter(Time[0]))
+                {
+                    // Keep drawing FVGs/DRs but block new setups/entries.
+                    if (sweepSetupActive && TimeInNoTradesAfter(Time[0]))
+                        sweepSetupActive = false;
+                }
+
                 if (sweepSetupActive && Time[0] > sweepSetupEndTime)
                 {
                     LogDebug("Sweep setup expired.");
@@ -425,7 +508,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
-            EvaluateSweepSetup();
+            if (TimeInSession(Times[drSeriesIndex][0]) && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
+                EvaluateSweepSetup();
         }
         #endregion
 
@@ -603,6 +687,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (Position.MarketPosition != MarketPosition.Flat)
                 return;
             if (Time[0] <= sweepSetupStartTime || Time[0] > sweepSetupEndTime)
+                return;
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
                 return;
 
             bool matchesDirection = sweepSetupDirection == SetupDirection.Long ? bullishFvg : bearishFvg;
@@ -1203,6 +1289,95 @@ namespace NinjaTrader.NinjaScript.Strategies
                 price,
                 marketPosition,
                 execution.Order.OrderId));
+        }
+
+        private void CancelAllOrders()
+        {
+            if (Account == null)
+                return;
+
+            foreach (Order order in Account.Orders)
+            {
+                if (order == null)
+                    continue;
+                if (order.Instrument != Instrument)
+                    continue;
+
+                if (order.OrderState == OrderState.Working ||
+                    order.OrderState == OrderState.Submitted ||
+                    order.OrderState == OrderState.Accepted ||
+                    order.OrderState == OrderState.ChangePending)
+                {
+                    CancelOrder(order);
+                }
+            }
+        }
+
+        private void DrawSessionBackground()
+        {
+            if (CurrentBar < 1)
+                return;
+
+            DateTime barTime = Time[0];
+            DateTime sessionStartTime = barTime.Date + SessionStart;
+            DateTime sessionEndTime = SessionStart > SessionEnd
+                ? sessionStartTime.AddDays(1).Date + SessionEnd
+                : sessionStartTime.Date + SessionEnd;
+
+            string rectTag = "H1M5_SessionFill_" + sessionStartTime.ToString("yyyyMMdd");
+            if (DrawObjects[rectTag] == null)
+            {
+                Draw.Rectangle(
+                    this,
+                    rectTag,
+                    false,
+                    sessionStartTime,
+                    0,
+                    sessionEndTime,
+                    30000,
+                    Brushes.Transparent,
+                    SessionBrush ?? Brushes.DarkSlateGray,
+                    10
+                ).ZOrder = -1;
+            }
+
+            var noTradesBrush = new SolidColorBrush(Color.FromArgb(70, 255, 0, 0));
+            try
+            {
+                if (noTradesBrush.CanFreeze)
+                    noTradesBrush.Freeze();
+            }
+            catch { }
+
+            DateTime noTradesAfterTime = Time[0].Date + NoTradesAfter;
+            if (SessionStart > SessionEnd && NoTradesAfter < SessionStart)
+                noTradesAfterTime = noTradesAfterTime.AddDays(1);
+
+            Draw.VerticalLine(this, $"NoTradesAfter_{sessionStartTime:yyyyMMdd}", noTradesAfterTime, noTradesBrush,
+                DashStyleHelper.Solid, 2);
+
+            string prevDay = sessionStartTime.AddDays(-1).ToString("yyyyMMdd");
+            RemoveDrawObject("H1M5_SessionFill_" + prevDay);
+        }
+
+        private bool TimeInSession(DateTime time)
+        {
+            TimeSpan now = time.TimeOfDay;
+
+            if (SessionStart < SessionEnd)
+                return now >= SessionStart && now < SessionEnd;
+
+            return now >= SessionStart || now < SessionEnd;
+        }
+
+        private bool TimeInNoTradesAfter(DateTime time)
+        {
+            TimeSpan now = time.TimeOfDay;
+
+            if (SessionStart < SessionEnd)
+                return now >= NoTradesAfter && now < SessionEnd;
+
+            return now >= NoTradesAfter || now < SessionEnd;
         }
     }
 }
