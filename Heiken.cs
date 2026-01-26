@@ -154,9 +154,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (IntrabarExitOnEmaCloseThrough)
                 {
                     if (Position.MarketPosition == MarketPosition.Long && lastPrice < emaValueIntrabar)
+                    {
+                        if (DebugLogging)
+                            LogDebugTrade($"LONG intrabar exit: ema close through | lastPrice={lastPrice:0.00} ema={emaValueIntrabar:0.00}");
                         ExitLong(1, "ExitLong", "LongEntry");
+                    }
                     else if (Position.MarketPosition == MarketPosition.Short && lastPrice > emaValueIntrabar)
+                    {
+                        if (DebugLogging)
+                            LogDebugTrade($"SHORT intrabar exit: ema close through | lastPrice={lastPrice:0.00} ema={emaValueIntrabar:0.00}");
                         ExitShort(1, "ExitShort", "ShortEntry");
+                    }
                 }
 
                 return;
@@ -305,20 +313,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                 && noUpperWick
                 && shortEmaSideOk;
 
-            bool exitLongSignal = ExitOnFirstOppositeCandle
+            bool exitLongOppositeSignal = ExitOnFirstOppositeCandle
                 ? isBear
                 : (isBear && noUpperWick);
-            bool exitShortSignal = ExitOnFirstOppositeCandle
+            bool exitShortOppositeSignal = ExitOnFirstOppositeCandle
                 ? isBull
                 : (isBull && noLowerWick);
+            bool exitLongEmaClose = ExitOnEmaCloseThrough && haCloseValue < emaValue;
+            bool exitShortEmaClose = ExitOnEmaCloseThrough && haCloseValue > emaValue;
 
-            if (ExitOnEmaCloseThrough)
-            {
-                if (haCloseValue < emaValue)
-                    exitLongSignal = true;
-                if (haCloseValue > emaValue)
-                    exitShortSignal = true;
-            }
+            bool exitLongSignal = exitLongOppositeSignal || exitLongEmaClose;
+            bool exitShortSignal = exitShortOppositeSignal || exitShortEmaClose;
 
             if (Position.MarketPosition == MarketPosition.Flat)
             {
@@ -332,6 +337,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (exitLongSignal)
                 {
+                    if (DebugLogging)
+                        LogDebugTrade($"LONG exit signal: {BuildExitReason(exitLongOppositeSignal, exitLongEmaClose)} | haClose={haCloseValue:0.00} ema={emaValue:0.00}");
                     ExitLong(1, "ExitLong", "LongEntry");
                     exitedThisBar = true;
                 }
@@ -341,6 +348,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     longTargetPrice = lastSwingHigh + TargetOffsetTicks * TickSize;
                     if (longTargetPrice > Close[0])
                     {
+                        if (DebugLogging)
+                            LogDebug($"LONG pivot target submitted: target={longTargetPrice:0.00} swingHigh={lastSwingHigh:0.00} offsetTicks={TargetOffsetTicks}");
                         ExitLongLimit(1, true, Position.Quantity, longTargetPrice, "PivotTargetLong", "LongEntry");
                         longTargetSubmitted = true;
                     }
@@ -352,6 +361,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (exitShortSignal)
                 {
+                    if (DebugLogging)
+                        LogDebugTrade($"SHORT exit signal: {BuildExitReason(exitShortOppositeSignal, exitShortEmaClose)} | haClose={haCloseValue:0.00} ema={emaValue:0.00}");
                     ExitShort(1, "ExitShort", "ShortEntry");
                     exitedThisBar = true;
                 }
@@ -361,6 +372,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     shortTargetPrice = lastSwingLow - TargetOffsetTicks * TickSize;
                     if (shortTargetPrice < Close[0])
                     {
+                        if (DebugLogging)
+                            LogDebug($"SHORT pivot target submitted: target={shortTargetPrice:0.00} swingLow={lastSwingLow:0.00} offsetTicks={TargetOffsetTicks}");
                         ExitShortLimit(1, true, Position.Quantity, shortTargetPrice, "PivotTargetShort", "ShortEntry");
                         shortTargetSubmitted = true;
                     }
@@ -373,11 +386,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (longTrigger)
             {
+                if (DebugLogging)
+                {
+                    LogDebugTrade($"LONG setup met: emaUp={emaUp} pullbackSeen={pullbackSeenLong} isBull={isBull} noLowerWick={noLowerWick} emaSideOk={longEmaSideOk}");
+                    LogDebug($"LONG context: haO={haOpenValue:0.00} haC={haCloseValue:0.00} haH={haHighValue:0.00} haL={haLowValue:0.00} ema={emaValue:0.00} pullbackBand={pullbackBand:0.00}");
+                }
                 EnterLong(1, Contracts, "LongEntry");
                 pullbackSeenLong = false;
             }
             else if (shortTrigger)
             {
+                if (DebugLogging)
+                {
+                    LogDebugTrade($"SHORT setup met: emaDown={emaDown} pullbackSeen={pullbackSeenShort} isBear={isBear} noUpperWick={noUpperWick} emaSideOk={shortEmaSideOk}");
+                    LogDebug($"SHORT context: haO={haOpenValue:0.00} haC={haCloseValue:0.00} haH={haHighValue:0.00} haL={haLowValue:0.00} ema={emaValue:0.00} pullbackBand={pullbackBand:0.00}");
+                }
                 EnterShort(1, Contracts, "ShortEntry");
                 pullbackSeenShort = false;
             }
@@ -387,10 +410,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (Position.MarketPosition == MarketPosition.Long)
             {
+                if (DebugLogging)
+                    LogDebugTrade($"Flattening LONG due to {reason}");
                 ExitLong(1, "Exit_" + reason, "LongEntry");
             }
             else if (Position.MarketPosition == MarketPosition.Short)
             {
+                if (DebugLogging)
+                    LogDebugTrade($"Flattening SHORT due to {reason}");
                 ExitShort(1, "Exit_" + reason, "ShortEntry");
             }
         }
@@ -400,6 +427,24 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!DebugLogging)
                 return;
             Print($"{Time[0]} | {Name} | bar={CurrentBar} | {message}");
+        }
+
+        private void LogDebugTrade(string message)
+        {
+            if (!DebugLogging)
+                return;
+            Print($"\n{Time[0]} | {Name} | bar={CurrentBar} | {message}");
+        }
+
+        private string BuildExitReason(bool oppositeSignal, bool emaCloseSignal)
+        {
+            if (oppositeSignal && emaCloseSignal)
+                return "opposite candle + ema close through";
+            if (oppositeSignal)
+                return "opposite candle";
+            if (emaCloseSignal)
+                return "ema close through";
+            return "unknown";
         }
 
         private bool TimeInSkip(DateTime time)
