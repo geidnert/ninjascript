@@ -89,6 +89,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool tradeWednesday;
 		private bool tradeThursday;
 		private bool tradeFriday;
+		private bool tradeSaturday;
+		private bool tradeSunday;
 		private TimeSpan skipStart;
 		private TimeSpan skipEnd;
 		private bool closeAtSkipStart;
@@ -308,6 +310,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				tradeWednesday = true;
 				tradeThursday = true;
 				tradeFriday = true;
+				tradeSaturday = false;
+				tradeSunday = false;
 				skipStart = new TimeSpan(0, 0, 0);
 				skipEnd = new TimeSpan(0, 0, 0);
 				closeAtSkipStart = true;
@@ -2199,6 +2203,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 					return tradeThursday;
 				case DayOfWeek.Friday:
 					return tradeFriday;
+				case DayOfWeek.Saturday:
+					return tradeSaturday;
+				case DayOfWeek.Sunday:
+					return tradeSunday;
 				default:
 					return true;
 			}
@@ -3874,6 +3882,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			get { return tradeFriday; }
 			set { tradeFriday = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Saturday", Description = "Allow trading on Saturdays.", GroupName = "D - Trade Days", Order = 5)]
+		public bool TradeSaturday
+		{
+			get { return tradeSaturday; }
+			set { tradeSaturday = value; }
+		}
+
+		[NinjaScriptProperty]
+		[Display(Name = "Sunday", Description = "Allow trading on Sundays.", GroupName = "D - Trade Days", Order = 6)]
+		public bool TradeSunday
+		{
+			get { return tradeSunday; }
+			set { tradeSunday = value; }
 		}
 
 		[NinjaScriptProperty]
