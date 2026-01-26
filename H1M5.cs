@@ -31,12 +31,17 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double MinDrSizePoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "DR Bars Period Type", GroupName = "01. DR Parameters", Order = 3)]
+        [Range(0.0, 50.0)]
+        [Display(Name = "Mid Red Zone % (each side)", GroupName = "01. DR Parameters", Order = 3)]
+        public double MidRedZonePercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "DR Bars Period Type", GroupName = "01. DR Parameters", Order = 4)]
         public BarsPeriodType DrBarsPeriodType { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "DR Bars Period Value", GroupName = "01. DR Parameters", Order = 4)]
+        [Display(Name = "DR Bars Period Value", GroupName = "01. DR Parameters", Order = 5)]
         public int DrBarsPeriodValue { get; set; }
 
         [XmlIgnore]
@@ -98,6 +103,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private DateTime currentDrStartTime;
         private DateTime currentDrEndTime;
         private string currentDrBoxTag;
+        private string currentDrRedZoneTag;
         private string currentDrMidLineTag;
         private string currentDrTopLineTag;
         private string currentDrBottomLineTag;
@@ -134,6 +140,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LegSwingLookback = 10;
                 SwingStrength = 1;
                 MinDrSizePoints = 4;
+                MidRedZonePercent = 12;
                 DrBarsPeriodType = BarsPeriodType.Minute;
                 DrBarsPeriodValue = 60;
                 BoxOpacity = 10;
@@ -169,6 +176,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrStartTime = Core.Globals.MinDate;
                 currentDrEndTime = Core.Globals.MinDate;
                 currentDrBoxTag = string.Empty;
+                currentDrRedZoneTag = string.Empty;
                 currentDrMidLineTag = string.Empty;
                 currentDrTopLineTag = string.Empty;
                 currentDrBottomLineTag = string.Empty;
@@ -460,6 +468,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             drCounter++;
             currentDrBoxTag = "DRBox_" + drCounter;
+            currentDrRedZoneTag = "DRRedZone_" + drCounter;
             currentDrMidLineTag = "DRMid_" + drCounter;
             currentDrTopLineTag = "DRTop_" + drCounter;
             currentDrBottomLineTag = "DRBot_" + drCounter;
@@ -550,6 +559,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BoxOpacity
             );
 
+            DrawRedZone(startTime, endTime);
+
             Brush midLineBrush = GetLineBrush(DrMidLineBrush);
             Draw.Line(
                 this,
@@ -589,6 +600,33 @@ namespace NinjaTrader.NinjaScript.Strategies
                 outlineLineBrush,
                 DashStyleHelper.Solid,
                 LineWidth
+            );
+        }
+
+        private void DrawRedZone(DateTime startTime, DateTime endTime)
+        {
+            if (MidRedZonePercent <= 0)
+                return;
+
+            double drHeight = currentDrHigh - currentDrLow;
+            if (drHeight <= 0)
+                return;
+
+            double halfZone = drHeight * (MidRedZonePercent / 100.0);
+            double zoneHigh = currentDrMid + halfZone;
+            double zoneLow = currentDrMid - halfZone;
+
+            Draw.Rectangle(
+                this,
+                currentDrRedZoneTag,
+                false,
+                startTime,
+                zoneLow,
+                endTime,
+                zoneHigh,
+                Brushes.Transparent,
+                Brushes.Red,
+                BoxOpacity
             );
         }
 
