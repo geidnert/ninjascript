@@ -92,6 +92,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Enable detailed debug logging to Output window", GroupName = "03. Debug", Order = 0)]
         public bool DebugLogging { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show Historical DRs", Description = "If false, only show the active DR range", GroupName = "02. Visual Settings", Order = 6)]
+        public bool ShowHistoricalDRs { get; set; }
         #endregion
 
         #region State Variables
@@ -147,6 +151,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LineWidth = 1;
                 LineOpacity = 30;
                 DebugLogging = false;
+                ShowHistoricalDRs = true;
 
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
@@ -475,6 +480,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             hasActiveDR = true;
 
+            if (!ShowHistoricalDRs)
+                ClearPreviousDrDrawings();
+
             double drHeight = drHigh - drLow;
             double drSizePoints = drHeight / TickSize;
             currentDrTradable = drSizePoints >= MinDrSizePoints;
@@ -628,6 +636,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Brushes.Red,
                 BoxOpacity
             );
+        }
+
+        private void ClearPreviousDrDrawings()
+        {
+            if (drCounter <= 1)
+                return;
+
+            int previousId = drCounter - 1;
+            RemoveDrawObject("DRBox_" + previousId);
+            RemoveDrawObject("DRRedZone_" + previousId);
+            RemoveDrawObject("DRMid_" + previousId);
+            RemoveDrawObject("DRTop_" + previousId);
+            RemoveDrawObject("DRBot_" + previousId);
         }
 
         private Brush GetLineBrush(Brush baseBrush)
