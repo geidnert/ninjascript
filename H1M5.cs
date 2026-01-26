@@ -127,8 +127,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "FVG Draw Limit (days)", GroupName = "04. FVG", Order = 5)]
         public int FvgDrawLimitDays { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Only Show FVGs Inside DR", Description = "If true, only draw FVGs fully within the active DR range", GroupName = "04. FVG", Order = 6)]
+        public bool OnlyShowFvgsInsideDr { get; set; }
+
         [XmlIgnore]
-        [Display(Name = "FVG Fill Brush", GroupName = "04. FVG", Order = 6)]
+        [Display(Name = "FVG Fill Brush", GroupName = "04. FVG", Order = 7)]
         public Brush FvgFillBrush { get; set; }
 
         [Browsable(false)]
@@ -139,7 +143,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [XmlIgnore]
-        [Display(Name = "Invalidated FVG Fill Brush", GroupName = "04. FVG", Order = 7)]
+        [Display(Name = "Invalidated FVG Fill Brush", GroupName = "04. FVG", Order = 8)]
         public Brush InvalidatedFvgFillBrush { get; set; }
 
         [Browsable(false)]
@@ -226,6 +230,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 FvgOpacity = 20;
                 InvalidatedFvgOpacity = 10;
                 FvgDrawLimitDays = 5;
+                OnlyShowFvgsInsideDr = false;
 
                 FvgFillBrush = Brushes.DarkCyan;
                 InvalidatedFvgFillBrush = Brushes.IndianRed;
@@ -442,6 +447,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (endBarsAgo < 0)
                     endBarsAgo = 0;
 
+                if (!ShouldDrawFvg(fvg.Lower, fvg.Upper))
+                {
+                    RemoveDrawObject(fvg.Tag);
+                    continue;
+                }
+
                 Draw.Rectangle(
                     this,
                     fvg.Tag,
@@ -464,18 +475,21 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else
                     {
-                        Draw.Rectangle(
-                            this,
-                            fvg.Tag,
-                            false,
-                            startBarsAgo,
-                            fvg.Lower,
-                            endBarsAgo,
-                            fvg.Upper,
-                            Brushes.Transparent,
-                            InvalidatedFvgFillBrush,
-                            InvalidatedFvgOpacity
-                        );
+                        if (ShouldDrawFvg(fvg.Lower, fvg.Upper))
+                        {
+                            Draw.Rectangle(
+                                this,
+                                fvg.Tag,
+                                false,
+                                startBarsAgo,
+                                fvg.Lower,
+                                endBarsAgo,
+                                fvg.Upper,
+                                Brushes.Transparent,
+                                InvalidatedFvgFillBrush,
+                                InvalidatedFvgOpacity
+                            );
+                        }
                     }
                 }
             }
@@ -504,6 +518,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
                 return;
+            if (!ShouldDrawFvg(fvg.Lower, fvg.Upper))
+                return;
 
             activeFvgs.Add(fvg);
 
@@ -519,6 +535,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 FvgFillBrush,
                 FvgOpacity
             );
+        }
+
+        private bool ShouldDrawFvg(double fvgLower, double fvgUpper)
+        {
+            if (!OnlyShowFvgsInsideDr)
+                return true;
+            if (!hasActiveDR)
+                return false;
+            return fvgLower >= currentDrLow && fvgUpper <= currentDrHigh;
         }
         #endregion
 
