@@ -191,6 +191,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0.0, 100.0)]
         [Display(Name = "TP % of DR", GroupName = "05. Entries", Order = 1)]
         public double TpPercentOfDr { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Trailing Stop", GroupName = "05. Entries", Order = 2)]
+        public bool EnableTrailingStop { get; set; }
         #endregion
 
         #region State Variables
@@ -240,6 +244,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         private DateTime sweepSetupEndTime;
         private double sweepSetupStopPrice;
         private bool sessionClosed;
+        private string activeEntrySignal;
+        private double activeEntryPrice;
+        private double activeStopPrice;
+        private double activeTpPrice;
+        private bool trailingActive;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -295,6 +304,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 SweepLookbackBars = 50;
                 TpPercentOfDr = 79;
+                EnableTrailingStop = false;
 
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
@@ -340,6 +350,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 sweepSetupEndTime = Core.Globals.MinDate;
                 sweepSetupStopPrice = 0;
                 sessionClosed = false;
+                activeEntrySignal = string.Empty;
+                activeEntryPrice = 0;
+                activeStopPrice = 0;
+                activeTpPrice = 0;
+                trailingActive = false;
 
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
                     DrBoxBrush.Freeze();
@@ -362,6 +377,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (CurrentBar < 1)
                     return;
+
+                if (Position.MarketPosition == MarketPosition.Flat && !string.IsNullOrEmpty(activeEntrySignal))
+                {
+                    activeEntrySignal = string.Empty;
+                    activeEntryPrice = 0;
+                    activeStopPrice = 0;
+                    activeTpPrice = 0;
+                    trailingActive = false;
+                }
 
                 bool inSessionNow = TimeInSession(Time[0]);
                 bool inSessionPrev = CurrentBar > 0 ? TimeInSession(Time[1]) : inSessionNow;
@@ -418,6 +442,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (hasActiveDR)
                         DrawCurrentDR(Times[0][0]);
+                    if (EnableTrailingStop)
+                        UpdateTrailingStop();
                     return;
                 }
             }
@@ -713,6 +739,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 stop,
                 sweepSetupDirection == SetupDirection.Long ? "bullish" : "bearish"));
 
+            activeEntrySignal = signal;
+            activeEntryPrice = Close[0];
+            activeStopPrice = stop;
+            activeTpPrice = tp;
+            trailingActive = false;
+
             SetStopLoss(signal, CalculationMode.Price, stop, false);
             SetProfitTarget(signal, CalculationMode.Price, tp);
 
@@ -878,6 +910,53 @@ namespace NinjaTrader.NinjaScript.Strategies
             double halfZone = drHeight * (MidRedZonePercent / 100.0);
             redLow = currentDrMid - halfZone;
             redHigh = currentDrMid + halfZone;
+        }
+        #endregion
+
+        #region Trailing Stop
+        private void UpdateTrailingStop()
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return;
+            if (CurrentBar < 2)
+                return;
+            if (string.IsNullOrEmpty(activeEntrySignal))
+                return;
+
+            if (!trailingActive)
+            {
+                bool triggerHit = Position.MarketPosition == MarketPosition.Long
+                    ? High[0] >= currentDrMid
+                    : Low[0] <= currentDrMid;
+                if (triggerHit)
+                {
+                    trailingActive = true;
+                    LogDebug(string.Format("Trailing activated at DR mid {0:F2}.", currentDrMid));
+                }
+            }
+
+            if (!trailingActive)
+                return;
+
+            double newStop = Position.MarketPosition == MarketPosition.Long ? Low[1] : High[1];
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                if (newStop > activeStopPrice && newStop < Close[0])
+                {
+                    activeStopPrice = newStop;
+                    SetStopLoss(activeEntrySignal, CalculationMode.Price, newStop, false);
+                    LogDebug(string.Format("Trailing SL moved to {0:F2}", newStop));
+                }
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                if (newStop < activeStopPrice && newStop > Close[0])
+                {
+                    activeStopPrice = newStop;
+                    SetStopLoss(activeEntrySignal, CalculationMode.Price, newStop, false);
+                    LogDebug(string.Format("Trailing SL moved to {0:F2}", newStop));
+                }
+            }
         }
         #endregion
 
