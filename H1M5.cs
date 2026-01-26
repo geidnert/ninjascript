@@ -10,6 +10,7 @@ using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
+using NinjaTrader.NinjaScript.Indicators;
 #endregion
 
 namespace NinjaTrader.NinjaScript.Strategies
@@ -195,6 +196,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Enable Trailing Stop", GroupName = "05. Entries", Order = 2)]
         public bool EnableTrailingStop { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Exit On EMA Flat", GroupName = "05. Entries", Order = 3)]
+        public bool ExitOnEmaFlat { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "EMA Period", GroupName = "05. Entries", Order = 4)]
+        public int EmaPeriod { get; set; }
         #endregion
 
         #region State Variables
@@ -249,6 +259,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double activeStopPrice;
         private double activeTpPrice;
         private bool trailingActive;
+        private EMA exitEma;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -305,6 +316,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SweepLookbackBars = 50;
                 TpPercentOfDr = 79;
                 EnableTrailingStop = false;
+                ExitOnEmaFlat = false;
+                EmaPeriod = 5;
 
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
@@ -324,6 +337,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.DataLoaded)
             {
+                if (ExitOnEmaFlat)
+                {
+                    exitEma = EMA(EmaPeriod);
+                    AddChartIndicator(exitEma);
+                }
+
                 drCounter = 0;
                 hasActiveDR = false;
                 currentDrHigh = 0;
@@ -377,6 +396,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (CurrentBar < 1)
                     return;
+
+                if (ExitOnEmaFlat && Position.MarketPosition != MarketPosition.Flat && CurrentBar >= EmaPeriod)
+                {
+                    double emaNow = exitEma[0];
+                    double emaPrev = exitEma[1];
+                    if (emaNow == emaPrev)
+                    {
+                        LogDebug(string.Format("EMA flat ({0}) — flattening position.", EmaPeriod), true);
+                        if (Position.MarketPosition == MarketPosition.Long)
+                            ExitLong("EMAFlatExit", activeEntrySignal);
+                        else if (Position.MarketPosition == MarketPosition.Short)
+                            ExitShort("EMAFlatExit", activeEntrySignal);
+
+                        CancelAllOrders();
+                    }
+                }
 
                 if (Position.MarketPosition == MarketPosition.Flat && !string.IsNullOrEmpty(activeEntrySignal))
                 {
