@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Windows.Media;
 using System.Xml.Serialization;
+using NinjaTrader.Cbi;
 using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.NinjaScript;
@@ -91,7 +92,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         public int LineOpacity { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Debug Logging", Description = "Enable detailed debug logging to Output window", GroupName = "03. Debug", Order = 0)]
+        [Display(Name = "Enable Logging", Description = "Enable detailed logging to Output window", GroupName = "03. Debug", Order = 0)]
         public bool DebugLogging { get; set; }
 
         [NinjaScriptProperty]
@@ -152,6 +153,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             get { return Serialize.BrushToString(InvalidatedFvgFillBrush); }
             set { InvalidatedFvgFillBrush = Serialize.StringToBrush(value); }
         }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "Sweep Lookback (bars)", GroupName = "05. Entries", Order = 0)]
+        public int SweepLookbackBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % of DR", GroupName = "05. Entries", Order = 1)]
+        public double TpPercentOfDr { get; set; }
         #endregion
 
         #region State Variables
@@ -165,6 +176,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             public bool IsBullish;
             public bool IsActive;
             public DateTime SessionDate;
+        }
+
+        private enum SetupDirection
+        {
+            Long,
+            Short
         }
 
         private double currentDrHigh;
@@ -188,6 +205,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private List<FvgBox> activeFvgs;
         private int fvgCounter;
+
+        private bool sweepSetupActive;
+        private SetupDirection sweepSetupDirection;
+        private DateTime sweepSetupStartTime;
+        private DateTime sweepSetupEndTime;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -235,6 +257,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 FvgFillBrush = Brushes.DarkCyan;
                 InvalidatedFvgFillBrush = Brushes.IndianRed;
 
+                SweepLookbackBars = 50;
+                TpPercentOfDr = 79;
+
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
                 DrMidLineBrush = Brushes.White;
@@ -273,6 +298,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 activeFvgs = new List<FvgBox>();
                 fvgCounter = 0;
+                sweepSetupActive = false;
+                sweepSetupDirection = SetupDirection.Long;
+                sweepSetupStartTime = Core.Globals.MinDate;
+                sweepSetupEndTime = Core.Globals.MinDate;
 
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
                     DrBoxBrush.Freeze();
@@ -291,6 +320,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (BarsInProgress == 0)
             {
+                if (sweepSetupActive && Time[0] > sweepSetupEndTime)
+                {
+                    LogDebug("Sweep setup expired.");
+                    sweepSetupActive = false;
+                }
+
                 if (CurrentBar >= 2)
                     UpdateFvgs();
 
@@ -387,6 +422,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     inBreakoutStrike = true;
                 }
             }
+
+            EvaluateSweepSetup();
         }
         #endregion
 
@@ -503,6 +540,15 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!bullishFvg && !bearishFvg)
                 return;
 
+            if (sweepSetupActive)
+            {
+                LogDebug(string.Format(
+                    "FVG detected {0}. Lower={1:F2} Upper={2:F2}",
+                    bullishFvg ? "bullish" : "bearish",
+                    bullishFvg ? High[2] : High[0],
+                    bullishFvg ? Low[0] : Low[2]));
+            }
+
             FvgBox fvg = new FvgBox();
             fvg.IsBullish = bullishFvg;
             fvg.Lower = bullishFvg ? High[2] : High[0];
@@ -535,6 +581,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 FvgFillBrush,
                 FvgOpacity
             );
+
+            TryEnterFromFvgSignal(bullishFvg, bearishFvg);
         }
 
         private bool ShouldDrawFvg(double fvgLower, double fvgUpper)
@@ -544,6 +592,201 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!hasActiveDR)
                 return false;
             return fvgLower >= currentDrLow && fvgUpper <= currentDrHigh;
+        }
+
+        private void TryEnterFromFvgSignal(bool bullishFvg, bool bearishFvg)
+        {
+            if (!sweepSetupActive)
+                return;
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
+            if (Time[0] <= sweepSetupStartTime || Time[0] > sweepSetupEndTime)
+                return;
+
+            bool matchesDirection = sweepSetupDirection == SetupDirection.Long ? bullishFvg : bearishFvg;
+            if (!matchesDirection)
+                return;
+
+            double drHeight = currentDrHigh - currentDrLow;
+            if (drHeight <= 0)
+                return;
+
+            double tp = sweepSetupDirection == SetupDirection.Long
+                ? currentDrLow + drHeight * (TpPercentOfDr / 100.0)
+                : currentDrHigh - drHeight * (TpPercentOfDr / 100.0);
+
+            double stop = sweepSetupDirection == SetupDirection.Long ? Low[1] : High[1];
+            string signal = sweepSetupDirection == SetupDirection.Long ? "H1M5_Long" : "H1M5_Short";
+
+            LogDebug(string.Format(
+                "FVG trigger {0}. TP={1:F2} SL={2:F2} (FVG {3})",
+                sweepSetupDirection == SetupDirection.Long ? "LONG" : "SHORT",
+                tp,
+                stop,
+                sweepSetupDirection == SetupDirection.Long ? "bullish" : "bearish"));
+
+            SetStopLoss(signal, CalculationMode.Price, stop, false);
+            SetProfitTarget(signal, CalculationMode.Price, tp);
+
+            if (sweepSetupDirection == SetupDirection.Long)
+                EnterLong(signal);
+            else
+                EnterShort(signal);
+
+            sweepSetupActive = false;
+        }
+        #endregion
+
+        #region Sweep Entry Logic
+        private void EvaluateSweepSetup()
+        {
+            if (!hasActiveDR)
+                return;
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
+            if (CurrentBar < 2)
+                return;
+
+            double close = Close[0];
+            if (!IsInsideDr(close) || !IsOutsideRedZone(close))
+                return;
+
+            double redLow, redHigh;
+            GetRedZone(out redLow, out redHigh);
+
+            int sweptIndex;
+            double sweptPrice;
+
+            if (TryFindUnsweptHigh(out sweptIndex, out sweptPrice))
+            {
+                bool wickValid = High[0] <= currentDrHigh && High[0] >= redHigh;
+                if (High[0] > sweptPrice && close < sweptPrice && wickValid)
+                {
+                    LogDebug(string.Format(
+                        "Sweep SHORT armed. SweptHigh={0:F2} CurrHigh={1:F2} Close={2:F2}",
+                        sweptPrice, High[0], close), true);
+                    ArmSweepSetup(SetupDirection.Short);
+                    return;
+                }
+            }
+
+            if (TryFindUnsweptLow(out sweptIndex, out sweptPrice))
+            {
+                bool wickValid = Low[0] >= currentDrLow && Low[0] <= redLow;
+                if (Low[0] < sweptPrice && close > sweptPrice && wickValid)
+                {
+                    LogDebug(string.Format(
+                        "Sweep LONG armed. SweptLow={0:F2} CurrLow={1:F2} Close={2:F2}",
+                        sweptPrice, Low[0], close), true);
+                    ArmSweepSetup(SetupDirection.Long);
+                }
+            }
+        }
+
+        private void ArmSweepSetup(SetupDirection direction)
+        {
+            sweepSetupActive = true;
+            sweepSetupDirection = direction;
+            sweepSetupStartTime = Times[drSeriesIndex][0];
+            sweepSetupEndTime = sweepSetupStartTime.AddMinutes(GetDrPeriodMinutes());
+        }
+
+        private int GetDrPeriodMinutes()
+        {
+            switch (DrBarsPeriodType)
+            {
+                case BarsPeriodType.Minute:
+                    return DrBarsPeriodValue;
+                case BarsPeriodType.Day:
+                    return DrBarsPeriodValue * 1440;
+                case BarsPeriodType.Week:
+                    return DrBarsPeriodValue * 10080;
+                case BarsPeriodType.Month:
+                    return DrBarsPeriodValue * 43200;
+                default:
+                    return 60;
+            }
+        }
+
+        private bool TryFindUnsweptHigh(out int barsAgo, out double high)
+        {
+            barsAgo = -1;
+            high = 0;
+
+            int maxLookback = Math.Min(SweepLookbackBars, CurrentBar - 1);
+            for (int i = 1; i <= maxLookback; i++)
+            {
+                double candidate = High[i];
+                bool swept = false;
+                for (int j = 1; j < i; j++)
+                {
+                    if (High[j] > candidate)
+                    {
+                        swept = true;
+                        break;
+                    }
+                }
+                if (swept)
+                    continue;
+
+                barsAgo = i;
+                high = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryFindUnsweptLow(out int barsAgo, out double low)
+        {
+            barsAgo = -1;
+            low = 0;
+
+            int maxLookback = Math.Min(SweepLookbackBars, CurrentBar - 1);
+            for (int i = 1; i <= maxLookback; i++)
+            {
+                double candidate = Low[i];
+                bool swept = false;
+                for (int j = 1; j < i; j++)
+                {
+                    if (Low[j] < candidate)
+                    {
+                        swept = true;
+                        break;
+                    }
+                }
+                if (swept)
+                    continue;
+
+                barsAgo = i;
+                low = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsInsideDr(double price)
+        {
+            return price >= currentDrLow && price <= currentDrHigh;
+        }
+
+        private bool IsOutsideRedZone(double price)
+        {
+            if (MidRedZonePercent <= 0)
+                return true;
+
+            double redLow, redHigh;
+            GetRedZone(out redLow, out redHigh);
+            return price <= redLow || price >= redHigh;
+        }
+
+        private void GetRedZone(out double redLow, out double redHigh)
+        {
+            double drHeight = currentDrHigh - currentDrLow;
+            double halfZone = drHeight * (MidRedZonePercent / 100.0);
+            redLow = currentDrMid - halfZone;
+            redHigh = currentDrMid + halfZone;
         }
         #endregion
 
@@ -928,8 +1171,33 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void DebugPrint(string message)
         {
-            if (DebugLogging && !string.IsNullOrEmpty(message))
-                Print(message);
+            LogDebug(message);
+        }
+
+        private void LogDebug(string message, bool newBlock = false)
+        {
+            if (!DebugLogging || string.IsNullOrEmpty(message))
+                return;
+            if (newBlock)
+                Print(string.Empty);
+            Print(string.Format("{0} - {1}", Time[0], message));
+        }
+
+        protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
+            MarketPosition marketPosition, string orderId, DateTime time)
+        {
+            if (!DebugLogging || execution == null || execution.Order == null)
+                return;
+
+            Print(string.Format(
+                "{0} - Execution {1} {2} qty={3} price={4:F2} pos={5} order={6}",
+                time,
+                execution.Order.OrderState,
+                execution.Order.Name,
+                quantity,
+                price,
+                marketPosition,
+                execution.Order.OrderId));
         }
     }
 }
