@@ -1,5 +1,6 @@
 #region Using declarations
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Windows.Media;
@@ -96,9 +97,72 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Show Historical DRs", Description = "If false, only show the active DR range", GroupName = "02. Visual Settings", Order = 6)]
         public bool ShowHistoricalDRs { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show Invalidated FVGs", Description = "If false, remove FVGs once invalidated", GroupName = "04. FVG", Order = 0)]
+        public bool ShowInvalidatedFvgs { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Min FVG Size (points)", GroupName = "04. FVG", Order = 1)]
+        public double MinFvgSizePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max FVG Size (points)", GroupName = "04. FVG", Order = 2)]
+        public double MaxFvgSizePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "FVG Opacity", GroupName = "04. FVG", Order = 3)]
+        public int FvgOpacity { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Invalidated FVG Opacity", GroupName = "04. FVG", Order = 4)]
+        public int InvalidatedFvgOpacity { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 365)]
+        [Display(Name = "FVG Draw Limit (days)", GroupName = "04. FVG", Order = 5)]
+        public int FvgDrawLimitDays { get; set; }
+
+        [XmlIgnore]
+        [Display(Name = "FVG Fill Brush", GroupName = "04. FVG", Order = 6)]
+        public Brush FvgFillBrush { get; set; }
+
+        [Browsable(false)]
+        public string FvgFillBrushSerializable
+        {
+            get { return Serialize.BrushToString(FvgFillBrush); }
+            set { FvgFillBrush = Serialize.StringToBrush(value); }
+        }
+
+        [XmlIgnore]
+        [Display(Name = "Invalidated FVG Fill Brush", GroupName = "04. FVG", Order = 7)]
+        public Brush InvalidatedFvgFillBrush { get; set; }
+
+        [Browsable(false)]
+        public string InvalidatedFvgFillBrushSerializable
+        {
+            get { return Serialize.BrushToString(InvalidatedFvgFillBrush); }
+            set { InvalidatedFvgFillBrush = Serialize.StringToBrush(value); }
+        }
         #endregion
 
         #region State Variables
+        private class FvgBox
+        {
+            public string Tag;
+            public int StartBarIndex;
+            public int EndBarIndex;
+            public double Upper;
+            public double Lower;
+            public bool IsBullish;
+            public bool IsActive;
+            public DateTime SessionDate;
+        }
+
         private double currentDrHigh;
         private double currentDrLow;
         private double currentDrMid;
@@ -117,6 +181,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool hasActiveDR;
         private bool currentDrTradable;
         private int drSeriesIndex;
+
+        private List<FvgBox> activeFvgs;
+        private int fvgCounter;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -152,6 +219,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LineOpacity = 30;
                 DebugLogging = false;
                 ShowHistoricalDRs = true;
+
+                ShowInvalidatedFvgs = true;
+                MinFvgSizePoints = 0;
+                MaxFvgSizePoints = 0;
+                FvgOpacity = 20;
+                InvalidatedFvgOpacity = 10;
+                FvgDrawLimitDays = 5;
+
+                FvgFillBrush = Brushes.DarkCyan;
+                InvalidatedFvgFillBrush = Brushes.IndianRed;
 
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
@@ -189,23 +266,39 @@ namespace NinjaTrader.NinjaScript.Strategies
                 inBreakoutStrike = false;
                 currentDrTradable = true;
 
+                activeFvgs = new List<FvgBox>();
+                fvgCounter = 0;
+
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
                     DrBoxBrush.Freeze();
                 if (DrOutlineBrush != null && DrOutlineBrush.CanFreeze)
                     DrOutlineBrush.Freeze();
                 if (DrMidLineBrush != null && DrMidLineBrush.CanFreeze)
                     DrMidLineBrush.Freeze();
+                if (FvgFillBrush != null && FvgFillBrush.CanFreeze)
+                    FvgFillBrush.Freeze();
+                if (InvalidatedFvgFillBrush != null && InvalidatedFvgFillBrush.CanFreeze)
+                    InvalidatedFvgFillBrush.Freeze();
             }
         }
 
         protected override void OnBarUpdate()
         {
-            if (BarsInProgress != drSeriesIndex)
+            if (BarsInProgress == 0)
             {
-                if (BarsInProgress == 0 && drSeriesIndex != 0 && hasActiveDR)
-                    DrawCurrentDR(Times[0][0]);
-                return;
+                if (CurrentBar >= 2)
+                    UpdateFvgs();
+
+                if (drSeriesIndex != 0)
+                {
+                    if (hasActiveDR)
+                        DrawCurrentDR(Times[0][0]);
+                    return;
+                }
             }
+
+            if (BarsInProgress != drSeriesIndex)
+                return;
 
             if (CurrentBars[drSeriesIndex] < SwingStrength * 2 + LegSwingLookback)
                 return;
@@ -289,6 +382,143 @@ namespace NinjaTrader.NinjaScript.Strategies
                     inBreakoutStrike = true;
                 }
             }
+        }
+        #endregion
+
+        #region FVG Logic
+        private void UpdateFvgs()
+        {
+            if (FvgDrawLimitDays <= 0)
+            {
+                if (activeFvgs.Count > 0)
+                {
+                    for (int i = 0; i < activeFvgs.Count; i++)
+                        RemoveDrawObject(activeFvgs[i].Tag);
+                    activeFvgs.Clear();
+                }
+                return;
+            }
+
+            PruneFvgs(FvgDrawLimitDays);
+            UpdateActiveFvgs();
+            DetectNewFvg();
+        }
+
+        private void PruneFvgs(int drawLimitDays)
+        {
+            if (drawLimitDays <= 0)
+                return;
+
+            DateTime cutoffDate = Time[0].Date.AddDays(-(drawLimitDays - 1));
+            for (int i = activeFvgs.Count - 1; i >= 0; i--)
+            {
+                FvgBox fvg = activeFvgs[i];
+                if (fvg.SessionDate < cutoffDate)
+                {
+                    RemoveDrawObject(fvg.Tag);
+                    activeFvgs.RemoveAt(i);
+                }
+            }
+        }
+
+        private void UpdateActiveFvgs()
+        {
+            for (int i = 0; i < activeFvgs.Count; i++)
+            {
+                FvgBox fvg = activeFvgs[i];
+                if (!fvg.IsActive)
+                    continue;
+
+                bool invalidated = fvg.IsBullish
+                    ? (Close[0] < fvg.Lower && Close[0] < Open[0])
+                    : (Close[0] > fvg.Upper && Close[0] > Open[0]);
+
+                fvg.EndBarIndex = CurrentBar;
+
+                int startBarsAgo = CurrentBar - fvg.StartBarIndex;
+                int endBarsAgo = CurrentBar - fvg.EndBarIndex;
+                if (startBarsAgo < 0)
+                    startBarsAgo = 0;
+                if (endBarsAgo < 0)
+                    endBarsAgo = 0;
+
+                Draw.Rectangle(
+                    this,
+                    fvg.Tag,
+                    false,
+                    startBarsAgo,
+                    fvg.Lower,
+                    endBarsAgo,
+                    fvg.Upper,
+                    Brushes.Transparent,
+                    FvgFillBrush,
+                    FvgOpacity
+                );
+
+                if (invalidated)
+                {
+                    fvg.IsActive = false;
+                    if (!ShowInvalidatedFvgs)
+                    {
+                        RemoveDrawObject(fvg.Tag);
+                    }
+                    else
+                    {
+                        Draw.Rectangle(
+                            this,
+                            fvg.Tag,
+                            false,
+                            startBarsAgo,
+                            fvg.Lower,
+                            endBarsAgo,
+                            fvg.Upper,
+                            Brushes.Transparent,
+                            InvalidatedFvgFillBrush,
+                            InvalidatedFvgOpacity
+                        );
+                    }
+                }
+            }
+        }
+
+        private void DetectNewFvg()
+        {
+            bool bullishFvg = Low[0] > High[2];
+            bool bearishFvg = High[0] < Low[2];
+
+            if (!bullishFvg && !bearishFvg)
+                return;
+
+            FvgBox fvg = new FvgBox();
+            fvg.IsBullish = bullishFvg;
+            fvg.Lower = bullishFvg ? High[2] : High[0];
+            fvg.Upper = bullishFvg ? Low[0] : Low[2];
+            fvg.StartBarIndex = CurrentBar - 2;
+            fvg.EndBarIndex = CurrentBar;
+            fvg.IsActive = true;
+            fvg.SessionDate = Time[0].Date;
+            fvg.Tag = string.Format("H1M5_FVG_{0}_{1:yyyyMMdd_HHmmss}", fvgCounter++, Time[0]);
+
+            double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
+            if (MinFvgSizePoints > 0 && fvgSizePoints < MinFvgSizePoints)
+                return;
+            if (MaxFvgSizePoints > 0 && fvgSizePoints > MaxFvgSizePoints)
+                return;
+
+            activeFvgs.Add(fvg);
+
+            Draw.Rectangle(
+                this,
+                fvg.Tag,
+                false,
+                2,
+                fvg.Lower,
+                0,
+                fvg.Upper,
+                Brushes.Transparent,
+                FvgFillBrush,
+                FvgOpacity
+            );
         }
         #endregion
 
