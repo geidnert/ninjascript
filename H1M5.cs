@@ -30,6 +30,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "Min DR Size (points)", GroupName = "01. DR Parameters", Order = 2)]
         public double MinDrSizePoints { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "DR Bars Period Type", GroupName = "01. DR Parameters", Order = 3)]
+        public BarsPeriodType DrBarsPeriodType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "DR Bars Period Value", GroupName = "01. DR Parameters", Order = 4)]
+        public int DrBarsPeriodValue { get; set; }
+
         [XmlIgnore]
         [Display(Name = "DR Box Brush", Description = "Fill color for DR boxes", GroupName = "02. Visual Settings", Order = 0)]
         public Brush DrBoxBrush { get; set; }
@@ -95,6 +104,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int drCounter;
         private bool hasActiveDR;
         private bool currentDrTradable;
+        private int drSeriesIndex;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -122,6 +132,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LegSwingLookback = 10;
                 SwingStrength = 1;
                 MinDrSizePoints = 4;
+                DrBarsPeriodType = BarsPeriodType.Minute;
+                DrBarsPeriodValue = 60;
                 BoxOpacity = 10;
                 LineWidth = 1;
                 LineOpacity = 30;
@@ -133,8 +145,15 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.Configure)
             {
-                // Add the lower timeframe series (M5) for future intrabar logic.
-                AddDataSeries(BarsPeriodType.Minute, 5);
+                if (BarsPeriod.BarsPeriodType == DrBarsPeriodType && BarsPeriod.Value == DrBarsPeriodValue)
+                {
+                    drSeriesIndex = 0;
+                }
+                else
+                {
+                    AddDataSeries(DrBarsPeriodType, DrBarsPeriodValue);
+                    drSeriesIndex = 1;
+                }
             }
             else if (State == State.DataLoaded)
             {
@@ -164,95 +183,90 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         protected override void OnBarUpdate()
         {
-            if (BarsInProgress == 0)
+            if (BarsInProgress != drSeriesIndex)
+                return;
+
+            if (CurrentBars[drSeriesIndex] < SwingStrength * 2 + LegSwingLookback)
+                return;
+
+            if (!IsFirstTickOfBar)
+                return;
+
+            if (!hasActiveDR)
             {
-                if (CurrentBars[0] < SwingStrength * 2 + LegSwingLookback || CurrentBars[1] < 1)
-                    return;
+                DebugPrint(string.Format("No active DR. Attempting to create initial DR. Close={0:F2}", Close[0]));
+                TryCreateInitialDR();
+                return;
+            }
 
-                if (!IsFirstTickOfBar)
-                    return;
-
-                if (!hasActiveDR)
+            if (hasActiveDR && inBreakoutStrike)
+            {
+                if (lastBreakoutDirection == 1)
                 {
-                    DebugPrint(string.Format("No active DR. Attempting to create initial DR. Close={0:F2}", Close[0]));
-                    TryCreateInitialDR();
-                    return;
-                }
-
-                if (hasActiveDR && inBreakoutStrike)
-                {
-                    if (lastBreakoutDirection == 1)
+                    if (High[0] > currentDrHigh)
                     {
-                        if (High[0] > currentDrHigh)
-                        {
-                            currentDrHigh = High[0];
-                            currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
-                            ExtendCurrentDR();
-                            DebugPrint("Bullish strike wick extension. New DR High=" + currentDrHigh);
-                        }
-                        else
-                        {
-                            inBreakoutStrike = false;
-                            DebugPrint("Bullish strike ended (no new high). Waiting for next close outside for new DR.");
-                        }
+                        currentDrHigh = High[0];
+                        currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
+                        ExtendCurrentDR();
+                        DebugPrint("Bullish strike wick extension. New DR High=" + currentDrHigh);
                     }
-                    else if (lastBreakoutDirection == -1)
+                    else
                     {
-                        if (Low[0] < currentDrLow)
-                        {
-                            currentDrLow = Low[0];
-                            currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
-                            ExtendCurrentDR();
-                            DebugPrint("Bearish strike wick extension. New DR Low=" + currentDrLow);
-                        }
-                        else
-                        {
-                            inBreakoutStrike = false;
-                            DebugPrint("Bearish strike ended (no new low). Waiting for next close outside for new DR.");
-                        }
+                        inBreakoutStrike = false;
+                        DebugPrint("Bullish strike ended (no new high). Waiting for next close outside for new DR.");
                     }
                 }
-
-                bool insideDR = Close[0] >= currentDrLow && Close[0] <= currentDrHigh;
-                if (insideDR)
+                else if (lastBreakoutDirection == -1)
                 {
-                    ExtendCurrentDR();
-                }
-                else
-                {
-                    bool bullishBreakout = Close[0] > currentDrHigh;
-                    bool bearishBreakout = Close[0] < currentDrLow;
-
-                    int currentBreakoutDirection = 0;
-                    if (bullishBreakout)
-                        currentBreakoutDirection = 1;
-                    else if (bearishBreakout)
-                        currentBreakoutDirection = -1;
-
-                    if (currentBreakoutDirection != 0)
+                    if (Low[0] < currentDrLow)
                     {
-                        bool isContinuation = currentBreakoutDirection == lastBreakoutDirection && inBreakoutStrike;
-                        lastBreakoutDirection = currentBreakoutDirection;
-
-                        if (currentBreakoutDirection == 1)
-                        {
-                            DebugPrint(string.Format("BULLISH BREAKOUT detected! Close={0:F2} > DR High={1:F2}", Close[0], currentDrHigh));
-                            CreateNewDRFromBullishBreakout(isContinuation);
-                        }
-                        else if (currentBreakoutDirection == -1)
-                        {
-                            DebugPrint(string.Format("BEARISH BREAKOUT detected! Close={0:F2} < DR Low={1:F2}", Close[0], currentDrLow));
-                            CreateNewDRFromBearishBreakout(isContinuation);
-                        }
-
-                        inBreakoutStrike = true;
+                        currentDrLow = Low[0];
+                        currentDrMid = (currentDrHigh + currentDrLow) / 2.0;
+                        ExtendCurrentDR();
+                        DebugPrint("Bearish strike wick extension. New DR Low=" + currentDrLow);
+                    }
+                    else
+                    {
+                        inBreakoutStrike = false;
+                        DebugPrint("Bearish strike ended (no new low). Waiting for next close outside for new DR.");
                     }
                 }
             }
-            else if (BarsInProgress == 1)
+
+            bool insideDR = Close[0] >= currentDrLow && Close[0] <= currentDrHigh;
+            if (insideDR)
             {
-                // Reserved for future M5 intrabar logic (SampleIntrabarBacktest style).
-                return;
+                ExtendCurrentDR();
+            }
+            else
+            {
+                bool bullishBreakout = Close[0] > currentDrHigh;
+                bool bearishBreakout = Close[0] < currentDrLow;
+
+                int currentBreakoutDirection = 0;
+                if (bullishBreakout)
+                    currentBreakoutDirection = 1;
+                else if (bearishBreakout)
+                    currentBreakoutDirection = -1;
+
+                if (currentBreakoutDirection != 0)
+                {
+                    bool isContinuation = currentBreakoutDirection == lastBreakoutDirection && inBreakoutStrike;
+                    lastBreakoutDirection = currentBreakoutDirection;
+
+                    if (currentBreakoutDirection == 1)
+                    {
+                        DebugPrint(string.Format("BULLISH BREAKOUT detected! Close={0:F2} > DR High={1:F2}", Close[0], currentDrHigh));
+                        CreateNewDRFromBullishBreakout(isContinuation);
+                    }
+                    else if (currentBreakoutDirection == -1)
+                    {
+                        DebugPrint(string.Format("BEARISH BREAKOUT detected! Close={0:F2} < DR Low={1:F2}", Close[0], currentDrLow));
+                        CreateNewDRFromBearishBreakout(isContinuation);
+                    }
+
+                    inBreakoutStrike = true;
+                }
             }
         }
         #endregion
