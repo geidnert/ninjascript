@@ -95,6 +95,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double currentDrMid;
         private int currentDrStartBar;
         private int currentDrEndBar;
+        private DateTime currentDrStartTime;
+        private DateTime currentDrEndTime;
         private string currentDrBoxTag;
         private string currentDrMidLineTag;
         private string currentDrTopLineTag;
@@ -164,6 +166,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentDrMid = 0;
                 currentDrStartBar = -1;
                 currentDrEndBar = -1;
+                currentDrStartTime = Core.Globals.MinDate;
+                currentDrEndTime = Core.Globals.MinDate;
                 currentDrBoxTag = string.Empty;
                 currentDrMidLineTag = string.Empty;
                 currentDrTopLineTag = string.Empty;
@@ -184,7 +188,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         protected override void OnBarUpdate()
         {
             if (BarsInProgress != drSeriesIndex)
+            {
+                if (BarsInProgress == 0 && drSeriesIndex != 0 && hasActiveDR)
+                    DrawCurrentDR(Times[0][0]);
                 return;
+            }
 
             if (CurrentBars[drSeriesIndex] < SwingStrength * 2 + LegSwingLookback)
                 return;
@@ -447,6 +455,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             currentDrMid = (drHigh + drLow) / 2.0;
             currentDrStartBar = startBar;
             currentDrEndBar = CurrentBar;
+            currentDrStartTime = Times[drSeriesIndex][CurrentBar - currentDrStartBar];
+            currentDrEndTime = Times[drSeriesIndex][0];
 
             drCounter++;
             currentDrBoxTag = "DRBox_" + drCounter;
@@ -472,6 +482,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private void ExtendCurrentDR()
         {
             currentDrEndBar = CurrentBar;
+            currentDrEndTime = Times[drSeriesIndex][0];
             double drHeight = currentDrHigh - currentDrLow;
             double drSizePoints = drHeight / TickSize;
             currentDrTradable = drSizePoints >= MinDrSizePoints;
@@ -514,24 +525,25 @@ namespace NinjaTrader.NinjaScript.Strategies
         #region Drawing
         private void DrawCurrentDR()
         {
+            DrawCurrentDR(currentDrEndTime);
+        }
+
+        private void DrawCurrentDR(DateTime endTime)
+        {
             if (!hasActiveDR)
                 return;
 
-            int startBarsAgo = CurrentBar - currentDrStartBar;
-            int endBarsAgo = CurrentBar - currentDrEndBar;
-
-            if (startBarsAgo < 0)
-                startBarsAgo = 0;
-            if (endBarsAgo < 0)
-                endBarsAgo = 0;
+            DateTime startTime = currentDrStartTime;
+            if (startTime == Core.Globals.MinDate)
+                startTime = Times[drSeriesIndex][0];
 
             Draw.Rectangle(
                 this,
                 currentDrBoxTag,
                 false,
-                startBarsAgo,
+                startTime,
                 currentDrLow,
-                endBarsAgo,
+                endTime,
                 currentDrHigh,
                 Brushes.Transparent,
                 DrBoxBrush,
@@ -543,9 +555,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 this,
                 currentDrMidLineTag,
                 false,
-                startBarsAgo,
+                startTime,
                 currentDrMid,
-                endBarsAgo,
+                endTime,
                 currentDrMid,
                 midLineBrush,
                 DashStyleHelper.Solid,
@@ -557,9 +569,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 this,
                 currentDrTopLineTag,
                 false,
-                startBarsAgo,
+                startTime,
                 currentDrHigh,
-                endBarsAgo,
+                endTime,
                 currentDrHigh,
                 outlineLineBrush,
                 DashStyleHelper.Solid,
@@ -570,9 +582,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 this,
                 currentDrBottomLineTag,
                 false,
-                startBarsAgo,
+                startTime,
                 currentDrLow,
-                endBarsAgo,
+                endTime,
                 currentDrLow,
                 outlineLineBrush,
                 DashStyleHelper.Solid,
