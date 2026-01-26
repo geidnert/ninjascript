@@ -230,22 +230,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             double haHighValue;
             double haLowValue;
 
-            if (BarsPeriod.BarsPeriodType == BarsPeriodType.HeikenAshi)
-            {
-                haOpenValue = Open[0];
-                haCloseValue = Close[0];
-                haHighValue = High[0];
-                haLowValue = Low[0];
-            }
-            else
-            {
-                haCloseValue = (Open[0] + High[0] + Low[0] + Close[0]) / 4.0;
-                haOpenValue = CurrentBar == 0
-                    ? (Open[0] + Close[0]) / 2.0
-                    : (haOpen[1] + haClose[1]) / 2.0;
-                haHighValue = Math.Max(High[0], Math.Max(haOpenValue, haCloseValue));
-                haLowValue = Math.Min(Low[0], Math.Min(haOpenValue, haCloseValue));
-            }
+            haCloseValue = (Open[0] + High[0] + Low[0] + Close[0]) / 4.0;
+            haOpenValue = CurrentBar == 0
+                ? (Open[0] + Close[0]) / 2.0
+                : (haOpen[1] + haClose[1]) / 2.0;
+            haHighValue = Math.Max(High[0], Math.Max(haOpenValue, haCloseValue));
+            haLowValue = Math.Min(Low[0], Math.Min(haOpenValue, haCloseValue));
 
             haOpen[0] = haOpenValue;
             haClose[0] = haCloseValue;
