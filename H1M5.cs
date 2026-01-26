@@ -210,6 +210,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private SetupDirection sweepSetupDirection;
         private DateTime sweepSetupStartTime;
         private DateTime sweepSetupEndTime;
+        private double sweepSetupStopPrice;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -302,6 +303,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 sweepSetupDirection = SetupDirection.Long;
                 sweepSetupStartTime = Core.Globals.MinDate;
                 sweepSetupEndTime = Core.Globals.MinDate;
+                sweepSetupStopPrice = 0;
 
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
                     DrBoxBrush.Freeze();
@@ -615,7 +617,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ? currentDrLow + drHeight * (TpPercentOfDr / 100.0)
                 : currentDrHigh - drHeight * (TpPercentOfDr / 100.0);
 
-            double stop = sweepSetupDirection == SetupDirection.Long ? Low[1] : High[1];
+            double stop = sweepSetupStopPrice;
             string signal = sweepSetupDirection == SetupDirection.Long ? "H1M5_Long" : "H1M5_Short";
 
             LogDebug(string.Format(
@@ -689,6 +691,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             sweepSetupDirection = direction;
             sweepSetupStartTime = Times[drSeriesIndex][0];
             sweepSetupEndTime = sweepSetupStartTime.AddMinutes(GetDrPeriodMinutes());
+            sweepSetupStopPrice = direction == SetupDirection.Long
+                ? Lows[drSeriesIndex][0]
+                : Highs[drSeriesIndex][0];
         }
 
         private int GetDrPeriodMinutes()
