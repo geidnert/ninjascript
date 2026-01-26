@@ -23,10 +23,6 @@ namespace NinjaTrader.NinjaScript.Strategies
     {
         private EMA ema;
         private Swing swing;
-        private Series<double> haOpen;
-        private Series<double> haClose;
-        private Series<double> haHigh;
-        private Series<double> haLow;
         private double lastSwingHigh;
         private double lastSwingLow;
         private bool pullbackSeenLong;
@@ -118,13 +114,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ema = EMA(EmaPeriod);
                 AddChartIndicator(ema);
                 ema.Plots[0].Brush = Brushes.DodgerBlue;
-            }
-            else if (State == State.DataLoaded)
-            {
-                haOpen = new Series<double>(this);
-                haClose = new Series<double>(this);
-                haHigh = new Series<double>(this);
-                haLow = new Series<double>(this);
             }
         }
 
@@ -230,17 +219,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             double haHighValue;
             double haLowValue;
 
-            haCloseValue = (Open[0] + High[0] + Low[0] + Close[0]) / 4.0;
-            haOpenValue = CurrentBar == 0
-                ? (Open[0] + Close[0]) / 2.0
-                : (haOpen[1] + haClose[1]) / 2.0;
-            haHighValue = Math.Max(High[0], Math.Max(haOpenValue, haCloseValue));
-            haLowValue = Math.Min(Low[0], Math.Min(haOpenValue, haCloseValue));
-
-            haOpen[0] = haOpenValue;
-            haClose[0] = haCloseValue;
-            haHigh[0] = haHighValue;
-            haLow[0] = haLowValue;
+            haOpenValue = Open[0];
+            haCloseValue = Close[0];
+            haHighValue = High[0];
+            haLowValue = Low[0];
 
             if (CurrentBar < Math.Max(2, EmaPeriod))
                 return;
