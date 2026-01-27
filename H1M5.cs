@@ -488,8 +488,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     LogDebug("Session end — flatten/cancel.");
                 }
 
-                bool crossedNoTrades =
-                    (Time[1].TimeOfDay <= NoTradesAfter && Time[0].TimeOfDay > NoTradesAfter);
+                bool crossedNoTrades = CurrentBar > 0 && !TimeInNoTradesAfter(Time[1]) && TimeInNoTradesAfter(Time[0]);
 
                 if (crossedNoTrades)
                 {
@@ -1824,7 +1823,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (SessionStart < SessionEnd)
                 return now >= NoTradesAfter && now < SessionEnd;
 
-            return now >= NoTradesAfter || now < SessionEnd;
+            // Overnight session
+            if (NoTradesAfter >= SessionStart)
+                return now >= NoTradesAfter || now < SessionEnd;
+
+            return now >= NoTradesAfter && now < SessionEnd;
         }
     }
 }
