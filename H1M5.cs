@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using NinjaTrader.Cbi;
@@ -139,6 +140,20 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Force Close at Skip Start", Description = "If true, flatten and cancel as soon as skip window begins.", GroupName = "07. Skip Time", Order = 2)]
         public bool ForceCloseAtSkipStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use News Skip Filter", Description = "Skip trading during listed news windows.", GroupName = "07. Skip Time", Order = 3)]
+        public bool UseNewsSkip { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 240)]
+        [Display(Name = "News Skip Minutes Before", Description = "Minutes before the news time to start skipping.", GroupName = "07. Skip Time", Order = 4)]
+        public int NewsSkipMinutesBefore { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 240)]
+        [Display(Name = "News Skip Minutes After", Description = "Minutes after the news time to end skipping.", GroupName = "07. Skip Time", Order = 5)]
+        public int NewsSkipMinutesAfter { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Show Invalidated FVGs", Description = "If false, remove FVGs once invalidated.", GroupName = "04. FVG", Order = 0)]
@@ -306,6 +321,76 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool trailingActive;
         private EMA exitEma;
         private int lastReverseBar;
+        private static readonly string NewsDatesRaw =
+@"2025-01-10,08:30
+2025-01-14,08:30
+2025-01-15,08:30
+2025-02-07,08:30
+2025-02-12,08:30
+2025-03-07,08:30
+2025-03-12,08:30
+2025-04-04,08:30
+2025-04-10,08:30
+2025-05-02,08:30
+2025-05-13,08:30
+2025-06-06,08:30
+2025-06-11,08:30
+2025-07-03,08:30
+2025-07-15,08:30
+2025-08-01,08:30
+2025-08-12,08:30
+2025-09-04,08:30
+2025-09-11,08:30
+2025-11-20,08:30
+2025-12-03,08:30
+2026-01-09,08:30
+2026-01-13,08:30
+2026-02-06,08:30
+2026-02-10,08:30
+2026-02-11,08:30
+2026-03-05,08:30
+2026-03-11,08:30
+2026-04-03,08:30
+2026-04-10,08:30
+2026-05-07,08:30
+2026-05-12,08:30
+2026-06-05,08:30
+2026-06-10,08:30
+2026-07-02,08:30
+2026-07-14,08:30
+2026-08-06,08:30
+2026-08-12,08:30
+2026-09-03,08:30
+2026-09-11,08:30
+2026-10-02,08:30
+2026-10-14,08:30
+2026-11-05,08:30
+2026-11-10,08:30
+2026-12-04,08:30
+2026-01-07,10:00
+2026-02-03,10:00
+2026-02-18,10:00
+2026-03-10,10:00
+2026-04-30,10:00
+2026-05-28,10:00
+2025-01-28,14:00
+2025-03-19,14:00
+2025-05-07,14:00
+2025-06-18,14:00
+2025-07-30,14:00
+2025-09-17,14:00
+2025-10-29,14:00
+2025-12-10,14:00
+2026-01-28,14:00
+2026-03-18,14:00
+2026-04-29,14:00
+2026-06-17,14:00
+2026-07-29,14:00
+2026-09-15,14:00
+2026-10-27,14:00
+2026-12-09,14:00";
+        private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static bool newsDatesInitialized;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -350,6 +435,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SkipStart = new TimeSpan(0, 0, 0);
                 SkipEnd = new TimeSpan(0, 0, 0);
                 ForceCloseAtSkipStart = true;
+                UseNewsSkip = true;
+                NewsSkipMinutesBefore = 0;
+                NewsSkipMinutesAfter = 5;
 
                 ShowInvalidatedFvgs = true;
                 MinFvgSizePoints = 0;
@@ -477,12 +565,48 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                 }
 
+                bool crossedNewsWindow =
+                    (!TimeInNewsSkip(Time[1]) && TimeInNewsSkip(Time[0])) ||
+                    (TimeInNewsSkip(Time[1]) && !TimeInNewsSkip(Time[0]));
+
+                if (crossedNewsWindow)
+                {
+                    if (TimeInNewsSkip(Time[0]))
+                    {
+                        LogDebug("⛔ Entered news window");
+                        if (ForceCloseAtSkipStart)
+                        {
+                            if (Position.MarketPosition == MarketPosition.Long)
+                                ExitLong("NewsWindow", activeEntrySignal);
+                            else if (Position.MarketPosition == MarketPosition.Short)
+                                ExitShort("NewsWindow", activeEntrySignal);
+                            CancelAllOrders();
+                        }
+                    }
+                    else
+                    {
+                        LogDebug("✅ Exited news window");
+                    }
+                }
+
                 if (TimeInSkip(Time[0]))
                 {
                     if (ForceCloseAtSkipStart && Position.MarketPosition != MarketPosition.Flat)
                     {
                         ExitLong("SkipWindow", activeEntrySignal);
                         ExitShort("SkipWindow", activeEntrySignal);
+                        CancelAllOrders();
+                    }
+                    sweepSetupActive = false;
+                    return;
+                }
+
+                if (TimeInNewsSkip(Time[0]))
+                {
+                    if (ForceCloseAtSkipStart && Position.MarketPosition != MarketPosition.Flat)
+                    {
+                        ExitLong("NewsWindow", activeEntrySignal);
+                        ExitShort("NewsWindow", activeEntrySignal);
                         CancelAllOrders();
                     }
                     sweepSetupActive = false;
@@ -1888,6 +2012,56 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DashStyleHelper.Solid, 2);
 
             DrawSkipWindow("Skip", SkipStart, SkipEnd);
+            DrawNewsWindows(barTime);
+        }
+
+        private void DrawNewsWindows(DateTime barTime)
+        {
+            if (!UseNewsSkip)
+                return;
+
+            EnsureNewsDatesInitialized();
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barTime.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsSkipMinutesBefore);
+                DateTime windowEnd = newsTime.AddMinutes(NewsSkipMinutesAfter);
+
+                var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(90, 255, 0, 0));
+                try
+                {
+                    if (areaBrush.CanFreeze)
+                        areaBrush.Freeze();
+                    if (lineBrush.CanFreeze)
+                        lineBrush.Freeze();
+                }
+                catch { }
+
+                string rectTag = $"H1M5_News_Rect_{newsTime:yyyyMMdd_HHmm}";
+                Draw.Rectangle(
+                    this,
+                    rectTag,
+                    false,
+                    windowStart,
+                    0,
+                    windowEnd,
+                    30000,
+                    lineBrush,
+                    areaBrush,
+                    2
+                ).ZOrder = -1;
+
+                string startTag = $"H1M5_News_Start_{newsTime:yyyyMMdd_HHmm}";
+                Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+
+                string endTag = $"H1M5_News_End_{newsTime:yyyyMMdd_HHmm}";
+                Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+            }
         }
 
         private void DrawSkipWindow(string tagPrefix, TimeSpan start, TimeSpan end)
@@ -1986,6 +2160,61 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (SkipStart < SkipEnd)
                 return now >= SkipStart && now <= SkipEnd;
             return now >= SkipStart || now <= SkipEnd;
+        }
+
+        private void EnsureNewsDatesInitialized()
+        {
+            if (newsDatesInitialized)
+                return;
+
+            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+            {
+                newsDatesInitialized = true;
+                return;
+            }
+
+            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < entries.Length; i++)
+            {
+                string trimmed = entries[i].Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+
+                DateTime parsed;
+                if (DateTime.TryParseExact(trimmed, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out parsed))
+                {
+                    NewsDates.Add(parsed);
+                }
+                else
+                {
+                    LogDebug(string.Format("Invalid news date entry: {0}", trimmed));
+                }
+            }
+
+            newsDatesInitialized = true;
+        }
+
+        private bool TimeInNewsSkip(DateTime time)
+        {
+            if (!UseNewsSkip)
+                return false;
+
+            EnsureNewsDatesInitialized();
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != time.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsSkipMinutesBefore);
+                DateTime windowEnd = newsTime.AddMinutes(NewsSkipMinutesAfter);
+                if (time >= windowStart && time <= windowEnd)
+                    return true;
+            }
+
+            return false;
         }
     }
 }
