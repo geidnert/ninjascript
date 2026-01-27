@@ -1765,7 +1765,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
 
             DateTime barTime = Time[0];
-            DateTime sessionStartTime = barTime.Date + SessionStart;
+            DateTime sessionStartTime = GetSessionStartTime(barTime);
             DateTime sessionEndTime = SessionStart > SessionEnd
                 ? sessionStartTime.AddDays(1).Date + SessionEnd
                 : sessionStartTime.Date + SessionEnd;
@@ -1795,15 +1795,30 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             catch { }
 
-            DateTime noTradesAfterTime = Time[0].Date + NoTradesAfter;
-            if (SessionStart > SessionEnd && NoTradesAfter < SessionStart)
-                noTradesAfterTime = noTradesAfterTime.AddDays(1);
+            DateTime noTradesAfterTime = GetNoTradesAfterTime(sessionStartTime);
 
             Draw.VerticalLine(this, $"NoTradesAfter_{sessionStartTime:yyyyMMdd}", noTradesAfterTime, noTradesBrush,
                 DashStyleHelper.Solid, 2);
+        }
 
-            string prevDay = sessionStartTime.AddDays(-1).ToString("yyyyMMdd");
-            RemoveDrawObject("H1M5_SessionFill_" + prevDay);
+        private DateTime GetSessionStartTime(DateTime barTime)
+        {
+            if (SessionStart <= SessionEnd)
+                return barTime.Date + SessionStart;
+
+            // Overnight session: if we're after midnight but before session end, start is previous day.
+            if (barTime.TimeOfDay < SessionEnd)
+                return barTime.Date.AddDays(-1) + SessionStart;
+
+            return barTime.Date + SessionStart;
+        }
+
+        private DateTime GetNoTradesAfterTime(DateTime sessionStartTime)
+        {
+            DateTime noTradesAfterTime = sessionStartTime.Date + NoTradesAfter;
+            if (SessionStart > SessionEnd && NoTradesAfter < SessionStart)
+                noTradesAfterTime = noTradesAfterTime.AddDays(1);
+            return noTradesAfterTime;
         }
 
         private bool TimeInSession(DateTime time)
