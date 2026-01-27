@@ -206,9 +206,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "EMA Period", Description = "EMA period used for flat-slope exit and chart plot.", GroupName = "05. Entries", Order = 4)]
         public int EmaPeriod { get; set; }
 
+        public enum EntryMode
+        {
+            Fvg,
+            Duo
+        }
+
         [NinjaScriptProperty]
-        [Display(Name = "Reverse On Opposite FVG", Description = "If true, reverse position when an opposite-direction 5m FVG prints.", GroupName = "05. Entries", Order = 5)]
-        public bool ReverseOnOppositeFvg { get; set; }
+        [Display(Name = "Entry Mode", Description = "Select entry trigger: FVG or Duo (2-candle).", GroupName = "05. Entries", Order = 5)]
+        public EntryMode EntryModeSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 10)]
@@ -216,13 +222,22 @@ namespace NinjaTrader.NinjaScript.Strategies
         public int ReverseSwingStrength { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Limit Entries", Description = "If true, place limit entries at the FVG edge (or % within the FVG) instead of market.", GroupName = "05. Entries", Order = 7)]
+        [Display(Name = "Reverse On Opposite FVG", Description = "If true, reverse position when an opposite-direction 5m FVG prints.", GroupName = "05. Entries", Order = 7)]
+        public bool ReverseOnOppositeFvg { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Limit Entries", Description = "If true, place limit entries at the FVG edge (or % within the FVG) instead of market.", GroupName = "05. Entries", Order = 8)]
         public bool UseLimitEntries { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Limit Entry %", Description = "0% = near edge (short: lower, long: upper). 100% = far edge (short: upper, long: lower).", GroupName = "05. Entries", Order = 8)]
+        [Display(Name = "Entry %", Description = "FVG: 0% = near edge (short: lower, long: upper), 100% = far edge. Duo: % into combined 2-candle body.", GroupName = "05. Entries", Order = 9)]
         public double LimitEntryPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Duo Min Combined Body (points)", Description = "Minimum combined body size of 2 same-direction 5m candles.", GroupName = "05. Entries", Order = 10)]
+        public double DuoMinCombinedBodyPoints { get; set; }
         #endregion
 
         #region State Variables
@@ -337,10 +352,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableTrailingStop = false;
                 ExitOnEmaFlat = false;
                 EmaPeriod = 5;
-                ReverseOnOppositeFvg = false;
+                EntryModeSetting = EntryMode.Fvg;
                 ReverseSwingStrength = 1;
+                ReverseOnOppositeFvg = false;
                 UseLimitEntries = false;
                 LimitEntryPercent = 0;
+                DuoMinCombinedBodyPoints = 0;
 
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
@@ -503,6 +520,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         DrawCurrentDR(Times[0][0]);
                     if (EnableTrailingStop)
                         UpdateTrailingStop();
+                    if (EntryModeSetting == EntryMode.Duo)
+                        EvaluateDuoEntry();
                     return;
                 }
             }
@@ -593,7 +612,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
-            if (TimeInSession(Times[drSeriesIndex][0]) && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
+            if (TimeInSession(Times[drSeriesIndex][0]) && !TimeInNoTradesAfter(Times[drSeriesIndex][0]) && EntryModeSetting == EntryMode.Fvg)
                 EvaluateSweepSetup();
         }
         #endregion
@@ -768,6 +787,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void TryEnterFromFvgSignal(bool bullishFvg, bool bearishFvg, double fvgLower, double fvgUpper)
         {
+            if (EntryModeSetting != EntryMode.Fvg)
+                return;
             if (!sweepSetupActive)
                 return;
             if (Position.MarketPosition != MarketPosition.Flat)
@@ -842,6 +863,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void TryReverseOnOppositeFvg(bool bullishFvg, bool bearishFvg, double fvgLower, double fvgUpper)
         {
+            if (EntryModeSetting != EntryMode.Fvg)
+                return;
             if (!ReverseOnOppositeFvg)
                 return;
             if (Position.MarketPosition == MarketPosition.Flat)
@@ -1087,6 +1110,85 @@ namespace NinjaTrader.NinjaScript.Strategies
             double halfZone = drHeight * (MidRedZonePercent / 100.0);
             redLow = currentDrMid - halfZone;
             redHigh = currentDrMid + halfZone;
+        }
+
+        private void EvaluateDuoEntry()
+        {
+            if (EntryModeSetting != EntryMode.Duo)
+                return;
+            if (!hasActiveDR)
+                return;
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
+                return;
+            if (CurrentBar < 2)
+                return;
+
+            bool c0Bull = Close[0] > Open[0];
+            bool c1Bull = Close[1] > Open[1];
+            bool c0Bear = Close[0] < Open[0];
+            bool c1Bear = Close[1] < Open[1];
+
+            if (!(c0Bull && c1Bull) && !(c0Bear && c1Bear))
+                return;
+
+            double bodyHigh = Math.Max(Math.Max(Open[0], Close[0]), Math.Max(Open[1], Close[1]));
+            double bodyLow = Math.Min(Math.Min(Open[0], Close[0]), Math.Min(Open[1], Close[1]));
+            double combinedBody = Math.Abs(bodyHigh - bodyLow);
+
+            if (DuoMinCombinedBodyPoints > 0 && combinedBody < DuoMinCombinedBodyPoints * TickSize)
+                return;
+
+            double close = Close[0];
+            if (!IsInsideDr(close) || !IsOutsideRedZone(close))
+                return;
+
+            SetupDirection direction = c0Bull ? SetupDirection.Long : SetupDirection.Short;
+            double entry = GetDuoEntryPrice(direction, bodyLow, bodyHigh);
+
+            double drHeight = currentDrHigh - currentDrLow;
+            if (drHeight <= 0)
+                return;
+
+            double tp = direction == SetupDirection.Long
+                ? currentDrLow + drHeight * (TpPercentOfDr / 100.0)
+                : currentDrHigh - drHeight * (TpPercentOfDr / 100.0);
+
+            double stop = direction == SetupDirection.Long ? bodyLow : bodyHigh;
+            string signal = direction == SetupDirection.Long ? "H1M5_DuoLong" : "H1M5_DuoShort";
+
+            LogDebug(string.Format(
+                "Duo trigger {0}. Entry={1:F2} TP={2:F2} SL={3:F2} Body[{4:F2}-{5:F2}]",
+                direction == SetupDirection.Long ? "LONG" : "SHORT",
+                entry,
+                tp,
+                stop,
+                bodyLow,
+                bodyHigh), true);
+
+            activeEntrySignal = signal;
+            activeEntryPrice = entry;
+            activeStopPrice = stop;
+            activeTpPrice = tp;
+            trailingActive = false;
+
+            SetStopLoss(signal, CalculationMode.Price, stop, false);
+            SetProfitTarget(signal, CalculationMode.Price, tp);
+
+            if (direction == SetupDirection.Long)
+                EnterLongLimit(entry, signal);
+            else
+                EnterShortLimit(entry, signal);
+        }
+
+        private double GetDuoEntryPrice(SetupDirection direction, double bodyLow, double bodyHigh)
+        {
+            double range = Math.Abs(bodyHigh - bodyLow);
+            double pct = Math.Max(0, Math.Min(100, LimitEntryPercent)) / 100.0;
+            if (direction == SetupDirection.Short)
+                return bodyHigh - range * pct;
+            return bodyLow + range * pct;
         }
 
         private bool IsFvgInTradeZone(SetupDirection direction, double fvgLower, double fvgUpper)
