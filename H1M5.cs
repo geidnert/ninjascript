@@ -611,7 +611,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
-            if (TimeInSession(Times[drSeriesIndex][0]) && !TimeInNoTradesAfter(Times[drSeriesIndex][0]) && EntryModeSetting == EntryMode.Fvg)
+            if (TimeInSession(Times[drSeriesIndex][0]) && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
                 EvaluateSweepSetup();
         }
         #endregion
@@ -1119,6 +1119,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             if (Position.MarketPosition != MarketPosition.Flat)
                 return;
+            if (!sweepSetupActive)
+                return;
+            if (Time[0] <= sweepSetupStartTime || Time[0] > sweepSetupEndTime)
+                return;
             if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
                 return;
             if (CurrentBar < 2)
@@ -1129,7 +1133,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool c0Bear = Close[0] < Open[0];
             bool c1Bear = Close[1] < Open[1];
 
-            if (!(c0Bull && c1Bull) && !(c0Bear && c1Bear))
+            if (sweepSetupDirection == SetupDirection.Long && !(c0Bull && c1Bull))
+                return;
+            if (sweepSetupDirection == SetupDirection.Short && !(c0Bear && c1Bear))
                 return;
 
             double bodyHigh = Math.Max(Math.Max(Open[0], Close[0]), Math.Max(Open[1], Close[1]));
@@ -1139,12 +1145,24 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (DuoMinCombinedBodyPoints > 0 && combinedBody < DuoMinCombinedBodyPoints * TickSize)
                 return;
 
-            double close = Close[0];
-            if (!IsInsideDr(close) || !IsOutsideRedZone(close))
+            if (!IsFvgInTradeZone(sweepSetupDirection, bodyLow, bodyHigh))
                 return;
 
-            SetupDirection direction = c0Bull ? SetupDirection.Long : SetupDirection.Short;
-            double entry = GetDuoEntryPrice(direction, bodyLow, bodyHigh);
+            SetupDirection direction = sweepSetupDirection;
+            double entry = UseLimitEntries ? GetDuoEntryPrice(direction, bodyLow, bodyHigh) : Close[0];
+            if (UseLimitEntries)
+            {
+                if (direction == SetupDirection.Long && entry > Close[0])
+                {
+                    LogDebug(string.Format("Duo entry skipped (limit above price). Entry={0:F2} Close={1:F2}", entry, Close[0]));
+                    return;
+                }
+                if (direction == SetupDirection.Short && entry < Close[0])
+                {
+                    LogDebug(string.Format("Duo entry skipped (limit below price). Entry={0:F2} Close={1:F2}", entry, Close[0]));
+                    return;
+                }
+            }
 
             double drHeight = currentDrHigh - currentDrLow;
             if (drHeight <= 0)
@@ -1154,7 +1172,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ? currentDrLow + drHeight * (TpPercentOfDr / 100.0)
                 : currentDrHigh - drHeight * (TpPercentOfDr / 100.0);
 
-            double stop = direction == SetupDirection.Long ? bodyLow : bodyHigh;
+            double wickHigh = Math.Max(High[0], High[1]);
+            double wickLow = Math.Min(Low[0], Low[1]);
+            double stop = direction == SetupDirection.Long ? wickLow : wickHigh;
+            if (direction == SetupDirection.Long && stop >= entry)
+                stop = entry - TickSize;
+            else if (direction == SetupDirection.Short && stop <= entry)
+                stop = entry + TickSize;
             string signal = direction == SetupDirection.Long ? "H1M5_DuoLong" : "H1M5_DuoShort";
 
             LogDebug(string.Format(
@@ -1176,9 +1200,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             SetProfitTarget(signal, CalculationMode.Price, tp);
 
             if (direction == SetupDirection.Long)
-                EnterLongLimit(entry, signal);
+            {
+                if (UseLimitEntries)
+                    EnterLongLimit(entry, signal);
+                else
+                    EnterLong(signal);
+            }
             else
-                EnterShortLimit(entry, signal);
+            {
+                if (UseLimitEntries)
+                    EnterShortLimit(entry, signal);
+                else
+                    EnterShort(signal);
+            }
+
+            sweepSetupActive = false;
         }
 
         private double GetDuoEntryPrice(SetupDirection direction, double bodyLow, double bodyHigh)
