@@ -20,35 +20,35 @@ namespace NinjaTrader.NinjaScript.Strategies
         #region User Inputs
         [NinjaScriptProperty]
         [Range(1, 50)]
-        [Display(Name = "Leg Swing Lookback", GroupName = "01. DR Parameters", Order = 0)]
+        [Display(Name = "Leg Swing Lookback", Description = "Max bars to look back for the internal swing that defines new DRs on breakouts.", GroupName = "01. DR Parameters", Order = 0)]
         public int LegSwingLookback { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 10)]
-        [Display(Name = "Swing Strength", GroupName = "01. DR Parameters", Order = 1)]
+        [Display(Name = "Swing Strength", Description = "Bars on each side required for a swing high/low in DR detection.", GroupName = "01. DR Parameters", Order = 1)]
         public int SwingStrength { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min DR Size (points)", GroupName = "01. DR Parameters", Order = 2)]
+        [Display(Name = "Min DR Size (points)", Description = "Minimum DR height in points required to consider it tradable.", GroupName = "01. DR Parameters", Order = 2)]
         public double MinDrSizePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 50.0)]
-        [Display(Name = "Mid Red Zone % (each side)", GroupName = "01. DR Parameters", Order = 3)]
+        [Display(Name = "Mid Red Zone % (each side)", Description = "Percent of DR height to mark above and below the midline as the red no-trade zone.", GroupName = "01. DR Parameters", Order = 3)]
         public double MidRedZonePercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "DR Bars Period Type", GroupName = "01. DR Parameters", Order = 4)]
+        [Display(Name = "DR Bars Period Type", Description = "Timeframe unit for DR calculation (e.g., Minute).", GroupName = "01. DR Parameters", Order = 4)]
         public BarsPeriodType DrBarsPeriodType { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "DR Bars Period Value", GroupName = "01. DR Parameters", Order = 5)]
+        [Display(Name = "DR Bars Period Value", Description = "Timeframe value for DR calculation (e.g., 60 for 1H when Period Type = Minute).", GroupName = "01. DR Parameters", Order = 5)]
         public int DrBarsPeriodValue { get; set; }
 
         [XmlIgnore]
-        [Display(Name = "DR Box Brush", Description = "Fill color for DR boxes", GroupName = "02. Visual Settings", Order = 0)]
+        [Display(Name = "DR Box Brush", Description = "Fill color for DR boxes.", GroupName = "02. Visual Settings", Order = 0)]
         public Brush DrBoxBrush { get; set; }
 
         [Browsable(false)]
@@ -59,7 +59,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [XmlIgnore]
-        [Display(Name = "DR Outline Brush", Description = "Outline color for DR boxes", GroupName = "02. Visual Settings", Order = 1)]
+        [Display(Name = "DR Outline Brush", Description = "Outline color for DR boxes.", GroupName = "02. Visual Settings", Order = 1)]
         public Brush DrOutlineBrush { get; set; }
 
         [Browsable(false)]
@@ -70,7 +70,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [XmlIgnore]
-        [Display(Name = "DR Mid-Line Brush", Description = "Color for mid-line", GroupName = "02. Visual Settings", Order = 2)]
+        [Display(Name = "DR Mid-Line Brush", Description = "Color for the DR midline.", GroupName = "02. Visual Settings", Order = 2)]
         public Brush DrMidLineBrush { get; set; }
 
         [Browsable(false)]
@@ -81,44 +81,44 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [Range(0, 100)]
-        [Display(Name = "Box Opacity", Description = "Transparency of DR box fill (0-100)", GroupName = "02. Visual Settings", Order = 3)]
+        [Display(Name = "Box Opacity", Description = "Transparency of DR box fill (0-100).", GroupName = "02. Visual Settings", Order = 3)]
         public int BoxOpacity { get; set; }
 
         [Range(1, 5)]
-        [Display(Name = "Line Width", Description = "Width of mid-line", GroupName = "02. Visual Settings", Order = 4)]
+        [Display(Name = "Line Width", Description = "Width of DR lines.", GroupName = "02. Visual Settings", Order = 4)]
         public int LineWidth { get; set; }
 
         [Range(0, 100)]
-        [Display(Name = "Line Opacity", Description = "Transparency of DR lines (0-100)", GroupName = "02. Visual Settings", Order = 5)]
+        [Display(Name = "Line Opacity", Description = "Transparency of DR lines (0-100).", GroupName = "02. Visual Settings", Order = 5)]
         public int LineOpacity { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Logging", Description = "Enable detailed logging to Output window", GroupName = "03. Debug", Order = 0)]
+        [Display(Name = "Enable Logging", Description = "Enable detailed logging to the Output window for debugging.", GroupName = "03. Debug", Order = 0)]
         public bool DebugLogging { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Show Historical DRs", Description = "If false, only show the active DR range", GroupName = "02. Visual Settings", Order = 6)]
+        [Display(Name = "Show Historical DRs", Description = "If false, only show the current active DR.", GroupName = "02. Visual Settings", Order = 6)]
         public bool ShowHistoricalDRs { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "When session is starting", GroupName = "06. Session Time", Order = 0)]
+        [Display(Name = "Session Start", Description = "Session start time (chart time).", GroupName = "06. Session Time", Order = 0)]
         public TimeSpan SessionStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "When session is ending", GroupName = "06. Session Time", Order = 1)]
+        [Display(Name = "Session End", Description = "Session end time (chart time).", GroupName = "06. Session Time", Order = 1)]
         public TimeSpan SessionEnd { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "No Trades After", Description = "No new entries after this time until session end", GroupName = "06. Session Time", Order = 2)]
+        [Display(Name = "No Trades After", Description = "No new entries after this time until session end (existing trades may still run).", GroupName = "06. Session Time", Order = 2)]
         public TimeSpan NoTradesAfter { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Close At Session End", Description = "If true, flatten/cancel at session end", GroupName = "06. Session Time", Order = 3)]
+        [Display(Name = "Close At Session End", Description = "If true, flatten open positions and cancel orders at session end.", GroupName = "06. Session Time", Order = 3)]
         public bool CloseAtSessionEnd { get; set; }
 
         [NinjaScriptProperty]
         [XmlIgnore]
-        [Display(Name = "Session Fill", Description = "Color of the session background", GroupName = "06. Session Time", Order = 4)]
+        [Display(Name = "Session Fill", Description = "Background color used to highlight the session window.", GroupName = "06. Session Time", Order = 4)]
         public Brush SessionBrush { get; set; }
 
         [Browsable(false)]
@@ -129,40 +129,40 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Show Invalidated FVGs", Description = "If false, remove FVGs once invalidated", GroupName = "04. FVG", Order = 0)]
+        [Display(Name = "Show Invalidated FVGs", Description = "If false, remove FVGs once invalidated.", GroupName = "04. FVG", Order = 0)]
         public bool ShowInvalidatedFvgs { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min FVG Size (points)", GroupName = "04. FVG", Order = 1)]
+        [Display(Name = "Min FVG Size (points)", Description = "Minimum FVG size in points to draw/track.", GroupName = "04. FVG", Order = 1)]
         public double MinFvgSizePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max FVG Size (points)", GroupName = "04. FVG", Order = 2)]
+        [Display(Name = "Max FVG Size (points)", Description = "Maximum FVG size in points to draw/track (0 disables).", GroupName = "04. FVG", Order = 2)]
         public double MaxFvgSizePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "FVG Opacity", GroupName = "04. FVG", Order = 3)]
+        [Display(Name = "FVG Opacity", Description = "Opacity of active FVG rectangles (0-100).", GroupName = "04. FVG", Order = 3)]
         public int FvgOpacity { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Invalidated FVG Opacity", GroupName = "04. FVG", Order = 4)]
+        [Display(Name = "Invalidated FVG Opacity", Description = "Opacity of invalidated FVG rectangles (0-100).", GroupName = "04. FVG", Order = 4)]
         public int InvalidatedFvgOpacity { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 365)]
-        [Display(Name = "FVG Draw Limit (days)", GroupName = "04. FVG", Order = 5)]
+        [Display(Name = "FVG Draw Limit (days)", Description = "Number of days of FVGs to keep on chart.", GroupName = "04. FVG", Order = 5)]
         public int FvgDrawLimitDays { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Only Show FVGs Inside DR", Description = "If true, only draw FVGs fully within the active DR range", GroupName = "04. FVG", Order = 6)]
+        [Display(Name = "Only Show FVGs Inside DR", Description = "If true, only draw FVGs fully within the active DR range.", GroupName = "04. FVG", Order = 6)]
         public bool OnlyShowFvgsInsideDr { get; set; }
 
         [XmlIgnore]
-        [Display(Name = "FVG Fill Brush", GroupName = "04. FVG", Order = 7)]
+        [Display(Name = "FVG Fill Brush", Description = "Fill color for active FVG rectangles.", GroupName = "04. FVG", Order = 7)]
         public Brush FvgFillBrush { get; set; }
 
         [Browsable(false)]
@@ -173,7 +173,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [XmlIgnore]
-        [Display(Name = "Invalidated FVG Fill Brush", GroupName = "04. FVG", Order = 8)]
+        [Display(Name = "Invalidated FVG Fill Brush", Description = "Fill color for invalidated FVG rectangles.", GroupName = "04. FVG", Order = 8)]
         public Brush InvalidatedFvgFillBrush { get; set; }
 
         [Browsable(false)]
@@ -185,26 +185,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(1, 200)]
-        [Display(Name = "Sweep Lookback (bars)", GroupName = "05. Entries", Order = 0)]
+        [Display(Name = "Sweep Lookback (bars)", Description = "Lookback window on 1H for unswept wick levels.", GroupName = "05. Entries", Order = 0)]
         public int SweepLookbackBars { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % of DR", GroupName = "05. Entries", Order = 1)]
+        [Display(Name = "TP % of DR", Description = "Take-profit level as a percent of DR height (directional).", GroupName = "05. Entries", Order = 1)]
         public double TpPercentOfDr { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Trailing Stop", GroupName = "05. Entries", Order = 2)]
+        [Display(Name = "Enable Trailing Stop", Description = "If true, trail SL after price touches DR midline (2-bar trailing).", GroupName = "05. Entries", Order = 2)]
         public bool EnableTrailingStop { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Exit On EMA Flat", GroupName = "05. Entries", Order = 3)]
+        [Display(Name = "Exit On EMA Flat", Description = "If true, flatten when EMA slope becomes flat (EMA[0] == EMA[1]).", GroupName = "05. Entries", Order = 3)]
         public bool ExitOnEmaFlat { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 200)]
-        [Display(Name = "EMA Period", GroupName = "05. Entries", Order = 4)]
+        [Display(Name = "EMA Period", Description = "EMA period used for flat-slope exit and chart plot.", GroupName = "05. Entries", Order = 4)]
         public int EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Reverse On Opposite FVG", Description = "If true, reverse position when an opposite-direction 5m FVG prints.", GroupName = "05. Entries", Order = 5)]
+        public bool ReverseOnOppositeFvg { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 10)]
+        [Display(Name = "Reverse Swing Strength (5m)", Description = "Swing strength for reverse SL using recent 5m swing high/low.", GroupName = "05. Entries", Order = 6)]
+        public int ReverseSwingStrength { get; set; }
         #endregion
 
         #region State Variables
@@ -260,6 +269,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double activeTpPrice;
         private bool trailingActive;
         private EMA exitEma;
+        private int lastReverseBar;
         #endregion
 
         #region NinjaScript Lifecycle
@@ -318,6 +328,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableTrailingStop = false;
                 ExitOnEmaFlat = false;
                 EmaPeriod = 5;
+                ReverseOnOppositeFvg = false;
+                ReverseSwingStrength = 1;
 
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
@@ -374,6 +386,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 activeStopPrice = 0;
                 activeTpPrice = 0;
                 trailingActive = false;
+                lastReverseBar = -1;
 
                 if (DrBoxBrush != null && DrBoxBrush.CanFreeze)
                     DrBoxBrush.Freeze();
@@ -729,6 +742,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 FvgOpacity
             );
 
+            TryReverseOnOppositeFvg(bullishFvg, bearishFvg);
             TryEnterFromFvgSignal(bullishFvg, bearishFvg);
         }
 
@@ -789,6 +803,75 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnterShort(signal);
 
             sweepSetupActive = false;
+        }
+
+        private void TryReverseOnOppositeFvg(bool bullishFvg, bool bearishFvg)
+        {
+            if (!ReverseOnOppositeFvg)
+                return;
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return;
+            if (CurrentBar == lastReverseBar)
+                return;
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
+                return;
+
+            bool shouldReverse = Position.MarketPosition == MarketPosition.Long ? bearishFvg : bullishFvg;
+            if (!shouldReverse)
+                return;
+
+            double swingPrice;
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                if (!TryFindRecentSwingHigh(ReverseSwingStrength, out swingPrice))
+                    return;
+            }
+            else
+            {
+                if (!TryFindRecentSwingLow(ReverseSwingStrength, out swingPrice))
+                    return;
+            }
+
+            double drHeight = currentDrHigh - currentDrLow;
+            if (drHeight <= 0)
+                return;
+
+            SetupDirection newDirection = Position.MarketPosition == MarketPosition.Long
+                ? SetupDirection.Short
+                : SetupDirection.Long;
+
+            double tp = newDirection == SetupDirection.Long
+                ? currentDrLow + drHeight * (TpPercentOfDr / 100.0)
+                : currentDrHigh - drHeight * (TpPercentOfDr / 100.0);
+
+            double stop = swingPrice;
+            string signal = newDirection == SetupDirection.Long ? "H1M5_RevLong" : "H1M5_RevShort";
+
+            LogDebug(string.Format(
+                "Reverse on opposite FVG. NewDir={0} TP={1:F2} SL={2:F2}",
+                newDirection == SetupDirection.Long ? "LONG" : "SHORT",
+                tp,
+                stop), true);
+
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong("ReverseExit", activeEntrySignal);
+            else
+                ExitShort("ReverseExit", activeEntrySignal);
+
+            SetStopLoss(signal, CalculationMode.Price, stop, false);
+            SetProfitTarget(signal, CalculationMode.Price, tp);
+
+            if (newDirection == SetupDirection.Long)
+                EnterLong(signal);
+            else
+                EnterShort(signal);
+
+            activeEntrySignal = signal;
+            activeEntryPrice = Close[0];
+            activeStopPrice = stop;
+            activeTpPrice = tp;
+            trailingActive = false;
+            lastReverseBar = CurrentBar;
         }
         #endregion
 
@@ -945,6 +1028,72 @@ namespace NinjaTrader.NinjaScript.Strategies
             double halfZone = drHeight * (MidRedZonePercent / 100.0);
             redLow = currentDrMid - halfZone;
             redHigh = currentDrMid + halfZone;
+        }
+
+        private bool TryFindRecentSwingHigh(int strength, out double swingHigh)
+        {
+            swingHigh = 0;
+            if (CurrentBar < strength * 2 + 1)
+                return false;
+
+            int maxLookback = Math.Min(50, CurrentBar - strength);
+            for (int barsAgo = 1; barsAgo <= maxLookback; barsAgo++)
+            {
+                if (IsSwingHighAt(barsAgo, strength))
+                {
+                    swingHigh = High[barsAgo];
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryFindRecentSwingLow(int strength, out double swingLow)
+        {
+            swingLow = 0;
+            if (CurrentBar < strength * 2 + 1)
+                return false;
+
+            int maxLookback = Math.Min(50, CurrentBar - strength);
+            for (int barsAgo = 1; barsAgo <= maxLookback; barsAgo++)
+            {
+                if (IsSwingLowAt(barsAgo, strength))
+                {
+                    swingLow = Low[barsAgo];
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsSwingHighAt(int barsAgo, int strength)
+        {
+            if (barsAgo < strength || CurrentBar - barsAgo < strength)
+                return false;
+
+            double pivot = High[barsAgo];
+            for (int i = 1; i <= strength; i++)
+            {
+                if (pivot <= High[barsAgo - i] || pivot <= High[barsAgo + i])
+                    return false;
+            }
+            return true;
+        }
+
+        private bool IsSwingLowAt(int barsAgo, int strength)
+        {
+            if (barsAgo < strength || CurrentBar - barsAgo < strength)
+                return false;
+
+            double pivot = Low[barsAgo];
+            for (int i = 1; i <= strength; i++)
+            {
+                if (pivot >= Low[barsAgo - i] || pivot >= Low[barsAgo + i])
+                    return false;
+            }
+            return true;
         }
         #endregion
 
