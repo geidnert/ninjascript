@@ -742,8 +742,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 FvgOpacity
             );
 
-            TryReverseOnOppositeFvg(bullishFvg, bearishFvg);
-            TryEnterFromFvgSignal(bullishFvg, bearishFvg);
+            TryReverseOnOppositeFvg(bullishFvg, bearishFvg, fvg.Lower, fvg.Upper);
+            TryEnterFromFvgSignal(bullishFvg, bearishFvg, fvg.Lower, fvg.Upper);
         }
 
         private bool ShouldDrawFvg(double fvgLower, double fvgUpper)
@@ -755,7 +755,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             return fvgLower >= currentDrLow && fvgUpper <= currentDrHigh;
         }
 
-        private void TryEnterFromFvgSignal(bool bullishFvg, bool bearishFvg)
+        private void TryEnterFromFvgSignal(bool bullishFvg, bool bearishFvg, double fvgLower, double fvgUpper)
         {
             if (!sweepSetupActive)
                 return;
@@ -769,6 +769,18 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool matchesDirection = sweepSetupDirection == SetupDirection.Long ? bullishFvg : bearishFvg;
             if (!matchesDirection)
                 return;
+            if (!IsFvgInTradeZone(sweepSetupDirection, fvgLower, fvgUpper))
+            {
+                LogDebug(string.Format(
+                    "FVG rejected (red zone overlap). Dir={0} FVG[{1:F2}-{2:F2}] DR[{3:F2}-{4:F2}] Mid={5:F2}",
+                    sweepSetupDirection == SetupDirection.Long ? "LONG" : "SHORT",
+                    fvgLower,
+                    fvgUpper,
+                    currentDrLow,
+                    currentDrHigh,
+                    currentDrMid));
+                return;
+            }
 
             double drHeight = currentDrHigh - currentDrLow;
             if (drHeight <= 0)
@@ -805,7 +817,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             sweepSetupActive = false;
         }
 
-        private void TryReverseOnOppositeFvg(bool bullishFvg, bool bearishFvg)
+        private void TryReverseOnOppositeFvg(bool bullishFvg, bool bearishFvg, double fvgLower, double fvgUpper)
         {
             if (!ReverseOnOppositeFvg)
                 return;
@@ -819,6 +831,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool shouldReverse = Position.MarketPosition == MarketPosition.Long ? bearishFvg : bullishFvg;
             if (!shouldReverse)
                 return;
+            SetupDirection newDirection = Position.MarketPosition == MarketPosition.Long
+                ? SetupDirection.Short
+                : SetupDirection.Long;
+            if (!IsFvgInTradeZone(newDirection, fvgLower, fvgUpper))
+            {
+                LogDebug(string.Format(
+                    "Reverse rejected (red zone overlap). Dir={0} FVG[{1:F2}-{2:F2}] DR[{3:F2}-{4:F2}] Mid={5:F2}",
+                    newDirection == SetupDirection.Long ? "LONG" : "SHORT",
+                    fvgLower,
+                    fvgUpper,
+                    currentDrLow,
+                    currentDrHigh,
+                    currentDrMid));
+                return;
+            }
 
             double swingPrice;
             if (Position.MarketPosition == MarketPosition.Long)
@@ -835,10 +862,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             double drHeight = currentDrHigh - currentDrLow;
             if (drHeight <= 0)
                 return;
-
-            SetupDirection newDirection = Position.MarketPosition == MarketPosition.Long
-                ? SetupDirection.Short
-                : SetupDirection.Long;
 
             double tp = newDirection == SetupDirection.Long
                 ? currentDrLow + drHeight * (TpPercentOfDr / 100.0)
@@ -1028,6 +1051,20 @@ namespace NinjaTrader.NinjaScript.Strategies
             double halfZone = drHeight * (MidRedZonePercent / 100.0);
             redLow = currentDrMid - halfZone;
             redHigh = currentDrMid + halfZone;
+        }
+
+        private bool IsFvgInTradeZone(SetupDirection direction, double fvgLower, double fvgUpper)
+        {
+            if (!hasActiveDR)
+                return false;
+
+            double redLow, redHigh;
+            GetRedZone(out redLow, out redHigh);
+
+            if (direction == SetupDirection.Short)
+                return fvgUpper >= redHigh && fvgLower <= currentDrHigh;
+
+            return fvgLower <= redLow && fvgUpper >= currentDrLow;
         }
 
         private bool TryFindRecentSwingHigh(int strength, out double swingHigh)
