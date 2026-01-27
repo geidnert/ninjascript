@@ -214,6 +214,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(1, 10)]
         [Display(Name = "Reverse Swing Strength (5m)", Description = "Swing strength for reverse SL using recent 5m swing high/low.", GroupName = "05. Entries", Order = 6)]
         public int ReverseSwingStrength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Limit Entries", Description = "If true, place limit entries at the FVG edge (or % within the FVG) instead of market.", GroupName = "05. Entries", Order = 7)]
+        public bool UseLimitEntries { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "Limit Entry %", Description = "0% = near edge (short: lower, long: upper). 100% = far edge (short: upper, long: lower).", GroupName = "05. Entries", Order = 8)]
+        public double LimitEntryPercent { get; set; }
         #endregion
 
         #region State Variables
@@ -330,6 +339,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EmaPeriod = 5;
                 ReverseOnOppositeFvg = false;
                 ReverseSwingStrength = 1;
+                UseLimitEntries = false;
+                LimitEntryPercent = 0;
 
                 DrBoxBrush = Brushes.DodgerBlue;
                 DrOutlineBrush = Brushes.DodgerBlue;
@@ -801,7 +812,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 sweepSetupDirection == SetupDirection.Long ? "bullish" : "bearish"));
 
             activeEntrySignal = signal;
-            activeEntryPrice = Close[0];
+            activeEntryPrice = UseLimitEntries
+                ? GetLimitEntryPrice(sweepSetupDirection, fvgLower, fvgUpper)
+                : Close[0];
             activeStopPrice = stop;
             activeTpPrice = tp;
             trailingActive = false;
@@ -810,9 +823,19 @@ namespace NinjaTrader.NinjaScript.Strategies
             SetProfitTarget(signal, CalculationMode.Price, tp);
 
             if (sweepSetupDirection == SetupDirection.Long)
-                EnterLong(signal);
+            {
+                if (UseLimitEntries)
+                    EnterLongLimit(activeEntryPrice, signal);
+                else
+                    EnterLong(signal);
+            }
             else
-                EnterShort(signal);
+            {
+                if (UseLimitEntries)
+                    EnterShortLimit(activeEntryPrice, signal);
+                else
+                    EnterShort(signal);
+            }
 
             sweepSetupActive = false;
         }
@@ -885,12 +908,25 @@ namespace NinjaTrader.NinjaScript.Strategies
             SetProfitTarget(signal, CalculationMode.Price, tp);
 
             if (newDirection == SetupDirection.Long)
-                EnterLong(signal);
+            {
+                double entry = UseLimitEntries ? GetLimitEntryPrice(newDirection, fvgLower, fvgUpper) : Close[0];
+                if (UseLimitEntries)
+                    EnterLongLimit(entry, signal);
+                else
+                    EnterLong(signal);
+                activeEntryPrice = entry;
+            }
             else
-                EnterShort(signal);
+            {
+                double entry = UseLimitEntries ? GetLimitEntryPrice(newDirection, fvgLower, fvgUpper) : Close[0];
+                if (UseLimitEntries)
+                    EnterShortLimit(entry, signal);
+                else
+                    EnterShort(signal);
+                activeEntryPrice = entry;
+            }
 
             activeEntrySignal = signal;
-            activeEntryPrice = Close[0];
             activeStopPrice = stop;
             activeTpPrice = tp;
             trailingActive = false;
@@ -1065,6 +1101,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return fvgUpper >= redHigh && fvgLower <= currentDrHigh;
 
             return fvgLower <= redLow && fvgUpper >= currentDrLow;
+        }
+
+        private double GetLimitEntryPrice(SetupDirection direction, double fvgLower, double fvgUpper)
+        {
+            double range = Math.Abs(fvgUpper - fvgLower);
+            double pct = Math.Max(0, Math.Min(100, LimitEntryPercent)) / 100.0;
+            if (direction == SetupDirection.Short)
+                return fvgLower + range * pct;
+            return fvgUpper - range * pct;
         }
 
         private bool TryFindRecentSwingHigh(int strength, out double swingHigh)
