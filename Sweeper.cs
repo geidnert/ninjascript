@@ -18,6 +18,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class Sweeper : Strategy
     {
+        public Sweeper()
+        {
+            VendorLicense(1005);
+        }
+
         #region User Inputs
         [NinjaScriptProperty]
         [Range(1, 50)]
