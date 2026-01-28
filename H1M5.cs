@@ -225,13 +225,18 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool EnableTrailingStop { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Exit On EMA Flat", Description = "If true, flatten when EMA slope becomes flat (EMA[0] == EMA[1]).", GroupName = "05. Entries", Order = 3)]
+        [Display(Name = "Exit On EMA Flat", Description = "If true, flatten when EMA slope crosses threshold (long: <= -threshold, short: >= +threshold).", GroupName = "05. Entries", Order = 3)]
         public bool ExitOnEmaFlat { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 200)]
         [Display(Name = "EMA Period", Description = "EMA period used for flat-slope exit and chart plot.", GroupName = "05. Entries", Order = 4)]
         public int EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "EMA Slope Threshold (points)", Description = "Minimum EMA slope magnitude to trigger exit. 0 = any non-positive/ non-negative slope.", GroupName = "05. Entries", Order = 5)]
+        public double EmaSlopeThreshold { get; set; }
 
         public enum EntryMode
         {
@@ -240,30 +245,30 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Mode", Description = "Select entry trigger: FVG or Duo (2-candle).", GroupName = "05. Entries", Order = 5)]
+        [Display(Name = "Entry Mode", Description = "Select entry trigger: FVG or Duo (2-candle).", GroupName = "05. Entries", Order = 6)]
         public EntryMode EntryModeSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 10)]
-        [Display(Name = "Reverse Swing Strength (5m)", Description = "Swing strength for reverse SL using recent 5m swing high/low.", GroupName = "05. Entries", Order = 6)]
+        [Display(Name = "Reverse Swing Strength (5m)", Description = "Swing strength for reverse SL using recent 5m swing high/low.", GroupName = "05. Entries", Order = 7)]
         public int ReverseSwingStrength { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Reverse On Opposite FVG", Description = "If true, reverse position when an opposite-direction 5m FVG prints.", GroupName = "05. Entries", Order = 7)]
+        [Display(Name = "Reverse On Opposite FVG", Description = "If true, reverse position when an opposite-direction 5m FVG prints.", GroupName = "05. Entries", Order = 8)]
         public bool ReverseOnOppositeFvg { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Limit Entries", Description = "If true, place limit entries at the FVG edge (or % within the FVG) instead of market.", GroupName = "05. Entries", Order = 8)]
+        [Display(Name = "Use Limit Entries", Description = "If true, place limit entries at the FVG edge (or % within the FVG) instead of market.", GroupName = "05. Entries", Order = 9)]
         public bool UseLimitEntries { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Entry %", Description = "FVG: 0% = near edge (short: lower, long: upper), 100% = far edge. Duo: % into combined 2-candle body.", GroupName = "05. Entries", Order = 9)]
+        [Display(Name = "Entry %", Description = "FVG: 0% = near edge (short: lower, long: upper), 100% = far edge. Duo: % into combined 2-candle body.", GroupName = "05. Entries", Order = 10)]
         public double LimitEntryPercent { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Duo Min Combined Body (points)", Description = "Minimum combined body size of 2 same-direction 5m candles.", GroupName = "05. Entries", Order = 10)]
+        [Display(Name = "Duo Min Combined Body (points)", Description = "Minimum combined body size of 2 same-direction 5m candles.", GroupName = "05. Entries", Order = 11)]
         public double DuoMinCombinedBodyPoints { get; set; }
         #endregion
 
@@ -455,6 +460,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableTrailingStop = false;
                 ExitOnEmaFlat = false;
                 EmaPeriod = 5;
+                EmaSlopeThreshold = 0;
                 EntryModeSetting = EntryMode.Fvg;
                 ReverseSwingStrength = 1;
                 ReverseOnOppositeFvg = false;
@@ -617,12 +623,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     double emaNow = exitEma[0];
                     double emaPrev = exitEma[1];
-                    if (emaNow == emaPrev)
+                    double emaSlope = emaNow - emaPrev;
+                    double threshold = EmaSlopeThreshold;
+                    bool exitLong = Position.MarketPosition == MarketPosition.Long && emaSlope <= -threshold;
+                    bool exitShort = Position.MarketPosition == MarketPosition.Short && emaSlope >= threshold;
+                    if (exitLong || exitShort)
                     {
-                        LogDebug(string.Format("EMA flat ({0}) — flattening position.", EmaPeriod), true);
-                        if (Position.MarketPosition == MarketPosition.Long)
+                        LogDebug(string.Format("EMA slope ({0}) crossed threshold — flattening position. slope={1} threshold={2}", EmaPeriod, emaSlope, threshold), true);
+                        if (exitLong)
                             ExitLong("EMAFlatExit", activeEntrySignal);
-                        else if (Position.MarketPosition == MarketPosition.Short)
+                        else if (exitShort)
                             ExitShort("EMAFlatExit", activeEntrySignal);
 
                         CancelAllOrders();
