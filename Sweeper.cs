@@ -1196,7 +1196,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     LogDebug(string.Format(
                         "Sweep SHORT armed. SweptHigh={0:F2} CurrHigh={1:F2} Close={2:F2}",
                         sweptPrice, high, close), true);
-                    ArmSweepSetup(SetupDirection.Short);
+                    double stopOverride = double.NaN;
+                    if (ArmSweepIntrabar)
+                        stopOverride = Lows[seriesIndex][sweptIndex];
+                    ArmSweepSetup(SetupDirection.Short, stopOverride);
                     return;
                 }
             }
@@ -1209,20 +1212,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     LogDebug(string.Format(
                         "Sweep LONG armed. SweptLow={0:F2} CurrLow={1:F2} Close={2:F2}",
                         sweptPrice, low, close), true);
-                    ArmSweepSetup(SetupDirection.Long);
+                    double stopOverride = double.NaN;
+                    if (ArmSweepIntrabar)
+                        stopOverride = Highs[seriesIndex][sweptIndex];
+                    ArmSweepSetup(SetupDirection.Long, stopOverride);
                 }
             }
         }
 
-        private void ArmSweepSetup(SetupDirection direction)
+        private void ArmSweepSetup(SetupDirection direction, double stopOverride)
         {
             sweepSetupActive = true;
             sweepSetupDirection = direction;
             sweepSetupStartTime = Times[drSeriesIndex][0];
             sweepSetupEndTime = sweepSetupStartTime.AddMinutes(GetDrPeriodMinutes());
-            sweepSetupStopPrice = direction == SetupDirection.Long
-                ? Lows[drSeriesIndex][0]
-                : Highs[drSeriesIndex][0];
+            if (!double.IsNaN(stopOverride))
+            {
+                sweepSetupStopPrice = stopOverride;
+            }
+            else
+            {
+                sweepSetupStopPrice = direction == SetupDirection.Long
+                    ? Lows[drSeriesIndex][0]
+                    : Highs[drSeriesIndex][0];
+            }
             lastSweepArmDrBarTime = sweepSetupStartTime;
         }
 
