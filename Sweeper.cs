@@ -243,6 +243,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "EMA Slope Threshold (points)", Description = "Minimum EMA slope magnitude to trigger exit. 0 = any non-positive/ non-negative slope.", GroupName = "05. Entries", Order = 5)]
         public double EmaSlopeThreshold { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Arm Sweep Intrabar", Description = "If true, arm sweep setup as soon as the current DR bar sweeps a prior bar (no wait for DR bar close).", GroupName = "05. Entries", Order = 6)]
+        public bool ArmSweepIntrabar { get; set; }
+
         public enum EntryMode
         {
             Fvg,
@@ -250,30 +254,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Mode", Description = "Select entry trigger: FVG or Duo (2-candle).", GroupName = "05. Entries", Order = 6)]
+        [Display(Name = "Entry Mode", Description = "Select entry trigger: FVG or Duo (2-candle).", GroupName = "05. Entries", Order = 7)]
         public EntryMode EntryModeSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 10)]
-        [Display(Name = "Reverse Swing Strength (5m)", Description = "Swing strength for reverse SL using recent 5m swing high/low.", GroupName = "05. Entries", Order = 7)]
+        [Display(Name = "Reverse Swing Strength (5m)", Description = "Swing strength for reverse SL using recent 5m swing high/low.", GroupName = "05. Entries", Order = 8)]
         public int ReverseSwingStrength { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Reverse On Opposite FVG", Description = "If true, reverse position when an opposite-direction 5m FVG prints.", GroupName = "05. Entries", Order = 8)]
+        [Display(Name = "Reverse On Opposite FVG", Description = "If true, reverse position when an opposite-direction 5m FVG prints.", GroupName = "05. Entries", Order = 9)]
         public bool ReverseOnOppositeFvg { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Limit Entries", Description = "If true, place limit entries at the FVG edge (or % within the FVG) instead of market.", GroupName = "05. Entries", Order = 9)]
+        [Display(Name = "Use Limit Entries", Description = "If true, place limit entries at the FVG edge (or % within the FVG) instead of market.", GroupName = "05. Entries", Order = 10)]
         public bool UseLimitEntries { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Entry %", Description = "FVG: 0% = near edge (short: lower, long: upper), 100% = far edge. Duo: % into combined 2-candle body.", GroupName = "05. Entries", Order = 10)]
+        [Display(Name = "Entry %", Description = "FVG: 0% = near edge (short: lower, long: upper), 100% = far edge. Duo: % into combined 2-candle body.", GroupName = "05. Entries", Order = 11)]
         public double LimitEntryPercent { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Duo Min Combined Body (points)", Description = "Minimum combined body size of 2 same-direction 5m candles.", GroupName = "05. Entries", Order = 11)]
+        [Display(Name = "Duo Min Combined Body (points)", Description = "Minimum combined body size of 2 same-direction 5m candles.", GroupName = "05. Entries", Order = 12)]
         public double DuoMinCombinedBodyPoints { get; set; }
         #endregion
 
@@ -323,6 +327,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime sweepSetupStartTime;
         private DateTime sweepSetupEndTime;
         private double sweepSetupStopPrice;
+        private DateTime lastSweepArmDrBarTime;
         private bool sessionClosed;
         private string activeEntrySignal;
         private double activeEntryPrice;
@@ -466,6 +471,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ExitOnEmaFlat = false;
                 EmaPeriod = 5;
                 EmaSlopeThreshold = 0;
+                ArmSweepIntrabar = false;
                 EntryModeSetting = EntryMode.Fvg;
                 ReverseSwingStrength = 1;
                 ReverseOnOppositeFvg = false;
@@ -522,6 +528,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 sweepSetupStartTime = Core.Globals.MinDate;
                 sweepSetupEndTime = Core.Globals.MinDate;
                 sweepSetupStopPrice = 0;
+                lastSweepArmDrBarTime = Core.Globals.MinDate;
                 sessionClosed = false;
                 activeEntrySignal = string.Empty;
                 activeEntryPrice = 0;
@@ -700,6 +707,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     sweepSetupActive = false;
                 }
 
+                if (ArmSweepIntrabar && drSeriesIndex != 0)
+                {
+                    if (CurrentBars[drSeriesIndex] >= 0)
+                    {
+                        if (TimeInSession(Times[drSeriesIndex][0]) && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
+                            EvaluateSweepSetup(drSeriesIndex);
+                    }
+                }
+
                 if (CurrentBar >= 2)
                     UpdateFvgs();
 
@@ -801,8 +817,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
-            if (TimeInSession(Times[drSeriesIndex][0]) && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
-                EvaluateSweepSetup();
+            if ((!ArmSweepIntrabar || drSeriesIndex == 0) && TimeInSession(Times[drSeriesIndex][0]) && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
+                EvaluateSweepSetup(drSeriesIndex);
         }
         #endregion
 
@@ -1147,16 +1163,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         #endregion
 
         #region Sweep Entry Logic
-        private void EvaluateSweepSetup()
+        private void EvaluateSweepSetup(int seriesIndex)
         {
             if (!hasActiveDR)
                 return;
             if (Position.MarketPosition != MarketPosition.Flat)
                 return;
-            if (CurrentBar < 2)
+            if (sweepSetupActive)
+                return;
+            if (CurrentBars[seriesIndex] < 2)
+                return;
+            if (ArmSweepIntrabar && lastSweepArmDrBarTime == Times[drSeriesIndex][0])
                 return;
 
-            double close = Close[0];
+            double close = Closes[seriesIndex][0];
+            double high = Highs[seriesIndex][0];
+            double low = Lows[seriesIndex][0];
             if (!IsInsideDr(close) || !IsOutsideRedZone(close))
                 return;
 
@@ -1166,27 +1188,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int sweptIndex;
             double sweptPrice;
 
-            if (TryFindUnsweptHigh(out sweptIndex, out sweptPrice))
+            if (TryFindUnsweptHigh(seriesIndex, out sweptIndex, out sweptPrice))
             {
-                bool wickValid = High[0] <= currentDrHigh && High[0] >= redHigh;
-                if (High[0] > sweptPrice && close < sweptPrice && wickValid)
+                bool wickValid = high <= currentDrHigh && high >= redHigh;
+                if (high > sweptPrice && close < sweptPrice && wickValid)
                 {
                     LogDebug(string.Format(
                         "Sweep SHORT armed. SweptHigh={0:F2} CurrHigh={1:F2} Close={2:F2}",
-                        sweptPrice, High[0], close), true);
+                        sweptPrice, high, close), true);
                     ArmSweepSetup(SetupDirection.Short);
                     return;
                 }
             }
 
-            if (TryFindUnsweptLow(out sweptIndex, out sweptPrice))
+            if (TryFindUnsweptLow(seriesIndex, out sweptIndex, out sweptPrice))
             {
-                bool wickValid = Low[0] >= currentDrLow && Low[0] <= redLow;
-                if (Low[0] < sweptPrice && close > sweptPrice && wickValid)
+                bool wickValid = low >= currentDrLow && low <= redLow;
+                if (low < sweptPrice && close > sweptPrice && wickValid)
                 {
                     LogDebug(string.Format(
                         "Sweep LONG armed. SweptLow={0:F2} CurrLow={1:F2} Close={2:F2}",
-                        sweptPrice, Low[0], close), true);
+                        sweptPrice, low, close), true);
                     ArmSweepSetup(SetupDirection.Long);
                 }
             }
@@ -1201,6 +1223,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sweepSetupStopPrice = direction == SetupDirection.Long
                 ? Lows[drSeriesIndex][0]
                 : Highs[drSeriesIndex][0];
+            lastSweepArmDrBarTime = sweepSetupStartTime;
         }
 
         private int GetDrPeriodMinutes()
@@ -1220,19 +1243,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private bool TryFindUnsweptHigh(out int barsAgo, out double high)
+        private bool TryFindUnsweptHigh(int seriesIndex, out int barsAgo, out double high)
         {
             barsAgo = -1;
             high = 0;
 
-            int maxLookback = Math.Min(SweepLookbackBars, CurrentBar - 1);
+            int maxLookback = Math.Min(SweepLookbackBars, CurrentBars[seriesIndex] - 1);
             for (int i = 1; i <= maxLookback; i++)
             {
-                double candidate = High[i];
+                double candidate = Highs[seriesIndex][i];
                 bool swept = false;
                 for (int j = 1; j < i; j++)
                 {
-                    if (High[j] > candidate)
+                    if (Highs[seriesIndex][j] > candidate)
                     {
                         swept = true;
                         break;
@@ -1249,19 +1272,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return false;
         }
 
-        private bool TryFindUnsweptLow(out int barsAgo, out double low)
+        private bool TryFindUnsweptLow(int seriesIndex, out int barsAgo, out double low)
         {
             barsAgo = -1;
             low = 0;
 
-            int maxLookback = Math.Min(SweepLookbackBars, CurrentBar - 1);
+            int maxLookback = Math.Min(SweepLookbackBars, CurrentBars[seriesIndex] - 1);
             for (int i = 1; i <= maxLookback; i++)
             {
-                double candidate = Low[i];
+                double candidate = Lows[seriesIndex][i];
                 bool swept = false;
                 for (int j = 1; j < i; j++)
                 {
-                    if (Low[j] < candidate)
+                    if (Lows[seriesIndex][j] < candidate)
                     {
                         swept = true;
                         break;
