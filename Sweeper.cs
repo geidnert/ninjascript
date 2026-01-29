@@ -1198,7 +1198,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         sweptPrice, high, close), true);
                     double stopOverride = double.NaN;
                     if (ArmSweepIntrabar)
-                        stopOverride = Lows[seriesIndex][sweptIndex];
+                        stopOverride = Highs[seriesIndex][sweptIndex];
                     ArmSweepSetup(SetupDirection.Short, stopOverride);
                     return;
                 }
@@ -1214,7 +1214,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         sweptPrice, low, close), true);
                     double stopOverride = double.NaN;
                     if (ArmSweepIntrabar)
-                        stopOverride = Highs[seriesIndex][sweptIndex];
+                        stopOverride = Lows[seriesIndex][sweptIndex];
                     ArmSweepSetup(SetupDirection.Long, stopOverride);
                 }
             }
