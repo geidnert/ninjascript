@@ -74,6 +74,10 @@ public class ORBOTesting : Strategy
     public string WebhookUrl { get; set; }
 
     [NinjaScriptProperty]
+    [Display(Name = "Max Trades Per Day", Description = "Max number of trades allowed per day (0 = unlimited)", Order = 6, GroupName = "A. Config")]
+    public int MaxTradesPerDay { get; set; }
+
+    [NinjaScriptProperty]
     [Display(Name = "Use Breakout Rearm Delay", Description = "Wait 5 minutes after breakout reset before allowing new entry", Order = 7, GroupName = "A. Config")]
     public bool UseBreakoutRearmDelay { get; set; }
 
@@ -256,6 +260,8 @@ public class ORBOTesting : Strategy
     private DateTime lastEntryTime = DateTime.MinValue;
     private readonly TimeSpan minTimeBetweenEntries = TimeSpan.FromSeconds(1);
     private int lastExitBarAnalyzer = -1;
+    private int tradesToday = 0;
+    private bool tradeLimitLoggedToday = false;
     private double todayLongLimit = Double.NaN;
     private double todayShortLimit = Double.NaN;
     private double todayLongProfit = Double.NaN;
@@ -387,6 +393,7 @@ public class ORBOTesting : Strategy
         SLBETrigger = 0;
         WebhookUrl = "";
         UseBreakoutRearmDelay = false;
+        MaxTradesPerDay = 0;
 		
         SkipStart = skipStart;
         SkipEnd = skipEnd;
@@ -1040,6 +1047,14 @@ public class ORBOTesting : Strategy
         if (order != null && (order.Name == "Long" || order.Name == "Short"))
         {
             entryOrder = order;
+            if (orderState == OrderState.Filled)
+            {
+                if (MaxTradesPerDay > 0)
+                {
+                    tradesToday++;
+                    DebugPrint($"📌 Trade count: {tradesToday}/{MaxTradesPerDay} for {Time[0]:yyyy-MM-dd}");
+                }
+            }
         }
 
         if (order != null && IsProfitOrder(order))
@@ -1238,6 +1253,8 @@ public class ORBOTesting : Strategy
         rangeTooWide = false;
         rangeTooWideLogged = false;
         cachedPrimaryBarSeconds = 0;
+        tradesToday = 0;
+        tradeLimitLoggedToday = false;
 
         if (isStrategyAnalyzer)
             lastExitBarAnalyzer = -1;
@@ -1245,6 +1262,16 @@ public class ORBOTesting : Strategy
 
     private void PlaceEntryIfTriggered()
     {
+        if (MaxTradesPerDay > 0 && tradesToday >= MaxTradesPerDay)
+        {
+            if (!tradeLimitLoggedToday)
+            {
+                DebugPrint($"🧮 Daily trade limit reached ({tradesToday}/{MaxTradesPerDay}). No more entries today.");
+                tradeLimitLoggedToday = true;
+            }
+            return;
+        }
+
         if (rangeTooWide)
             return;
 
