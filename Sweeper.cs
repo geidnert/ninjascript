@@ -113,6 +113,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Sweep Line Width", Description = "Width of swept 1H level lines.", GroupName = "02. Visual Settings", Order = 8)]
         public int SweepLineWidth { get; set; }
 
+        [XmlIgnore]
+        [Display(Name = "Swing Line Brush", Description = "Color for swing high/low liquidity lines.", GroupName = "02. Visual Settings", Order = 9)]
+        public Brush SwingLineBrush { get; set; }
+
+        [Browsable(false)]
+        public string SwingLineBrushSerializable
+        {
+            get { return Serialize.BrushToString(SwingLineBrush); }
+            set { SwingLineBrush = Serialize.StringToBrush(value); }
+        }
+
+        [Range(1, 1000)]
+        [Display(Name = "Swing Draw Bars", Description = "Number of DR bars to keep swing lines visible.", GroupName = "02. Visual Settings", Order = 10)]
+        public int SwingDrawBars { get; set; }
+
         [NinjaScriptProperty]
         [Display(Name = "Enable Logging", Description = "Enable detailed logging to the Output window for debugging.", GroupName = "03. Debug", Order = 0)]
         public bool DebugLogging { get; set; }
@@ -232,7 +247,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(1, 200)]
-        [Display(Name = "Sweep Lookback (bars)", Description = "Lookback window on 1H for unswept wick levels.", GroupName = "05. Entries", Order = 0)]
+        [Display(Name = "Sweep Lookback (bars)", Description = "Lookback window on DR timeframe for unswept levels.", GroupName = "05. Entries", Order = 0)]
         public int SweepLookbackBars { get; set; }
 
         [NinjaScriptProperty]
@@ -270,6 +285,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SkipClose
         }
 
+        public enum SweepSource
+        {
+            CandleHighLow,
+            SwingHighLow
+        }
+
         [NinjaScriptProperty]
         [Display(Name = "Entry Mode", Description = "Select entry trigger: FVG or Duo (2-candle).",GroupName = "05. Entries", Order = 6)]
         public EntryMode EntryModeSetting { get; set; }
@@ -277,6 +298,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Sweep Confirmation", Description = "Require 1H close back through swept level before arming setup.", GroupName = "05. Entries", Order = 7)]
         public SweepConfirmMode SweepConfirmModeSetting { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Sweep Source", Description = "Choose candle high/low sweeps or swing high/low sweeps.", GroupName = "05. Entries", Order = 7)]
+        public SweepSource SweepSourceSetting { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 20)]
+        [Display(Name = "Sweep Swing Strength", Description = "Bars on each side required for swing high/low used by sweep.", GroupName = "05. Entries", Order = 7)]
+        public int SweepSwingStrength { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 10)]
@@ -327,6 +357,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             public bool IsHigh;
         }
 
+        private class SwingLine
+        {
+            public string Tag;
+            public int StartBarIndex;
+            public DateTime StartTime;
+            public DateTime EndTime;
+            public double Price;
+            public bool IsActive;
+            public bool IsHigh;
+        }
+
         private enum SetupDirection
         {
             Long,
@@ -354,6 +395,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private List<FvgBox> activeFvgs;
         private List<SweepLine> sweepLines;
+        private List<SwingLine> swingLines;
         private int sweepLineCounter;
         private bool pendingSweepValid;
         private int pendingSweepStartBarIndex;
@@ -482,6 +524,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LineOpacity = 30;
                 SweepLineBrush = Brushes.DimGray;
                 SweepLineWidth = 1;
+                SwingLineBrush = Brushes.DimGray;
+                SwingDrawBars = 300;
                 DebugLogging = false;
                 ShowHistoricalDRs = true;
 
@@ -516,6 +560,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EmaSlopeThreshold = 0;
                 EntryModeSetting = EntryMode.Fvg;
                 SweepConfirmModeSetting = SweepConfirmMode.RequireClose;
+                SweepSourceSetting = SweepSource.CandleHighLow;
+                SweepSwingStrength = 1;
                 ReverseSwingStrength = 1;
                 ReverseOnOppositeFvg = false;
                 UseLimitEntries = false;
@@ -567,6 +613,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeFvgs = new List<FvgBox>();
                 fvgCounter = 0;
                 sweepLines = new List<SweepLine>();
+                swingLines = new List<SwingLine>();
                 sweepLineCounter = 0;
                 pendingSweepValid = false;
                 pendingSweepStartBarIndex = -1;
@@ -596,6 +643,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     DrMidLineBrush.Freeze();
                 if (SweepLineBrush != null && SweepLineBrush.CanFreeze)
                     SweepLineBrush.Freeze();
+                if (SwingLineBrush != null && SwingLineBrush.CanFreeze)
+                    SwingLineBrush.Freeze();
                 if (FvgFillBrush != null && FvgFillBrush.CanFreeze)
                     FvgFillBrush.Freeze();
                 if (InvalidatedFvgFillBrush != null && InvalidatedFvgFillBrush.CanFreeze)
@@ -614,7 +663,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (pendingSweepDrawRequested)
                 {
-                    DrawPendingSweepLine(pendingSweepFillTime);
+                    if (SweepSourceSetting == SweepSource.CandleHighLow)
+                        DrawPendingSweepLine(pendingSweepFillTime);
+                    else
+                        pendingSweepValid = false;
                     pendingSweepDrawRequested = false;
                 }
 
@@ -777,10 +829,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (CurrentBar >= 2)
                     UpdateFvgs();
 
-                UpdateSweepLinesDraw();
+                if (SweepSourceSetting == SweepSource.SwingHighLow)
+                {
+                    ClearSweepLines();
+                    UpdateSwingLiquidityPrimary();
 
-                if (SweepConfirmModeSetting == SweepConfirmMode.SkipClose && drSeriesIndex != 0)
-                    EvaluateSweepSetupSkipClose();
+                    if (SweepConfirmModeSetting == SweepConfirmMode.RequireClose
+                        && TimeInSession(Time[0])
+                        && !TimeInNoTradesAfter(Time[0]))
+                    {
+                        EvaluateSweepSetup();
+                    }
+                    else if (SweepConfirmModeSetting == SweepConfirmMode.SkipClose)
+                    {
+                        EvaluateSweepSetupSkipClose();
+                    }
+
+                    UpdateSwingLinesDraw();
+                }
+                else
+                {
+                    ClearSwingLines();
+                    UpdateSweepLinesDraw();
+
+                    if (SweepConfirmModeSetting == SweepConfirmMode.SkipClose)
+                        EvaluateSweepSetupSkipClose();
+                }
 
                 if (drSeriesIndex != 0)
                 {
@@ -881,6 +955,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             if (SweepConfirmModeSetting == SweepConfirmMode.RequireClose
+                && SweepSourceSetting != SweepSource.SwingHighLow
                 && TimeInSession(Times[drSeriesIndex][0])
                 && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
             {
@@ -1094,7 +1169,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? currentDrLow + drHeight * (TpPercentOfDr / 100.0)
                 : currentDrHigh - drHeight * (TpPercentOfDr / 100.0);
 
+            double entryPrice = UseLimitEntries
+                ? GetLimitEntryPrice(sweepSetupDirection, fvgLower, fvgUpper)
+                : Close[0];
+
             double stop = sweepSetupStopPrice;
+            if (SweepSourceSetting == SweepSource.SwingHighLow)
+                stop = bullishFvg ? Low[2] : High[2];
+
             string signal = sweepSetupDirection == SetupDirection.Long ? "Sweeper_Long" : "Sweeper_Short";
 
             LogDebug(string.Format(
@@ -1105,9 +1187,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 sweepSetupDirection == SetupDirection.Long ? "bullish" : "bearish"));
 
             activeEntrySignal = signal;
-            activeEntryPrice = UseLimitEntries
-                ? GetLimitEntryPrice(sweepSetupDirection, fvgLower, fvgUpper)
-                : Close[0];
+            activeEntryPrice = entryPrice;
             activeStopPrice = stop;
             activeTpPrice = tp;
             trailingActive = false;
@@ -1294,7 +1374,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             for (int i = 0; i < sweepLines.Count; i++)
             {
                 SweepLine line = sweepLines[i];
-                if (line == null)
+                if (line == null || !line.IsActive)
                     continue;
 
                 Draw.Line(
@@ -1309,6 +1389,150 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     DashStyleHelper.Solid,
                     SweepLineWidth
                 );
+            }
+        }
+
+        private void ClearSweepLines()
+        {
+            if (sweepLines == null || sweepLines.Count == 0)
+                return;
+
+            for (int i = 0; i < sweepLines.Count; i++)
+            {
+                if (!string.IsNullOrEmpty(sweepLines[i].Tag))
+                    RemoveDrawObject(sweepLines[i].Tag);
+            }
+            sweepLines.Clear();
+        }
+
+        private void UpdateSwingLinesDraw()
+        {
+            if (swingLines == null || swingLines.Count == 0)
+                return;
+
+            for (int i = 0; i < swingLines.Count; i++)
+            {
+                SwingLine line = swingLines[i];
+                if (line == null || !line.IsActive)
+                    continue;
+
+                bool hit = line.IsHigh ? High[0] >= line.Price : Low[0] <= line.Price;
+                line.EndTime = Time[0];
+
+                Draw.Line(
+                    this,
+                    line.Tag,
+                    false,
+                    line.StartTime,
+                    line.Price,
+                    line.EndTime,
+                    line.Price,
+                    SwingLineBrush,
+                    DashStyleHelper.Solid,
+                    1
+                );
+
+                if (hit)
+                {
+                    if (DebugLogging)
+                    {
+                        LogDebug(string.Format(
+                            "Swing line hit {0} price={1:F2} time={2:yyyy-MM-dd HH:mm}",
+                            line.IsHigh ? "HIGH" : "LOW",
+                            line.Price,
+                            Time[0]));
+                    }
+                    line.IsActive = false;
+                }
+            }
+        }
+
+        private void ClearSwingLines()
+        {
+            if (swingLines == null || swingLines.Count == 0)
+                return;
+
+            for (int i = 0; i < swingLines.Count; i++)
+            {
+                if (!string.IsNullOrEmpty(swingLines[i].Tag))
+                    RemoveDrawObject(swingLines[i].Tag);
+            }
+            swingLines.Clear();
+        }
+
+        private void UpdateSwingLiquidityPrimary()
+        {
+            if (SweepSourceSetting != SweepSource.SwingHighLow)
+                return;
+
+            if (SwingDrawBars <= 0)
+            {
+                ClearSwingLines();
+                return;
+            }
+
+            if (CurrentBar < SweepSwingStrength * 2)
+                return;
+
+            int pivotBarsAgo = SweepSwingStrength;
+            if (IsSwingHighAt(pivotBarsAgo, SweepSwingStrength))
+            {
+                double price = High[pivotBarsAgo];
+                if (!WasSwingLevelSwept(pivotBarsAgo, price, true))
+                    AddSwingLine(true, pivotBarsAgo, price);
+            }
+            if (IsSwingLowAt(pivotBarsAgo, SweepSwingStrength))
+            {
+                double price = Low[pivotBarsAgo];
+                if (!WasSwingLevelSwept(pivotBarsAgo, price, false))
+                    AddSwingLine(false, pivotBarsAgo, price);
+            }
+
+            PruneSwingLines();
+        }
+
+        private void AddSwingLine(bool isHigh, int barsAgo, double price)
+        {
+            int startBarIndex = CurrentBar - barsAgo;
+            DateTime startTime = Time[barsAgo];
+            string tag = string.Format("Sweeper_Swing_{0}_{1:yyyyMMdd_HHmmss}", isHigh ? "H" : "L", startTime);
+
+            SwingLine line = new SwingLine
+            {
+                Tag = tag,
+                Price = price,
+                StartBarIndex = startBarIndex,
+                StartTime = startTime,
+                EndTime = startTime,
+                IsActive = true,
+                IsHigh = isHigh
+            };
+
+            swingLines.Add(line);
+            if (DebugLogging)
+            {
+                LogDebug(string.Format(
+                    "Swing line created {0} price={1:F2} time={2:yyyy-MM-dd HH:mm} bar={3}",
+                    isHigh ? "HIGH" : "LOW",
+                    price,
+                    startTime,
+                    startBarIndex));
+            }
+
+        }
+
+        private void PruneSwingLines()
+        {
+            int cutoffIndex = CurrentBar - SwingDrawBars;
+            for (int i = swingLines.Count - 1; i >= 0; i--)
+            {
+                SwingLine line = swingLines[i];
+                if (line.StartBarIndex < cutoffIndex)
+                {
+                    if (!string.IsNullOrEmpty(line.Tag))
+                        RemoveDrawObject(line.Tag);
+                    swingLines.RemoveAt(i);
+                }
             }
         }
         private void ClearPendingSweepLine()
@@ -1338,6 +1562,63 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int sweptIndex;
             double sweptPrice;
             bool requireSweepClose = SweepConfirmModeSetting == SweepConfirmMode.RequireClose;
+
+            if (SweepSourceSetting == SweepSource.SwingHighLow)
+            {
+                SwingLine swingLine;
+                if (TryFindActiveSwingHigh(out swingLine))
+                {
+                    sweptPrice = swingLine.Price;
+                    bool wickValid = High[0] <= currentDrHigh && High[0] >= redHigh;
+                    bool sweepHit = High[0] > sweptPrice && wickValid;
+                    bool closeConfirm = close < sweptPrice;
+                    if (sweepHit && (!requireSweepClose || closeConfirm))
+                    {
+                        LogDebug(string.Format(
+                            "Sweep SHORT armed. SweptHigh={0:F2} CurrHigh={1:F2} Close={2:F2}",
+                            sweptPrice, High[0], close), true);
+                        double stop;
+                        if (!TryGetClosestSwingStop(SetupDirection.Short, Close[0], out stop))
+                            stop = sweptPrice + TickSize;
+                        LogDebug(string.Format(
+                            "Pending sweep line set (SHORT). Price={0:F2} StartTime={1:yyyy-MM-dd HH:mm}",
+                            sweptPrice, swingLine.StartTime));
+                        if (sweepSetupActive)
+                            ClearPendingSweepLine();
+                        SetPendingSweepLine(true, sweptPrice, swingLine.StartTime);
+                        ArmSweepSetupSwing(SetupDirection.Short, stop);
+                        swingLine.IsActive = false;
+                        return;
+                    }
+                }
+
+                if (TryFindActiveSwingLow(out swingLine))
+                {
+                    sweptPrice = swingLine.Price;
+                    bool wickValid = Low[0] >= currentDrLow && Low[0] <= redLow;
+                    bool sweepHit = Low[0] < sweptPrice && wickValid;
+                    bool closeConfirm = close > sweptPrice;
+                    if (sweepHit && (!requireSweepClose || closeConfirm))
+                    {
+                        LogDebug(string.Format(
+                            "Sweep LONG armed. SweptLow={0:F2} CurrLow={1:F2} Close={2:F2}",
+                            sweptPrice, Low[0], close), true);
+                        double stop;
+                        if (!TryGetClosestSwingStop(SetupDirection.Long, Close[0], out stop))
+                            stop = sweptPrice - TickSize;
+                        LogDebug(string.Format(
+                            "Pending sweep line set (LONG). Price={0:F2} StartTime={1:yyyy-MM-dd HH:mm}",
+                            sweptPrice, swingLine.StartTime));
+                        if (sweepSetupActive)
+                            ClearPendingSweepLine();
+                        SetPendingSweepLine(false, sweptPrice, swingLine.StartTime);
+                        ArmSweepSetupSwing(SetupDirection.Long, stop);
+                        swingLine.IsActive = false;
+                    }
+                }
+
+                return;
+            }
 
             if (TryFindUnsweptHigh(out sweptIndex, out sweptPrice))
             {
@@ -1387,14 +1668,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             if (Position.MarketPosition != MarketPosition.Flat)
                 return;
-            if (sweepSetupActive)
+            if (sweepSetupActive && SweepSourceSetting != SweepSource.SwingHighLow)
                 return;
-            if (CurrentBars[drSeriesIndex] < 2)
-                return;
-            if (!TimeInSession(Times[drSeriesIndex][0]) || TimeInNoTradesAfter(Times[drSeriesIndex][0]))
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
                 return;
 
-            double close = Closes[drSeriesIndex][0];
+            double close = Close[0];
             if (!IsInsideDr(close) || !IsOutsideRedZone(close))
                 return;
 
@@ -1403,6 +1682,70 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             int sweptIndex;
             double sweptPrice;
+
+            if (SweepSourceSetting == SweepSource.SwingHighLow)
+            {
+                SwingLine swingLine;
+                if (TryFindActiveSwingHigh(out swingLine))
+                {
+                    sweptPrice = swingLine.Price;
+                    double seriesHigh = High[0];
+                    bool wickValid = seriesHigh <= currentDrHigh && seriesHigh >= redHigh;
+                    if (seriesHigh > sweptPrice && wickValid)
+                    {
+                        LogDebug(string.Format(
+                            "Sweep SHORT armed (skip close). SweptHigh={0:F2} CurrHigh={1:F2} Close={2:F2}",
+                            sweptPrice, seriesHigh, close), true);
+                        LogDebug(string.Format(
+                            "Pending sweep line set (SHORT). Price={0:F2} StartTime={1:yyyy-MM-dd HH:mm}",
+                            sweptPrice, swingLine.StartTime));
+                        if (sweepSetupActive)
+                            ClearPendingSweepLine();
+                        SetPendingSweepLine(true, sweptPrice, swingLine.StartTime);
+                        double stop;
+                        if (!TryGetClosestSwingStop(SetupDirection.Short, Close[0], out stop))
+                            stop = sweptPrice + TickSize;
+                        ArmSweepSetupSwing(SetupDirection.Short, stop);
+                        swingLine.IsActive = false;
+                        return;
+                    }
+                }
+
+                if (TryFindActiveSwingLow(out swingLine))
+                {
+                    sweptPrice = swingLine.Price;
+                    double seriesLow = Low[0];
+                    bool wickValid = seriesLow >= currentDrLow && seriesLow <= redLow;
+                    if (seriesLow < sweptPrice && wickValid)
+                    {
+                        LogDebug(string.Format(
+                            "Sweep LONG armed (skip close). SweptLow={0:F2} CurrLow={1:F2} Close={2:F2}",
+                            sweptPrice, seriesLow, close), true);
+                        LogDebug(string.Format(
+                            "Pending sweep line set (LONG). Price={0:F2} StartTime={1:yyyy-MM-dd HH:mm}",
+                            sweptPrice, swingLine.StartTime));
+                        if (sweepSetupActive)
+                            ClearPendingSweepLine();
+                        SetPendingSweepLine(false, sweptPrice, swingLine.StartTime);
+                        double stop;
+                        if (!TryGetClosestSwingStop(SetupDirection.Long, Close[0], out stop))
+                            stop = sweptPrice - TickSize;
+                        ArmSweepSetupSwing(SetupDirection.Long, stop);
+                        swingLine.IsActive = false;
+                    }
+                }
+
+                return;
+            }
+
+            if (CurrentBars[drSeriesIndex] < 2)
+                return;
+            if (!TimeInSession(Times[drSeriesIndex][0]) || TimeInNoTradesAfter(Times[drSeriesIndex][0]))
+                return;
+
+            close = Closes[drSeriesIndex][0];
+            if (!IsInsideDr(close) || !IsOutsideRedZone(close))
+                return;
 
             if (TryFindUnsweptHighOnSeries(drSeriesIndex, out sweptIndex, out sweptPrice))
             {
@@ -1457,6 +1800,106 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sweepSetupStopPrice = stopPrice;
         }
 
+        private void ArmSweepSetupSwing(SetupDirection direction, double stopPrice)
+        {
+            sweepSetupActive = true;
+            sweepSetupDirection = direction;
+            sweepSetupStartTime = Time[0];
+            sweepSetupEndTime = sweepSetupStartTime.AddMinutes(GetDrPeriodMinutes());
+            sweepSetupStopPrice = stopPrice;
+        }
+
+        private bool TryGetClosestSwingStop(SetupDirection direction, double referencePrice, out double stopPrice)
+        {
+            stopPrice = 0;
+            if (swingLines == null || swingLines.Count == 0)
+                return false;
+
+            bool wantHigh = direction == SetupDirection.Short;
+            double best = 0;
+            bool found = false;
+
+            for (int i = 0; i < swingLines.Count; i++)
+            {
+                SwingLine line = swingLines[i];
+                if (line == null || !line.IsActive)
+                    continue;
+                if (line.IsHigh != wantHigh)
+                    continue;
+
+                double price = line.Price;
+                if (DebugLogging)
+                {
+                    LogDebug(string.Format(
+                        "Swing stop candidate dir={0} price={1:F2} ref={2:F2} time={3:yyyy-MM-dd HH:mm}",
+                        direction,
+                        price,
+                        referencePrice,
+                        line.StartTime));
+                }
+                if (direction == SetupDirection.Long)
+                {
+                    if (price >= referencePrice)
+                        continue;
+                    // Use the closest active swing low below the reference.
+                    if (!found || price > best)
+                    {
+                        best = price;
+                        found = true;
+                    }
+                }
+                else
+                {
+                    if (price <= referencePrice)
+                        continue;
+                    // Use the closest active swing high above the reference.
+                    if (!found || price < best)
+                    {
+                        best = price;
+                        found = true;
+                    }
+                }
+            }
+
+            if (!found)
+                return false;
+
+            stopPrice = best + (direction == SetupDirection.Short ? TickSize : -TickSize);
+            if (DebugLogging)
+            {
+                LogDebug(string.Format(
+                    "Swing stop selected dir={0} stop={1:F2} ref={2:F2}",
+                    direction,
+                    stopPrice,
+                    referencePrice));
+            }
+            return true;
+        }
+
+
+        private bool WasSwingLevelSwept(int pivotBarsAgo, double price, bool isHigh)
+        {
+            if (pivotBarsAgo <= 0)
+                return false;
+
+            for (int barsAgo = 0; barsAgo < pivotBarsAgo; barsAgo++)
+            {
+                if (isHigh)
+                {
+                    if (High[barsAgo] >= price)
+                        return true;
+                }
+                else
+                {
+                    if (Low[barsAgo] <= price)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+
         private int GetDrPeriodMinutes()
         {
             switch (DrBarsPeriodType)
@@ -1497,6 +1940,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 barsAgo = i;
                 high = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryFindActiveSwingHigh(out SwingLine swingLine)
+        {
+            swingLine = null;
+            if (swingLines == null || swingLines.Count == 0)
+                return false;
+
+            int currentIndex = CurrentBar;
+            int cutoffIndex = currentIndex - SweepLookbackBars;
+
+            for (int i = swingLines.Count - 1; i >= 0; i--)
+            {
+                SwingLine line = swingLines[i];
+                if (line == null || !line.IsActive || !line.IsHigh)
+                    continue;
+                if (SweepLookbackBars > 0 && line.StartBarIndex < cutoffIndex)
+                    continue;
+
+                swingLine = line;
                 return true;
             }
 
@@ -1584,6 +2051,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 barsAgo = i;
                 low = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryFindActiveSwingLow(out SwingLine swingLine)
+        {
+            swingLine = null;
+            if (swingLines == null || swingLines.Count == 0)
+                return false;
+
+            int currentIndex = CurrentBar;
+            int cutoffIndex = currentIndex - SweepLookbackBars;
+
+            for (int i = swingLines.Count - 1; i >= 0; i--)
+            {
+                SwingLine line = swingLines[i];
+                if (line == null || !line.IsActive || line.IsHigh)
+                    continue;
+                if (SweepLookbackBars > 0 && line.StartBarIndex < cutoffIndex)
+                    continue;
+
+                swingLine = line;
                 return true;
             }
 
