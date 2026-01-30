@@ -227,6 +227,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double London_MaxSessionGain { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Use Market Entry", Description = "If true, entries use market orders instead of limit orders for London session", Order = 15, GroupName = "London Parameters")]
+        public bool London_UseMarketEntry { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "London Time")]
         public TimeSpan London_SessionStart
         {
@@ -323,6 +327,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Max Session Gain (Points)", Description = "Pause trading for the rest of the New York session after this realized gain in points. 0 = disabled.", Order = 14, GroupName = "New York Parameters")]
         public double NewYork_MaxSessionGain { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Market Entry", Description = "If true, entries use market orders instead of limit orders for New York session", Order = 15, GroupName = "New York Parameters")]
+        public bool NewYork_UseMarketEntry { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Flatten On Max Session Gain", Description = "If true, flatten open positions when max session gain is reached.", Order = 1, GroupName = "Session Limits")]
@@ -508,6 +516,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan activeSkipEnd;
         private TimeSpan activeSkip2Start;
         private TimeSpan activeSkip2End;
+        private bool activeUseMarketEntry;
 		private TimeZoneInfo targetTimeZone;
 		private TimeZoneInfo londonTimeZone;
         private int lineTagCounter = 0;
@@ -659,6 +668,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_SLPercentFirstCandle = 100;
                 London_MaxSLPoints = 112;
                 London_MaxSessionGain = 160;
+                London_UseMarketEntry = false;
                 London_SessionStart  = new TimeSpan(1, 30, 0);
                 London_SessionEnd    = new TimeSpan(5, 30, 0);
                 London_NoTradesAfter = new TimeSpan(5, 00, 0);
@@ -681,6 +691,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_SLPercentFirstCandle = 100;
                 NewYork_MaxSLPoints = 139;
                 NewYork_MaxSessionGain = 145;
+                NewYork_UseMarketEntry = false;
                 NewYork_SessionStart = new TimeSpan(9, 40, 0);
                 NewYork_SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
@@ -1257,10 +1268,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         }
                     }
 
-						SetStopLoss("LongEntry", CalculationMode.Price, paddedLongSL, false);
+	                    SetStopLoss("LongEntry", CalculationMode.Price, paddedLongSL, false);
 	                    SetProfitTarget("LongEntry", CalculationMode.Price, longTP);
 	                    QueueEntryWebhookLong(longEntry, longTP, paddedLongSL);
-						EnterLongLimit(0, true, activeContracts, longEntry, "LongEntry");
+						if (activeUseMarketEntry)
+							EnterLong(activeContracts, "LongEntry");
+						else
+							EnterLongLimit(0, true, activeContracts, longEntry, "LongEntry");
 
                     SetHedgeLock(instrument, desiredDirection); 
 
@@ -1382,7 +1396,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                    SetStopLoss("ShortEntry", CalculationMode.Price, paddedShortSL, false);
 	                    SetProfitTarget("ShortEntry", CalculationMode.Price, shortTP);
 	                    QueueEntryWebhookShort(shortEntry, shortTP, paddedShortSL);
-						EnterShortLimit(0, true, activeContracts, shortEntry, "ShortEntry");
+						if (activeUseMarketEntry)
+							EnterShort(activeContracts, "ShortEntry");
+						else
+							EnterShortLimit(0, true, activeContracts, shortEntry, "ShortEntry");
 
                     SetHedgeLock(instrument, desiredDirection);
 
@@ -1463,7 +1480,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         {
                             Print($"{Time[0]} - 📤 Webhook sending initial LONG order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
                         }
-	                    SendWebhook("buy", sendEntryPrice, sendTP, sendSL);
+	                    SendWebhook("buy", sendEntryPrice, sendTP, sendSL, activeUseMarketEntry);
 	                    pendingLongWebhook = false;
 	                    lastLongWebhookOrderId = orderId;
                         lastLongWebhookEntry = sendEntryPrice;
@@ -1513,7 +1530,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         {
                             Print($"{Time[0]} - 📤 Webhook sending initial SHORT order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
                         }
-	                    SendWebhook("sell", sendEntryPrice, sendTP, sendSL);
+	                    SendWebhook("sell", sendEntryPrice, sendTP, sendSL, activeUseMarketEntry);
 	                    pendingShortWebhook = false;
 	                    lastShortWebhookOrderId = orderId;
                         lastShortWebhookEntry = sendEntryPrice;
@@ -3662,6 +3679,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeSLPercentFirstCandle = London_SLPercentFirstCandle;
                     activeMaxSLPoints = London_MaxSLPoints;
                     activeMaxSessionGain = London_MaxSessionGain;
+                    activeUseMarketEntry = London_UseMarketEntry;
 
                     activeSessionStart  = London_SessionStart;
                     activeSessionEnd    = London_SessionEnd;
@@ -3700,6 +3718,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeSLPercentFirstCandle = NewYork_SLPercentFirstCandle;
                     activeMaxSLPoints = NewYork_MaxSLPoints;
                     activeMaxSessionGain = NewYork_MaxSessionGain;
+                    activeUseMarketEntry = NewYork_UseMarketEntry;
 
                     activeSessionStart  = NewYork_SessionStart;
                     activeSessionEnd    = NewYork_SessionEnd;
@@ -3909,7 +3928,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	            SendWebhook("exit");
 	        }
 
-        private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0)
+        private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false)
         {
             if (State != State.Realtime)
             return;
@@ -3935,7 +3954,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     case "buy":
                     case "sell":
-                        json = $@"
+                        if (isMarketEntry)
+                        {
+                            json = $@"
+                        {{
+                            ""ticker"": ""{ticker}"",
+                            ""action"": ""{eventType}"",
+                            ""orderType"": ""market"",
+                            ""quantityType"": ""fixed_quantity"",
+                            ""quantity"": {activeContracts},
+                            ""signalPrice"": {entryStr},
+                            ""time"": ""{time}"",
+                            ""takeProfit"": {{
+                                ""limitPrice"": {tpStr}
+                            }},
+                            ""stopLoss"": {{
+                                ""type"": ""stop"",
+                                ""stopPrice"": {slStr}
+                            }}
+                        }}";
+                            payloadLog = $"{eventType.ToUpper()} market tp={tpStr} sl={slStr}";
+                        }
+                        else
+                        {
+                            json = $@"
                         {{
                             ""ticker"": ""{ticker}"",
                             ""action"": ""{eventType}"",
@@ -3953,7 +3995,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                                 ""stopPrice"": {slStr}
                             }}
                         }}";
-                        payloadLog = $"{eventType.ToUpper()} limit={entryStr} tp={tpStr} sl={slStr}";
+                            payloadLog = $"{eventType.ToUpper()} limit={entryStr} tp={tpStr} sl={slStr}";
+                        }
                         break;
 
 	                    case "exit":
