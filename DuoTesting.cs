@@ -15,6 +15,7 @@
     using NinjaTrader.Gui;
     using NinjaTrader.Gui.Tools;
     using NinjaTrader.NinjaScript;
+    using NinjaTrader.NinjaScript.Indicators;
     using NinjaTrader.NinjaScript.DrawingTools;
 #endregion
 
@@ -44,6 +45,124 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Reverse On Signal", Description = "If true, flatten current position when a reverse signal is generated, then place the new limit order", Order = 5, GroupName = "Config")]
         public bool ReverseOnSignal { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use iFVG Addon", Description = "Enable iFVG add-on override entries", Order = 6, GroupName = "Config")]
+        public bool UseIfvgAddon { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Min Size (Points)", Description = "Minimum iFVG size in price units", Order = 1, GroupName = "London iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double London_IfvgMinSizePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Max Size (Points)", Description = "Maximum iFVG size in price units (0 = no max)", Order = 2, GroupName = "London iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double London_IfvgMaxSizePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Min TP/SL Distance (Points)", Description = "Minimum distance between entry and pivot targets/stops", Order = 3, GroupName = "London iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double London_IfvgMinTpSlDistancePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Swing Strength", Description = "Bars on each side required to form a swing pivot", Order = 4, GroupName = "London iFVG Addon")]
+        [Range(1, int.MaxValue)]
+        public int London_IfvgSwingStrength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Swing Draw Bars", Description = "Number of bars to keep swing sweeps active", Order = 5, GroupName = "London iFVG Addon")]
+        [Range(0, int.MaxValue)]
+        public int London_IfvgSwingDrawBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Max Bars Between Sweep And iFVG", Description = "Maximum bars allowed between the sweep and the iFVG invalidation", Order = 6, GroupName = "London iFVG Addon")]
+        [Range(0, int.MaxValue)]
+        public int London_IfvgMaxBarsBetweenSweepAndIfvg { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London Use iFVG Break-Even Wick", Description = "Enable break-even wick logic for iFVG", Order = 7, GroupName = "London iFVG Addon")]
+        public bool London_IfvgUseBreakEvenWickLine { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London Use iFVG Volume SMA Filter", Description = "Require fast volume SMA to exceed slow SMA by a multiplier", Order = 8, GroupName = "London iFVG Addon")]
+        public bool London_IfvgUseVolumeSmaFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Volume SMA Fast Period", Description = "Fast period for the volume SMA filter", Order = 9, GroupName = "London iFVG Addon")]
+        [Range(1, int.MaxValue)]
+        public int London_IfvgVolumeFastSmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Volume SMA Slow Period", Description = "Slow period for the volume SMA filter", Order = 10, GroupName = "London iFVG Addon")]
+        [Range(1, int.MaxValue)]
+        public int London_IfvgVolumeSlowSmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London iFVG Volume SMA Multiplier", Description = "Fast volume SMA must exceed slow SMA times this multiplier", Order = 11, GroupName = "London iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double London_IfvgVolumeSmaMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Min Size (Points)", Description = "Minimum iFVG size in price units", Order = 1, GroupName = "New York iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double NewYork_IfvgMinSizePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Max Size (Points)", Description = "Maximum iFVG size in price units (0 = no max)", Order = 2, GroupName = "New York iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double NewYork_IfvgMaxSizePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Min TP/SL Distance (Points)", Description = "Minimum distance between entry and pivot targets/stops", Order = 3, GroupName = "New York iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double NewYork_IfvgMinTpSlDistancePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Swing Strength", Description = "Bars on each side required to form a swing pivot", Order = 4, GroupName = "New York iFVG Addon")]
+        [Range(1, int.MaxValue)]
+        public int NewYork_IfvgSwingStrength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Swing Draw Bars", Description = "Number of bars to keep swing sweeps active", Order = 5, GroupName = "New York iFVG Addon")]
+        [Range(0, int.MaxValue)]
+        public int NewYork_IfvgSwingDrawBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Max Bars Between Sweep And iFVG", Description = "Maximum bars allowed between the sweep and the iFVG invalidation", Order = 6, GroupName = "New York iFVG Addon")]
+        [Range(0, int.MaxValue)]
+        public int NewYork_IfvgMaxBarsBetweenSweepAndIfvg { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York Use iFVG Break-Even Wick", Description = "Enable break-even wick logic for iFVG", Order = 7, GroupName = "New York iFVG Addon")]
+        public bool NewYork_IfvgUseBreakEvenWickLine { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York Use iFVG Volume SMA Filter", Description = "Require fast volume SMA to exceed slow SMA by a multiplier", Order = 8, GroupName = "New York iFVG Addon")]
+        public bool NewYork_IfvgUseVolumeSmaFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Volume SMA Fast Period", Description = "Fast period for the volume SMA filter", Order = 9, GroupName = "New York iFVG Addon")]
+        [Range(1, int.MaxValue)]
+        public int NewYork_IfvgVolumeFastSmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Volume SMA Slow Period", Description = "Slow period for the volume SMA filter", Order = 10, GroupName = "New York iFVG Addon")]
+        [Range(1, int.MaxValue)]
+        public int NewYork_IfvgVolumeSlowSmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York iFVG Volume SMA Multiplier", Description = "Fast volume SMA must exceed slow SMA times this multiplier", Order = 11, GroupName = "New York iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double NewYork_IfvgVolumeSmaMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG Debug Logging", Description = "Enable iFVG add-on debug logs", Order = 14, GroupName = "iFVG Addon")]
+        public bool IfvgDebugLogging { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG Verbose Logging", Description = "Enable iFVG add-on verbose logs", Order = 15, GroupName = "iFVG Addon")]
+        public bool IfvgVerboseDebugLogging { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "London Parameters", Order = 1)]
@@ -450,6 +569,70 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static readonly string hedgeLockFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "AntiHedgeLock.csv");
         private double sessionStartCumProfit;
         private bool sessionGainLimitReached;
+        private List<IfvgBox> ifvgActiveFvgs;
+        private List<IfvgBox> ifvgBreakEvenFvgs;
+        private List<IfvgSwingLine> ifvgSwingLines;
+        private int ifvgCounter;
+        private bool ifvgOverrideActive;
+        private IfvgDirection? ifvgActiveDirection;
+        private double ifvgEntryLower;
+        private double ifvgEntryUpper;
+        private int ifvgLastEntryBar = -1;
+        private SMA ifvgVolumeFastSmaLondon;
+        private SMA ifvgVolumeSlowSmaLondon;
+        private SMA ifvgVolumeFastSmaNewYork;
+        private SMA ifvgVolumeSlowSmaNewYork;
+        private SMA ifvgVolumeFastSmaActive;
+        private SMA ifvgVolumeSlowSmaActive;
+        private IfvgSweepEvent ifvgLastSwingSweep;
+        private bool ifvgBreakEvenActive;
+        private bool ifvgBreakEvenTriggered;
+        private double ifvgBreakEvenPrice;
+        private IfvgDirection? ifvgBreakEvenDirection;
+        private string ifvgActiveTradeTag;
+        private string ifvgLastTradeLabelPrinted;
+        private double activeIfvgMinSizePoints;
+        private double activeIfvgMaxSizePoints;
+        private double activeIfvgMinTpSlDistancePoints;
+        private int activeIfvgSwingStrength;
+        private int activeIfvgSwingDrawBars;
+        private int activeIfvgMaxBarsBetweenSweepAndIfvg;
+        private bool activeIfvgUseBreakEvenWickLine;
+        private bool activeIfvgUseVolumeSmaFilter;
+        private int activeIfvgVolumeFastSmaPeriod;
+        private int activeIfvgVolumeSlowSmaPeriod;
+        private double activeIfvgVolumeSmaMultiplier;
+        private const string IfvgLongSignalName = "iFVG_Long";
+        private const string IfvgShortSignalName = "iFVG_Short";
+
+        private class IfvgBox
+        {
+            public string Tag;
+            public int StartBarIndex;
+            public int EndBarIndex;
+            public int CreatedBarIndex;
+            public double Upper;
+            public double Lower;
+            public bool IsBullish;
+            public bool IsActive;
+        }
+
+        private class IfvgSwingLine
+        {
+            public string Tag;
+            public double Price;
+            public int StartBarIndex;
+            public int EndBarIndex;
+            public bool IsActive;
+            public bool IsHigh;
+        }
+
+        private class IfvgSweepEvent
+        {
+            public IfvgDirection Direction;
+            public double Price;
+            public int BarIndex;
+        }
 
         protected override void OnStateChange()
         {
@@ -521,6 +704,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 WebhookUrl = "";
                 ReverseOnSignal = true;
                 FlattenOnMaxSessionGain = false;
+                UseIfvgAddon = false;
+                London_IfvgMinSizePoints = 10;
+                London_IfvgMaxSizePoints = 50;
+                London_IfvgMinTpSlDistancePoints = 5;
+                London_IfvgSwingStrength = 10;
+                London_IfvgSwingDrawBars = 200;
+                London_IfvgMaxBarsBetweenSweepAndIfvg = 20;
+                London_IfvgUseBreakEvenWickLine = false;
+                London_IfvgUseVolumeSmaFilter = false;
+                London_IfvgVolumeFastSmaPeriod = 9;
+                London_IfvgVolumeSlowSmaPeriod = 21;
+                London_IfvgVolumeSmaMultiplier = 1;
+                NewYork_IfvgMinSizePoints = 10;
+                NewYork_IfvgMaxSizePoints = 50;
+                NewYork_IfvgMinTpSlDistancePoints = 5;
+                NewYork_IfvgSwingStrength = 10;
+                NewYork_IfvgSwingDrawBars = 200;
+                NewYork_IfvgMaxBarsBetweenSweepAndIfvg = 20;
+                NewYork_IfvgUseBreakEvenWickLine = false;
+                NewYork_IfvgUseVolumeSmaFilter = false;
+                NewYork_IfvgVolumeFastSmaPeriod = 9;
+                NewYork_IfvgVolumeSlowSmaPeriod = 21;
+                NewYork_IfvgVolumeSmaMultiplier = 1;
+                IfvgDebugLogging = true;
+                IfvgVerboseDebugLogging = false;
             }
             else if (State == State.DataLoaded)
             {
@@ -532,6 +740,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // heartbeatTimer.Start();
 
                 ApplyStopLossPreset(London_SLPresetSetting);
+                ifvgActiveFvgs = new List<IfvgBox>();
+                ifvgBreakEvenFvgs = new List<IfvgBox>();
+                ifvgSwingLines = new List<IfvgSwingLine>();
+                ifvgCounter = 0;
+                ifvgOverrideActive = false;
+                ifvgActiveDirection = null;
+                ifvgEntryLower = 0;
+                ifvgEntryUpper = 0;
+                ifvgVolumeFastSmaLondon = SMA(Volume, London_IfvgVolumeFastSmaPeriod);
+                ifvgVolumeSlowSmaLondon = SMA(Volume, London_IfvgVolumeSlowSmaPeriod);
+                ifvgVolumeFastSmaNewYork = SMA(Volume, NewYork_IfvgVolumeFastSmaPeriod);
+                ifvgVolumeSlowSmaNewYork = SMA(Volume, NewYork_IfvgVolumeSlowSmaPeriod);
             }
             else if (State == State.Configure)
             {
@@ -589,6 +809,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 shortExitBar = -1;
             
                 displayText = "Waiting...";
+
+                if (UseIfvgAddon && ifvgActiveFvgs != null)
+                {
+                    ifvgActiveFvgs.Clear();
+                    if (ifvgBreakEvenFvgs != null)
+                        ifvgBreakEvenFvgs.Clear();
+                    if (ifvgSwingLines != null)
+                        ifvgSwingLines.Clear();
+                    ifvgCounter = 0;
+                    ifvgOverrideActive = false;
+                    ifvgActiveDirection = null;
+                    ifvgEntryLower = 0;
+                    ifvgEntryUpper = 0;
+                    ifvgLastSwingSweep = null;
+                    ifvgBreakEvenActive = false;
+                    ifvgBreakEvenTriggered = false;
+                    ifvgBreakEvenPrice = 0;
+                    ifvgBreakEvenDirection = null;
+                    ifvgActiveTradeTag = null;
+                    ifvgLastTradeLabelPrinted = null;
+                }
             
                 Print($"{Time[0]} - New session started, state reset.");
 				}
@@ -709,6 +950,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ✅ Always keep preview lines updating while in session
             UpdatePreviewLines();
 
+            if (UseIfvgAddon)
+                UpdateIfvgAddon();
+
             // 🔒 HARD GUARD: no entries after London_NoTradesAfter (but keep lines)
             if (TimeInNoTradesAfter(Time[0])) {
 				CancelEntryIfAfterNoTrades();
@@ -722,6 +966,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SendWebhookCancelSafe();
                 return;
             }
+
+            if (UseIfvgAddon && ifvgOverrideActive)
+                return;
 
             // 🔒 HARD GUARD: no signal/order logic while a position is open
             if (Position.MarketPosition != MarketPosition.Flat)
@@ -1382,9 +1629,750 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return false;
         }
 
+        private void UpdateIfvgAddon()
+        {
+            if (CurrentBar < 2 || ifvgActiveFvgs == null)
+                return;
+
+            UpdateIfvgSwingLiquidity();
+            UpdateIfvgActiveFvgs();
+            UpdateIfvgBreakEvenFvgs();
+            DetectNewIfvg();
+
+            if (!ifvgOverrideActive)
+                return;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+                ResetIfvgOverride();
+            else
+            {
+                CheckIfvgExitOnCloseBeyondEntry();
+                CheckIfvgBreakEvenTrigger();
+            }
+        }
+
+        private void ResetIfvgOverride()
+        {
+            ifvgOverrideActive = false;
+            ifvgActiveDirection = null;
+            ifvgEntryLower = 0;
+            ifvgEntryUpper = 0;
+            ifvgBreakEvenActive = false;
+            ifvgBreakEvenTriggered = false;
+            ifvgBreakEvenPrice = 0;
+            ifvgBreakEvenDirection = null;
+            ifvgActiveTradeTag = null;
+            ifvgLastTradeLabelPrinted = null;
+        }
+
+        private void CheckIfvgExitOnCloseBeyondEntry()
+        {
+            if (!ifvgOverrideActive || ifvgActiveDirection == null)
+                return;
+
+            if (ifvgActiveDirection == IfvgDirection.Long && Position.MarketPosition == MarketPosition.Long && Close[0] < ifvgEntryLower)
+                ExitLong("iFVGCloseExit", IfvgLongSignalName);
+            else if (ifvgActiveDirection == IfvgDirection.Short && Position.MarketPosition == MarketPosition.Short && Close[0] > ifvgEntryUpper)
+                ExitShort("iFVGCloseExit", IfvgShortSignalName);
+        }
+
+        private void UpdateIfvgActiveFvgs()
+        {
+            if (ifvgActiveFvgs.Count == 0)
+                return;
+
+            for (int i = 0; i < ifvgActiveFvgs.Count; i++)
+            {
+                IfvgBox fvg = ifvgActiveFvgs[i];
+                if (!fvg.IsActive)
+                    continue;
+
+                bool invalidated = fvg.IsBullish
+                    ? (Close[0] < fvg.Lower && Close[0] < Open[0])
+                    : (Close[0] > fvg.Upper && Close[0] > Open[0]);
+
+                fvg.EndBarIndex = CurrentBar;
+
+                if (!invalidated)
+                    continue;
+
+                LogIfvgTrade(fvg.Tag, string.Format(
+                    "ENTRY ATTEMPT {0} fvgLower={1} fvgUpper={2} close={3}",
+                    fvg.IsBullish ? "bullish" : "bearish",
+                    fvg.Lower,
+                    fvg.Upper,
+                    Close[0]), true);
+
+                IfvgDirection direction = fvg.IsBullish ? IfvgDirection.Short : IfvgDirection.Long;
+                TryEnterIfvg(direction, fvg.Lower, fvg.Upper, fvg.Tag);
+                fvg.IsActive = false;
+            }
+        }
+
+        private void DetectNewIfvg()
+        {
+            bool bullishFvg = Low[0] > High[2];
+            bool bearishFvg = High[0] < Low[2];
+
+            if (!bullishFvg && !bearishFvg)
+                return;
+
+            LogIfvgVerbose(string.Format(
+                "FVG detected {0} low0={1} high2={2} high0={3} low2={4}",
+                bullishFvg ? "bullish" : "bearish",
+                Low[0],
+                High[2],
+                High[0],
+                Low[2]));
+
+            IfvgBox fvg = new IfvgBox
+            {
+                IsBullish = bullishFvg,
+                Lower = bullishFvg ? High[2] : High[0],
+                Upper = bullishFvg ? Low[0] : Low[2],
+                StartBarIndex = CurrentBar - 2,
+                EndBarIndex = CurrentBar,
+                CreatedBarIndex = CurrentBar,
+                IsActive = true,
+                Tag = string.Format("iFVG_{0}_{1:yyyyMMdd_HHmmss}", ifvgCounter++, Time[0])
+            };
+
+            if (ifvgBreakEvenFvgs != null)
+                ifvgBreakEvenFvgs.Add(fvg);
+
+            double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
+            if (activeIfvgMinSizePoints > 0 && fvgSizePoints < activeIfvgMinSizePoints)
+            {
+                LogIfvgVerbose(string.Format("FVG rejected: size {0} < min {1}", fvgSizePoints, activeIfvgMinSizePoints));
+                return;
+            }
+            if (activeIfvgMaxSizePoints > 0 && fvgSizePoints > activeIfvgMaxSizePoints)
+            {
+                LogIfvgVerbose(string.Format("FVG rejected: size {0} > max {1}", fvgSizePoints, activeIfvgMaxSizePoints));
+                return;
+            }
+
+            ifvgActiveFvgs.Add(fvg);
+        }
+
+        private void UpdateIfvgBreakEvenFvgs()
+        {
+            if (ifvgBreakEvenFvgs == null || ifvgBreakEvenFvgs.Count == 0)
+                return;
+
+            for (int i = 0; i < ifvgBreakEvenFvgs.Count; i++)
+            {
+                IfvgBox fvg = ifvgBreakEvenFvgs[i];
+                if (!fvg.IsActive)
+                    continue;
+
+                bool invalidated = fvg.IsBullish
+                    ? (Close[0] < fvg.Lower && Close[0] < Open[0])
+                    : (Close[0] > fvg.Upper && Close[0] > Open[0]);
+
+                if (invalidated)
+                    fvg.IsActive = false;
+            }
+        }
+
+        private void TryEnterIfvg(IfvgDirection direction, double fvgLower, double fvgUpper, string fvgTag)
+        {
+            if (!UseIfvgAddon)
+                return;
+
+            if (ifvgOverrideActive)
+            {
+                LogIfvgTrade(fvgTag, "BLOCKED (ActivePosition)", false);
+                return;
+            }
+
+            if (ifvgLastEntryBar == CurrentBar)
+            {
+                LogIfvgTrade(fvgTag, "BLOCKED (AlreadyEnteredThisBar)", false);
+                return;
+            }
+
+            if (!TimeInSession(Time[0]))
+            {
+                LogIfvgTrade(fvgTag, "BLOCKED (OutsideSession)", false);
+                return;
+            }
+
+            if (TimeInNoTradesAfter(Time[0]))
+            {
+                LogIfvgTrade(fvgTag, "BLOCKED (NoTradesAfter)", false);
+                return;
+            }
+
+            if (TimeInSkip(Time[0]))
+            {
+                LogIfvgTrade(fvgTag, "BLOCKED (SkipWindow)", false);
+                return;
+            }
+
+            if (HasReachedSessionGainLimit())
+                return;
+
+            IfvgSweepEvent sweep = GetEligibleIfvgSweep(direction, fvgTag);
+            if (sweep == null)
+                return;
+
+            if (!IfvgPassesVolumeSmaFilter(fvgTag))
+                return;
+
+            CancelOrder(longEntryOrder);
+            CancelOrder(shortEntryOrder);
+            SendWebhookCancelSafe();
+
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong("iFVGFlip");
+            else if (Position.MarketPosition == MarketPosition.Short)
+                ExitShort("iFVGFlip");
+
+            longLinesActive = false;
+            shortLinesActive = false;
+            longSignalBar = -1;
+            shortSignalBar = -1;
+            longExitBar = -1;
+            shortExitBar = -1;
+
+            double entryPrice = Close[0];
+            double firstTargetPrice;
+            int firstTargetBarsAgo;
+            bool hasFirstTarget = direction == IfvgDirection.Long
+                ? TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, activeIfvgMinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo)
+                : TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, activeIfvgMinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo);
+            if (!hasFirstTarget)
+            {
+                LogIfvgTrade(fvgTag, string.Format("BLOCKED (NoTarget: {0} entry={1})", direction, entryPrice), false);
+                return;
+            }
+
+            double targetPrice = firstTargetPrice;
+            int targetBarsAgo = firstTargetBarsAgo;
+
+            if (activeIfvgUseBreakEvenWickLine)
+            {
+                double minBeGap = activeIfvgMinTpSlDistancePoints;
+                bool foundTarget = false;
+                for (int occurrence = 2; occurrence <= 10; occurrence++)
+                {
+                    double candidatePrice;
+                    int candidateBarsAgo;
+                    bool hasCandidate = direction == IfvgDirection.Long
+                        ? TryGetNthBullishPivotHighAboveEntry(entryPrice, occurrence, activeIfvgMinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo)
+                        : TryGetNthBearishPivotLowBelowEntry(entryPrice, occurrence, activeIfvgMinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo);
+                    if (!hasCandidate)
+                        break;
+
+                    bool beyondBe = direction == IfvgDirection.Long
+                        ? candidatePrice > firstTargetPrice
+                        : candidatePrice < firstTargetPrice;
+                    bool farEnough = minBeGap <= 0 || Math.Abs(candidatePrice - firstTargetPrice) >= minBeGap;
+
+                    if (beyondBe && farEnough)
+                    {
+                        targetPrice = candidatePrice;
+                        targetBarsAgo = candidateBarsAgo;
+                        if (occurrence > 2)
+                            LogIfvgTrade(fvgTag, string.Format("TP adjusted (Pivot {0}) price={1} barsAgo={2}", occurrence, candidatePrice, candidateBarsAgo), false);
+                        foundTarget = true;
+                        break;
+                    }
+                }
+
+                if (!foundTarget)
+                {
+                    LogIfvgTrade(fvgTag, string.Format("BLOCKED (NoTargetBeyondBE: {0} entry={1})", direction, entryPrice), false);
+                    return;
+                }
+            }
+
+            targetPrice = RoundToTickSize(targetPrice);
+
+            double stopPrice = 0;
+            int stopBarsAgo = -1;
+            bool hasStop = false;
+            bool hasAnyStop = false;
+            double fallbackStopPrice = 0;
+            int fallbackStopBarsAgo = -1;
+            int stopOccurrence = 1;
+            while (true)
+            {
+                bool foundStop = direction == IfvgDirection.Long
+                    ? TryGetNthBearishPivotLowBelowEntry(entryPrice, stopOccurrence, activeIfvgMinTpSlDistancePoints, out stopPrice, out stopBarsAgo)
+                    : TryGetNthBullishPivotHighAboveEntry(entryPrice, stopOccurrence, activeIfvgMinTpSlDistancePoints, out stopPrice, out stopBarsAgo);
+
+                if (!foundStop)
+                    break;
+
+                if (!hasAnyStop)
+                {
+                    hasAnyStop = true;
+                    fallbackStopPrice = stopPrice;
+                    fallbackStopBarsAgo = stopBarsAgo;
+                }
+
+                bool outsideFvg = direction == IfvgDirection.Long ? stopPrice < fvgLower : stopPrice > fvgUpper;
+                if (outsideFvg)
+                {
+                    hasStop = true;
+                    break;
+                }
+
+                stopOccurrence++;
+            }
+
+            if (!hasStop)
+            {
+                if (hasAnyStop)
+                {
+                    stopPrice = fallbackStopPrice;
+                    stopBarsAgo = fallbackStopBarsAgo;
+                    LogIfvgTrade(fvgTag, string.Format(
+                        "WARN StopInsideFVG {0} entry={1} stop={2} fvgLower={3} fvgUpper={4}",
+                        direction,
+                        entryPrice,
+                        stopPrice,
+                        fvgLower,
+                        fvgUpper), false);
+                }
+                else
+                {
+                    LogIfvgTrade(fvgTag, string.Format(
+                        "BLOCKED (NoStop: {0} entry={1})",
+                        direction,
+                        entryPrice), false);
+                    return;
+                }
+            }
+
+            double bePrice = firstTargetPrice;
+            int beBarsAgo = firstTargetBarsAgo;
+            if (activeIfvgUseBreakEvenWickLine)
+            {
+                double fvgBePrice;
+                int fvgBeBarsAgo;
+                if (TryGetBreakEvenFromFvg(direction, entryPrice, firstTargetPrice, out fvgBePrice, out fvgBeBarsAgo))
+                {
+                    bePrice = fvgBePrice;
+                    beBarsAgo = fvgBeBarsAgo;
+                    LogIfvgTrade(fvgTag, string.Format("BE LINE from FVG price={0} barsAgo={1}", bePrice, beBarsAgo), false);
+                }
+
+                ActivateIfvgBreakEvenLine(direction, bePrice);
+                if (bePrice == firstTargetPrice)
+                    LogIfvgTrade(fvgTag, string.Format("BE LINE price={0} barsAgo={1}", bePrice, beBarsAgo), false);
+            }
+
+            stopPrice = RoundToTickSize(stopPrice);
+
+            string signalName = direction == IfvgDirection.Long ? IfvgLongSignalName : IfvgShortSignalName;
+            SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
+            SetProfitTarget(signalName, CalculationMode.Price, targetPrice);
+
+            string beInfo = activeIfvgUseBreakEvenWickLine ? string.Format(" be={0}", RoundToTickSize(bePrice)) : string.Empty;
+            LogIfvgTrade(fvgTag, string.Format(
+                "ENTRY SENT {0} entry={1} stop={2} target={3}{4} stopBarsAgo={5} targetBarsAgo={6} sweepPrice={7} sweepBar={8}",
+                direction,
+                entryPrice,
+                stopPrice,
+                targetPrice,
+                beInfo,
+                stopBarsAgo,
+                targetBarsAgo,
+                sweep.Price,
+                sweep.BarIndex), false);
+
+            ifvgOverrideActive = true;
+            ifvgActiveDirection = direction;
+            ifvgEntryLower = fvgLower;
+            ifvgEntryUpper = fvgUpper;
+            ifvgLastEntryBar = CurrentBar;
+            ifvgActiveTradeTag = fvgTag;
+
+            if (direction == IfvgDirection.Long)
+                EnterLong(activeContracts, signalName);
+            else
+                EnterShort(activeContracts, signalName);
+        }
+
+        private void UpdateIfvgSwingLiquidity()
+        {
+            if (ifvgSwingLines == null)
+                return;
+
+            if (activeIfvgSwingDrawBars <= 0)
+            {
+                if (ifvgSwingLines.Count > 0)
+                    ifvgSwingLines.Clear();
+                return;
+            }
+
+            if (CurrentBar < activeIfvgSwingStrength * 2)
+                return;
+
+            int pivotBarsAgo = activeIfvgSwingStrength;
+            if (IsIfvgSwingHigh(pivotBarsAgo))
+                AddIfvgSwingLine(true, pivotBarsAgo, High[pivotBarsAgo]);
+            if (IsIfvgSwingLow(pivotBarsAgo))
+                AddIfvgSwingLine(false, pivotBarsAgo, Low[pivotBarsAgo]);
+
+            UpdateIfvgSwingLines();
+            PruneIfvgSwingLines();
+        }
+
+        private bool IsIfvgSwingHigh(int barsAgo)
+        {
+            int span = barsAgo * 2 + 1;
+            double max = MAX(High, span)[0];
+            return High[barsAgo] >= max;
+        }
+
+        private bool IsIfvgSwingLow(int barsAgo)
+        {
+            int span = barsAgo * 2 + 1;
+            double min = MIN(Low, span)[0];
+            return Low[barsAgo] <= min;
+        }
+
+        private void AddIfvgSwingLine(bool isHigh, int barsAgo, double price)
+        {
+            int startBarIndex = CurrentBar - barsAgo;
+            string tag = string.Format("iFVG_Swing_{0}_{1}", isHigh ? "H" : "L", startBarIndex);
+
+            IfvgSwingLine line = new IfvgSwingLine
+            {
+                Tag = tag,
+                Price = price,
+                StartBarIndex = startBarIndex,
+                EndBarIndex = CurrentBar,
+                IsActive = true,
+                IsHigh = isHigh
+            };
+
+            ifvgSwingLines.Add(line);
+        }
+
+        private void UpdateIfvgSwingLines()
+        {
+            for (int i = 0; i < ifvgSwingLines.Count; i++)
+            {
+                IfvgSwingLine line = ifvgSwingLines[i];
+                if (!line.IsActive)
+                    continue;
+
+                bool hit = line.IsHigh ? High[0] >= line.Price : Low[0] <= line.Price;
+                line.EndBarIndex = CurrentBar;
+
+                if (hit)
+                {
+                    RegisterIfvgSweep(line.IsHigh ? IfvgDirection.Short : IfvgDirection.Long, line.Price);
+                    line.IsActive = false;
+                }
+            }
+        }
+
+        private void PruneIfvgSwingLines()
+        {
+            int cutoffIndex = CurrentBar - activeIfvgSwingDrawBars;
+            for (int i = ifvgSwingLines.Count - 1; i >= 0; i--)
+            {
+                IfvgSwingLine line = ifvgSwingLines[i];
+                if (line.StartBarIndex < cutoffIndex)
+                    ifvgSwingLines.RemoveAt(i);
+            }
+        }
+
+        private void RegisterIfvgSweep(IfvgDirection direction, double price)
+        {
+            IfvgSweepEvent existing = ifvgLastSwingSweep;
+            if (existing != null &&
+                existing.Direction == direction &&
+                existing.Price == price &&
+                existing.BarIndex == CurrentBar)
+                return;
+
+            IfvgSweepEvent sweep = new IfvgSweepEvent
+            {
+                Direction = direction,
+                Price = price,
+                BarIndex = CurrentBar
+            };
+
+            ifvgLastSwingSweep = sweep;
+
+            LogIfvgVerbose(string.Format(
+                "Sweep registered {0} price={1} bar={2} source=swing",
+                direction,
+                price,
+                CurrentBar));
+        }
+
+        private IfvgSweepEvent GetEligibleIfvgSweep(IfvgDirection direction, string fvgTag)
+        {
+            IfvgSweepEvent best = null;
+
+            if (ifvgLastSwingSweep != null && ifvgLastSwingSweep.Direction == direction)
+                best = ifvgLastSwingSweep;
+
+            if (best == null)
+            {
+                LogIfvgTrade(fvgTag, string.Format("BLOCKED (SweepMissing: {0})", direction), false);
+                return null;
+            }
+
+            int barsSince = CurrentBar - best.BarIndex;
+            if (barsSince < 0 || barsSince > activeIfvgMaxBarsBetweenSweepAndIfvg)
+            {
+                LogIfvgTrade(fvgTag, string.Format(
+                    "BLOCKED (SweepExpired: {0} barsSince={1} max={2})",
+                    direction,
+                    barsSince,
+                    activeIfvgMaxBarsBetweenSweepAndIfvg), false);
+                return null;
+            }
+
+            LogIfvgTrade(fvgTag, string.Format(
+                "Eligible sweep {0} price={1} bar={2} barsSince={3}",
+                direction,
+                best.Price,
+                best.BarIndex,
+                barsSince), false);
+            return best;
+        }
+
+        private bool IfvgPassesVolumeSmaFilter(string fvgTag)
+        {
+            if (!activeIfvgUseVolumeSmaFilter)
+                return true;
+
+            if (ifvgVolumeFastSmaActive == null || ifvgVolumeSlowSmaActive == null)
+                return true;
+
+            int requiredBars = Math.Max(activeIfvgVolumeFastSmaPeriod, activeIfvgVolumeSlowSmaPeriod);
+            if (CurrentBar < requiredBars - 1)
+            {
+                LogIfvgTrade(fvgTag, string.Format(
+                    "BLOCKED (VolumeSmaWarmup: bars={0} need={1})",
+                    CurrentBar + 1,
+                    requiredBars), false);
+                return false;
+            }
+
+            double fast = ifvgVolumeFastSmaActive[0];
+            double slow = ifvgVolumeSlowSmaActive[0];
+            if (slow <= 0)
+            {
+                LogIfvgTrade(fvgTag, string.Format(
+                    "BLOCKED (VolumeSmaInvalid: fast={0} slow={1})",
+                    fast,
+                    slow), false);
+                return false;
+            }
+
+            if (fast <= slow * activeIfvgVolumeSmaMultiplier)
+            {
+                LogIfvgTrade(fvgTag, string.Format(
+                    "BLOCKED (VolumeSma: fast={0} slow={1} mult={2})",
+                    fast,
+                    slow,
+                    activeIfvgVolumeSmaMultiplier), false);
+                return false;
+            }
+
+            LogIfvgTrade(fvgTag, string.Format(
+                "Filter VolumeSma ok fast={0} slow={1} mult={2}",
+                fast,
+                slow,
+                activeIfvgVolumeSmaMultiplier), false);
+            return true;
+        }
+
+        private void CheckIfvgBreakEvenTrigger()
+        {
+            if (!activeIfvgUseBreakEvenWickLine || !ifvgBreakEvenActive || ifvgBreakEvenTriggered)
+                return;
+            if (Position.MarketPosition == MarketPosition.Flat || ifvgBreakEvenDirection == null)
+                return;
+
+            double high = High[0];
+            double low = Low[0];
+            bool hit = ifvgBreakEvenDirection == IfvgDirection.Long
+                ? high >= ifvgBreakEvenPrice
+                : low <= ifvgBreakEvenPrice;
+
+            if (!hit)
+                return;
+
+            ifvgBreakEvenTriggered = true;
+            string signalName = ifvgBreakEvenDirection == IfvgDirection.Long ? IfvgLongSignalName : IfvgShortSignalName;
+            double entryPrice = Position.AveragePrice;
+            SetStopLoss(signalName, CalculationMode.Price, entryPrice, false);
+            LogIfvgTrade(ifvgActiveTradeTag, string.Format("BE HIT move SL to entry={0}", entryPrice), true);
+        }
+
+        private void ActivateIfvgBreakEvenLine(IfvgDirection direction, double price)
+        {
+            ifvgBreakEvenActive = true;
+            ifvgBreakEvenTriggered = false;
+            ifvgBreakEvenPrice = RoundToTickSize(price);
+            ifvgBreakEvenDirection = direction;
+        }
+
+        private bool TryGetNthBullishPivotHighAboveEntry(double entryPrice, int occurrence, double minDistancePoints, out double price, out int barsAgo)
+        {
+            price = 0;
+            barsAgo = -1;
+            int found = 0;
+
+            for (int i = 1; i + 1 <= CurrentBars[0]; i++)
+            {
+                if (Highs[0][i] <= Highs[0][i - 1] || Highs[0][i] <= Highs[0][i + 1])
+                    continue;
+                if (Highs[0][i] <= entryPrice)
+                    continue;
+                if (minDistancePoints > 0 && (Highs[0][i] - entryPrice) < minDistancePoints)
+                    continue;
+
+                found++;
+                if (found == occurrence)
+                {
+                    price = Highs[0][i];
+                    barsAgo = i;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryGetNthBearishPivotLowBelowEntry(double entryPrice, int occurrence, double minDistancePoints, out double price, out int barsAgo)
+        {
+            price = 0;
+            barsAgo = -1;
+            int found = 0;
+
+            for (int i = 1; i + 1 <= CurrentBars[0]; i++)
+            {
+                if (Lows[0][i] >= Lows[0][i - 1] || Lows[0][i] >= Lows[0][i + 1])
+                    continue;
+                if (Lows[0][i] >= entryPrice)
+                    continue;
+                if (minDistancePoints > 0 && (entryPrice - Lows[0][i]) < minDistancePoints)
+                    continue;
+
+                found++;
+                if (found == occurrence)
+                {
+                    price = Lows[0][i];
+                    barsAgo = i;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryGetBreakEvenFromFvg(IfvgDirection direction, double entryPrice, double pivotPrice, out double bePrice, out int beBarsAgo)
+        {
+            bePrice = 0;
+            beBarsAgo = -1;
+
+            if (ifvgBreakEvenFvgs == null || ifvgBreakEvenFvgs.Count == 0)
+                return false;
+
+            bool found = false;
+            double bestPrice = 0;
+            int bestBarsAgo = -1;
+
+            for (int i = 0; i < ifvgBreakEvenFvgs.Count; i++)
+            {
+                IfvgBox fvg = ifvgBreakEvenFvgs[i];
+                if (!fvg.IsActive)
+                    continue;
+
+                double candidatePrice = direction == IfvgDirection.Long ? fvg.Lower : fvg.Upper;
+                if (direction == IfvgDirection.Long)
+                {
+                    if (candidatePrice <= entryPrice || candidatePrice >= pivotPrice)
+                        continue;
+                    if (!found || candidatePrice < bestPrice)
+                    {
+                        found = true;
+                        bestPrice = candidatePrice;
+                        bestBarsAgo = CurrentBar - fvg.CreatedBarIndex;
+                    }
+                }
+                else
+                {
+                    if (candidatePrice >= entryPrice || candidatePrice <= pivotPrice)
+                        continue;
+                    if (!found || candidatePrice > bestPrice)
+                    {
+                        found = true;
+                        bestPrice = candidatePrice;
+                        bestBarsAgo = CurrentBar - fvg.CreatedBarIndex;
+                    }
+                }
+            }
+
+            if (!found)
+                return false;
+
+            bePrice = RoundToTickSize(bestPrice);
+            beBarsAgo = bestBarsAgo;
+            return true;
+        }
+
+        private void LogIfvgDebug(string message)
+        {
+            if (!IfvgDebugLogging)
+                return;
+            Print(string.Format("{0} - iFVG {1}", Time[0], message));
+        }
+
+        private void LogIfvgVerbose(string message)
+        {
+            if (!IfvgDebugLogging || !IfvgVerboseDebugLogging)
+                return;
+            Print(string.Format("{0} - iFVG {1}", Time[0], message));
+        }
+
+        private void LogIfvgTrade(string tradeTag, string message, bool addSeparator)
+        {
+            if (!IfvgDebugLogging)
+                return;
+
+            string label = FormatIfvgLabel(tradeTag);
+            if (!string.IsNullOrEmpty(label) && label != ifvgLastTradeLabelPrinted)
+            {
+                if (!string.IsNullOrEmpty(ifvgLastTradeLabelPrinted) && addSeparator)
+                    Print(string.Empty);
+                ifvgLastTradeLabelPrinted = label;
+            }
+
+            if (!string.IsNullOrEmpty(label))
+                Print(string.Format("{0} - {1} {2}", Time[0], label, message));
+            else
+                Print(string.Format("{0} - {1}", Time[0], message));
+        }
+
+        private string FormatIfvgLabel(string tradeTag)
+        {
+            if (string.IsNullOrEmpty(tradeTag))
+                return string.Empty;
+
+            string[] parts = tradeTag.Split('_');
+            if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
+                return "iFVG T" + parts[1];
+
+            return "iFVG";
+        }
+
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
-	            MarketPosition marketPosition, string orderId, DateTime time)
-	        {
+            MarketPosition marketPosition, string orderId, DateTime time)
+        {
 	            var smallFont = new SimpleFont("Arial", 8) { Bold = true };
 
 	            // ✅ Track TP fills
@@ -1489,6 +2477,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
                 ClearHedgeLock(Instrument.MasterInstrument.Name);
 	            }
+
+            if (ifvgOverrideActive && Position.MarketPosition == MarketPosition.Flat)
+                ResetIfvgOverride();
 	        }
 
 	        private void UpdatePreviewLines()
@@ -1614,7 +2605,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	            {
 	                if (debug)
 	                    Print($"{Time[0]} - Flattening LONG due to {reason}");
-	                ExitLong("Exit_" + reason, "LongEntry");
+	                if (ifvgOverrideActive)
+	                    ExitLong("Exit_" + reason);
+	                else
+	                    ExitLong("Exit_" + reason, "LongEntry");
 	                
 	                // ✅ Send EXIT webhook for longs
 	                SendWebhookExitSafe();
@@ -1623,7 +2617,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	            {
 	                if (debug)
 	                    Print($"{Time[0]} - Flattening SHORT due to {reason}");
-	                ExitShort("Exit_" + reason, "ShortEntry");
+	                if (ifvgOverrideActive)
+	                    ExitShort("Exit_" + reason);
+	                else
+	                    ExitShort("Exit_" + reason, "ShortEntry");
 	                
 	                // ✅ Send EXIT webhook for shorts
 	                SendWebhookExitSafe();
@@ -2475,6 +3472,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private enum IfvgDirection
+        {
+            Long,
+            Short
+        }
+
         public enum SessionSlot
         {
             None,
@@ -2667,6 +3670,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeSkipEnd = London_SkipEnd;
                     activeSkip2Start = London_Skip2Start;
                     activeSkip2End = London_Skip2End;
+                    activeIfvgMinSizePoints = London_IfvgMinSizePoints;
+                    activeIfvgMaxSizePoints = London_IfvgMaxSizePoints;
+                    activeIfvgMinTpSlDistancePoints = London_IfvgMinTpSlDistancePoints;
+                    activeIfvgSwingStrength = London_IfvgSwingStrength;
+                    activeIfvgSwingDrawBars = London_IfvgSwingDrawBars;
+                    activeIfvgMaxBarsBetweenSweepAndIfvg = London_IfvgMaxBarsBetweenSweepAndIfvg;
+                    activeIfvgUseBreakEvenWickLine = London_IfvgUseBreakEvenWickLine;
+                    activeIfvgUseVolumeSmaFilter = London_IfvgUseVolumeSmaFilter;
+                    activeIfvgVolumeFastSmaPeriod = London_IfvgVolumeFastSmaPeriod;
+                    activeIfvgVolumeSlowSmaPeriod = London_IfvgVolumeSlowSmaPeriod;
+                    activeIfvgVolumeSmaMultiplier = London_IfvgVolumeSmaMultiplier;
+                    ifvgVolumeFastSmaActive = ifvgVolumeFastSmaLondon;
+                    ifvgVolumeSlowSmaActive = ifvgVolumeSlowSmaLondon;
                     break;
                 case SessionSlot.Session2:
                     activeAutoShiftTimes = AutoShiftSession2;
@@ -2692,6 +3708,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeSkipEnd = NewYork_SkipEnd;
                     activeSkip2Start = NewYork_Skip2Start;
                     activeSkip2End = NewYork_Skip2End;
+                    activeIfvgMinSizePoints = NewYork_IfvgMinSizePoints;
+                    activeIfvgMaxSizePoints = NewYork_IfvgMaxSizePoints;
+                    activeIfvgMinTpSlDistancePoints = NewYork_IfvgMinTpSlDistancePoints;
+                    activeIfvgSwingStrength = NewYork_IfvgSwingStrength;
+                    activeIfvgSwingDrawBars = NewYork_IfvgSwingDrawBars;
+                    activeIfvgMaxBarsBetweenSweepAndIfvg = NewYork_IfvgMaxBarsBetweenSweepAndIfvg;
+                    activeIfvgUseBreakEvenWickLine = NewYork_IfvgUseBreakEvenWickLine;
+                    activeIfvgUseVolumeSmaFilter = NewYork_IfvgUseVolumeSmaFilter;
+                    activeIfvgVolumeFastSmaPeriod = NewYork_IfvgVolumeFastSmaPeriod;
+                    activeIfvgVolumeSlowSmaPeriod = NewYork_IfvgVolumeSlowSmaPeriod;
+                    activeIfvgVolumeSmaMultiplier = NewYork_IfvgVolumeSmaMultiplier;
+                    ifvgVolumeFastSmaActive = ifvgVolumeFastSmaNewYork;
+                    ifvgVolumeSlowSmaActive = ifvgVolumeSlowSmaNewYork;
                     break;
             }
         }
