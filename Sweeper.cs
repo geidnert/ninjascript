@@ -288,7 +288,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public enum SweepSource
         {
             CandleHighLow,
-            SwingHighLow
+            SwingHighLow,
+            DrEdgeFvg
         }
 
         [NinjaScriptProperty]
@@ -312,6 +313,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(1, 10)]
         [Display(Name = "Reverse Swing Strength (5m)", Description = "Swing strength for reverse SL using recent 5m swing high/low.", GroupName = "05. Entries", Order = 7)]
         public int ReverseSwingStrength { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "DR Edge Trigger % (Top)", Description = "Percent of DR height (from low) to arm short setup when price reaches the top edge.", GroupName = "05. Entries", Order = 7)]
+        public double DrEdgeTriggerPercentTop { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "DR Edge Trigger % (Bottom)", Description = "Percent of DR height (from low) to arm long setup when price reaches the bottom edge.", GroupName = "05. Entries", Order = 7)]
+        public double DrEdgeTriggerPercentBottom { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Reverse On Opposite FVG", Description = "If true, reverse position when an opposite-direction 5m FVG prints.", GroupName = "05. Entries", Order = 8)]
@@ -411,6 +422,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime sweepSetupStartTime;
         private DateTime sweepSetupEndTime;
         private double sweepSetupStopPrice;
+        private bool sweepSetupFromDrEdge;
         private bool sessionClosed;
         private string activeEntrySignal;
         private double activeEntryPrice;
@@ -563,6 +575,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SweepSourceSetting = SweepSource.CandleHighLow;
                 SweepSwingStrength = 1;
                 ReverseSwingStrength = 1;
+                DrEdgeTriggerPercentTop = 95;
+                DrEdgeTriggerPercentBottom = 5;
                 ReverseOnOppositeFvg = false;
                 UseLimitEntries = false;
                 LimitEntryPercent = 0;
@@ -627,6 +641,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 sweepSetupStartTime = Core.Globals.MinDate;
                 sweepSetupEndTime = Core.Globals.MinDate;
                 sweepSetupStopPrice = 0;
+                sweepSetupFromDrEdge = false;
                 sessionClosed = false;
                 activeEntrySignal = string.Empty;
                 activeEntryPrice = 0;
@@ -829,7 +844,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (CurrentBar >= 2)
                     UpdateFvgs();
 
-                if (SweepSourceSetting == SweepSource.SwingHighLow)
+                if (SweepSourceSetting == SweepSource.DrEdgeFvg)
+                {
+                    ClearSweepLines();
+                    ClearSwingLines();
+                    EvaluateDrEdgeSetup();
+                }
+                else if (SweepSourceSetting == SweepSource.SwingHighLow)
                 {
                     ClearSweepLines();
                     UpdateSwingLiquidityPrimary();
@@ -954,12 +975,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
-            if (SweepConfirmModeSetting == SweepConfirmMode.RequireClose
-                && SweepSourceSetting != SweepSource.SwingHighLow
-                && TimeInSession(Times[drSeriesIndex][0])
-                && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
-            {
-                EvaluateSweepSetup();
+                if (SweepConfirmModeSetting == SweepConfirmMode.RequireClose
+                    && SweepSourceSetting != SweepSource.SwingHighLow
+                    && SweepSourceSetting != SweepSource.DrEdgeFvg
+                    && TimeInSession(Times[drSeriesIndex][0])
+                    && !TimeInNoTradesAfter(Times[drSeriesIndex][0]))
+                {
+                    EvaluateSweepSetup();
             }
         }
         #endregion
@@ -1168,6 +1190,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double tp = sweepSetupDirection == SetupDirection.Long
                 ? currentDrLow + drHeight * (TpPercentOfDr / 100.0)
                 : currentDrHigh - drHeight * (TpPercentOfDr / 100.0);
+            if (sweepSetupFromDrEdge)
+                tp = sweepSetupDirection == SetupDirection.Long ? currentDrHigh : currentDrLow;
 
             double entryPrice = UseLimitEntries
                 ? GetLimitEntryPrice(sweepSetupDirection, fvgLower, fvgUpper)
@@ -1211,6 +1235,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             sweepSetupActive = false;
+            sweepSetupFromDrEdge = false;
         }
 
         private void TryReverseOnOppositeFvg(bool bullishFvg, bool bearishFvg, double fvgLower, double fvgUpper)
@@ -1798,6 +1823,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sweepSetupStartTime = Times[drSeriesIndex][0];
             sweepSetupEndTime = sweepSetupStartTime.AddMinutes(GetDrPeriodMinutes());
             sweepSetupStopPrice = stopPrice;
+            sweepSetupFromDrEdge = false;
         }
 
         private void ArmSweepSetupSwing(SetupDirection direction, double stopPrice)
@@ -1807,6 +1833,71 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sweepSetupStartTime = Time[0];
             sweepSetupEndTime = sweepSetupStartTime.AddMinutes(GetDrPeriodMinutes());
             sweepSetupStopPrice = stopPrice;
+            sweepSetupFromDrEdge = false;
+        }
+
+        private void EvaluateDrEdgeSetup()
+        {
+            if (SweepSourceSetting != SweepSource.DrEdgeFvg)
+                return;
+            if (EntryModeSetting != EntryMode.Fvg)
+                return;
+            if (!hasActiveDR)
+                return;
+            if (!currentDrTradable)
+                return;
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
+            if (sweepSetupActive)
+                return;
+            if (!TimeInSession(Time[0]) || TimeInNoTradesAfter(Time[0]))
+                return;
+
+            double drHeight = currentDrHigh - currentDrLow;
+            if (drHeight <= 0)
+                return;
+
+            double redLow, redHigh;
+            GetRedZone(out redLow, out redHigh);
+
+            double topTrigger = currentDrLow + drHeight * (DrEdgeTriggerPercentTop / 100.0);
+            double bottomTrigger = currentDrLow + drHeight * (DrEdgeTriggerPercentBottom / 100.0);
+
+            bool touchedTop = High[0] >= topTrigger && High[0] <= currentDrHigh && High[0] >= redHigh;
+            bool touchedBottom = Low[0] <= bottomTrigger && Low[0] >= currentDrLow && Low[0] <= redLow;
+
+            if (touchedTop)
+            {
+                LogDebug(string.Format(
+                    "DR edge short armed. High={0:F2} Trigger={1:F2} DR[{2:F2}-{3:F2}]",
+                    High[0],
+                    topTrigger,
+                    currentDrLow,
+                    currentDrHigh));
+                ArmDrEdgeSetup(SetupDirection.Short);
+                return;
+            }
+
+            if (touchedBottom)
+            {
+                LogDebug(string.Format(
+                    "DR edge long armed. Low={0:F2} Trigger={1:F2} DR[{2:F2}-{3:F2}]",
+                    Low[0],
+                    bottomTrigger,
+                    currentDrLow,
+                    currentDrHigh));
+                ArmDrEdgeSetup(SetupDirection.Long);
+            }
+        }
+
+        private void ArmDrEdgeSetup(SetupDirection direction)
+        {
+            sweepSetupActive = true;
+            sweepSetupDirection = direction;
+            sweepSetupStartTime = Time[0];
+            sweepSetupEndTime = sweepSetupStartTime.AddMinutes(GetDrPeriodMinutes());
+            sweepSetupStopPrice = direction == SetupDirection.Long ? currentDrLow - TickSize : currentDrHigh + TickSize;
+            sweepSetupFromDrEdge = true;
         }
 
         private bool TryGetClosestSwingStop(SetupDirection direction, double referencePrice, out double stopPrice)
