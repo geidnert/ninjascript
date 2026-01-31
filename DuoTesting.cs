@@ -678,7 +678,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_SkipEnd       = new TimeSpan(0, 0, 0);
                 London_Skip2Start     = new TimeSpan(0, 0, 0);
                 London_Skip2End       = new TimeSpan(0, 0, 0);
-                London_IfvgMinSizePoints = 8.5;
+                London_IfvgMinSizePoints = 8.25;
                 London_IfvgMaxSizePoints = 18;
                 London_IfvgMinTpSlDistancePoints = 0.75;
                 London_IfvgSwingStrength = 1;
@@ -712,7 +712,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_SkipEnd = new TimeSpan(13, 15, 0);
                 NewYork_Skip2Start = new TimeSpan(0, 0, 0);
                 NewYork_Skip2End = new TimeSpan(0, 0, 0);
-                NewYork_IfvgMinSizePoints = 8.35;
+                NewYork_IfvgMinSizePoints = 8.25;
                 NewYork_IfvgMaxSizePoints = 27;
                 NewYork_IfvgMinTpSlDistancePoints = 1.5;
                 NewYork_IfvgSwingStrength = 1;
