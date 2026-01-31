@@ -474,6 +474,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool Second_Candle_Open= false;
         private double currentLongCancelPrice = 0;
         private double currentShortCancelPrice = 0;
+        private double ifvgLastEntryPriceLong = 0;
+        private double ifvgLastEntryPriceShort = 0;
         private Random rng;
         private string displayText = "Waiting...";
         private bool sessionClosed = false;
@@ -1651,6 +1653,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CurrentBar < 2 || ifvgActiveFvgs == null)
                 return;
 
+            if (IfvgDebugLogging)
+            {
+                string pos = Position.MarketPosition.ToString();
+                double unrealized = Position.MarketPosition == MarketPosition.Flat
+                    ? 0
+                    : Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+                LogIfvgDebug(string.Format(
+                    "State bar={0} pos={1} upnl={2:0.00} activeFvgs={3} override={4}",
+                    CurrentBar,
+                    pos,
+                    unrealized,
+                    ifvgActiveFvgs.Count,
+                    ifvgOverrideActive));
+            }
+
             UpdateIfvgSwingLiquidity();
             UpdateIfvgActiveFvgs();
             UpdateIfvgBreakEvenFvgs();
@@ -1712,6 +1729,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!invalidated)
                     continue;
+
+                LogIfvgDebug(string.Format(
+                    "FVG invalidated tag={0} bullish={1} lower={2} upper={3} close={4} open={5}",
+                    fvg.Tag,
+                    fvg.IsBullish,
+                    fvg.Lower,
+                    fvg.Upper,
+                    Close[0],
+                    Open[0]));
 
                 LogIfvgTrade(fvg.Tag, string.Format(
                     "ENTRY ATTEMPT {0} fvgLower={1} fvgUpper={2} close={3}",
@@ -1796,6 +1822,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (!UseIfvgAddon)
                 return;
+
+            LogIfvgTrade(fvgTag, string.Format(
+                "EVAL start dir={0} pos={1} close={2} time={3:HH:mm:ss}",
+                direction,
+                Position.MarketPosition,
+                Close[0],
+                Time[0]), false);
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                LogIfvgTrade(fvgTag, "BLOCKED (NoActivePosition)", false);
+                return;
+            }
+
+            double unrealizedPnl = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+            if (unrealizedPnl >= 0)
+            {
+                LogIfvgTrade(fvgTag, string.Format(
+                    "BLOCKED (PositionNotNegative) upnl={0:0.00}",
+                    unrealizedPnl), false);
+                return;
+            }
+
+            IfvgDirection requiredDirection = Position.MarketPosition == MarketPosition.Long
+                ? IfvgDirection.Short
+                : IfvgDirection.Long;
+            if (direction != requiredDirection)
+            {
+                LogIfvgTrade(fvgTag, "BLOCKED (DirectionMismatch)", false);
+                return;
+            }
 
             if (ifvgOverrideActive)
             {
@@ -2009,9 +2066,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ifvgActiveTradeTag = fvgTag;
 
             if (direction == IfvgDirection.Long)
+            {
+                ifvgLastEntryPriceLong = entryPrice;
                 EnterLong(activeContracts, signalName);
+            }
             else
+            {
+                ifvgLastEntryPriceShort = entryPrice;
                 EnterShort(activeContracts, signalName);
+            }
         }
 
         private void UpdateIfvgSwingLiquidity()
@@ -2387,21 +2450,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return "iFVG";
         }
 
+        private double ResolveEntryPriceForExitLabel(Order order, double fallbackPrice)
+        {
+            if (order == null)
+                return fallbackPrice;
+            if (order.FromEntrySignal == "LongEntry")
+                return currentLongEntry;
+            if (order.FromEntrySignal == "ShortEntry")
+                return currentShortEntry;
+            if (order.FromEntrySignal == IfvgLongSignalName)
+                return ifvgLastEntryPriceLong;
+            if (order.FromEntrySignal == IfvgShortSignalName)
+                return ifvgLastEntryPriceShort;
+            return fallbackPrice;
+        }
+
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
             MarketPosition marketPosition, string orderId, DateTime time)
         {
 	            var smallFont = new SimpleFont("Arial", 8) { Bold = true };
 
-	            // ✅ Track TP fills
+            if (execution.Order != null &&
+                execution.Order.OrderState == OrderState.Filled &&
+                (execution.Order.Name == IfvgLongSignalName || execution.Order.Name == IfvgShortSignalName))
+            {
+                if (execution.Order.Name == IfvgLongSignalName)
+                    ifvgLastEntryPriceLong = price;
+                else
+                    ifvgLastEntryPriceShort = price;
+            }
+
+            // ✅ Track TP fills
 	            if (execution.Order != null && execution.Order.Name == "Profit target"
 	                && execution.Order.OrderState == OrderState.Filled)
 	            {
-	                double entryPrice = execution.Order.FromEntrySignal == "LongEntry"
-	                    ? currentLongEntry
-	                    : currentShortEntry;
-
-                double points = Math.Abs(price - entryPrice) / TickSize;
-                double pointsInPrice = points * TickSize;
+                double entryPrice = ResolveEntryPriceForExitLabel(execution.Order, price);
+                double points = Math.Abs(price - entryPrice);
 
                 double yOffset = (execution.Order.FromEntrySignal == "LongEntry")
                     ? price + (2 * TickSize)
@@ -2409,7 +2493,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 string tag = "TPText_" + CurrentBar + "_" + execution.Order.FromEntrySignal;
                 Draw.Text(this, tag, true,
-                    $"+{pointsInPrice:0.00} points",
+                    $"+{points:0.00} points",
                     0, yOffset, 0,
                     Brushes.Green,
                     new SimpleFont("Arial", 15),
@@ -2418,15 +2502,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ✅ Track SL fills
-	            if (execution.Order != null && execution.Order.Name == "Stop loss"
+            if (execution.Order != null && execution.Order.Name == "Stop loss"
 	                && execution.Order.OrderState == OrderState.Filled)
 	            {
-	                double entryPrice = execution.Order.FromEntrySignal == "LongEntry"
-	                    ? currentLongEntry
-	                    : currentShortEntry;
-
-                double points = Math.Abs(price - entryPrice) / TickSize;
-                double pointsInPrice = points * TickSize;
+                double entryPrice = ResolveEntryPriceForExitLabel(execution.Order, price);
+                double points = Math.Abs(price - entryPrice);
 
                 double yOffset = (execution.Order.FromEntrySignal == "LongEntry")
                     ? price - (2 * TickSize)   // place text below stop for long
@@ -2434,7 +2514,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 string tag = "SLText_" + CurrentBar + "_" + execution.Order.FromEntrySignal;
                 Draw.Text(this, tag, true,
-                    $"-{pointsInPrice:0.00} points",
+                    $"-{points:0.00} points",
                     0, yOffset, 0,
                     Brushes.Red,
                     new SimpleFont("Arial", 15),
