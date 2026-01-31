@@ -476,6 +476,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double currentShortCancelPrice = 0;
         private double ifvgLastEntryPriceLong = 0;
         private double ifvgLastEntryPriceShort = 0;
+        private double lastPrimaryEntryPrice = 0;
+        private bool lastPrimaryEntryIsLong = true;
         private Random rng;
         private string displayText = "Waiting...";
         private bool sessionClosed = false;
@@ -2480,6 +2482,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     ifvgLastEntryPriceShort = price;
             }
 
+            if (execution.Order != null &&
+                execution.Order.OrderState == OrderState.Filled &&
+                (execution.Order.Name == "LongEntry" || execution.Order.Name == "ShortEntry"))
+            {
+                lastPrimaryEntryIsLong = execution.Order.Name == "LongEntry";
+                lastPrimaryEntryPrice = price;
+            }
+
             // ✅ Track TP fills
 	            if (execution.Order != null && execution.Order.Name == "Profit target"
 	                && execution.Order.OrderState == OrderState.Filled)
@@ -2502,7 +2512,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ✅ Track SL fills
-            if (execution.Order != null && execution.Order.Name == "Stop loss"
+	            if (execution.Order != null && execution.Order.Name == "Stop loss"
 	                && execution.Order.OrderState == OrderState.Filled)
 	            {
                 double entryPrice = ResolveEntryPriceForExitLabel(execution.Order, price);
@@ -2517,6 +2527,63 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     $"-{points:0.00} points",
                     0, yOffset, 0,
                     Brushes.Red,
+                    new SimpleFont("Arial", 15),
+                    TextAlignment.Center,
+                    null, null, 0);
+            }
+
+            if (execution.Order != null &&
+                execution.Order.OrderState == OrderState.Filled &&
+                (execution.Order.Name == "iFVGFlip" || execution.Order.Name.StartsWith("Exit_")) &&
+                (execution.Order.FromEntrySignal == "LongEntry" || execution.Order.FromEntrySignal == "ShortEntry"))
+            {
+                bool isLong = execution.Order.FromEntrySignal == "LongEntry";
+                double entryPrice = ResolveEntryPriceForExitLabel(execution.Order, price);
+                double rawPoints = isLong ? (price - entryPrice) : (entryPrice - price);
+                double points = Math.Abs(rawPoints);
+                bool isWin = rawPoints >= 0;
+
+                double yOffset;
+                if (isLong)
+                    yOffset = isWin ? price + (2 * TickSize) : price - (2 * TickSize);
+                else
+                    yOffset = isWin ? price - (2 * TickSize) : price + (2 * TickSize);
+
+                string tag = "ExitText_" + CurrentBar + "_" + execution.Order.FromEntrySignal;
+                Draw.Text(this, tag, true,
+                    $"{(isWin ? "+" : "-")}{points:0.00} points",
+                    0, yOffset, 0,
+                    isWin ? Brushes.Green : Brushes.Red,
+                    new SimpleFont("Arial", 15),
+                    TextAlignment.Center,
+                    null, null, 0);
+            }
+
+            if (execution.Order != null &&
+                execution.Order.OrderState == OrderState.Filled &&
+                execution.Order.Name != "Profit target" &&
+                execution.Order.Name != "Stop loss" &&
+                string.IsNullOrEmpty(execution.Order.FromEntrySignal) &&
+                lastPrimaryEntryPrice > 0 &&
+                (execution.Order.OrderAction == OrderAction.Sell || execution.Order.OrderAction == OrderAction.BuyToCover))
+            {
+                bool isLong = lastPrimaryEntryIsLong;
+                double entryPrice = lastPrimaryEntryPrice;
+                double rawPoints = isLong ? (price - entryPrice) : (entryPrice - price);
+                double points = Math.Abs(rawPoints);
+                bool isWin = rawPoints >= 0;
+
+                double yOffset;
+                if (isLong)
+                    yOffset = isWin ? price + (2 * TickSize) : price - (2 * TickSize);
+                else
+                    yOffset = isWin ? price - (2 * TickSize) : price + (2 * TickSize);
+
+                string tag = "ExitText_" + CurrentBar + "_PrimaryExit";
+                Draw.Text(this, tag, true,
+                    $"{(isWin ? "+" : "-")}{points:0.00} points",
+                    0, yOffset, 0,
+                    isWin ? Brushes.Green : Brushes.Red,
                     new SimpleFont("Arial", 15),
                     TextAlignment.Center,
                     null, null, 0);
@@ -2569,6 +2636,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     shortEntryOrder = null;
                     longOrderPlaced = false;
                     shortOrderPlaced = false;
+                    lastPrimaryEntryPrice = 0;
+                    lastPrimaryEntryIsLong = true;
 
                     UpdateInfo();
                 }
