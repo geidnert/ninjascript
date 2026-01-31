@@ -59,6 +59,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private TimeSpan session2Start = new TimeSpan(9, 40, 0);
         private TimeSpan session2End = new TimeSpan(15, 0, 0);
         private TimeSpan session2NoTradesAfter = new TimeSpan(14, 30, 0);
+        private double haOpenPrev;
+        private double haClosePrev;
+        private bool haInitialized;
 
         protected override void OnStateChange()
         {
@@ -219,10 +222,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             double haHighValue;
             double haLowValue;
 
-            haOpenValue = Open[0];
-            haCloseValue = Close[0];
-            haHighValue = High[0];
-            haLowValue = Low[0];
+            // Heiken-Ashi calculation based on the current bar OHLC.
+            haCloseValue = (Open[0] + High[0] + Low[0] + Close[0]) / 4.0;
+            if (!haInitialized || Bars.IsFirstBarOfSession)
+            {
+                haOpenValue = (Open[0] + Close[0]) / 2.0;
+                haInitialized = true;
+            }
+            else
+            {
+                haOpenValue = (haOpenPrev + haClosePrev) / 2.0;
+            }
+            haHighValue = Math.Max(High[0], Math.Max(haOpenValue, haCloseValue));
+            haLowValue = Math.Min(Low[0], Math.Min(haOpenValue, haCloseValue));
+            haOpenPrev = haOpenValue;
+            haClosePrev = haCloseValue;
 
             if (CurrentBar < Math.Max(2, EmaPeriod))
                 return;
