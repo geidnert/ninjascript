@@ -676,6 +676,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_SkipEnd       = new TimeSpan(0, 0, 0);
                 London_Skip2Start     = new TimeSpan(0, 0, 0);
                 London_Skip2End       = new TimeSpan(0, 0, 0);
+                London_IfvgMinSizePoints = 8.5;
+                London_IfvgMaxSizePoints = 18;
+                London_IfvgMinTpSlDistancePoints = 0.75;
+                London_IfvgSwingStrength = 1;
+                London_IfvgSwingDrawBars = 200;
+                London_IfvgMaxBarsBetweenSweepAndIfvg = 12;
+                London_IfvgUseBreakEvenWickLine = false;
+                London_IfvgUseVolumeSmaFilter = false;
+                London_IfvgVolumeFastSmaPeriod = 5;
+                London_IfvgVolumeSlowSmaPeriod = 20;
+                London_IfvgVolumeSmaMultiplier = 1;
                 // New York
                 NewYork_Contracts     = 1;
                 NewYork_MinC12Body  = 19;
@@ -699,6 +710,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_SkipEnd = new TimeSpan(13, 15, 0);
                 NewYork_Skip2Start = new TimeSpan(0, 0, 0);
                 NewYork_Skip2End = new TimeSpan(0, 0, 0);
+                NewYork_IfvgMinSizePoints = 8.35;
+                NewYork_IfvgMaxSizePoints = 27;
+                NewYork_IfvgMinTpSlDistancePoints = 1.5;
+                NewYork_IfvgSwingStrength = 1;
+                NewYork_IfvgSwingDrawBars = 200;
+                NewYork_IfvgMaxBarsBetweenSweepAndIfvg = 15;
+                NewYork_IfvgUseBreakEvenWickLine = true;
+                NewYork_IfvgUseVolumeSmaFilter = true;
+                NewYork_IfvgVolumeFastSmaPeriod = 5;
+                NewYork_IfvgVolumeSlowSmaPeriod = 20;
+                NewYork_IfvgVolumeSmaMultiplier = 1;
                 // Other defaults
                 SessionBrush  = Brushes.Gold;
                 CloseAtSessionEnd = true;
@@ -715,29 +737,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 WebhookUrl = "";
                 ReverseOnSignal = true;
                 FlattenOnMaxSessionGain = false;
-                UseIfvgAddon = false;
-                London_IfvgMinSizePoints = 10;
-                London_IfvgMaxSizePoints = 50;
-                London_IfvgMinTpSlDistancePoints = 5;
-                London_IfvgSwingStrength = 10;
-                London_IfvgSwingDrawBars = 200;
-                London_IfvgMaxBarsBetweenSweepAndIfvg = 20;
-                London_IfvgUseBreakEvenWickLine = false;
-                London_IfvgUseVolumeSmaFilter = false;
-                London_IfvgVolumeFastSmaPeriod = 9;
-                London_IfvgVolumeSlowSmaPeriod = 21;
-                London_IfvgVolumeSmaMultiplier = 1;
-                NewYork_IfvgMinSizePoints = 10;
-                NewYork_IfvgMaxSizePoints = 50;
-                NewYork_IfvgMinTpSlDistancePoints = 5;
-                NewYork_IfvgSwingStrength = 10;
-                NewYork_IfvgSwingDrawBars = 200;
-                NewYork_IfvgMaxBarsBetweenSweepAndIfvg = 20;
-                NewYork_IfvgUseBreakEvenWickLine = false;
-                NewYork_IfvgUseVolumeSmaFilter = false;
-                NewYork_IfvgVolumeFastSmaPeriod = 9;
-                NewYork_IfvgVolumeSlowSmaPeriod = 21;
-                NewYork_IfvgVolumeSmaMultiplier = 1;
+                UseIfvgAddon = true;
                 IfvgDebugLogging = true;
                 IfvgVerboseDebugLogging = false;
             }
