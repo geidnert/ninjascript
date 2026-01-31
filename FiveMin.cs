@@ -10,6 +10,7 @@ using NinjaTrader.NinjaScript.DrawingTools;
 using System.Windows.Media;
 using System.ComponentModel.DataAnnotations;
 using System.Windows;
+using System.Xml.Serialization;
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
@@ -68,6 +69,74 @@ public class FiveMin : Strategy
         Order = 3,
         GroupName = "B. Entry Conditions")]
     public double RiskRewardRatio { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Show Inverted FVGs",
+        Description = "If true, keep and color FVGs after they are hit/inverted.",
+        Order = 6,
+        GroupName = "B. Entry Conditions")]
+    public bool ShowInvalidatedFvgs { get; set; }
+
+    [XmlIgnore]
+    [Display(
+        Name = "FVG Fill Brush",
+        Description = "Fill color for active FVG rectangles.",
+        Order = 7,
+        GroupName = "B. Entry Conditions")]
+    public Brush FvgFillBrush { get; set; }
+
+    public string FvgFillBrushSerializable
+    {
+        get { return Serialize.BrushToString(FvgFillBrush); }
+        set { FvgFillBrush = Serialize.StringToBrush(value); }
+    }
+
+    [XmlIgnore]
+    [Display(
+        Name = "Invalidated FVG Fill Brush",
+        Description = "Fill color for invalidated FVG rectangles.",
+        Order = 8,
+        GroupName = "B. Entry Conditions")]
+    public Brush InvalidatedFvgFillBrush { get; set; }
+
+    public string InvalidatedFvgFillBrushSerializable
+    {
+        get { return Serialize.BrushToString(InvalidatedFvgFillBrush); }
+        set { InvalidatedFvgFillBrush = Serialize.StringToBrush(value); }
+    }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "FVG Opacity",
+        Description = "Opacity for active FVGs (0-255).",
+        Order = 9,
+        GroupName = "B. Entry Conditions")]
+    public int FvgOpacity { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Inverted FVG Opacity",
+        Description = "Opacity for invalidated FVGs (0-255).",
+        Order = 10,
+        GroupName = "B. Entry Conditions")]
+    public int InvalidatedFvgOpacity { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Use Fixed Take Profit (Points)",
+        Description = "If true, TP is a fixed number of points instead of Risk Reward Ratio.",
+        Order = 4,
+        GroupName = "B. Entry Conditions")]
+    public bool UseFixedTakeProfitPoints { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Take Profit Points",
+        Description = "Fixed TP distance in points (price units).",
+        Order = 5,
+        GroupName = "B. Entry Conditions")]
+    public double TakeProfitPoints { get; set; }
 
     [NinjaScriptProperty]
     [Display(
@@ -178,6 +247,9 @@ public class FiveMin : Strategy
     private bool trailingActivated = false;
     private double entryTakeProfitPrice = double.NaN;
     private double entryPrice = double.NaN;
+    private bool invalidBarsPeriod = false;
+    private readonly List<FvgBox> activeFvgs = new List<FvgBox>();
+    private int fvgCounter = 0;
     // --- Trailing stop state machine ---
     private bool  trailCancelPending   = false;      // true while we wait for old SL to be fully cancelled
     private double pendingTrailStopPrice = double.NaN; // new SL price to submit after cancel
@@ -199,6 +271,22 @@ public class FiveMin : Strategy
             isRealTime = true;
         else if (State == State.Historical)
             isStrategyAnalyzer = (Account == null || Account.Name == "Backtest");
+        else if (State == State.DataLoaded)
+        {
+            invalidBarsPeriod =
+                BarsPeriod.BarsPeriodType != BarsPeriodType.Minute ||
+                BarsPeriod.Value != 5;
+
+            if (invalidBarsPeriod)
+            {
+                DebugPrint("⚠ FiveMin requires a 5-minute chart. Strategy will skip trading until chart is 5-minute.");
+            }
+
+            if (FvgFillBrush != null && FvgFillBrush.CanFreeze)
+                FvgFillBrush.Freeze();
+            if (InvalidatedFvgFillBrush != null && InvalidatedFvgFillBrush.CanFreeze)
+                InvalidatedFvgFillBrush.Freeze();
+        }
         // else if (State == State.DataLoaded)
         //     ApplyPreset(PresetSetting);
     }
@@ -216,6 +304,13 @@ public class FiveMin : Strategy
         DebugMode = true;
         EnterOnFvgBreakout = true;
         RiskRewardRatio = 2.0;
+        ShowInvalidatedFvgs = true;
+        FvgFillBrush = Brushes.DodgerBlue;
+        InvalidatedFvgFillBrush = Brushes.Gray;
+        FvgOpacity = 70;
+        InvalidatedFvgOpacity = 40;
+        UseFixedTakeProfitPoints = false;
+        TakeProfitPoints = 5.0;
         MaxTPsPerDay = 1;
         MaxLossesPerDay = 2;
         Trailing = true;
@@ -242,15 +337,12 @@ public class FiveMin : Strategy
         // --- Bias window control ---
         TimeSpan now = Times[0][0].TimeOfDay;
 
-        // Align biasStart to the first bar that begins *after* SessionStart
-        int barSize = BarsPeriod.Value;                 // e.g. 5 for 5-minute chart
-        int startMinute = ((SessionStart.Minutes / barSize)) * barSize;
-        TimeSpan biasStart = new TimeSpan(SessionStart.Hours, startMinute, 0);
+        // Capture the first 5-minute candle (e.g. 9:30–9:35) as the range
+        TimeSpan biasStart = new TimeSpan(SessionStart.Hours, SessionStart.Minutes, 0);
         TimeSpan biasEnd = biasStart.Add(TimeSpan.FromMinutes(BiasDuration));
-        biasEnd = biasEnd.Add(TimeSpan.FromMinutes(1));
 
         // Enter bias window
-        if (!isInBiasWindow && now >= biasStart && now < biasEnd)
+        if (!isInBiasWindow && now >= biasStart && now <= biasEnd)
         {
             sessionHigh = High[0];
             sessionLow  = Low[0];
@@ -258,13 +350,13 @@ public class FiveMin : Strategy
             hasCapturedRange = false;
             DebugPrint($"[Bias] Started bias window {biasStart}–{biasEnd}");
         }
-        else if (isInBiasWindow && now < biasEnd)
+        else if (isInBiasWindow && now <= biasEnd)
         {
             // keep updating range
             sessionHigh = Math.Max(sessionHigh, High[0]);
             sessionLow  = Math.Min(sessionLow, Low[0]);
         }
-        else if (isInBiasWindow && now >= biasEnd && !hasCapturedRange)
+        else if (isInBiasWindow && now > biasEnd && !hasCapturedRange)
         {
             DrawSessionWickRangePersistent(biasStart, biasEnd, "WickRange", Brushes.DodgerBlue,
                                         DashStyleHelper.Solid, 2);
@@ -363,6 +455,8 @@ public class FiveMin : Strategy
 		// --- Rule 3 retrace runs on *every* tick
 		TryEntrySignal(true);
 
+        UpdateActiveFvgs();
+
         // --- Draw trailing activation + trailing line ---
         if (Trailing && Position.MarketPosition != MarketPosition.Flat)
         {
@@ -415,6 +509,7 @@ public class FiveMin : Strategy
             lastFvgType = FVGType.Bullish;
             fvgFirstCandleHigh = High[3];
             fvgFirstCandleLow  = Low[3];
+            AddActiveFvg(low, high, true, CurrentBar - 3, CurrentBar - 1);
             DebugPrint($"[FVG] ✅ Bullish (closed). Zone=[{low:F2},{high:F2}]");
             return true;
         }
@@ -426,6 +521,7 @@ public class FiveMin : Strategy
             lastFvgType = FVGType.Bearish;
             fvgFirstCandleHigh = High[3];
             fvgFirstCandleLow  = Low[3];
+            AddActiveFvg(low, high, false, CurrentBar - 3, CurrentBar - 1);
             DebugPrint($"[FVG] ✅ Bearish (closed). Zone=[{low:F2},{high:F2}]");
             return true;
         }
@@ -438,6 +534,8 @@ public class FiveMin : Strategy
     private bool ShouldSkipBarUpdate()
     {
         if (BarsInProgress != 0)
+            return true;
+        if (invalidBarsPeriod)
             return true;
         if (CurrentBars[0] < 24)
             return true;
@@ -558,6 +656,9 @@ public class FiveMin : Strategy
             return;
 
         if (Times[0][0].TimeOfDay >= NoTradesAfter)
+            return;
+
+        if (!hasCapturedRange)
             return;
 
         HandleOppositeSignalReset();
@@ -804,7 +905,8 @@ public class FiveMin : Strategy
             entryOrder = order;
         }
 
-        if (order != null && orderState == OrderState.Filled && order.Name.Contains("Profit target"))
+        if (order != null && orderState == OrderState.Filled &&
+            (order.Name.Contains("Profit target") || IsProfitOrder(order)))
         {
             if (isStrategyAnalyzer)
                 lastExitBarAnalyzer = CurrentBar;
@@ -841,13 +943,19 @@ public class FiveMin : Strategy
             {
                 stopPx = Instrument.MasterInstrument.RoundToTickSize(firstLow - TickSize);
                 double risk = entryPrice - stopPx;
-                takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + (RiskRewardRatio * risk));
+                if (UseFixedTakeProfitPoints && TakeProfitPoints > 0)
+                    takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TakeProfitPoints);
+                else
+                    takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + (RiskRewardRatio * risk));
             }
             else
             {
                 stopPx = Instrument.MasterInstrument.RoundToTickSize(firstHigh + TickSize);
                 double risk = stopPx - entryPrice;
-                takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - (RiskRewardRatio * risk));
+                if (UseFixedTakeProfitPoints && TakeProfitPoints > 0)
+                    takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TakeProfitPoints);
+                else
+                    takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - (RiskRewardRatio * risk));
             }
 
             entryTakeProfitPrice = takePx;
@@ -857,6 +965,21 @@ public class FiveMin : Strategy
                 hardStopOrder = ExitLongStopMarket(0, true, NumberOfContracts, stopPx, "StopLoss", currentSignalName);
             else
                 hardStopOrder = ExitShortStopMarket(0, true, NumberOfContracts, stopPx, "StopLoss", currentSignalName);
+
+            // Optional profit target
+            if (!double.IsNaN(entryTakeProfitPrice))
+            {
+                if (execution.Order.Name.Contains("Long"))
+                {
+                    var tp = ExitLongLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "ProfitLong", currentSignalName);
+                    profitOrders.Add(tp);
+                }
+                else
+                {
+                    var tp = ExitShortLimit(0, true, NumberOfContracts, entryTakeProfitPrice, "ProfitShort", currentSignalName);
+                    profitOrders.Add(tp);
+                }
+            }
 
             DebugPrint($"📌 REAL entry={entryPrice:F2}, SL={stopPx:F2}, TP={takePx:F2}, Risk={(Math.Abs(entryPrice - stopPx)):F2}");
         }
@@ -1129,23 +1252,132 @@ public class FiveMin : Strategy
 
     private void DrawFVGZone()
     {
-        string tagBase = $"FVG_{lastFvgType}";
-        var brush = new SolidColorBrush(Color.FromArgb(70, 50, 205, 50));
-        int barsAgoStart = CurrentBar - rule2Bar;
-
-        Draw.Line(this, tagBase + "_high", false, barsAgoStart, fvgHigh, -90, fvgHigh, brush, DashStyleHelper.Solid, 1);
-        Draw.Line(this, tagBase + "_low", false, barsAgoStart, fvgLow, -90, fvgLow, brush, DashStyleHelper.Solid, 1);
+        // FVGs are now tracked/drawn as rectangles via AddActiveFvg/UpdateActiveFvgs.
     }
 
     private void DrawFVGZoneProgress()
     {
-        string tagBase = $"FVG_{lastFvgType}";
-        var brush = new SolidColorBrush(Color.FromArgb(70, 50, 205, 50));
-        int barsAgoStart = CurrentBar - rule2Bar;
-        int barsAgoEnd   = CurrentBar - retraceBar;
+        // FVGs are now tracked/drawn as rectangles via AddActiveFvg/UpdateActiveFvgs.
+    }
 
-        Draw.Line(this, tagBase + "_high", false, barsAgoStart, fvgHigh, barsAgoEnd, fvgHigh, brush, DashStyleHelper.Solid, 1);
-        Draw.Line(this, tagBase + "_low", false, barsAgoStart, fvgLow, barsAgoEnd, fvgLow, brush, DashStyleHelper.Solid, 1);
+    private class FvgBox
+    {
+        public string Tag;
+        public double Lower;
+        public double Upper;
+        public bool IsBullish;
+        public bool IsActive;
+        public int StartBarIndex;
+        public int EndBarIndex;
+        public int CreatedBarIndex;
+        public int InvalidatedBarIndex;
+        public DateTime SessionDate;
+    }
+
+    private void AddActiveFvg(double lower, double upper, bool bullish, int startBarIndex, int endBarIndex)
+    {
+        var fvg = new FvgBox
+        {
+            Tag = $"FiveMin_FVG_{fvgCounter++}_{Time[0]:yyyyMMdd_HHmmss}",
+            Lower = Math.Min(lower, upper),
+            Upper = Math.Max(lower, upper),
+            IsBullish = bullish,
+            IsActive = true,
+            StartBarIndex = Math.Max(0, startBarIndex),
+            EndBarIndex = Math.Max(0, endBarIndex),
+            CreatedBarIndex = CurrentBar,
+            InvalidatedBarIndex = -1,
+            SessionDate = Time[0].Date
+        };
+
+        activeFvgs.Add(fvg);
+
+        DrawFvgRectangle(fvg, FvgFillBrush ?? Brushes.Transparent, ClampOpacity(FvgOpacity));
+    }
+
+    private void UpdateActiveFvgs()
+    {
+        if (activeFvgs.Count == 0)
+            return;
+
+        for (int i = activeFvgs.Count - 1; i >= 0; i--)
+        {
+            var fvg = activeFvgs[i];
+            if (!fvg.IsActive && !ShowInvalidatedFvgs)
+                continue;
+
+            if (fvg.IsActive)
+                fvg.EndBarIndex = CurrentBar;
+
+            int startBarsAgo = CurrentBar - fvg.StartBarIndex;
+            int endBarsAgo = fvg.IsActive ? 0 : Math.Max(0, CurrentBar - fvg.EndBarIndex);
+            if (startBarsAgo < 0)
+                startBarsAgo = 0;
+
+            if (fvg.IsActive)
+            {
+                bool allowHitCheck = CurrentBar > fvg.CreatedBarIndex;
+                bool invalidated = allowHitCheck && (
+                    (fvg.IsBullish && Close[0] < fvg.Lower && Close[0] < Open[0]) ||
+                    (!fvg.IsBullish && Close[0] > fvg.Upper && Close[0] > Open[0]));
+
+                if (invalidated)
+                {
+                    fvg.IsActive = false;
+                    fvg.InvalidatedBarIndex = CurrentBar;
+                    fvg.EndBarIndex = CurrentBar;
+
+                    if (!ShowInvalidatedFvgs)
+                    {
+                        RemoveDrawObject(fvg.Tag);
+                    }
+                    else
+                    {
+                        int fixedEndBarsAgo = Math.Max(0, CurrentBar - fvg.EndBarIndex);
+                        DrawFvgRectangle(
+                            fvg,
+                            InvalidatedFvgFillBrush ?? Brushes.Transparent,
+                            ClampOpacity(InvalidatedFvgOpacity),
+                            startBarsAgo,
+                            fixedEndBarsAgo);
+                    }
+                }
+                else
+                {
+                    DrawFvgRectangle(fvg, FvgFillBrush ?? Brushes.Transparent, ClampOpacity(FvgOpacity), startBarsAgo, endBarsAgo);
+                }
+            }
+            else if (ShowInvalidatedFvgs)
+            {
+                int fixedEndBarsAgo = Math.Max(0, CurrentBar - fvg.EndBarIndex);
+                DrawFvgRectangle(fvg, InvalidatedFvgFillBrush ?? Brushes.Transparent, ClampOpacity(InvalidatedFvgOpacity), startBarsAgo, fixedEndBarsAgo);
+            }
+        }
+    }
+
+    private void DrawFvgRectangle(FvgBox fvg, Brush fill, int opacity, int startBarsAgo = 2, int endBarsAgo = 0)
+    {
+        Draw.Rectangle(
+            this,
+            fvg.Tag,
+            false,
+            startBarsAgo,
+            fvg.Lower,
+            endBarsAgo,
+            fvg.Upper,
+            Brushes.Transparent,
+            fill,
+            opacity
+        );
+    }
+
+    private int ClampOpacity(int opacity)
+    {
+        if (opacity < 0)
+            return 0;
+        if (opacity > 255)
+            return 255;
+        return opacity;
     }
 
     private void CleanupPosition()
@@ -1204,7 +1436,7 @@ public class FiveMin : Strategy
             if (t.Date != Times[0][0].Date)
                 break;
             var tod = t.TimeOfDay;
-            if (tod >= startTime && tod < endTime)
+            if (tod >= startTime && tod <= endTime)
             {
                 if (e < 0)
                     e = i;
