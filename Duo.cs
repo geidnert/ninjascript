@@ -680,7 +680,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_SkipEnd       = new TimeSpan(0, 0, 0);
                 London_Skip2Start     = new TimeSpan(0, 0, 0);
                 London_Skip2End       = new TimeSpan(0, 0, 0);
-                London_IfvgMinSizePoints = 1.25;
+                London_IfvgMinSizePoints = 8.25;
                 London_IfvgMaxSizePoints = 18;
                 London_IfvgMinTpSlDistancePoints = 0.75;
                 London_IfvgSwingStrength = 1;
