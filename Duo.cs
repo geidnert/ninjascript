@@ -165,16 +165,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal bool IfvgVerboseDebugLogging { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 12, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG Allow When Losing", Description = "Allow iFVG entries only when the current position is losing", Order = 11, GroupName = "iFVG Addon")]
+        public bool IfvgAllowWhenLosing { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG Allow When Green", Description = "Allow iFVG entries even if the current position is green", Order = 12, GroupName = "iFVG Addon")]
+        public bool IfvgAllowWhenGreen { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG Allow From Flat", Description = "Allow iFVG entries even when flat (forces pivot TP/SL)", Order = 13, GroupName = "iFVG Addon")]
+        public bool IfvgAllowFromFlat { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 14, GroupName = "iFVG Addon")]
         public IfvgTpMode IfvgTpSetting { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 13, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 15, GroupName = "iFVG Addon")]
         [Range(0, double.MaxValue)]
         public double IfvgTpPerc { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 14, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 16, GroupName = "iFVG Addon")]
         public IfvgSlMode IfvgSlSetting { get; set; }
 
         // [NinjaScriptProperty]
@@ -767,6 +779,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseIfvgAddon = true;
                 IfvgDebugLogging = false;
                 IfvgVerboseDebugLogging = false;
+                IfvgAllowWhenLosing = true;
+                IfvgAllowWhenGreen = false;
+                IfvgAllowFromFlat = false;
                 IfvgTpSetting = IfvgTpMode.PivotTarget;
                 IfvgTpPerc = 100;
                 IfvgSlSetting = IfvgSlMode.PivotStop;
@@ -1891,28 +1906,43 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Close[0],
                 Time[0]), false);
 
-            if (Position.MarketPosition == MarketPosition.Flat)
+            bool isFlat = Position.MarketPosition == MarketPosition.Flat;
+            if (isFlat && !IfvgAllowFromFlat)
             {
                 LogIfvgTrade(fvgTag, "BLOCKED (NoActivePosition)", false);
                 return;
             }
 
-            double unrealizedPnl = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
-            if (unrealizedPnl >= 0)
+            if (!isFlat)
             {
-                LogIfvgTrade(fvgTag, string.Format(
-                    "BLOCKED (PositionNotNegative) upnl={0:0.00}",
-                    unrealizedPnl), false);
-                return;
+                double unrealizedPnl = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+                bool isGreen = unrealizedPnl >= 0;
+                if (isGreen && !IfvgAllowWhenGreen)
+                {
+                    LogIfvgTrade(fvgTag, string.Format(
+                        "BLOCKED (PositionNotNegative) upnl={0:0.00}",
+                        unrealizedPnl), false);
+                    return;
+                }
+                if (!isGreen && !IfvgAllowWhenLosing)
+                {
+                    LogIfvgTrade(fvgTag, string.Format(
+                        "BLOCKED (PositionNegative) upnl={0:0.00}",
+                        unrealizedPnl), false);
+                    return;
+                }
             }
 
-            IfvgDirection requiredDirection = Position.MarketPosition == MarketPosition.Long
-                ? IfvgDirection.Short
-                : IfvgDirection.Long;
-            if (direction != requiredDirection)
+            if (!isFlat)
             {
-                LogIfvgTrade(fvgTag, "BLOCKED (DirectionMismatch)", false);
-                return;
+                IfvgDirection requiredDirection = Position.MarketPosition == MarketPosition.Long
+                    ? IfvgDirection.Short
+                    : IfvgDirection.Long;
+                if (direction != requiredDirection)
+                {
+                    LogIfvgTrade(fvgTag, "BLOCKED (DirectionMismatch)", false);
+                    return;
+                }
             }
 
             if (ifvgOverrideActive)
@@ -2080,7 +2110,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
-            if (IfvgTpSetting == IfvgTpMode.OriginalDuoStop)
+            bool forcePivotTpSl = isFlat && IfvgAllowFromFlat;
+            if (forcePivotTpSl && (IfvgTpSetting != IfvgTpMode.PivotTarget || IfvgSlSetting != IfvgSlMode.PivotStop))
+            {
+                LogIfvgTrade(fvgTag, "INFO Forcing pivot TP/SL (flat entry)", false);
+            }
+            if (!forcePivotTpSl && IfvgTpSetting == IfvgTpMode.OriginalDuoStop)
             {
                 if (!TryGetIfvgOriginalDuoStop(direction, out targetPrice))
                 {
@@ -2093,7 +2128,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 targetBarsAgo = -1;
             }
-            else if (IfvgTpSetting == IfvgTpMode.DuoC12Percent)
+            else if (!forcePivotTpSl && IfvgTpSetting == IfvgTpMode.DuoC12Percent)
             {
                 double c12Body;
                 if (!TryGetIfvgOriginalC12Body(direction, out c12Body))
@@ -2110,7 +2145,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 targetBarsAgo = -1;
             }
 
-            if (IfvgSlSetting == IfvgSlMode.OriginalCandle1Wick)
+            if (!forcePivotTpSl && IfvgSlSetting == IfvgSlMode.OriginalCandle1Wick)
             {
                 if (!TryGetIfvgOriginalCandleWick(direction, 1, out stopPrice))
                 {
@@ -2123,7 +2158,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 stopBarsAgo = -1;
             }
-            else if (IfvgSlSetting == IfvgSlMode.OriginalCandle2Wick)
+            else if (!forcePivotTpSl && IfvgSlSetting == IfvgSlMode.OriginalCandle2Wick)
             {
                 if (!TryGetIfvgOriginalCandleWick(direction, 2, out stopPrice))
                 {
