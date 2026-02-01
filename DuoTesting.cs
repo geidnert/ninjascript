@@ -865,25 +865,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (debug)
 					    Print($"{Time[0]} - ⛔ Entered skip window");
 
-                    if (ForceCloseAtSkipStart)
-                    {
-					    if (Position.MarketPosition != MarketPosition.Flat)
-					    {
-						    Flatten("SkipWindow");
-					    }
-					    else
-					    {
-						    CancelOrder(shortEntryOrder);
-						    CancelOrder(longEntryOrder);
-	                            SendWebhookCancelSafe();
-					    }
-	                        longLinesActive = false;
-	                        shortLinesActive = false;
-	                        longSignalBar = -1;
-	                        shortSignalBar = -1;
-                        longExitBar = -1;
-                        shortExitBar = -1;
-                    }
+	                    if (ForceCloseAtSkipStart)
+	                    {
+	                        FlattenAll("SkipWindow");
+	                    }
 				}
 				else
 				{
@@ -906,7 +891,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (Position.MarketPosition != MarketPosition.Flat)
                     {
                         // Case 1: In a position -> flatten (Managed Mode removes TP/SL too)
-                        Flatten("SessionEnd");
+                        FlattenAll("SessionEnd");
                     }
                     else
                     {
@@ -1632,7 +1617,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (sessionGainLimitReached)
             {
                 if (FlattenOnMaxSessionGain && Position.MarketPosition != MarketPosition.Flat)
-                    Flatten("SessionGainLimit");
+                    FlattenAll("SessionGainLimit");
                 return true;
             }
 
@@ -1643,7 +1628,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (debug)
                     Print($"{Time[0]} - ⛔ Max session gain reached ({sessionProfit:0.00} pts >= {activeMaxSessionGain:0.00} pts). Pausing entries for session.");
                 if (FlattenOnMaxSessionGain && Position.MarketPosition != MarketPosition.Flat)
-                    Flatten("SessionGainLimit");
+                    FlattenAll("SessionGainLimit");
                 return true;
             }
 
@@ -2791,6 +2776,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                // ✅ Send EXIT webhook for shorts
 	                SendWebhookExitSafe();
 	            }
+
+            longLinesActive = false;
+            shortLinesActive = false;
+            longSignalBar = -1;
+            shortSignalBar = -1;
+            longExitBar = -1;
+            shortExitBar = -1;
+        }
+
+        private void FlattenAll(string reason)
+        {
+            CancelOrder(shortEntryOrder);
+            CancelOrder(longEntryOrder);
+            SendWebhookCancelSafe();
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                if (debug)
+                    Print($"{Time[0]} - Flattening LONG due to {reason}");
+                ExitLong("Exit_" + reason, "LongEntry");
+                ExitLong("Exit_" + reason + "_iFVG", IfvgLongSignalName);
+                SendWebhookExitSafe();
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                if (debug)
+                    Print($"{Time[0]} - Flattening SHORT due to {reason}");
+                ExitShort("Exit_" + reason, "ShortEntry");
+                ExitShort("Exit_" + reason + "_iFVG", IfvgShortSignalName);
+                SendWebhookExitSafe();
+            }
 
             longLinesActive = false;
             shortLinesActive = false;
