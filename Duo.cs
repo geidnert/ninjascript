@@ -590,14 +590,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double pendingShortEntry;
         private double pendingShortTP;
         private double pendingShortSL;
+        private bool pendingIfvgLongWebhook;
+        private bool pendingIfvgShortWebhook;
+        private double pendingIfvgLongEntry;
+        private double pendingIfvgLongTP;
+        private double pendingIfvgLongSL;
+        private double pendingIfvgShortEntry;
+        private double pendingIfvgShortTP;
+        private double pendingIfvgShortSL;
+        private bool pendingIfvgLongMarketEntry;
+        private bool pendingIfvgShortMarketEntry;
         private string lastLongWebhookOrderId;
         private string lastShortWebhookOrderId;
+        private string lastIfvgLongWebhookOrderId;
+        private string lastIfvgShortWebhookOrderId;
         private double lastLongWebhookEntry;
         private double lastLongWebhookTP;
         private double lastLongWebhookSL;
         private double lastShortWebhookEntry;
         private double lastShortWebhookTP;
         private double lastShortWebhookSL;
+        private double lastIfvgLongWebhookEntry;
+        private double lastIfvgLongWebhookTP;
+        private double lastIfvgLongWebhookSL;
+        private double lastIfvgShortWebhookEntry;
+        private double lastIfvgShortWebhookTP;
+        private double lastIfvgShortWebhookSL;
         private int lastCancelWebhookBar = -1;
         private int lastExitWebhookBar = -1;
         private string lastCancelWebhookOrderId;
@@ -1490,8 +1508,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	            if (order.Name == "ShortEntry")
 	                shortEntryOrder = order;
 
-	            if (order.Name == "LongEntry" && pendingLongWebhook)
-	            {
+            if (order.Name == "LongEntry" && pendingLongWebhook)
+            {
 	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
                     double resolvedEntryPrice = pendingLongEntry;
                     double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
@@ -1540,8 +1558,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	                }
 	            }
 
-	            if (order.Name == "ShortEntry" && pendingShortWebhook)
-	            {
+            if (order.Name == "ShortEntry" && pendingShortWebhook)
+            {
 	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
                     double resolvedEntryPrice = pendingShortEntry;
                     double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
@@ -1854,6 +1872,106 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (invalidated)
                     fvg.IsActive = false;
             }
+
+            if (order.Name == IfvgLongSignalName && pendingIfvgLongWebhook)
+            {
+                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
+                double resolvedEntryPrice = pendingIfvgLongEntry;
+                double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
+                if (orderLimitPrice > 0)
+                    resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
+                double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
+                double sendTP = RoundToTickSize(pendingIfvgLongTP);
+                double sendSL = RoundToTickSize(pendingIfvgLongSL);
+                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working || orderState == OrderState.Filled;
+                bool isNewOrderId = !string.Equals(lastIfvgLongWebhookOrderId, orderId, StringComparison.Ordinal);
+                bool payloadChanged =
+                    isNewOrderId ||
+                    !PricesEqual(lastIfvgLongWebhookEntry, sendEntryPrice) ||
+                    !PricesEqual(lastIfvgLongWebhookTP, sendTP) ||
+                    !PricesEqual(lastIfvgLongWebhookSL, sendSL);
+
+                if (isActive && payloadChanged)
+                {
+                    if (!string.IsNullOrEmpty(lastIfvgLongWebhookOrderId))
+                    {
+                        if (debug)
+                            Print($"{Time[0]} - 🔁 Webhook updating iFVG LONG order: {FormatPriceInvariant(lastIfvgLongWebhookEntry)}/{FormatPriceInvariant(lastIfvgLongWebhookTP)}/{FormatPriceInvariant(lastIfvgLongWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
+                        SendWebhook("cancel");
+                    }
+                    else if (debug)
+                    {
+                        Print($"{Time[0]} - 📤 Webhook sending iFVG LONG order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
+                    }
+                    SendWebhook("buy", sendEntryPrice, sendTP, sendSL, pendingIfvgLongMarketEntry);
+                    pendingIfvgLongWebhook = false;
+                    lastIfvgLongWebhookOrderId = orderId;
+                    lastIfvgLongWebhookEntry = sendEntryPrice;
+                    lastIfvgLongWebhookTP = sendTP;
+                    lastIfvgLongWebhookSL = sendSL;
+                }
+                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
+                {
+                    pendingIfvgLongWebhook = false;
+                    if (orderState == OrderState.Cancelled)
+                    {
+                        lastIfvgLongWebhookOrderId = null;
+                        lastIfvgLongWebhookEntry = 0;
+                        lastIfvgLongWebhookTP = 0;
+                        lastIfvgLongWebhookSL = 0;
+                    }
+                }
+            }
+
+            if (order.Name == IfvgShortSignalName && pendingIfvgShortWebhook)
+            {
+                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
+                double resolvedEntryPrice = pendingIfvgShortEntry;
+                double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
+                if (orderLimitPrice > 0)
+                    resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
+                double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
+                double sendTP = RoundToTickSize(pendingIfvgShortTP);
+                double sendSL = RoundToTickSize(pendingIfvgShortSL);
+                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working || orderState == OrderState.Filled;
+                bool isNewOrderId = !string.Equals(lastIfvgShortWebhookOrderId, orderId, StringComparison.Ordinal);
+                bool payloadChanged =
+                    isNewOrderId ||
+                    !PricesEqual(lastIfvgShortWebhookEntry, sendEntryPrice) ||
+                    !PricesEqual(lastIfvgShortWebhookTP, sendTP) ||
+                    !PricesEqual(lastIfvgShortWebhookSL, sendSL);
+
+                if (isActive && payloadChanged)
+                {
+                    if (!string.IsNullOrEmpty(lastIfvgShortWebhookOrderId))
+                    {
+                        if (debug)
+                            Print($"{Time[0]} - 🔁 Webhook updating iFVG SHORT order: {FormatPriceInvariant(lastIfvgShortWebhookEntry)}/{FormatPriceInvariant(lastIfvgShortWebhookTP)}/{FormatPriceInvariant(lastIfvgShortWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
+                        SendWebhook("cancel");
+                    }
+                    else if (debug)
+                    {
+                        Print($"{Time[0]} - 📤 Webhook sending iFVG SHORT order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
+                    }
+                    SendWebhook("sell", sendEntryPrice, sendTP, sendSL, pendingIfvgShortMarketEntry);
+                    pendingIfvgShortWebhook = false;
+                    lastIfvgShortWebhookOrderId = orderId;
+                    lastIfvgShortWebhookEntry = sendEntryPrice;
+                    lastIfvgShortWebhookTP = sendTP;
+                    lastIfvgShortWebhookSL = sendSL;
+                }
+                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
+                {
+                    pendingIfvgShortWebhook = false;
+                    if (orderState == OrderState.Cancelled)
+                    {
+                        lastIfvgShortWebhookOrderId = null;
+                        lastIfvgShortWebhookEntry = 0;
+                        lastIfvgShortWebhookTP = 0;
+                        lastIfvgShortWebhookSL = 0;
+                    }
+                }
+            }
         }
 
         private bool TryGetIfvgOriginalDuoStop(IfvgDirection direction, out double stopPrice)
@@ -1987,7 +2105,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             CancelOrder(longEntryOrder);
             CancelOrder(shortEntryOrder);
-            SendWebhookCancelSafe();
+            SendWebhookCancelSafe(forceSend: true);
 
             if (Position.MarketPosition == MarketPosition.Long)
                 ExitLong("iFVGFlip");
@@ -2229,11 +2347,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (direction == IfvgDirection.Long)
             {
                 ifvgLastEntryPriceLong = entryPrice;
+                QueueIfvgWebhookLong(entryPrice, targetPrice, stopPrice, true);
                 EnterLong(activeContracts, signalName);
             }
             else
             {
                 ifvgLastEntryPriceShort = entryPrice;
+                QueueIfvgWebhookShort(entryPrice, targetPrice, stopPrice, true);
                 EnterShort(activeContracts, signalName);
             }
         }
@@ -2446,9 +2566,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!hit)
                 return;
 
-            ifvgBreakEvenTriggered = true;
             string signalName = ifvgBreakEvenDirection == IfvgDirection.Long ? IfvgLongSignalName : IfvgShortSignalName;
             double entryPrice = Position.AveragePrice;
+            double closePrice = Close[0];
+            bool wrongSide = ifvgBreakEvenDirection == IfvgDirection.Long
+                ? entryPrice >= closePrice
+                : entryPrice <= closePrice;
+            if (wrongSide)
+            {
+                LogIfvgTrade(ifvgActiveTradeTag, string.Format(
+                    "BE SKIP wrong-side dir={0} entry={1} close={2} be={3}",
+                    ifvgBreakEvenDirection,
+                    entryPrice,
+                    closePrice,
+                    ifvgBreakEvenPrice), true);
+                return;
+            }
+
+            ifvgBreakEvenTriggered = true;
             SetStopLoss(signalName, CalculationMode.Price, entryPrice, false);
             LogIfvgTrade(ifvgActiveTradeTag, string.Format("BE HIT move SL to entry={0}", entryPrice), true);
         }
@@ -4223,30 +4358,48 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 	            pendingLongSL = RoundToTickSize(stopLoss);
 	        }
 
-	        private void QueueEntryWebhookShort(double entryPrice, double takeProfit, double stopLoss)
-	        {
-	            if (Position.MarketPosition != MarketPosition.Flat)
-	                return;
+        private void QueueEntryWebhookShort(double entryPrice, double takeProfit, double stopLoss)
+        {
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return;
 
 	            pendingShortWebhook = true;
 	            pendingShortEntry = RoundToTickSize(entryPrice);
 	            pendingShortTP = RoundToTickSize(takeProfit);
-	            pendingShortSL = RoundToTickSize(stopLoss);
-	        }
+            pendingShortSL = RoundToTickSize(stopLoss);
+        }
 
-	        private void SendWebhookCancelSafe(Order order)
-	        {
-	            string orderId = order != null ? order.OrderId : null;
-	            double limitPrice = 0;
-	            if (order != null && order.LimitPrice > 0)
-	                limitPrice = RoundToTickSize(order.LimitPrice);
-	            SendWebhookCancelSafe(orderId, limitPrice);
-	        }
+        private void QueueIfvgWebhookLong(double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry)
+        {
+            pendingIfvgLongWebhook = true;
+            pendingIfvgLongEntry = RoundToTickSize(entryPrice);
+            pendingIfvgLongTP = RoundToTickSize(takeProfit);
+            pendingIfvgLongSL = RoundToTickSize(stopLoss);
+            pendingIfvgLongMarketEntry = isMarketEntry;
+        }
 
-	        private void SendWebhookCancelSafe(string orderId = null, double limitPrice = 0)
-	        {
-	            if (Position.MarketPosition != MarketPosition.Flat)
-	                return;
+        private void QueueIfvgWebhookShort(double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry)
+        {
+            pendingIfvgShortWebhook = true;
+            pendingIfvgShortEntry = RoundToTickSize(entryPrice);
+            pendingIfvgShortTP = RoundToTickSize(takeProfit);
+            pendingIfvgShortSL = RoundToTickSize(stopLoss);
+            pendingIfvgShortMarketEntry = isMarketEntry;
+        }
+
+        private void SendWebhookCancelSafe(Order order, bool forceSend = false)
+        {
+            string orderId = order != null ? order.OrderId : null;
+            double limitPrice = 0;
+            if (order != null && order.LimitPrice > 0)
+                limitPrice = RoundToTickSize(order.LimitPrice);
+            SendWebhookCancelSafe(orderId, limitPrice, forceSend);
+        }
+
+        private void SendWebhookCancelSafe(string orderId = null, double limitPrice = 0, bool forceSend = false)
+        {
+            if (!forceSend && Position.MarketPosition != MarketPosition.Flat)
+                return;
 
 	            bool sameBar = CurrentBar == lastCancelWebhookBar;
 	            bool sameOrder = string.Equals(lastCancelWebhookOrderId ?? string.Empty, orderId ?? string.Empty, StringComparison.Ordinal);
