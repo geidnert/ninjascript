@@ -157,11 +157,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NewYork_IfvgVolumeSmaMultiplier { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG Debug Logging", Description = "Enable iFVG add-on debug logs", Order = 14, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG Debug Logging", Description = "Enable iFVG add-on debug logs", Order = 18, GroupName = "iFVG Addon")]
         public bool IfvgDebugLogging { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG Verbose Logging", Description = "Enable iFVG add-on verbose logs", Order = 15, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG Verbose Logging", Description = "Enable iFVG add-on verbose logs", Order = 19, GroupName = "iFVG Addon")]
         public bool IfvgVerboseDebugLogging { get; set; }
 
         [NinjaScriptProperty]
@@ -177,16 +177,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool IfvgAllowFromFlat { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 14, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG Allow Reversal Entries", Description = "If false, iFVG reversals will only flatten the current position (no new entry)", Order = 14, GroupName = "iFVG Addon")]
+        public bool IfvgAllowReversalEntries { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 15, GroupName = "iFVG Addon")]
         public IfvgTpMode IfvgTpSetting { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 15, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 16, GroupName = "iFVG Addon")]
         [Range(0, double.MaxValue)]
         public double IfvgTpPerc { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 16, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 17, GroupName = "iFVG Addon")]
         public IfvgSlMode IfvgSlSetting { get; set; }
 
         [NinjaScriptProperty]
@@ -800,6 +804,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IfvgAllowWhenLosing = true;
                 IfvgAllowWhenGreen = false;
                 IfvgAllowFromFlat = false;
+                IfvgAllowReversalEntries = true;
                 IfvgTpSetting = IfvgTpMode.PivotTarget;
                 IfvgTpPerc = 100;
                 IfvgSlSetting = IfvgSlMode.PivotStop;
@@ -2111,6 +2116,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ExitLong("iFVGFlip");
             else if (Position.MarketPosition == MarketPosition.Short)
                 ExitShort("iFVGFlip");
+
+            if (!isFlat && !IfvgAllowReversalEntries)
+            {
+                LogIfvgTrade(fvgTag, "INFO Reversal disabled; flatten only", false);
+                return;
+            }
 
             longLinesActive = false;
             shortLinesActive = false;

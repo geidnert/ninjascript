@@ -177,16 +177,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool IfvgAllowFromFlat { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 14, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG Allow Reversal Entries", Description = "If false, iFVG reversals will only flatten the current position (no new entry)", Order = 14, GroupName = "iFVG Addon")]
+        public bool IfvgAllowReversalEntries { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 15, GroupName = "iFVG Addon")]
         public IfvgTpMode IfvgTpSetting { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 15, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 16, GroupName = "iFVG Addon")]
         [Range(0, double.MaxValue)]
         public double IfvgTpPerc { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 16, GroupName = "iFVG Addon")]
+        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 17, GroupName = "iFVG Addon")]
         public IfvgSlMode IfvgSlSetting { get; set; }
 
         // [NinjaScriptProperty]
@@ -800,6 +804,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IfvgAllowWhenLosing = true;
                 IfvgAllowWhenGreen = false;
                 IfvgAllowFromFlat = false;
+                IfvgAllowReversalEntries = true;
                 IfvgTpSetting = IfvgTpMode.PivotTarget;
                 IfvgTpPerc = 100;
                 IfvgSlSetting = IfvgSlMode.PivotStop;
@@ -1873,105 +1878,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     fvg.IsActive = false;
             }
 
-            if (order.Name == IfvgLongSignalName && pendingIfvgLongWebhook)
-            {
-                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
-                double resolvedEntryPrice = pendingIfvgLongEntry;
-                double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
-                if (orderLimitPrice > 0)
-                    resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
-                double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
-                double sendTP = RoundToTickSize(pendingIfvgLongTP);
-                double sendSL = RoundToTickSize(pendingIfvgLongSL);
-                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working || orderState == OrderState.Filled;
-                bool isNewOrderId = !string.Equals(lastIfvgLongWebhookOrderId, orderId, StringComparison.Ordinal);
-                bool payloadChanged =
-                    isNewOrderId ||
-                    !PricesEqual(lastIfvgLongWebhookEntry, sendEntryPrice) ||
-                    !PricesEqual(lastIfvgLongWebhookTP, sendTP) ||
-                    !PricesEqual(lastIfvgLongWebhookSL, sendSL);
-
-                if (isActive && payloadChanged)
-                {
-                    if (!string.IsNullOrEmpty(lastIfvgLongWebhookOrderId))
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - 🔁 Webhook updating iFVG LONG order: {FormatPriceInvariant(lastIfvgLongWebhookEntry)}/{FormatPriceInvariant(lastIfvgLongWebhookTP)}/{FormatPriceInvariant(lastIfvgLongWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                        SendWebhook("cancel");
-                    }
-                    else if (debug)
-                    {
-                        Print($"{Time[0]} - 📤 Webhook sending iFVG LONG order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                    }
-                    SendWebhook("buy", sendEntryPrice, sendTP, sendSL, pendingIfvgLongMarketEntry);
-                    pendingIfvgLongWebhook = false;
-                    lastIfvgLongWebhookOrderId = orderId;
-                    lastIfvgLongWebhookEntry = sendEntryPrice;
-                    lastIfvgLongWebhookTP = sendTP;
-                    lastIfvgLongWebhookSL = sendSL;
-                }
-                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
-                {
-                    pendingIfvgLongWebhook = false;
-                    if (orderState == OrderState.Cancelled)
-                    {
-                        lastIfvgLongWebhookOrderId = null;
-                        lastIfvgLongWebhookEntry = 0;
-                        lastIfvgLongWebhookTP = 0;
-                        lastIfvgLongWebhookSL = 0;
-                    }
-                }
-            }
-
-            if (order.Name == IfvgShortSignalName && pendingIfvgShortWebhook)
-            {
-                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
-                double resolvedEntryPrice = pendingIfvgShortEntry;
-                double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
-                if (orderLimitPrice > 0)
-                    resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
-                double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
-                double sendTP = RoundToTickSize(pendingIfvgShortTP);
-                double sendSL = RoundToTickSize(pendingIfvgShortSL);
-                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working || orderState == OrderState.Filled;
-                bool isNewOrderId = !string.Equals(lastIfvgShortWebhookOrderId, orderId, StringComparison.Ordinal);
-                bool payloadChanged =
-                    isNewOrderId ||
-                    !PricesEqual(lastIfvgShortWebhookEntry, sendEntryPrice) ||
-                    !PricesEqual(lastIfvgShortWebhookTP, sendTP) ||
-                    !PricesEqual(lastIfvgShortWebhookSL, sendSL);
-
-                if (isActive && payloadChanged)
-                {
-                    if (!string.IsNullOrEmpty(lastIfvgShortWebhookOrderId))
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - 🔁 Webhook updating iFVG SHORT order: {FormatPriceInvariant(lastIfvgShortWebhookEntry)}/{FormatPriceInvariant(lastIfvgShortWebhookTP)}/{FormatPriceInvariant(lastIfvgShortWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                        SendWebhook("cancel");
-                    }
-                    else if (debug)
-                    {
-                        Print($"{Time[0]} - 📤 Webhook sending iFVG SHORT order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                    }
-                    SendWebhook("sell", sendEntryPrice, sendTP, sendSL, pendingIfvgShortMarketEntry);
-                    pendingIfvgShortWebhook = false;
-                    lastIfvgShortWebhookOrderId = orderId;
-                    lastIfvgShortWebhookEntry = sendEntryPrice;
-                    lastIfvgShortWebhookTP = sendTP;
-                    lastIfvgShortWebhookSL = sendSL;
-                }
-                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
-                {
-                    pendingIfvgShortWebhook = false;
-                    if (orderState == OrderState.Cancelled)
-                    {
-                        lastIfvgShortWebhookOrderId = null;
-                        lastIfvgShortWebhookEntry = 0;
-                        lastIfvgShortWebhookTP = 0;
-                        lastIfvgShortWebhookSL = 0;
-                    }
-                }
-            }
         }
 
         private bool TryGetIfvgOriginalDuoStop(IfvgDirection direction, out double stopPrice)
@@ -2111,6 +2017,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ExitLong("iFVGFlip");
             else if (Position.MarketPosition == MarketPosition.Short)
                 ExitShort("iFVGFlip");
+
+            if (!isFlat && !IfvgAllowReversalEntries)
+            {
+                LogIfvgTrade(fvgTag, "INFO Reversal disabled; flatten only", false);
+                return;
+            }
 
             longLinesActive = false;
             shortLinesActive = false;
