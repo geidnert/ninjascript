@@ -165,6 +165,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool IfvgVerboseDebugLogging { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 12, GroupName = "iFVG Addon")]
+        public IfvgTpMode IfvgTpSetting { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 13, GroupName = "iFVG Addon")]
+        [Range(0, double.MaxValue)]
+        public double IfvgTpPerc { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 14, GroupName = "iFVG Addon")]
+        public IfvgSlMode IfvgSlSetting { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "London Parameters", Order = 1)]
         public double London_MinC12Body { get; set; }
 
@@ -468,6 +481,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double currentShortEntry = 0;
         private double currentLongSL = 0;
         private double currentShortSL = 0;
+        private double currentLongC1High = 0;
+        private double currentLongC1Low = 0;
+        private double currentLongC2High = 0;
+        private double currentLongC2Low = 0;
+        private double currentLongC12Body = 0;
+        private double currentShortC1High = 0;
+        private double currentShortC1Low = 0;
+        private double currentShortC2High = 0;
+        private double currentShortC2Low = 0;
+        private double currentShortC12Body = 0;
         private bool First_Candle_High_Low = true;
         private bool First_Candle_Open = false;
         private bool Second_Candle_High_Low = false;
@@ -744,6 +767,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseIfvgAddon = true;
                 IfvgDebugLogging = true;
                 IfvgVerboseDebugLogging = false;
+                IfvgTpSetting = IfvgTpMode.PivotTarget;
+                IfvgTpPerc = 100;
+                IfvgSlSetting = IfvgSlMode.PivotStop;
             }
             else if (State == State.DataLoaded)
             {
@@ -1270,6 +1296,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     currentLongEntry = longEntry;
                     currentLongTP = longTP;
                     currentLongSL = paddedLongSL;
+                    currentLongC1High = c1High;
+                    currentLongC1Low = c1Low;
+                    currentLongC2High = c2High;
+                    currentLongC2Low = c2Low;
+                    currentLongC12Body = c12Body;
                     currentLongCancelPrice = longCancelPrice;
                     longSignalBar = CurrentBar;
                     longLineTagPrefix = $"LongLine_{++lineTagCounter}_{CurrentBar}_";
@@ -1395,6 +1426,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     currentShortEntry = shortEntry;
                     currentShortTP = shortTP;
                     currentShortSL = paddedShortSL;
+                    currentShortC1High = c1High;
+                    currentShortC1Low = c1Low;
+                    currentShortC2High = c2High;
+                    currentShortC2Low = c2Low;
+                    currentShortC12Body = c12Body;
                     currentShortCancelPrice = shortCancelPrice;
                     shortSignalBar = CurrentBar;
                     shortLineTagPrefix = $"ShortLine_{++lineTagCounter}_{CurrentBar}_";
@@ -1805,6 +1841,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private bool TryGetIfvgOriginalDuoStop(IfvgDirection direction, out double stopPrice)
+        {
+            stopPrice = direction == IfvgDirection.Long ? currentShortSL : currentLongSL;
+            return stopPrice != 0;
+        }
+
+        private bool TryGetIfvgOriginalC12Body(IfvgDirection direction, out double c12Body)
+        {
+            c12Body = direction == IfvgDirection.Long ? currentShortC12Body : currentLongC12Body;
+            return c12Body > 0;
+        }
+
+        private bool TryGetIfvgOriginalCandleWick(IfvgDirection direction, int candleIndex, out double wickPrice)
+        {
+            wickPrice = 0;
+            if (candleIndex == 1)
+            {
+                wickPrice = direction == IfvgDirection.Long ? currentShortC1Low : currentLongC1High;
+                return wickPrice != 0;
+            }
+
+            if (candleIndex == 2)
+            {
+                wickPrice = direction == IfvgDirection.Long ? currentShortC2Low : currentLongC2High;
+                return wickPrice != 0;
+            }
+
+            return false;
+        }
+
+        private bool IsIfvgTpSlValid(IfvgDirection direction, double entryPrice, double targetPrice, double stopPrice)
+        {
+            if (direction == IfvgDirection.Long)
+                return targetPrice > entryPrice && stopPrice < entryPrice;
+
+            return targetPrice < entryPrice && stopPrice > entryPrice;
+        }
+
         private void TryEnterIfvg(IfvgDirection direction, double fvgLower, double fvgUpper, string fvgTag)
         {
             if (!UseIfvgAddon)
@@ -1949,8 +2023,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
-            targetPrice = RoundToTickSize(targetPrice);
-
             double stopPrice = 0;
             int stopBarsAgo = -1;
             bool hasStop = false;
@@ -2008,6 +2080,63 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
+            if (IfvgTpSetting == IfvgTpMode.OriginalDuoStop)
+            {
+                if (!TryGetIfvgOriginalDuoStop(direction, out targetPrice))
+                {
+                    string msg = $"iFVG TP invalid (OriginalDuoStop missing) dir={direction} entry={entryPrice:0.00}";
+                    Print($"{Time[0]} - {msg}");
+                    LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
+                    FlattenAll("IfvgTpInvalid");
+                    return;
+                }
+
+                targetBarsAgo = -1;
+            }
+            else if (IfvgTpSetting == IfvgTpMode.DuoC12Percent)
+            {
+                double c12Body;
+                if (!TryGetIfvgOriginalC12Body(direction, out c12Body))
+                {
+                    string msg = $"iFVG TP invalid (DuoC12 missing) dir={direction} entry={entryPrice:0.00}";
+                    Print($"{Time[0]} - {msg}");
+                    LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
+                    FlattenAll("IfvgTpInvalid");
+                    return;
+                }
+
+                double tpOffset = c12Body * (IfvgTpPerc / 100.0);
+                targetPrice = direction == IfvgDirection.Long ? entryPrice + tpOffset : entryPrice - tpOffset;
+                targetBarsAgo = -1;
+            }
+
+            if (IfvgSlSetting == IfvgSlMode.OriginalCandle1Wick)
+            {
+                if (!TryGetIfvgOriginalCandleWick(direction, 1, out stopPrice))
+                {
+                    string msg = $"iFVG SL invalid (C1 wick missing) dir={direction} entry={entryPrice:0.00}";
+                    Print($"{Time[0]} - {msg}");
+                    LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
+                    FlattenAll("IfvgSlInvalid");
+                    return;
+                }
+
+                stopBarsAgo = -1;
+            }
+            else if (IfvgSlSetting == IfvgSlMode.OriginalCandle2Wick)
+            {
+                if (!TryGetIfvgOriginalCandleWick(direction, 2, out stopPrice))
+                {
+                    string msg = $"iFVG SL invalid (C2 wick missing) dir={direction} entry={entryPrice:0.00}";
+                    Print($"{Time[0]} - {msg}");
+                    LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
+                    FlattenAll("IfvgSlInvalid");
+                    return;
+                }
+
+                stopBarsAgo = -1;
+            }
+
             double bePrice = firstTargetPrice;
             int beBarsAgo = firstTargetBarsAgo;
             if (activeIfvgUseBreakEvenWickLine)
@@ -2026,7 +2155,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     LogIfvgTrade(fvgTag, string.Format("BE LINE price={0} barsAgo={1}", bePrice, beBarsAgo), false);
             }
 
+            targetPrice = RoundToTickSize(targetPrice);
             stopPrice = RoundToTickSize(stopPrice);
+
+            if (!IsIfvgTpSlValid(direction, entryPrice, targetPrice, stopPrice))
+            {
+                string msg = $"iFVG TP/SL invalid dir={direction} entry={entryPrice:0.00} stop={stopPrice:0.00} target={targetPrice:0.00}";
+                Print($"{Time[0]} - {msg}");
+                LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
+                FlattenAll("IfvgTpSlInvalid");
+                return;
+            }
 
             string signalName = direction == IfvgDirection.Long ? IfvgLongSignalName : IfvgShortSignalName;
             SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
@@ -3652,6 +3791,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (debug)
                     Print($"⚠️ Heartbeat write error: {ex.Message}");
             }
+        }
+
+        public enum IfvgTpMode
+        {
+            PivotTarget,
+            OriginalDuoStop,
+            DuoC12Percent
+        }
+
+        public enum IfvgSlMode
+        {
+            PivotStop,
+            OriginalCandle1Wick,
+            OriginalCandle2Wick
         }
 
         private enum IfvgDirection
