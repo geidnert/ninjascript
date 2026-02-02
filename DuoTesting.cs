@@ -738,12 +738,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_Skip2Start     = new TimeSpan(0, 0, 0);
                 London_Skip2End       = new TimeSpan(0, 0, 0);
                 London_IfvgMinSizePoints = 8.25;
-                London_IfvgMaxSizePoints = 18;
-                London_IfvgMinTpSlDistancePoints = 0.75;
+                London_IfvgMaxSizePoints = 14.75;
+                London_IfvgMinTpSlDistancePoints = 3;
                 London_IfvgSwingStrength = 1;
-                London_IfvgSwingDrawBars = 200;
+                London_IfvgSwingDrawBars = 300;
                 London_IfvgMaxBarsBetweenSweepAndIfvg = 12;
-                London_IfvgUseBreakEvenWickLine = false;
+                London_IfvgUseBreakEvenWickLine = true;
                 London_IfvgUseVolumeSmaFilter = false;
                 London_IfvgVolumeFastSmaPeriod = 5;
                 London_IfvgVolumeSlowSmaPeriod = 20;
@@ -751,7 +751,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // New York
                 NewYork_Contracts     = 1;
                 NewYork_MinC12Body  = 19;
-                NewYork_MinCandlePoints = 0.75;
+                NewYork_MinCandlePoints = 1;
                 NewYork_MaxC12Body  = 132;
                 NewYork_OffsetPerc  = 0.2;
                 NewYork_TpPerc      = 28.3;
@@ -771,12 +771,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_SkipEnd = new TimeSpan(13, 15, 0);
                 NewYork_Skip2Start = new TimeSpan(0, 0, 0);
                 NewYork_Skip2End = new TimeSpan(0, 0, 0);
-                NewYork_IfvgMinSizePoints = 8.25;
+                NewYork_IfvgMinSizePoints = 6;
                 NewYork_IfvgMaxSizePoints = 27;
-                NewYork_IfvgMinTpSlDistancePoints = 1.5;
-                NewYork_IfvgSwingStrength = 1;
-                NewYork_IfvgSwingDrawBars = 200;
-                NewYork_IfvgMaxBarsBetweenSweepAndIfvg = 15;
+                NewYork_IfvgMinTpSlDistancePoints = 0;
+                NewYork_IfvgSwingStrength = 2;
+                NewYork_IfvgSwingDrawBars = 300;
+                NewYork_IfvgMaxBarsBetweenSweepAndIfvg = 17;
                 NewYork_IfvgUseBreakEvenWickLine = true;
                 NewYork_IfvgUseVolumeSmaFilter = true;
                 NewYork_IfvgVolumeFastSmaPeriod = 5;
@@ -799,15 +799,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ReverseOnSignal = true;
                 FlattenOnMaxSessionGain = false;
                 UseIfvgAddon = true;
-                IfvgDebugLogging = true;
+                IfvgDebugLogging = false;
                 IfvgVerboseDebugLogging = false;
                 IfvgAllowWhenLosing = true;
                 IfvgAllowWhenGreen = false;
-                IfvgAllowFromFlat = false;
+                IfvgAllowFromFlat = true;
                 IfvgAllowReversalEntries = true;
-                IfvgTpSetting = IfvgTpMode.PivotTarget;
+                IfvgTpSetting = IfvgTpMode.OriginalDuoStop;
                 IfvgTpPerc = 100;
-                IfvgSlSetting = IfvgSlMode.PivotStop;
+                IfvgSlSetting = IfvgSlMode.OriginalCandle2Wick;
             }
             else if (State == State.DataLoaded)
             {
