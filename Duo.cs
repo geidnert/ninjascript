@@ -157,41 +157,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal double NewYork_IfvgVolumeSmaMultiplier { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "iFVG Debug Logging", Description = "Enable iFVG add-on debug logs", Order = 14, GroupName = "iFVG Addon")]
+        // [Display(Name = "iFVG Debug Logging", Description = "Enable iFVG add-on debug logs", Order = 18, GroupName = "iFVG Addon")]
         internal bool IfvgDebugLogging { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "iFVG Verbose Logging", Description = "Enable iFVG add-on verbose logs", Order = 15, GroupName = "iFVG Addon")]
+        // [Display(Name = "iFVG Verbose Logging", Description = "Enable iFVG add-on verbose logs", Order = 19, GroupName = "iFVG Addon")]
         internal bool IfvgVerboseDebugLogging { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Allow When Losing", Description = "Allow iFVG entries only when the current position is losing", Order = 11, GroupName = "iFVG Addon")]
-        public bool IfvgAllowWhenLosing { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "iFVG Allow When Losing", Description = "Allow iFVG entries only when the current position is losing", Order = 11, GroupName = "iFVG Addon")]
+        internal bool IfvgAllowWhenLosing { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Allow When Green", Description = "Allow iFVG entries even if the current position is green", Order = 12, GroupName = "iFVG Addon")]
-        public bool IfvgAllowWhenGreen { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "iFVG Allow When Green", Description = "Allow iFVG entries even if the current position is green", Order = 12, GroupName = "iFVG Addon")]
+        internal bool IfvgAllowWhenGreen { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Allow From Flat", Description = "Allow iFVG entries even when flat (forces pivot TP/SL)", Order = 13, GroupName = "iFVG Addon")]
-        public bool IfvgAllowFromFlat { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "iFVG Allow From Flat", Description = "Allow iFVG entries even when flat (forces pivot TP/SL)", Order = 13, GroupName = "iFVG Addon")]
+        internal bool IfvgAllowFromFlat { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Allow Reversal Entries", Description = "If false, iFVG reversals will only flatten the current position (no new entry)", Order = 14, GroupName = "iFVG Addon")]
-        public bool IfvgAllowReversalEntries { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "iFVG Allow Reversal Entries", Description = "If false, iFVG reversals will only flatten the current position (no new entry)", Order = 14, GroupName = "iFVG Addon")]
+        internal bool IfvgAllowReversalEntries { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 15, GroupName = "iFVG Addon")]
-        public IfvgTpMode IfvgTpSetting { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 15, GroupName = "iFVG Addon")]
+        internal IfvgTpMode IfvgTpSetting { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 16, GroupName = "iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double IfvgTpPerc { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 16, GroupName = "iFVG Addon")]
+        // [Range(0, double.MaxValue)]
+        internal double IfvgTpPerc { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 17, GroupName = "iFVG Addon")]
-        public IfvgSlMode IfvgSlSetting { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 17, GroupName = "iFVG Addon")]
+        internal IfvgSlMode IfvgSlSetting { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "London Parameters", Order = 1)]
@@ -738,12 +738,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_Skip2Start     = new TimeSpan(0, 0, 0);
                 London_Skip2End       = new TimeSpan(0, 0, 0);
                 London_IfvgMinSizePoints = 8.25;
-                London_IfvgMaxSizePoints = 18;
-                London_IfvgMinTpSlDistancePoints = 0.75;
+                London_IfvgMaxSizePoints = 14.75;
+                London_IfvgMinTpSlDistancePoints = 3;
                 London_IfvgSwingStrength = 1;
-                London_IfvgSwingDrawBars = 200;
+                London_IfvgSwingDrawBars = 300;
                 London_IfvgMaxBarsBetweenSweepAndIfvg = 12;
-                London_IfvgUseBreakEvenWickLine = false;
+                London_IfvgUseBreakEvenWickLine = true;
                 London_IfvgUseVolumeSmaFilter = false;
                 London_IfvgVolumeFastSmaPeriod = 5;
                 London_IfvgVolumeSlowSmaPeriod = 20;
@@ -751,7 +751,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // New York
                 NewYork_Contracts     = 1;
                 NewYork_MinC12Body  = 19;
-                NewYork_MinCandlePoints = 0.75;
+                NewYork_MinCandlePoints = 1;
                 NewYork_MaxC12Body  = 132;
                 NewYork_OffsetPerc  = 0.2;
                 NewYork_TpPerc      = 28.3;
@@ -771,12 +771,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_SkipEnd = new TimeSpan(13, 15, 0);
                 NewYork_Skip2Start = new TimeSpan(0, 0, 0);
                 NewYork_Skip2End = new TimeSpan(0, 0, 0);
-                NewYork_IfvgMinSizePoints = 8.25;
+                NewYork_IfvgMinSizePoints = 6;
                 NewYork_IfvgMaxSizePoints = 27;
-                NewYork_IfvgMinTpSlDistancePoints = 1.5;
-                NewYork_IfvgSwingStrength = 1;
-                NewYork_IfvgSwingDrawBars = 200;
-                NewYork_IfvgMaxBarsBetweenSweepAndIfvg = 15;
+                NewYork_IfvgMinTpSlDistancePoints = 0;
+                NewYork_IfvgSwingStrength = 2;
+                NewYork_IfvgSwingDrawBars = 300;
+                NewYork_IfvgMaxBarsBetweenSweepAndIfvg = 17;
                 NewYork_IfvgUseBreakEvenWickLine = true;
                 NewYork_IfvgUseVolumeSmaFilter = true;
                 NewYork_IfvgVolumeFastSmaPeriod = 5;
@@ -803,11 +803,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IfvgVerboseDebugLogging = false;
                 IfvgAllowWhenLosing = true;
                 IfvgAllowWhenGreen = false;
-                IfvgAllowFromFlat = false;
+                IfvgAllowFromFlat = true;
                 IfvgAllowReversalEntries = true;
-                IfvgTpSetting = IfvgTpMode.PivotTarget;
+                IfvgTpSetting = IfvgTpMode.OriginalDuoStop;
                 IfvgTpPerc = 100;
-                IfvgSlSetting = IfvgSlMode.PivotStop;
+                IfvgSlSetting = IfvgSlMode.OriginalCandle2Wick;
             }
             else if (State == State.DataLoaded)
             {
@@ -1637,6 +1637,106 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateInfo();
                 }
             }
+
+            if (order.Name == IfvgLongSignalName && pendingIfvgLongWebhook)
+            {
+                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
+                double resolvedEntryPrice = pendingIfvgLongEntry;
+                double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
+                if (orderLimitPrice > 0)
+                    resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
+                double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
+                double sendTP = RoundToTickSize(pendingIfvgLongTP);
+                double sendSL = RoundToTickSize(pendingIfvgLongSL);
+                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working || orderState == OrderState.Filled;
+                bool isNewOrderId = !string.Equals(lastIfvgLongWebhookOrderId, orderId, StringComparison.Ordinal);
+                bool payloadChanged =
+                    isNewOrderId ||
+                    !PricesEqual(lastIfvgLongWebhookEntry, sendEntryPrice) ||
+                    !PricesEqual(lastIfvgLongWebhookTP, sendTP) ||
+                    !PricesEqual(lastIfvgLongWebhookSL, sendSL);
+
+                if (isActive && payloadChanged)
+                {
+                    if (!string.IsNullOrEmpty(lastIfvgLongWebhookOrderId))
+                    {
+                        if (debug)
+                            Print($"{Time[0]} - 🔁 Webhook updating iFVG LONG order: {FormatPriceInvariant(lastIfvgLongWebhookEntry)}/{FormatPriceInvariant(lastIfvgLongWebhookTP)}/{FormatPriceInvariant(lastIfvgLongWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
+                        SendWebhook("cancel");
+                    }
+                    else if (debug)
+                    {
+                        Print($"{Time[0]} - 📤 Webhook sending iFVG LONG order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
+                    }
+                    SendWebhook("buy", sendEntryPrice, sendTP, sendSL, pendingIfvgLongMarketEntry);
+                    pendingIfvgLongWebhook = false;
+                    lastIfvgLongWebhookOrderId = orderId;
+                    lastIfvgLongWebhookEntry = sendEntryPrice;
+                    lastIfvgLongWebhookTP = sendTP;
+                    lastIfvgLongWebhookSL = sendSL;
+                }
+                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
+                {
+                    pendingIfvgLongWebhook = false;
+                    if (orderState == OrderState.Cancelled)
+                    {
+                        lastIfvgLongWebhookOrderId = null;
+                        lastIfvgLongWebhookEntry = 0;
+                        lastIfvgLongWebhookTP = 0;
+                        lastIfvgLongWebhookSL = 0;
+                    }
+                }
+            }
+
+            if (order.Name == IfvgShortSignalName && pendingIfvgShortWebhook)
+            {
+                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
+                double resolvedEntryPrice = pendingIfvgShortEntry;
+                double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
+                if (orderLimitPrice > 0)
+                    resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
+                double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
+                double sendTP = RoundToTickSize(pendingIfvgShortTP);
+                double sendSL = RoundToTickSize(pendingIfvgShortSL);
+                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working || orderState == OrderState.Filled;
+                bool isNewOrderId = !string.Equals(lastIfvgShortWebhookOrderId, orderId, StringComparison.Ordinal);
+                bool payloadChanged =
+                    isNewOrderId ||
+                    !PricesEqual(lastIfvgShortWebhookEntry, sendEntryPrice) ||
+                    !PricesEqual(lastIfvgShortWebhookTP, sendTP) ||
+                    !PricesEqual(lastIfvgShortWebhookSL, sendSL);
+
+                if (isActive && payloadChanged)
+                {
+                    if (!string.IsNullOrEmpty(lastIfvgShortWebhookOrderId))
+                    {
+                        if (debug)
+                            Print($"{Time[0]} - 🔁 Webhook updating iFVG SHORT order: {FormatPriceInvariant(lastIfvgShortWebhookEntry)}/{FormatPriceInvariant(lastIfvgShortWebhookTP)}/{FormatPriceInvariant(lastIfvgShortWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
+                        SendWebhook("cancel");
+                    }
+                    else if (debug)
+                    {
+                        Print($"{Time[0]} - 📤 Webhook sending iFVG SHORT order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
+                    }
+                    SendWebhook("sell", sendEntryPrice, sendTP, sendSL, pendingIfvgShortMarketEntry);
+                    pendingIfvgShortWebhook = false;
+                    lastIfvgShortWebhookOrderId = orderId;
+                    lastIfvgShortWebhookEntry = sendEntryPrice;
+                    lastIfvgShortWebhookTP = sendTP;
+                    lastIfvgShortWebhookSL = sendSL;
+                }
+                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
+                {
+                    pendingIfvgShortWebhook = false;
+                    if (orderState == OrderState.Cancelled)
+                    {
+                        lastIfvgShortWebhookOrderId = null;
+                        lastIfvgShortWebhookEntry = 0;
+                        lastIfvgShortWebhookTP = 0;
+                        lastIfvgShortWebhookSL = 0;
+                    }
+                }
+            }
             else
             {
                 // For all other order updates (Submitted, Working, Filled), just refresh info
@@ -1877,7 +1977,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (invalidated)
                     fvg.IsActive = false;
             }
-
         }
 
         private bool TryGetIfvgOriginalDuoStop(IfvgDirection direction, out double stopPrice)
