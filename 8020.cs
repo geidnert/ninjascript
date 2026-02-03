@@ -59,6 +59,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				TakeProfitPoints = 10;
 				StopLossPoints = 10;
 				MaxTradesPerRange = 1;
+				Contracts = 1;
 
 				SessionStart = new TimeSpan(9, 30, 0);
 				SessionEnd = new TimeSpan(16, 0, 0);
@@ -199,9 +200,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				LogDebug($"Trigger hit. Sending orders. LongEntry={longEntry:0.00} LongSL={longStop:0.00} LongTP={longTarget:0.00} ShortEntry={shortEntry:0.00} ShortSL={shortStop:0.00} ShortTP={shortTarget:0.00}");
 
 				longEntryOrder = SubmitOrderUnmanaged(
-					1, OrderAction.Buy, OrderType.Limit, DefaultQuantity, longEntry, 0, null, LongSignal);
+					1, OrderAction.Buy, OrderType.Limit, Contracts, longEntry, 0, null, LongSignal);
 				shortEntryOrder = SubmitOrderUnmanaged(
-					1, OrderAction.SellShort, OrderType.Limit, DefaultQuantity, shortEntry, 0, null, ShortSignal);
+					1, OrderAction.SellShort, OrderType.Limit, Contracts, shortEntry, 0, null, ShortSignal);
 
 				ordersPlaced = true;
 				activeBase = baseKey;
@@ -479,6 +480,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Display(ResourceType = typeof(Custom.Resource), Name = "MaxTradesPerRange", GroupName = "NinjaScriptParameters", Order = 4)]
 		public int MaxTradesPerRange { get; set; }
 
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Contracts", GroupName = "NinjaScriptParameters", Order = 5)]
+		public int Contracts { get; set; }
+
 		[NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "SessionStart", GroupName = "Session", Order = 0)]
 		public TimeSpan SessionStart { get; set; }
@@ -541,7 +546,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "DebugEnabled", GroupName = "NinjaScriptParameters", Order = 5)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "DebugEnabled", GroupName = "NinjaScriptParameters", Order = 6)]
 		public bool DebugEnabled { get; set; }
 		#endregion
 	}
