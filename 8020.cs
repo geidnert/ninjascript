@@ -12,6 +12,7 @@ using NinjaTrader.Cbi;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
+using NinjaTrader.NinjaScript.Indicators;
 #endregion
 
 namespace NinjaTrader.NinjaScript.Strategies
@@ -39,6 +40,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool tradeCompletedSinceLastTrigger;
 		private bool sessionClosed;
 		private bool inSkipWindow;
+		private SMA volumeFastSma;
+		private SMA volumeSlowSma;
 
 		protected override void OnStateChange()
 		{
@@ -60,12 +63,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StopLossPoints = 10;
 				MaxTradesPerRange = 1;
 				Contracts = 1;
+				UseVolumeSmaFilter = false;
+				VolumeFastSmaPeriod = 20;
+				VolumeSlowSmaPeriod = 50;
+				VolumeSmaMultiplier = 1.0;
 
 				SessionStart = new TimeSpan(9, 30, 0);
 				SessionEnd = new TimeSpan(16, 0, 0);
 				NoTradesAfter = new TimeSpan(15, 30, 0);
 				SkipStart = TimeSpan.Zero;
 				SkipEnd = TimeSpan.Zero;
+				Skip2Start = TimeSpan.Zero;
+				Skip2End = TimeSpan.Zero;
 				CloseAtSessionEnd = true;
 				ForceCloseAtSkipStart = true;
 				SessionBrush = Brushes.Gold;
@@ -89,6 +98,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				tradeCompletedSinceLastTrigger = false;
 				sessionClosed = false;
 				inSkipWindow = false;
+				volumeFastSma = SMA(Volume, VolumeFastSmaPeriod);
+				volumeSlowSma = SMA(Volume, VolumeSlowSmaPeriod);
 				LogDebug($"Init: EntryHandling={EntryHandling} StopTargetHandling={StopTargetHandling}");
 			}
 		}
@@ -189,6 +200,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (!ordersPlaced && hitTrigger && baseKey == activeBase && canRearmInRange)
 			{
+				if (!PassesVolumeSmaFilter())
+					return;
+
 				double longEntry = Instrument.MasterInstrument.RoundToTickSize(low);
 				double shortEntry = Instrument.MasterInstrument.RoundToTickSize(high);
 
@@ -353,6 +367,36 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return order != null && (order.OrderState == OrderState.Working || order.OrderState == OrderState.Accepted);
 		}
 
+		private bool PassesVolumeSmaFilter()
+		{
+			if (!UseVolumeSmaFilter)
+				return true;
+
+			int requiredBars = Math.Max(VolumeFastSmaPeriod, VolumeSlowSmaPeriod);
+			if (CurrentBars[1] < requiredBars)
+			{
+				LogDebug($"BLOCKED (VolumeSmaWarmup: bars={CurrentBars[1] + 1} need={requiredBars})");
+				return false;
+			}
+
+			double fast = volumeFastSma[0];
+			double slow = volumeSlowSma[0];
+			if (slow <= 0)
+			{
+				LogDebug($"BLOCKED (VolumeSmaInvalid: fast={fast:0.00} slow={slow:0.00})");
+				return false;
+			}
+
+			if (fast <= slow * VolumeSmaMultiplier)
+			{
+				LogDebug($"BLOCKED (VolumeSma: fast={fast:0.00} slow={slow:0.00} mult={VolumeSmaMultiplier:0.00})");
+				return false;
+			}
+
+			LogDebug($"Filter VolumeSma ok fast={fast:0.00} slow={slow:0.00} mult={VolumeSmaMultiplier:0.00}");
+			return true;
+		}
+
 		private bool TimeInSession(DateTime time)
 		{
 			if (SessionStart == SessionEnd)
@@ -362,9 +406,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private bool TimeInSkip(DateTime time)
 		{
-			if (SkipStart == SkipEnd)
-				return false;
-			return IsTimeInRange(time.TimeOfDay, SkipStart, SkipEnd);
+			bool inSkip1 = SkipStart != SkipEnd && IsTimeInRange(time.TimeOfDay, SkipStart, SkipEnd);
+			bool inSkip2 = Skip2Start != Skip2End && IsTimeInRange(time.TimeOfDay, Skip2Start, Skip2End);
+			return inSkip1 || inSkip2;
 		}
 
 		private bool TimeInNoTradesAfter(DateTime time)
@@ -430,6 +474,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (SkipStart != SkipEnd)
 				DrawSkipWindow(SkipStart, SkipEnd);
+			if (Skip2Start != Skip2End)
+				DrawSkipWindow(Skip2Start, Skip2End);
 		}
 
 		private void DrawSkipWindow(TimeSpan start, TimeSpan end)
@@ -485,6 +531,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public int Contracts { get; set; }
 
 		[NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "UseVolumeSmaFilter", GroupName = "NinjaScriptParameters", Order = 6)]
+		public bool UseVolumeSmaFilter { get; set; }
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "VolumeFastSmaPeriod", GroupName = "NinjaScriptParameters", Order = 7)]
+		public int VolumeFastSmaPeriod { get; set; }
+
+		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "VolumeSlowSmaPeriod", GroupName = "NinjaScriptParameters", Order = 8)]
+		public int VolumeSlowSmaPeriod { get; set; }
+
+		[Range(0, double.MaxValue), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "VolumeSmaMultiplier", GroupName = "NinjaScriptParameters", Order = 9)]
+		public double VolumeSmaMultiplier { get; set; }
+
+		[NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "SessionStart", GroupName = "Session", Order = 0)]
 		public TimeSpan SessionStart { get; set; }
 
@@ -505,15 +567,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public TimeSpan SkipEnd { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "CloseAtSessionEnd", GroupName = "Session", Order = 5)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Skip2Start", GroupName = "Session", Order = 5)]
+		public TimeSpan Skip2Start { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "Skip2End", GroupName = "Session", Order = 6)]
+		public TimeSpan Skip2End { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "CloseAtSessionEnd", GroupName = "Session", Order = 7)]
 		public bool CloseAtSessionEnd { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "ForceCloseAtSkipStart", GroupName = "Session", Order = 6)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "ForceCloseAtSkipStart", GroupName = "Session", Order = 8)]
 		public bool ForceCloseAtSkipStart { get; set; }
 
 		[XmlIgnore]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "SessionBrush", GroupName = "Session", Order = 7)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "SessionBrush", GroupName = "Session", Order = 9)]
 		public Brush SessionBrush { get; set; }
 
 		[Browsable(false)]
@@ -524,7 +594,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[XmlIgnore]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "SkipBrush", GroupName = "Session", Order = 8)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "SkipBrush", GroupName = "Session", Order = 10)]
 		public Brush SkipBrush { get; set; }
 
 		[Browsable(false)]
@@ -535,7 +605,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[XmlIgnore]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "NoTradesAfterBrush", GroupName = "Session", Order = 9)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "NoTradesAfterBrush", GroupName = "Session", Order = 11)]
 		public Brush NoTradesAfterBrush { get; set; }
 
 		[Browsable(false)]
@@ -546,7 +616,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "DebugEnabled", GroupName = "NinjaScriptParameters", Order = 6)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "DebugEnabled", GroupName = "NinjaScriptParameters", Order = 10)]
 		public bool DebugEnabled { get; set; }
 		#endregion
 	}
