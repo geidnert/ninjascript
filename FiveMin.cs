@@ -140,6 +140,22 @@ public class FiveMin : Strategy
 
     [NinjaScriptProperty]
     [Display(
+        Name = "Use Fixed Stop Loss (Points)",
+        Description = "If true, SL is a fixed number of points instead of FVG-based SL.",
+        Order = 6,
+        GroupName = "B. Entry Conditions")]
+    public bool UseFixedStopLossPoints { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Stop Loss Points",
+        Description = "Fixed SL distance in points (price units).",
+        Order = 7,
+        GroupName = "B. Entry Conditions")]
+    public double StopLossPoints { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
         Name = "Max TPs Per Day",
         Description = "How many take-profit wins are allowed per day before stopping trading.",
         Order = 4,
@@ -153,6 +169,14 @@ public class FiveMin : Strategy
         Order = 5,
         GroupName = "A. Config")]
     public int MaxLossesPerDay { get; set; }
+
+    [NinjaScriptProperty]
+    [Display(
+        Name = "Tick-Based Range Flatten",
+        Description = "If true, flatten any open position immediately when price touches the captured range.",
+        Order = 6,
+        GroupName = "A. Config")]
+    public bool TickBasedRangeFlatten { get; set; }
 
     [NinjaScriptProperty]
     [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
@@ -301,7 +325,7 @@ public class FiveMin : Strategy
         NumberOfContracts = 1;
         BiasDuration = 5;
         MaxAccountBalance = 0; 
-        DebugMode = true;
+        DebugMode = false;
         EnterOnFvgBreakout = true;
         RiskRewardRatio = 2.0;
         ShowInvalidatedFvgs = true;
@@ -311,9 +335,12 @@ public class FiveMin : Strategy
         InvalidatedFvgOpacity = 40;
         UseFixedTakeProfitPoints = false;
         TakeProfitPoints = 5.0;
+        UseFixedStopLossPoints = false;
+        StopLossPoints = 3.0;
         MaxTPsPerDay = 1;
         MaxLossesPerDay = 2;
         Trailing = true;
+        TickBasedRangeFlatten = false;
     }
 #endregion
 
@@ -368,6 +395,9 @@ public class FiveMin : Strategy
         ExitIfSessionEnded();
         CancelEntryIfAfterNoTrades();
         CancelOrphanOrdersIfSessionOver();
+
+        if (TickBasedRangeFlatten && ShouldFlattenOnRangeTouch())
+            return;
 
         // ---------------------------------------------
         // STEP 1: Detect FIRST TP touch to activate trailing
@@ -813,6 +843,8 @@ public class FiveMin : Strategy
             name = "SessionExit";
         else if (reason.Equals("MaxProfitExit"))
             name = "MaxProfitExit";
+        else if (reason.Equals("RangeTouch"))
+            name = "RangeTouch";
 
         int qtyToExit = NumberOfContracts;
         if (qtyToExit > 0)
@@ -824,6 +856,34 @@ public class FiveMin : Strategy
         }
     }
 #endregion
+
+    private bool ShouldFlattenOnRangeTouch()
+    {
+        if (!hasCapturedRange)
+            return false;
+
+        if (Position.MarketPosition == MarketPosition.Flat)
+            return false;
+
+        double bid = GetCurrentBid();
+        double ask = GetCurrentAsk();
+
+        if (Position.MarketPosition == MarketPosition.Long && bid <= sessionHigh)
+        {
+            DebugPrint($"[Range] Touch detected (long). Bid={bid:F2}, RangeHigh={sessionHigh:F2} → flatten.");
+            TryExitAll(sessionHigh, "RangeTouch");
+            return true;
+        }
+
+        if (Position.MarketPosition == MarketPosition.Short && ask >= sessionLow)
+        {
+            DebugPrint($"[Range] Touch detected (short). Ask={ask:F2}, RangeLow={sessionLow:F2} → flatten.");
+            TryExitAll(sessionLow, "RangeTouch");
+            return true;
+        }
+
+        return false;
+    }
 
 #region NinjaTrader Event Routing
     protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
@@ -941,7 +1001,10 @@ public class FiveMin : Strategy
 
             if (execution.Order.Name.Contains("Long"))
             {
-                stopPx = Instrument.MasterInstrument.RoundToTickSize(firstLow - TickSize);
+                if (UseFixedStopLossPoints && StopLossPoints > 0)
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - StopLossPoints);
+                else
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(firstLow - TickSize);
                 double risk = entryPrice - stopPx;
                 if (UseFixedTakeProfitPoints && TakeProfitPoints > 0)
                     takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TakeProfitPoints);
@@ -950,7 +1013,10 @@ public class FiveMin : Strategy
             }
             else
             {
-                stopPx = Instrument.MasterInstrument.RoundToTickSize(firstHigh + TickSize);
+                if (UseFixedStopLossPoints && StopLossPoints > 0)
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + StopLossPoints);
+                else
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(firstHigh + TickSize);
                 double risk = stopPx - entryPrice;
                 if (UseFixedTakeProfitPoints && TakeProfitPoints > 0)
                     takePx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TakeProfitPoints);
