@@ -54,7 +54,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ExitOnSessionCloseSeconds = 30;
 				BarsRequiredToTrade = 1;
 
-				TriggerValue = 30;
+				TriggerLower = 40;
+				TriggerUpper = 60;
 				TakeProfitPoints = 10;
 				StopLossPoints = 10;
 				MaxTradesPerRange = 1;
@@ -165,11 +166,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (lastPrice < low || lastPrice > high)
 				return;
 
-			double triggerPrice = base100 + 20.0 + TriggerValue;
-			bool hitTrigger =
-				(lastPrice == triggerPrice) ||
-				(prevPrice < triggerPrice && lastPrice > triggerPrice) ||
-				(prevPrice > triggerPrice && lastPrice < triggerPrice);
+			double triggerLowerPrice = base100 + 20.0 + TriggerLower;
+			double triggerUpperPrice = base100 + 20.0 + TriggerUpper;
+			bool wasInBand = prevPrice >= triggerLowerPrice && prevPrice <= triggerUpperPrice;
+			bool isInBand = lastPrice >= triggerLowerPrice && lastPrice <= triggerUpperPrice;
+			bool hitTrigger = !wasInBand && isInBand;
 
 			if (hitTrigger && baseKey != activeBase)
 			{
@@ -458,20 +459,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		#region Properties
-		[Range(1, 80), NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "TriggerValue", GroupName = "NinjaScriptParameters", Order = 0)]
-		public int TriggerValue { get; set; }
+		[Range(0, 80), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "TriggerLower", GroupName = "NinjaScriptParameters", Order = 0)]
+		public int TriggerLower { get; set; }
+
+		[Range(0, 80), NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "TriggerUpper", GroupName = "NinjaScriptParameters", Order = 1)]
+		public int TriggerUpper { get; set; }
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "TakeProfitPoints", GroupName = "NinjaScriptParameters", Order = 1)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "TakeProfitPoints", GroupName = "NinjaScriptParameters", Order = 2)]
 		public int TakeProfitPoints { get; set; }
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "StopLossPoints", GroupName = "NinjaScriptParameters", Order = 2)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "StopLossPoints", GroupName = "NinjaScriptParameters", Order = 3)]
 		public int StopLossPoints { get; set; }
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "MaxTradesPerRange", GroupName = "NinjaScriptParameters", Order = 3)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "MaxTradesPerRange", GroupName = "NinjaScriptParameters", Order = 4)]
 		public int MaxTradesPerRange { get; set; }
 
 		[NinjaScriptProperty]
@@ -536,7 +541,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[NinjaScriptProperty]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "DebugEnabled", GroupName = "NinjaScriptParameters", Order = 4)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "DebugEnabled", GroupName = "NinjaScriptParameters", Order = 5)]
 		public bool DebugEnabled { get; set; }
 		#endregion
 	}
