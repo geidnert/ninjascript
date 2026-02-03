@@ -176,10 +176,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ExitOnSessionCloseSeconds = 30;
 				BarsRequiredToTrade = 1;
 
-				TriggerLower = 40;
-				TriggerUpper = 60;
-				TakeProfitPoints = 10;
-				StopLossPoints = 10;
+				TriggerLower = 40.0;
+				TriggerUpper = 60.0;
+				TakeProfitPoints = 10.0;
+				StopLossPoints = 10.0;
 				MaxTradesPerRange = 1;
 				Contracts = 1;
 				UseVolumeSmaFilter = false;
@@ -200,8 +200,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				SkipBrush = Brushes.DarkSlateGray;
 				NoTradesAfterBrush = Brushes.Red;
 				UseNewsFilter = true;
-				NewsSkipStart = new TimeSpan(14, 25, 0);
-				NewsSkipEnd = new TimeSpan(14, 35, 0);
+				NewsSkipStart = new TimeSpan(08, 28, 0);
+				NewsSkipEnd = new TimeSpan(08, 32, 0);
 			}
 			else if (State == State.Configure)
 			{
@@ -721,19 +721,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 		#region Properties
 		[Range(0, 80), NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "TriggerLower", GroupName = "NinjaScriptParameters", Order = 0)]
-		public int TriggerLower { get; set; }
+		public double TriggerLower { get; set; }
 
 		[Range(0, 80), NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "TriggerUpper", GroupName = "NinjaScriptParameters", Order = 1)]
-		public int TriggerUpper { get; set; }
+		public double TriggerUpper { get; set; }
 
-		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Range(0.25, double.MaxValue), NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "TakeProfitPoints", GroupName = "NinjaScriptParameters", Order = 2)]
-		public int TakeProfitPoints { get; set; }
+		public double TakeProfitPoints { get; set; }
 
-		[Range(1, int.MaxValue), NinjaScriptProperty]
+		[Range(0.25, double.MaxValue), NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "StopLossPoints", GroupName = "NinjaScriptParameters", Order = 3)]
-		public int StopLossPoints { get; set; }
+		public double StopLossPoints { get; set; }
 
 		[Range(1, int.MaxValue), NinjaScriptProperty]
 		[Display(ResourceType = typeof(Custom.Resource), Name = "MaxTradesPerRange", GroupName = "NinjaScriptParameters", Order = 4)]
