@@ -3,8 +3,10 @@
 //
 #region Using declarations
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using NinjaTrader.Gui;
@@ -42,6 +44,123 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool inSkipWindow;
 		private SMA volumeFastSma;
 		private SMA volumeSlowSma;
+		private const string NewsDatesRaw =
+			"2025-01-10\n" +
+			"2025-01-14\n" +
+			"2025-01-15\n" +
+			"2025-01-16\n" +
+			"2025-01-31\n" +
+			"2025-02-06\n" +
+			"2025-02-07\n" +
+			"2025-02-12\n" +
+			"2025-02-13\n" +
+			"2025-02-14\n" +
+			"2025-03-06\n" +
+			"2025-03-07\n" +
+			"2025-03-12\n" +
+			"2025-03-13\n" +
+			"2025-03-18\n" +
+			"2025-04-04\n" +
+			"2025-04-10\n" +
+			"2025-04-11\n" +
+			"2025-04-15\n" +
+			"2025-04-30\n" +
+			"2025-05-02\n" +
+			"2025-05-08\n" +
+			"2025-05-13\n" +
+			"2025-05-15\n" +
+			"2025-05-16\n" +
+			"2025-06-05\n" +
+			"2025-06-06\n" +
+			"2025-06-11\n" +
+			"2025-06-12\n" +
+			"2025-06-17\n" +
+			"2025-07-03\n" +
+			"2025-07-15\n" +
+			"2025-07-16\n" +
+			"2025-07-17\n" +
+			"2025-07-31\n" +
+			"2025-08-01\n" +
+			"2025-08-07\n" +
+			"2025-08-12\n" +
+			"2025-08-14\n" +
+			"2025-08-15\n" +
+			"2025-09-04\n" +
+			"2025-09-05\n" +
+			"2025-09-10\n" +
+			"2025-09-11\n" +
+			"2025-09-16\n" +
+			"2025-10-16\n" +
+			"2025-10-24\n" +
+			"2025-10-31\n" +
+			"2025-11-06\n" +
+			"2025-11-07\n" +
+			"2025-11-13\n" +
+			"2025-11-14\n" +
+			"2025-11-18\n" +
+			"2025-11-20\n" +
+			"2025-11-21\n" +
+			"2025-12-03\n" +
+			"2025-12-05\n" +
+			"2025-12-10\n" +
+			"2025-12-11\n" +
+			"2025-12-16\n" +
+			"2025-12-18\n" +
+			"2026-01-08\n" +
+			"2026-01-09\n" +
+			"2026-01-13\n" +
+			"2026-01-14\n" +
+			"2026-01-15\n" +
+			"2026-01-30\n" +
+			"2026-02-27\n" +
+			"2026-03-12\n" +
+			"2026-04-03\n" +
+			"2026-04-10\n" +
+			"2026-04-14\n" +
+			"2026-04-15\n" +
+			"2026-04-30\n" +
+			"2026-05-07\n" +
+			"2026-05-08\n" +
+			"2026-05-12\n" +
+			"2026-05-13\n" +
+			"2026-05-14\n" +
+			"2026-06-04\n" +
+			"2026-06-05\n" +
+			"2026-06-10\n" +
+			"2026-06-11\n" +
+			"2026-06-16\n" +
+			"2026-07-02\n" +
+			"2026-07-14\n" +
+			"2026-07-15\n" +
+			"2026-07-17\n" +
+			"2026-07-31\n" +
+			"2026-08-06\n" +
+			"2026-08-07\n" +
+			"2026-08-12\n" +
+			"2026-08-13\n" +
+			"2026-08-18\n" +
+			"2026-09-03\n" +
+			"2026-09-04\n" +
+			"2026-09-10\n" +
+			"2026-09-11\n" +
+			"2026-09-16\n" +
+			"2026-10-02\n" +
+			"2026-10-14\n" +
+			"2026-10-15\n" +
+			"2026-10-16\n" +
+			"2026-10-30\n" +
+			"2026-11-05\n" +
+			"2026-11-06\n" +
+			"2026-11-10\n" +
+			"2026-11-13\n" +
+			"2026-11-17\n" +
+			"2026-12-04\n" +
+			"2026-12-08\n" +
+			"2026-12-10\n" +
+			"2026-12-15\n" +
+			"2026-12-17";
+		private HashSet<DateTime> newsDates;
+		private bool newsDatesInitialized;
 
 		protected override void OnStateChange()
 		{
@@ -80,6 +199,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				SessionBrush = Brushes.Gold;
 				SkipBrush = Brushes.DarkSlateGray;
 				NoTradesAfterBrush = Brushes.Red;
+				UseNewsFilter = true;
+				NewsSkipStart = new TimeSpan(14, 25, 0);
+				NewsSkipEnd = new TimeSpan(14, 35, 0);
 			}
 			else if (State == State.Configure)
 			{
@@ -408,7 +530,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			bool inSkip1 = SkipStart != SkipEnd && IsTimeInRange(time.TimeOfDay, SkipStart, SkipEnd);
 			bool inSkip2 = Skip2Start != Skip2End && IsTimeInRange(time.TimeOfDay, Skip2Start, Skip2End);
-			return inSkip1 || inSkip2;
+			return inSkip1 || inSkip2 || IsNewsSkipTime(time);
 		}
 
 		private bool TimeInNoTradesAfter(DateTime time)
@@ -476,6 +598,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				DrawSkipWindow(SkipStart, SkipEnd);
 			if (Skip2Start != Skip2End)
 				DrawSkipWindow(Skip2Start, Skip2End);
+			DrawNewsWindow(Time[0]);
 		}
 
 		private void DrawSkipWindow(TimeSpan start, TimeSpan end)
@@ -494,6 +617,96 @@ namespace NinjaTrader.NinjaScript.Strategies
 					windowEnd, 30000,
 					Brushes.Transparent, SkipBrush ?? Brushes.DarkSlateGray, 25).ZOrder = -1;
 			}
+		}
+
+		private void DrawNewsWindow(DateTime barTime)
+		{
+			if (!UseNewsFilter)
+				return;
+
+			EnsureNewsDatesInitialized();
+			if (newsDates == null || newsDates.Count == 0)
+				return;
+
+			if (NewsSkipStart == NewsSkipEnd)
+				return;
+
+			if (!newsDates.Contains(barTime.Date))
+				return;
+
+			DateTime windowStart = barTime.Date + NewsSkipStart;
+			DateTime windowEnd = barTime.Date + NewsSkipEnd;
+			if (NewsSkipStart > NewsSkipEnd)
+				windowEnd = windowEnd.AddDays(1);
+
+			string rectTag = $"8020_NEWS_Rect_{barTime:yyyyMMdd}";
+			Draw.Rectangle(
+				this,
+				rectTag,
+				false,
+				windowStart,
+				0,
+				windowEnd,
+				30000,
+				Brushes.Transparent,
+				SkipBrush ?? Brushes.DarkSlateGray,
+				25
+			).ZOrder = -1;
+
+			string startTag = $"8020_NEWS_Start_{barTime:yyyyMMdd}";
+			Draw.VerticalLine(this, startTag, windowStart, SkipBrush ?? Brushes.DarkSlateGray, DashStyleHelper.Solid, 2);
+
+			string endTag = $"8020_NEWS_End_{barTime:yyyyMMdd}";
+			Draw.VerticalLine(this, endTag, windowEnd, SkipBrush ?? Brushes.DarkSlateGray, DashStyleHelper.Solid, 2);
+		}
+
+		private void EnsureNewsDatesInitialized()
+		{
+			if (newsDatesInitialized)
+				return;
+
+			newsDatesInitialized = true;
+			newsDates = new HashSet<DateTime>();
+
+			if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+				return;
+
+			string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+			foreach (string entry in entries)
+			{
+				string trimmed = entry.Trim();
+				if (DateTime.TryParseExact(trimmed, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime date))
+				{
+					newsDates.Add(date.Date);
+				}
+				else if (DebugEnabled)
+				{
+					Print($"Invalid News date entry: {trimmed}");
+				}
+			}
+		}
+
+		private bool IsNewsSkipTime(DateTime time)
+		{
+			if (!UseNewsFilter)
+				return false;
+
+			EnsureNewsDatesInitialized();
+			if (newsDates == null || newsDates.Count == 0)
+				return false;
+
+			if (!newsDates.Contains(time.Date))
+				return false;
+
+			TimeSpan start = NewsSkipStart;
+			TimeSpan end = NewsSkipEnd;
+
+			if (start == end)
+				return false;
+
+			return start < end
+				? (time.TimeOfDay >= start && time.TimeOfDay < end)
+				: (time.TimeOfDay >= start || time.TimeOfDay < end);
 		}
 
 		private void LogDebug(string message, DateTime? time = null)
@@ -582,8 +795,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Display(ResourceType = typeof(Custom.Resource), Name = "ForceCloseAtSkipStart", GroupName = "Session", Order = 8)]
 		public bool ForceCloseAtSkipStart { get; set; }
 
+		[NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "UseNewsFilter", GroupName = "Session", Order = 9)]
+		public bool UseNewsFilter { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "NewsSkipStart", GroupName = "Session", Order = 10)]
+		public TimeSpan NewsSkipStart { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "NewsSkipEnd", GroupName = "Session", Order = 11)]
+		public TimeSpan NewsSkipEnd { get; set; }
+
 		[XmlIgnore]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "SessionBrush", GroupName = "Session", Order = 9)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "SessionBrush", GroupName = "Session", Order = 12)]
 		public Brush SessionBrush { get; set; }
 
 		[Browsable(false)]
@@ -594,7 +819,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[XmlIgnore]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "SkipBrush", GroupName = "Session", Order = 10)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "SkipBrush", GroupName = "Session", Order = 13)]
 		public Brush SkipBrush { get; set; }
 
 		[Browsable(false)]
@@ -605,7 +830,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 
 		[XmlIgnore]
-		[Display(ResourceType = typeof(Custom.Resource), Name = "NoTradesAfterBrush", GroupName = "Session", Order = 11)]
+		[Display(ResourceType = typeof(Custom.Resource), Name = "NoTradesAfterBrush", GroupName = "Session", Order = 14)]
 		public Brush NoTradesAfterBrush { get; set; }
 
 		[Browsable(false)]
