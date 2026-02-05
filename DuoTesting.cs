@@ -33,6 +33,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 		public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Show EMA On Chart", Description = "Plot EMA filter on chart (if enabled)", Order = 7, GroupName = "Config")]
+        public bool ShowEmaOnChart { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3, GroupName = "Config")]
         public bool AntiHedge {
             get; set;
@@ -260,6 +264,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool London_UseMarketEntry { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "EMA Period (0 = Off)", Description = "EMA period for London session filter", Order = 1, GroupName = "London EMA Filter")]
+        [Range(0, int.MaxValue)]
+        public int London_EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EMA Body Filter", Description = "Which candle bodies must be fully beyond EMA", Order = 2, GroupName = "London EMA Filter")]
+        public EmaBodyFilterMode London_EmaBodyFilterMode { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "London Time")]
         public TimeSpan London_SessionStart
         {
@@ -360,6 +373,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Use Market Entry", Description = "If true, entries use market orders instead of limit orders for New York session", Order = 15, GroupName = "New York Parameters")]
         public bool NewYork_UseMarketEntry { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EMA Period (0 = Off)", Description = "EMA period for New York session filter", Order = 1, GroupName = "New York EMA Filter")]
+        [Range(0, int.MaxValue)]
+        public int NewYork_EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EMA Body Filter", Description = "Which candle bodies must be fully beyond EMA", Order = 2, GroupName = "New York EMA Filter")]
+        public EmaBodyFilterMode NewYork_EmaBodyFilterMode { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Flatten On Max Session Gain", Description = "If true, flatten open positions when max session gain is reached.", Order = 1, GroupName = "Session Limits")]
@@ -560,6 +582,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan activeSkip2Start;
         private TimeSpan activeSkip2End;
         private bool activeUseMarketEntry;
+        private int activeEmaPeriod;
+        private EmaBodyFilterMode activeEmaBodyFilterMode;
 		private TimeZoneInfo targetTimeZone;
 		private TimeZoneInfo londonTimeZone;
         private int lineTagCounter = 0;
@@ -654,6 +678,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private SMA ifvgVolumeSlowSmaNewYork;
         private SMA ifvgVolumeFastSmaActive;
         private SMA ifvgVolumeSlowSmaActive;
+        private EMA emaLondon;
+        private EMA emaNewYork;
+        private EMA emaActive;
         private IfvgSweepEvent ifvgLastSwingSweep;
         private bool ifvgBreakEvenActive;
         private bool ifvgBreakEvenTriggered;
@@ -713,6 +740,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
                 IsInstantiatedOnEachOptimizationIteration = false;
+                ShowEmaOnChart = true;
 
                 // London
                 London_Contracts     = 2;
@@ -730,6 +758,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_MaxSLPoints = 112;
                 London_MaxSessionGain = 160;
                 London_UseMarketEntry = false;
+                London_EmaPeriod = 0;
+                London_EmaBodyFilterMode = EmaBodyFilterMode.None;
                 London_SessionStart  = new TimeSpan(1, 30, 0);
                 London_SessionEnd    = new TimeSpan(5, 30, 0);
                 London_NoTradesAfter = new TimeSpan(5, 00, 0);
@@ -764,6 +794,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_MaxSLPoints = 139;
                 NewYork_MaxSessionGain = 145;
                 NewYork_UseMarketEntry = false;
+                NewYork_EmaPeriod = 0;
+                NewYork_EmaBodyFilterMode = EmaBodyFilterMode.None;
                 NewYork_SessionStart = new TimeSpan(9, 40, 0);
                 NewYork_SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
@@ -831,6 +863,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ifvgVolumeSlowSmaLondon = SMA(Volume, London_IfvgVolumeSlowSmaPeriod);
                 ifvgVolumeFastSmaNewYork = SMA(Volume, NewYork_IfvgVolumeFastSmaPeriod);
                 ifvgVolumeSlowSmaNewYork = SMA(Volume, NewYork_IfvgVolumeSlowSmaPeriod);
+                emaLondon = London_EmaPeriod > 0 ? EMA(Close, London_EmaPeriod) : null;
+                emaNewYork = NewYork_EmaPeriod > 0 ? EMA(Close, NewYork_EmaPeriod) : null;
+
+                if (ShowEmaOnChart)
+                {
+                    if (emaLondon != null)
+                        AddChartIndicator(emaLondon);
+                    if (emaNewYork != null)
+                        AddChartIndicator(emaNewYork);
+                }
             }
             else if (State == State.Configure)
             {
@@ -1163,6 +1205,64 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (shouldLog)
                         Print($"\n{Time[0]} - 🚫 Skipping signals: c12Body {c12Body:0.00} outside [{activeMinC12Body:0.00}, {activeMaxC12Body:0.00}]");
                     return;
+                }
+
+                if (activeEmaPeriod > 0)
+                {
+                    if (emaActive == null || CurrentBar < activeEmaPeriod)
+                    {
+                        if (shouldLog)
+                            Print($"\n{Time[0]} - 🚫 Skipping signals: EMA not ready (period {activeEmaPeriod}).");
+                        return;
+                    }
+
+                    double emaValue = emaActive[0];
+                    if (validBull)
+                    {
+                        if (activeEmaBodyFilterMode != EmaBodyFilterMode.None)
+                        {
+                            double c1BodyLow = Math.Min(c1Open, c1Close);
+                            double c2BodyLow = Math.Min(c2Open, c2Close);
+                            bool c1Ok = c1BodyLow > emaValue;
+                            bool c2Ok = c2BodyLow > emaValue;
+                            bool passes = activeEmaBodyFilterMode == EmaBodyFilterMode.SecondBodyOnly ? c2Ok : (c1Ok && c2Ok);
+                            if (!passes)
+                            {
+                                if (shouldLog)
+                                    Print($"\n{Time[0]} - 🚫 Skipping LONG: candle bodies not fully above EMA {emaValue:0.00}.");
+                                return;
+                            }
+                        }
+                        else if (Close[0] < emaValue)
+                        {
+                            if (shouldLog)
+                                Print($"\n{Time[0]} - 🚫 Skipping LONG: Close {Close[0]:0.00} below EMA {emaValue:0.00}.");
+                            return;
+                        }
+                    }
+                    if (validBear)
+                    {
+                        if (activeEmaBodyFilterMode != EmaBodyFilterMode.None)
+                        {
+                            double c1BodyHigh = Math.Max(c1Open, c1Close);
+                            double c2BodyHigh = Math.Max(c2Open, c2Close);
+                            bool c1Ok = c1BodyHigh < emaValue;
+                            bool c2Ok = c2BodyHigh < emaValue;
+                            bool passes = activeEmaBodyFilterMode == EmaBodyFilterMode.SecondBodyOnly ? c2Ok : (c1Ok && c2Ok);
+                            if (!passes)
+                            {
+                                if (shouldLog)
+                                    Print($"\n{Time[0]} - 🚫 Skipping SHORT: candle bodies not fully below EMA {emaValue:0.00}.");
+                                return;
+                            }
+                        }
+                        else if (Close[0] > emaValue)
+                        {
+                            if (shouldLog)
+                                Print($"\n{Time[0]} - 🚫 Skipping SHORT: Close {Close[0]:0.00} above EMA {emaValue:0.00}.");
+                            return;
+                        }
+                    }
                 }
 
                 double longSL = 0;
@@ -2096,6 +2196,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 LogIfvgTrade(fvgTag, "BLOCKED (SkipWindow)", false);
                 return;
+            }
+
+            if (activeEmaPeriod > 0)
+            {
+                if (emaActive == null || CurrentBar < activeEmaPeriod)
+                {
+                    LogIfvgTrade(fvgTag, "BLOCKED (EMA not ready)", false);
+                    return;
+                }
+
+                double emaValue = emaActive[0];
+                if (direction == IfvgDirection.Long && Close[0] < emaValue)
+                {
+                    LogIfvgTrade(fvgTag, "BLOCKED (EMA filter long)", false);
+                    return;
+                }
+                if (direction == IfvgDirection.Short && Close[0] > emaValue)
+                {
+                    LogIfvgTrade(fvgTag, "BLOCKED (EMA filter short)", false);
+                    return;
+                }
             }
 
             if (HasReachedSessionGainLimit())
@@ -3988,6 +4109,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             OriginalCandle2Wick
         }
 
+        public enum EmaBodyFilterMode
+        {
+            None,
+            SecondBodyOnly,
+            BothBodies
+        }
+
         private enum IfvgDirection
         {
             Long,
@@ -4179,6 +4307,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeMaxSLPoints = London_MaxSLPoints;
                     activeMaxSessionGain = London_MaxSessionGain;
                     activeUseMarketEntry = London_UseMarketEntry;
+                    activeEmaPeriod = London_EmaPeriod;
+                    activeEmaBodyFilterMode = London_EmaBodyFilterMode;
 
                     activeSessionStart  = London_SessionStart;
                     activeSessionEnd    = London_SessionEnd;
@@ -4200,6 +4330,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeIfvgVolumeSmaMultiplier = London_IfvgVolumeSmaMultiplier;
                     ifvgVolumeFastSmaActive = ifvgVolumeFastSmaLondon;
                     ifvgVolumeSlowSmaActive = ifvgVolumeSlowSmaLondon;
+                    emaActive = emaLondon;
                     break;
                 case SessionSlot.Session2:
                     activeAutoShiftTimes = AutoShiftSession2;
@@ -4218,6 +4349,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeMaxSLPoints = NewYork_MaxSLPoints;
                     activeMaxSessionGain = NewYork_MaxSessionGain;
                     activeUseMarketEntry = NewYork_UseMarketEntry;
+                    activeEmaPeriod = NewYork_EmaPeriod;
+                    activeEmaBodyFilterMode = NewYork_EmaBodyFilterMode;
 
                     activeSessionStart  = NewYork_SessionStart;
                     activeSessionEnd    = NewYork_SessionEnd;
@@ -4239,6 +4372,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeIfvgVolumeSmaMultiplier = NewYork_IfvgVolumeSmaMultiplier;
                     ifvgVolumeFastSmaActive = ifvgVolumeFastSmaNewYork;
                     ifvgVolumeSlowSmaActive = ifvgVolumeSlowSmaNewYork;
+                    emaActive = emaNewYork;
                     break;
             }
         }
