@@ -10,6 +10,7 @@
     using System.Xml.Serialization;
     using System.IO;
     using System.Globalization;
+    using System.Web.Script.Serialization;
     using NinjaTrader.Cbi;
     using NinjaTrader.Data;
     using NinjaTrader.Gui;
@@ -29,26 +30,54 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-		[Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 2, GroupName = "Config")]
+		[Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 1, GroupName = "Config")]
 		public bool RequireEntryConfirmation { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3, GroupName = "Config")]
+        // [Display(Name = "Show EMA On Chart", Description = "Plot EMA filter on chart (if enabled)", Order = 12, GroupName = "Config")]
+        internal bool ShowEmaOnChart { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 2, GroupName = "Config")]
         internal bool AntiHedge {
             get; set;
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 4, GroupName = "Config")]
+        [Display(Name = "TradersPost Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 9, GroupName = "Config")]
         public string WebhookUrl { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Reverse On Signal", Description = "If true, flatten current position when a reverse signal is generated, then place the new limit order", Order = 5, GroupName = "Config")]
+        // [Display(Name = "Webhook Provider", Description = "Choose which provider to send webhook orders to", Order = 3, GroupName = "Config")]
+        internal WebhookProvider WebhookProviderType { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Reverse On Signal", Description = "If true, flatten current position when a reverse signal is generated, then place the new limit order", Order = 10, GroupName = "Config")]
         internal bool ReverseOnSignal { get; set; }
 
         // [NinjaScriptProperty]
-        // [Display(Name = "Use iFVG Addon", Description = "Enable iFVG add-on override entries", Order = 6, GroupName = "Config")]
+        // [Display(Name = "Use iFVG Addon", Description = "Enable iFVG add-on override entries", Order = 11, GroupName = "Config")]
         internal bool UseIfvgAddon { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "ProjectX API Base URL", Description = "Base URL for ProjectX Gateway API", Order = 4, GroupName = "Config")]
+        internal string ProjectXApiBaseUrl { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "ProjectX Username", Description = "ProjectX dashboard username", Order = 5, GroupName = "Config")]
+        internal string ProjectXUsername { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "ProjectX API Key", Description = "ProjectX API key", Order = 6, GroupName = "Config")]
+        internal string ProjectXApiKey { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "ProjectX Account ID", Description = "ProjectX account ID", Order = 7, GroupName = "Config")]
+        internal string ProjectXAccountId { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "ProjectX Contract ID", Description = "ProjectX contract ID (e.g., CON.F.US.DA6.M25)", Order = 8, GroupName = "Config")]
+        internal string ProjectXContractId { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "London iFVG Min Size (Points)", Description = "Minimum iFVG size in price units", Order = 1, GroupName = "London iFVG Addon")]
@@ -260,6 +289,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal bool London_UseMarketEntry { get; set; }
 
         // [NinjaScriptProperty]
+        // [Display(Name = "EMA Period (0 = Off)", Description = "EMA period for London session filter", Order = 1, GroupName = "London EMA Filter")]
+        // [Range(0, int.MaxValue)]
+        internal int London_EmaPeriod { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "EMA Body Filter", Description = "Which candle bodies must be fully beyond EMA", Order = 2, GroupName = "London EMA Filter")]
+        internal EmaBodyFilterMode London_EmaBodyFilterMode { get; set; }
+
+        // [NinjaScriptProperty]
         // [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "London Time")]
         internal TimeSpan London_SessionStart
         {
@@ -360,6 +398,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [NinjaScriptProperty]
         // [Display(Name = "Use Market Entry", Description = "If true, entries use market orders instead of limit orders for New York session", Order = 15, GroupName = "New York Parameters")]
         internal bool NewYork_UseMarketEntry { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "EMA Period (0 = Off)", Description = "EMA period for New York session filter", Order = 1, GroupName = "New York EMA Filter")]
+        // [Range(0, int.MaxValue)]
+        internal int NewYork_EmaPeriod { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "EMA Body Filter", Description = "Which candle bodies must be fully beyond EMA", Order = 2, GroupName = "New York EMA Filter")]
+        internal EmaBodyFilterMode NewYork_EmaBodyFilterMode { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Flatten On Max Session Gain", Description = "If true, flatten open positions when max session gain is reached.", Order = 1, GroupName = "Session Limits")]
@@ -560,6 +607,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan activeSkip2Start;
         private TimeSpan activeSkip2End;
         private bool activeUseMarketEntry;
+        private int activeEmaPeriod;
+        private EmaBodyFilterMode activeEmaBodyFilterMode;
 		private TimeZoneInfo targetTimeZone;
 		private TimeZoneInfo londonTimeZone;
         private int lineTagCounter = 0;
@@ -625,6 +674,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string lastCancelWebhookOrderId;
         private double lastCancelWebhookLimitPrice;
         private string lastExitWebhookExecutionId;
+        private string projectXSessionToken;
+        private DateTime projectXTokenAcquiredUtc = DateTime.MinValue;
+        private int? projectXLastOrderId;
+        private string projectXLastOrderContractId;
 
         // --- Heartbeat reporting ---
         private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
@@ -654,6 +707,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private SMA ifvgVolumeSlowSmaNewYork;
         private SMA ifvgVolumeFastSmaActive;
         private SMA ifvgVolumeSlowSmaActive;
+        private EMA emaLondon;
+        private EMA emaNewYork;
+        private EMA emaActive;
         private IfvgSweepEvent ifvgLastSwingSweep;
         private bool ifvgBreakEvenActive;
         private bool ifvgBreakEvenTriggered;
@@ -713,6 +769,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
                 IsInstantiatedOnEachOptimizationIteration = false;
+                ShowEmaOnChart = true;
 
                 // London
                 London_Contracts     = 2;
@@ -730,6 +787,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_MaxSLPoints = 112;
                 London_MaxSessionGain = 160;
                 London_UseMarketEntry = false;
+                London_EmaPeriod = 21;
+                London_EmaBodyFilterMode = EmaBodyFilterMode.SecondBodyOnly;
                 London_SessionStart  = new TimeSpan(1, 30, 0);
                 London_SessionEnd    = new TimeSpan(5, 30, 0);
                 London_NoTradesAfter = new TimeSpan(5, 00, 0);
@@ -764,6 +823,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_MaxSLPoints = 139;
                 NewYork_MaxSessionGain = 145;
                 NewYork_UseMarketEntry = false;
+                NewYork_EmaPeriod = 21;
+                NewYork_EmaBodyFilterMode = EmaBodyFilterMode.SecondBodyOnly;
                 NewYork_SessionStart = new TimeSpan(9, 40, 0);
                 NewYork_SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
@@ -796,7 +857,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RequireEntryConfirmation = false;
                 AntiHedge = false;
                 WebhookUrl = "";
+                WebhookProviderType = WebhookProvider.TradersPost;
                 ReverseOnSignal = true;
+                ProjectXApiBaseUrl = "https://gateway-api-demo.s2f.projectx.com";
+                ProjectXUsername = "";
+                ProjectXApiKey = "";
+                ProjectXAccountId = "";
+                ProjectXContractId = "";
                 FlattenOnMaxSessionGain = false;
                 UseIfvgAddon = true;
                 IfvgDebugLogging = false;
@@ -831,6 +898,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ifvgVolumeSlowSmaLondon = SMA(Volume, London_IfvgVolumeSlowSmaPeriod);
                 ifvgVolumeFastSmaNewYork = SMA(Volume, NewYork_IfvgVolumeFastSmaPeriod);
                 ifvgVolumeSlowSmaNewYork = SMA(Volume, NewYork_IfvgVolumeSlowSmaPeriod);
+                emaLondon = London_EmaPeriod > 0 ? EMA(Close, London_EmaPeriod) : null;
+                emaNewYork = NewYork_EmaPeriod > 0 ? EMA(Close, NewYork_EmaPeriod) : null;
+
+                if (ShowEmaOnChart)
+                {
+                    if (emaLondon != null)
+                        AddChartIndicator(emaLondon);
+                    if (emaNewYork != null)
+                        AddChartIndicator(emaNewYork);
+                }
             }
             else if (State == State.Configure)
             {
@@ -1163,6 +1240,64 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (shouldLog)
                         Print($"\n{Time[0]} - 🚫 Skipping signals: c12Body {c12Body:0.00} outside [{activeMinC12Body:0.00}, {activeMaxC12Body:0.00}]");
                     return;
+                }
+
+                if (activeEmaPeriod > 0)
+                {
+                    if (emaActive == null || CurrentBar < activeEmaPeriod)
+                    {
+                        if (shouldLog)
+                            Print($"\n{Time[0]} - 🚫 Skipping signals: EMA not ready (period {activeEmaPeriod}).");
+                        return;
+                    }
+
+                    double emaValue = emaActive[0];
+                    if (validBull)
+                    {
+                        if (activeEmaBodyFilterMode != EmaBodyFilterMode.None)
+                        {
+                            double c1BodyLow = Math.Min(c1Open, c1Close);
+                            double c2BodyLow = Math.Min(c2Open, c2Close);
+                            bool c1Ok = c1BodyLow > emaValue;
+                            bool c2Ok = c2BodyLow > emaValue;
+                            bool passes = activeEmaBodyFilterMode == EmaBodyFilterMode.SecondBodyOnly ? c2Ok : (c1Ok && c2Ok);
+                            if (!passes)
+                            {
+                                if (shouldLog)
+                                    Print($"\n{Time[0]} - 🚫 Skipping LONG: candle bodies not fully above EMA {emaValue:0.00}.");
+                                return;
+                            }
+                        }
+                        else if (Close[0] < emaValue)
+                        {
+                            if (shouldLog)
+                                Print($"\n{Time[0]} - 🚫 Skipping LONG: Close {Close[0]:0.00} below EMA {emaValue:0.00}.");
+                            return;
+                        }
+                    }
+                    if (validBear)
+                    {
+                        if (activeEmaBodyFilterMode != EmaBodyFilterMode.None)
+                        {
+                            double c1BodyHigh = Math.Max(c1Open, c1Close);
+                            double c2BodyHigh = Math.Max(c2Open, c2Close);
+                            bool c1Ok = c1BodyHigh < emaValue;
+                            bool c2Ok = c2BodyHigh < emaValue;
+                            bool passes = activeEmaBodyFilterMode == EmaBodyFilterMode.SecondBodyOnly ? c2Ok : (c1Ok && c2Ok);
+                            if (!passes)
+                            {
+                                if (shouldLog)
+                                    Print($"\n{Time[0]} - 🚫 Skipping SHORT: candle bodies not fully below EMA {emaValue:0.00}.");
+                                return;
+                            }
+                        }
+                        else if (Close[0] > emaValue)
+                        {
+                            if (shouldLog)
+                                Print($"\n{Time[0]} - 🚫 Skipping SHORT: Close {Close[0]:0.00} above EMA {emaValue:0.00}.");
+                            return;
+                        }
+                    }
                 }
 
                 double longSL = 0;
@@ -2096,6 +2231,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 LogIfvgTrade(fvgTag, "BLOCKED (SkipWindow)", false);
                 return;
+            }
+
+            if (activeEmaPeriod > 0)
+            {
+                if (emaActive == null || CurrentBar < activeEmaPeriod)
+                {
+                    LogIfvgTrade(fvgTag, "BLOCKED (EMA not ready)", false);
+                    return;
+                }
+
+                double emaValue = emaActive[0];
+                if (direction == IfvgDirection.Long && Close[0] < emaValue)
+                {
+                    LogIfvgTrade(fvgTag, "BLOCKED (EMA filter long)", false);
+                    return;
+                }
+                if (direction == IfvgDirection.Short && Close[0] > emaValue)
+                {
+                    LogIfvgTrade(fvgTag, "BLOCKED (EMA filter short)", false);
+                    return;
+                }
             }
 
             if (HasReachedSessionGainLimit())
@@ -3974,6 +4130,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        public enum WebhookProvider
+        {
+            TradersPost,
+            ProjectX
+        }
+
         public enum IfvgTpMode
         {
             PivotTarget,
@@ -3986,6 +4148,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             PivotStop,
             OriginalCandle1Wick,
             OriginalCandle2Wick
+        }
+
+        public enum EmaBodyFilterMode
+        {
+            None,
+            SecondBodyOnly,
+            BothBodies
         }
 
         private enum IfvgDirection
@@ -4179,6 +4348,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeMaxSLPoints = London_MaxSLPoints;
                     activeMaxSessionGain = London_MaxSessionGain;
                     activeUseMarketEntry = London_UseMarketEntry;
+                    activeEmaPeriod = London_EmaPeriod;
+                    activeEmaBodyFilterMode = London_EmaBodyFilterMode;
 
                     activeSessionStart  = London_SessionStart;
                     activeSessionEnd    = London_SessionEnd;
@@ -4200,6 +4371,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeIfvgVolumeSmaMultiplier = London_IfvgVolumeSmaMultiplier;
                     ifvgVolumeFastSmaActive = ifvgVolumeFastSmaLondon;
                     ifvgVolumeSlowSmaActive = ifvgVolumeSlowSmaLondon;
+                    emaActive = emaLondon;
                     break;
                 case SessionSlot.Session2:
                     activeAutoShiftTimes = AutoShiftSession2;
@@ -4218,6 +4390,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeMaxSLPoints = NewYork_MaxSLPoints;
                     activeMaxSessionGain = NewYork_MaxSessionGain;
                     activeUseMarketEntry = NewYork_UseMarketEntry;
+                    activeEmaPeriod = NewYork_EmaPeriod;
+                    activeEmaBodyFilterMode = NewYork_EmaBodyFilterMode;
 
                     activeSessionStart  = NewYork_SessionStart;
                     activeSessionEnd    = NewYork_SessionEnd;
@@ -4239,6 +4413,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeIfvgVolumeSmaMultiplier = NewYork_IfvgVolumeSmaMultiplier;
                     ifvgVolumeFastSmaActive = ifvgVolumeFastSmaNewYork;
                     ifvgVolumeSlowSmaActive = ifvgVolumeSlowSmaNewYork;
+                    emaActive = emaNewYork;
                     break;
             }
         }
@@ -4450,6 +4625,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (State != State.Realtime)
             return;
 
+            if (WebhookProviderType == WebhookProvider.ProjectX)
+            {
+                SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry);
+                return;
+            }
+
             if (string.IsNullOrEmpty(WebhookUrl))
                 return;
 
@@ -4555,6 +4736,263 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             catch (Exception ex)
             {
                 Print($"⚠️ Webhook error: {ex.Message}");
+            }
+        }
+
+        private void SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry)
+        {
+            if (!EnsureProjectXSession())
+                return;
+
+            if (!TryGetProjectXIds(out int accountId, out string contractId))
+                return;
+
+            try
+            {
+                string response = null;
+                switch (eventType.ToLower())
+                {
+                    case "buy":
+                    case "sell":
+                        response = ProjectXPlaceOrder(eventType, accountId, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry);
+                        break;
+                    case "exit":
+                        response = ProjectXClosePosition(accountId, contractId);
+                        break;
+                    case "cancel":
+                        response = ProjectXCancelOrders(accountId, contractId);
+                        break;
+                    default:
+                        Print($"⚠️ ProjectX unsupported event type: {eventType}");
+                        return;
+                }
+
+                if (!string.IsNullOrEmpty(response))
+                    Print($"✅ ProjectX {eventType.ToUpper()} sent for {contractId}");
+            }
+            catch (Exception ex)
+            {
+                Print($"⚠️ ProjectX error: {ex.Message}");
+            }
+        }
+
+        private bool EnsureProjectXSession()
+        {
+            if (string.IsNullOrWhiteSpace(ProjectXApiBaseUrl))
+            {
+                Print("⚠️ ProjectX API Base URL is empty.");
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(projectXSessionToken) &&
+                (DateTime.UtcNow - projectXTokenAcquiredUtc).TotalHours < 23)
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(ProjectXUsername) || string.IsNullOrWhiteSpace(ProjectXApiKey))
+            {
+                Print("⚠️ ProjectX username or API key missing.");
+                return false;
+            }
+
+            string json = $@"
+            {{
+                ""userName"": ""{ProjectXUsername}"",
+                ""loginKey"": ""{ProjectXApiKey}""
+            }}";
+
+            string response = ProjectXPost("/api/Auth/loginKey", json, requiresAuth: false);
+            if (string.IsNullOrWhiteSpace(response))
+                return false;
+
+            if (!TryGetJsonString(response, "token", out string token))
+            {
+                Print("⚠️ ProjectX login did not return a token.");
+                return false;
+            }
+
+            projectXSessionToken = token;
+            projectXTokenAcquiredUtc = DateTime.UtcNow;
+            return true;
+        }
+
+        private bool TryGetProjectXIds(out int accountId, out string contractId)
+        {
+            accountId = 0;
+            contractId = null;
+
+            if (!int.TryParse(ProjectXAccountId, out accountId) || accountId <= 0)
+            {
+                Print("⚠️ ProjectX Account ID is missing or invalid.");
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(ProjectXContractId))
+            {
+                Print("⚠️ ProjectX Contract ID is missing.");
+                return false;
+            }
+
+            contractId = ProjectXContractId.Trim();
+            return true;
+        }
+
+        private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry)
+        {
+            int orderSide = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            int orderType = isMarketEntry ? 2 : 1; // 2 = Market, 1 = Limit
+
+            double entry = RoundToTickSize(entryPrice);
+            int tpTicks = PriceToTicks(Math.Abs(takeProfit - entry));
+            int slTicks = PriceToTicks(Math.Abs(entry - stopLoss));
+
+            string limitPart = isMarketEntry ? "" : $@",""limitPrice"": {FormatPriceInvariant(entry)}";
+
+            string json = $@"
+            {{
+                ""accountId"": {accountId},
+                ""contractId"": ""{contractId}"",
+                ""type"": {orderType},
+                ""side"": {orderSide},
+                ""size"": {activeContracts}{limitPart},
+                ""takeProfitBracket"": {{
+                    ""quantity"": 1,
+                    ""type"": 1,
+                    ""ticks"": {Math.Max(1, tpTicks)}
+                }},
+                ""stopLossBracket"": {{
+                    ""quantity"": 1,
+                    ""type"": 4,
+                    ""ticks"": {Math.Max(1, slTicks)}
+                }}
+            }}";
+
+            string response = ProjectXPost("/api/Order/place", json, requiresAuth: true);
+            if (string.IsNullOrWhiteSpace(response))
+                return null;
+
+            if (TryGetJsonInt(response, "orderId", out int orderId))
+            {
+                projectXLastOrderId = orderId;
+                projectXLastOrderContractId = contractId;
+            }
+
+            return response;
+        }
+
+        private string ProjectXClosePosition(int accountId, string contractId)
+        {
+            string json = $@"
+            {{
+                ""accountId"": {accountId},
+                ""contractId"": ""{contractId}""
+            }}";
+            return ProjectXPost("/api/Position/closeContract", json, requiresAuth: true);
+        }
+
+        private string ProjectXCancelOrders(int accountId, string contractId)
+        {
+            if (projectXLastOrderId.HasValue && string.Equals(projectXLastOrderContractId, contractId, StringComparison.OrdinalIgnoreCase))
+            {
+                string cancelJson = $@"
+                {{
+                    ""accountId"": {accountId},
+                    ""orderId"": {projectXLastOrderId.Value}
+                }}";
+                return ProjectXPost("/api/Order/cancel", cancelJson, requiresAuth: true);
+            }
+
+            string searchJson = $@"
+            {{
+                ""accountId"": {accountId}
+            }}";
+
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, requiresAuth: true);
+            if (string.IsNullOrWhiteSpace(searchResponse))
+                return null;
+
+            foreach (var order in ExtractProjectXOrders(searchResponse))
+            {
+                if (!order.TryGetValue("contractId", out object contractObj))
+                    continue;
+                if (!string.Equals(contractObj?.ToString(), contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!order.TryGetValue("id", out object idObj))
+                    continue;
+                if (!int.TryParse(idObj?.ToString(), out int id) || id <= 0)
+                    continue;
+
+                string cancelJson = $@"
+                {{
+                    ""accountId"": {accountId},
+                    ""orderId"": {id}
+                }}";
+                ProjectXPost("/api/Order/cancel", cancelJson, requiresAuth: true);
+            }
+
+            return searchResponse;
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuth)
+        {
+            string baseUrl = ProjectXApiBaseUrl?.TrimEnd('/');
+            if (string.IsNullOrWhiteSpace(baseUrl))
+                return null;
+
+            string url = baseUrl + path;
+
+            using (var client = new System.Net.WebClient())
+            {
+                client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                if (requiresAuth && !string.IsNullOrWhiteSpace(projectXSessionToken))
+                    client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
+                return client.UploadString(url, "POST", json);
+            }
+        }
+
+        private int PriceToTicks(double priceDistance)
+        {
+            if (TickSize <= 0)
+                return 0;
+            return (int)Math.Round(priceDistance / TickSize, MidpointRounding.AwayFromZero);
+        }
+
+        private bool TryGetJsonString(string json, string key, out string value)
+        {
+            value = null;
+            var serializer = new JavaScriptSerializer();
+            var data = serializer.Deserialize<Dictionary<string, object>>(json);
+            if (data == null || !data.TryGetValue(key, out object raw) || raw == null)
+                return false;
+            value = raw.ToString();
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        private bool TryGetJsonInt(string json, string key, out int value)
+        {
+            value = 0;
+            var serializer = new JavaScriptSerializer();
+            var data = serializer.Deserialize<Dictionary<string, object>>(json);
+            if (data == null || !data.TryGetValue(key, out object raw) || raw == null)
+                return false;
+            return int.TryParse(raw.ToString(), out value);
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXOrders(string json)
+        {
+            var serializer = new JavaScriptSerializer();
+            var data = serializer.Deserialize<Dictionary<string, object>>(json);
+            if (data == null || !data.TryGetValue("orders", out object raw) || raw == null)
+                yield break;
+
+            if (raw is object[] array)
+            {
+                foreach (var item in array)
+                {
+                    if (item is Dictionary<string, object> dict)
+                        yield return dict;
+                }
             }
         }
 	    }
