@@ -77,8 +77,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int londonSequentialWins;
         private int newYorkSequentialWins;
 
+        private bool wasInPosition;
+        private SessionSlot lastTradeSession = SessionSlot.None;
         private int processedTradeCount;
-        private SessionSlot openTradeSession = SessionSlot.None;
 
         private static readonly string NewsDatesRaw =
 @"2025-01-10,08:30
@@ -241,8 +242,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
                 ApplyInputsForSession(activeSession);
+                wasInPosition = false;
+                lastTradeSession = SessionSlot.None;
                 processedTradeCount = SystemPerformance.AllTrades.Count;
-                openTradeSession = SessionSlot.None;
 
                 EnsureNewsDatesInitialized();
 
@@ -275,6 +277,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             ProcessSessionTransitions(SessionSlot.NewYork);
 
             UpdateActiveSession(Time[0]);
+            UpdateSequentialCountersOnTradeClose();
 
             bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
             bool inNewsSkipPrev = CurrentBar > 0 && TimeInNewsSkip(Time[1]);
@@ -510,13 +513,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (execution?.Order == null)
                 return;
 
-            bool isEntryOrder = execution.Order.Name == "LongEntry" || execution.Order.Name == "ShortEntry";
-            if (isEntryOrder && marketPosition != MarketPosition.Flat)
-                openTradeSession = DetermineSessionForTime(time);
-
-            if (marketPosition == MarketPosition.Flat)
-                ProcessClosedTrades(time);
-
             if (!DebugLogging)
                 return;
 
@@ -746,51 +742,61 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             int losses = GetSequentialLosses(slot);
             int wins = GetSequentialWins(slot);
+            int maxLosses = GetMaxSequentialLossesLimit(slot);
+            int maxWins = GetMaxSequentialWinsLimit(slot);
 
-            if (activeMaxSequentialLosses > 0 && losses >= activeMaxSequentialLosses)
+            if (maxLosses > 0 && losses >= maxLosses)
                 return true;
 
-            if (activeMaxSequentialWins > 0 && wins >= activeMaxSequentialWins)
+            if (maxWins > 0 && wins >= maxWins)
                 return true;
 
             return false;
         }
 
-        private void ProcessClosedTrades(DateTime executionTime)
+        private void UpdateSequentialCountersOnTradeClose()
         {
+            bool inPositionNow = Position.MarketPosition != MarketPosition.Flat;
+            if (inPositionNow && !wasInPosition)
+                lastTradeSession = activeSession != SessionSlot.None ? activeSession : DetermineSessionForTime(Time[0]);
+
             int allTradesCount = SystemPerformance.AllTrades.Count;
-            if (allTradesCount <= processedTradeCount)
-                return;
-
-            for (int i = processedTradeCount; i < allTradesCount; i++)
+            if (allTradesCount > processedTradeCount)
             {
-                Trade closedTrade = SystemPerformance.AllTrades[i];
-                SessionSlot tradeSession = openTradeSession != SessionSlot.None
-                    ? openTradeSession
-                    : DetermineSessionForTime(executionTime);
+                for (int i = processedTradeCount; i < allTradesCount; i++)
+                {
+                    Trade closedTrade = SystemPerformance.AllTrades[i];
+                    SessionSlot tradeSession = lastTradeSession != SessionSlot.None
+                        ? lastTradeSession
+                        : (activeSession != SessionSlot.None ? activeSession : DetermineSessionForTime(Time[0]));
 
-                double tradeProfit = closedTrade.ProfitCurrency;
-                if (tradeProfit < 0)
-                {
-                    IncrementSequentialLoss(tradeSession);
-                    LogDebug(string.Format("Closed trade LOSS | session={0} pnl={1:0.00} seqLoss={2} seqWin={3}",
-                        FormatSessionLabel(tradeSession), tradeProfit, GetSequentialLosses(tradeSession), GetSequentialWins(tradeSession)));
+                    double tradeProfit = closedTrade.ProfitCurrency;
+                    if (tradeProfit < 0)
+                    {
+                        IncrementSequentialLoss(tradeSession);
+                        LogDebug(string.Format("Closed trade LOSS | session={0} pnl={1:0.00} seqLoss={2} seqWin={3}",
+                            FormatSessionLabel(tradeSession), tradeProfit, GetSequentialLosses(tradeSession), GetSequentialWins(tradeSession)));
+                    }
+                    else if (tradeProfit > 0)
+                    {
+                        IncrementSequentialWin(tradeSession);
+                        LogDebug(string.Format("Closed trade WIN | session={0} pnl={1:0.00} seqLoss={2} seqWin={3}",
+                            FormatSessionLabel(tradeSession), tradeProfit, GetSequentialLosses(tradeSession), GetSequentialWins(tradeSession)));
+                    }
+                    else
+                    {
+                        LogDebug(string.Format("Closed trade BREAKEVEN | session={0} pnl={1:0.00} seqLoss={2} seqWin={3}",
+                            FormatSessionLabel(tradeSession), tradeProfit, GetSequentialLosses(tradeSession), GetSequentialWins(tradeSession)));
+                    }
                 }
-                else if (tradeProfit > 0)
-                {
-                    IncrementSequentialWin(tradeSession);
-                    LogDebug(string.Format("Closed trade WIN | session={0} pnl={1:0.00} seqLoss={2} seqWin={3}",
-                        FormatSessionLabel(tradeSession), tradeProfit, GetSequentialLosses(tradeSession), GetSequentialWins(tradeSession)));
-                }
-                else
-                {
-                    LogDebug(string.Format("Closed trade BREAKEVEN | session={0} pnl={1:0.00} seqLoss={2} seqWin={3}",
-                        FormatSessionLabel(tradeSession), tradeProfit, GetSequentialLosses(tradeSession), GetSequentialWins(tradeSession)));
-                }
+
+                processedTradeCount = allTradesCount;
             }
 
-            processedTradeCount = allTradesCount;
-            openTradeSession = SessionSlot.None;
+            if (!inPositionNow)
+                lastTradeSession = SessionSlot.None;
+
+            wasInPosition = inPositionNow;
         }
 
         private int GetSequentialLosses(SessionSlot slot)
@@ -877,6 +883,36 @@ namespace NinjaTrader.NinjaScript.Strategies
                     newYorkSequentialLosses = 0;
                     newYorkSequentialWins = 0;
                     break;
+            }
+        }
+
+        private int GetMaxSequentialLossesLimit(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    return AsiaMaxSequentialLosses;
+                case SessionSlot.London:
+                    return LondonMaxSequentialLosses;
+                case SessionSlot.NewYork:
+                    return NewYorkMaxSequentialLosses;
+                default:
+                    return 0;
+            }
+        }
+
+        private int GetMaxSequentialWinsLimit(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    return AsiaMaxSequentialWins;
+                case SessionSlot.London:
+                    return LondonMaxSequentialWins;
+                case SessionSlot.NewYork:
+                    return NewYorkMaxSequentialWins;
+                default:
+                    return 0;
             }
         }
 
