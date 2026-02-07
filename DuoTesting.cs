@@ -787,8 +787,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London_MaxSLPoints = 112;
                 London_MaxSessionGain = 160;
                 London_UseMarketEntry = false;
-                London_EmaPeriod = 0;
-                London_EmaBodyFilterMode = EmaBodyFilterMode.None;
+                London_EmaPeriod = 21;
+                London_EmaBodyFilterMode = EmaBodyFilterMode.SecondBodyOnly;
                 London_SessionStart  = new TimeSpan(1, 30, 0);
                 London_SessionEnd    = new TimeSpan(5, 30, 0);
                 London_NoTradesAfter = new TimeSpan(5, 00, 0);
@@ -823,8 +823,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork_MaxSLPoints = 139;
                 NewYork_MaxSessionGain = 145;
                 NewYork_UseMarketEntry = false;
-                NewYork_EmaPeriod = 0;
-                NewYork_EmaBodyFilterMode = EmaBodyFilterMode.None;
+                NewYork_EmaPeriod = 21;
+                NewYork_EmaBodyFilterMode = EmaBodyFilterMode.SecondBodyOnly;
                 NewYork_SessionStart = new TimeSpan(9, 40, 0);
                 NewYork_SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
