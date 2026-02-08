@@ -241,6 +241,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 adxAsia = ADX(AsiaAdxPeriod);
                 adxLondon = ADX(LondonAdxPeriod);
                 adxNewYork = ADX(NewYorkAdxPeriod);
+                if (adxAsia != null && adxAsia.Lines != null && adxAsia.Lines.Length > 0)
+                    adxAsia.Lines[0].Value = AsiaAdxThreshold;
+                if (adxLondon != null && adxLondon.Lines != null && adxLondon.Lines.Length > 0)
+                    adxLondon.Lines[0].Value = LondonAdxThreshold;
+                if (adxNewYork != null && adxNewYork.Lines != null && adxNewYork.Lines.Length > 0)
+                    adxNewYork.Lines[0].Value = NewYorkAdxThreshold;
 
                 AddChartIndicator(emaAsia);
                 if (LondonEmaPeriod != AsiaEmaPeriod)
@@ -637,6 +643,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = AsiaEmaPeriod;
                     activeAdxPeriod = AsiaAdxPeriod;
                     activeAdxThreshold = AsiaAdxThreshold;
+                    if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
+                        activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = AsiaContracts;
                     activeSignalBodyThresholdPercent = AsiaSignalBodyThresholdPercent;
                     activeEntryStopMode = AsiaEntryStopMode;
@@ -654,6 +662,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = LondonEmaPeriod;
                     activeAdxPeriod = LondonAdxPeriod;
                     activeAdxThreshold = LondonAdxThreshold;
+                    if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
+                        activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = LondonContracts;
                     activeSignalBodyThresholdPercent = LondonSignalBodyThresholdPercent;
                     activeEntryStopMode = LondonEntryStopMode;
@@ -671,6 +681,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = NewYorkEmaPeriod;
                     activeAdxPeriod = NewYorkAdxPeriod;
                     activeAdxThreshold = NewYorkAdxThreshold;
+                    if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
+                        activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = NewYorkContracts;
                     activeSignalBodyThresholdPercent = NewYorkSignalBodyThresholdPercent;
                     activeEntryStopMode = NewYorkEntryStopMode;
