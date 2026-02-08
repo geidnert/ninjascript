@@ -1042,7 +1042,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
 
                 var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
-                var lineBrush = new SolidColorBrush(Color.FromArgb(90, 255, 0, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
                 try
                 {
                     if (areaBrush.CanFreeze)
