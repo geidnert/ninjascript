@@ -162,6 +162,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EntryHandling = EntryHandling.UniqueEntries;
                 IsExitOnSessionCloseStrategy = false;
                 IsInstantiatedOnEachOptimizationIteration = false;
+                RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
 
                 UseAsiaSession = true;
                 AsiaSessionStart = new TimeSpan(19, 0, 0);
@@ -399,7 +400,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             return;
                         }
                         pendingShortStopForWebhook = stopPrice;
-                        SetStopLoss("ShortEntry", CalculationMode.Price, stopPrice, false);
+                        SetStopLossByDistanceTicks("ShortEntry", Close[0], stopPrice);
                         SendWebhook("sell", Close[0], Close[0], stopPrice, true, qty);
                         EnterShort(qty, "ShortEntry");
 
@@ -433,7 +434,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             return;
                         }
                         pendingLongStopForWebhook = stopPrice;
-                        SetStopLoss("LongEntry", CalculationMode.Price, stopPrice, false);
+                        SetStopLossByDistanceTicks("LongEntry", Close[0], stopPrice);
                         SendWebhook("buy", Close[0], Close[0], stopPrice, true, qty);
                         EnterLong(qty, "LongEntry");
 
@@ -471,7 +472,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 
                     pendingLongStopForWebhook = stopPrice;
-                    SetStopLoss("LongEntry", CalculationMode.Price, stopPrice, false);
+                    SetStopLossByDistanceTicks("LongEntry", entryPrice, stopPrice);
                     SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
                     EnterLong(qty, "LongEntry");
                     LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
@@ -493,7 +494,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 
                     pendingShortStopForWebhook = stopPrice;
-                    SetStopLoss("ShortEntry", CalculationMode.Price, stopPrice, false);
+                    SetStopLossByDistanceTicks("ShortEntry", entryPrice, stopPrice);
                     SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
                     EnterShort(qty, "ShortEntry");
                     LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
@@ -520,6 +521,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     shortEntryOrder = null;
             }
 
+            if (orderState == OrderState.Rejected)
+                HandleOrderRejected(order, error, comment);
+
             bool isImportantState = orderState == OrderState.Filled
                 || orderState == OrderState.Cancelled
                 || orderState == OrderState.Rejected;
@@ -538,6 +542,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                         stopPrice,
                         error,
                         comment));
+            }
+        }
+
+        private void HandleOrderRejected(Order order, ErrorCode error, string comment)
+        {
+            string name = order != null ? (order.Name ?? string.Empty) : string.Empty;
+            string state = order != null ? order.OrderState.ToString() : "Unknown";
+            Print(string.Format("{0} | DuoEMA | bar={1} | Order rejected guard | name={2} state={3} error={4} comment={5}",
+                Time[0], CurrentBar, name, state, error, comment ?? string.Empty));
+
+            if (name == "LongEntry" || name == "ShortEntry")
+            {
+                CancelWorkingEntryOrders();
+                return;
+            }
+
+            if (name == "Stop loss" || name == "Profit target")
+            {
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("ProtectiveReject", "LongEntry");
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort("ProtectiveReject", "ShortEntry");
             }
         }
 
@@ -1226,6 +1252,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return baseQty * 2;
 
             return baseQty;
+        }
+
+        private void SetStopLossByDistanceTicks(string fromEntrySignal, double referenceEntryPrice, double plannedStopPrice)
+        {
+            int stopTicks = PriceToTicks(Math.Abs(referenceEntryPrice - plannedStopPrice));
+            if (stopTicks < 1)
+                stopTicks = 1;
+            SetStopLoss(fromEntrySignal, CalculationMode.Ticks, stopTicks, false);
         }
 
         private bool IsAccountBalanceBlocked()
