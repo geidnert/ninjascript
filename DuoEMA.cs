@@ -48,6 +48,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private Order longEntryOrder;
         private Order shortEntryOrder;
         private int lastLoggedBar = -1;
+        private int missingLongEntryOrderBars;
+        private int missingShortEntryOrderBars;
 
         private bool asiaSessionClosed;
         private bool londonSessionClosed;
@@ -186,38 +188,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 UseLondonSession = true;
                 AutoShiftLondon = true;
-                LondonSessionStart = new TimeSpan(1, 30, 0);
-                LondonSessionEnd = new TimeSpan(5, 30, 0);
-                LondonNoTradesAfter = new TimeSpan(5, 0, 0);
-                LondonEmaPeriod = 21;
+                LondonSessionStart = new TimeSpan(2, 30, 0);
+                LondonSessionEnd = new TimeSpan(7, 30, 0);
+                LondonNoTradesAfter = new TimeSpan(7, 30, 0);
+                LondonEmaPeriod = 11;
                 LondonContracts = 1;
-                LondonSignalBodyThresholdPercent = 50.0;
+                LondonSignalBodyThresholdPercent = 56.0;
                 LondonRequireEmaTouch = false;
                 LondonAdxPeriod = 14;
-                LondonAdxThreshold = 20.0;
+                LondonAdxThreshold = 13;
                 LondonEntryStopMode = InitialStopMode.WickExtreme;
-                LondonExitCrossPoints = 0.0;
-                LondonFlipBodyThresholdPercent = 50.0;
+                LondonExitCrossPoints = 2.75;
+                LondonFlipBodyThresholdPercent = 28;
                 LondonFlipStopSetting = FlipStopMode.WickExtreme;
-                LondonMinEntryBodySize = 0.0;
+                LondonMinEntryBodySize = 26;
                 LondonContractDoublerStopThresholdPoints = 0.0;
 
                 UseNewYorkSession = true;
                 AutoShiftNewYork = false;
                 NewYorkSessionStart = new TimeSpan(9, 40, 0);
-                NewYorkSessionEnd = new TimeSpan(15, 0, 0);
+                NewYorkSessionEnd = new TimeSpan(14, 30, 0);
                 NewYorkNoTradesAfter = new TimeSpan(14, 30, 0);
-                NewYorkEmaPeriod = 21;
+                NewYorkEmaPeriod = 19;
                 NewYorkContracts = 1;
-                NewYorkSignalBodyThresholdPercent = 50.0;
+                NewYorkSignalBodyThresholdPercent = 40.0;
                 NewYorkRequireEmaTouch = false;
                 NewYorkAdxPeriod = 14;
-                NewYorkAdxThreshold = 20.0;
-                NewYorkEntryStopMode = InitialStopMode.WickExtreme;
-                NewYorkExitCrossPoints = 0.0;
-                NewYorkFlipBodyThresholdPercent = 50.0;
-                NewYorkFlipStopSetting = FlipStopMode.WickExtreme;
-                NewYorkMinEntryBodySize = 0.0;
+                NewYorkAdxThreshold = 24.0;
+                NewYorkEntryStopMode = InitialStopMode.CandleOpen;
+                NewYorkExitCrossPoints = 2.0;
+                NewYorkFlipBodyThresholdPercent = 73.0;
+                NewYorkFlipStopSetting = FlipStopMode.CandleOpen;
+                NewYorkMinEntryBodySize = 15.25;
                 NewYorkContractDoublerStopThresholdPoints = 0.0;
 
                 CloseAtSessionEnd = true;
@@ -268,6 +270,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
                 ApplyInputsForSession(activeSession);
+                UpdateEmaPlotVisibility();
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
                 projectXSessionToken = null;
@@ -307,8 +310,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             ProcessSessionTransitions(SessionSlot.Asia);
             ProcessSessionTransitions(SessionSlot.London);
             ProcessSessionTransitions(SessionSlot.NewYork);
+            ReconcileTrackedEntryOrders();
 
             UpdateActiveSession(Time[0]);
+            UpdateEmaPlotVisibility();
 
             bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
             bool inNewsSkipPrev = CurrentBar > 0 && TimeInNewsSkip(Time[1]);
@@ -456,7 +461,24 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             if (!canTradeNow)
+            {
+                if (DebugLogging && (longSignal || shortSignal))
+                {
+                    LogDebug(string.Format(
+                        "Signal blocked | session={0} longSig={1} shortSig={2} canTrade={3} inSession={4} noTrades={5} news={6} acctBlocked={7} adx={8:0.00}/{9:0.00}",
+                        FormatSessionLabel(activeSession),
+                        longSignal,
+                        shortSignal,
+                        canTradeNow,
+                        inActiveSessionNow,
+                        inNoTradesNow,
+                        inNewsSkipNow,
+                        accountBlocked,
+                        adxValue,
+                        activeAdxThreshold));
+                }
                 return;
+            }
 
             bool longOrderActive = IsOrderActive(longEntryOrder);
             bool shortOrderActive = IsOrderActive(shortEntryOrder);
@@ -482,6 +504,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     EnterLong(qty, "LongEntry");
                     LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
                 }
+                else if (DebugLogging)
+                {
+                    LogDebug(string.Format("LONG signal skipped | reason=longOrderActive tracked={0}", FormatOrderRef(longEntryOrder)));
+                }
             }
             else if (shortSignal)
             {
@@ -503,6 +529,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
                     EnterShort(qty, "ShortEntry");
                     LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
+                }
+                else if (DebugLogging)
+                {
+                    LogDebug(string.Format("SHORT signal skipped | reason=shortOrderActive tracked={0}", FormatOrderRef(shortEntryOrder)));
                 }
             }
         }
@@ -532,13 +562,17 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool isImportantState = orderState == OrderState.Filled
                 || orderState == OrderState.Cancelled
                 || orderState == OrderState.Rejected;
+            bool isEntryOrder = order.Name == "LongEntry" || order.Name == "ShortEntry";
+            bool shouldLogOrderState = DebugLogging && (isImportantState || isEntryOrder);
 
-            if (DebugLogging && isImportantState)
+            if (shouldLogOrderState)
             {
+                string currentOrderId = order.OrderId ?? string.Empty;
                 LogDebug(
                     string.Format(
-                        "OrderUpdate | name={0} state={1} qty={2} filled={3} avg={4:0.00} limit={5:0.00} stop={6:0.00} error={7} comment={8}",
+                        "OrderUpdate | name={0} id={1} state={2} qty={3} filled={4} avg={5:0.00} limit={6:0.00} stop={7:0.00} error={8} comment={9} trackedLong={10} trackedShort={11}",
                         order.Name,
+                        currentOrderId,
                         orderState,
                         quantity,
                         filled,
@@ -546,7 +580,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                         limitPrice,
                         stopPrice,
                         error,
-                        comment));
+                        comment,
+                        FormatOrderRef(longEntryOrder),
+                        FormatOrderRef(shortEntryOrder)));
             }
         }
 
@@ -784,6 +820,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
 
+        private void UpdateEmaPlotVisibility()
+        {
+            SetEmaVisible(emaAsia, activeSession == SessionSlot.Asia);
+            SetEmaVisible(emaLondon, activeSession == SessionSlot.London);
+            SetEmaVisible(emaNewYork, activeSession == SessionSlot.NewYork);
+        }
+
+        private void SetEmaVisible(EMA ema, bool visible)
+        {
+            if (ema == null || ema.Plots == null || ema.Plots.Length == 0)
+                return;
+
+            ema.Plots[0].Brush = visible ? Brushes.Gold : Brushes.Transparent;
+        }
+
         private int GetMaxConfiguredEmaPeriod()
         {
             return Math.Max(AsiaEmaPeriod, Math.Max(LondonEmaPeriod, NewYorkEmaPeriod));
@@ -843,6 +894,84 @@ namespace NinjaTrader.NinjaScript.Strategies
                  order.OrderState == OrderState.Accepted ||
                  order.OrderState == OrderState.ChangePending ||
                  order.OrderState == OrderState.PartFilled);
+        }
+
+        private void ReconcileTrackedEntryOrders()
+        {
+            ReconcileTrackedEntryOrder(ref longEntryOrder, "LongEntry", ref missingLongEntryOrderBars);
+            ReconcileTrackedEntryOrder(ref shortEntryOrder, "ShortEntry", ref missingShortEntryOrderBars);
+        }
+
+        private void ReconcileTrackedEntryOrder(ref Order trackedOrder, string expectedName, ref int missingBars)
+        {
+            if (!IsOrderActive(trackedOrder))
+            {
+                missingBars = 0;
+                return;
+            }
+
+            if (Account == null)
+            {
+                missingBars = 0;
+                return;
+            }
+
+            string trackedId = trackedOrder.OrderId ?? string.Empty;
+            bool foundActive = false;
+
+            try
+            {
+                foreach (Order accountOrder in Account.Orders)
+                {
+                    if (accountOrder == null)
+                        continue;
+
+                    string accountOrderId = accountOrder.OrderId ?? string.Empty;
+                    if (trackedId.Length > 0 && string.Equals(accountOrderId, trackedId, StringComparison.Ordinal))
+                    {
+                        foundActive = IsOrderActive(accountOrder);
+                        break;
+                    }
+                }
+            }
+            catch
+            {
+                missingBars = 0;
+                return;
+            }
+
+            if (foundActive)
+            {
+                missingBars = 0;
+                return;
+            }
+
+            missingBars++;
+
+            if (missingBars >= 2)
+            {
+                if (DebugLogging)
+                {
+                    LogDebug(string.Format(
+                        "Clearing stale tracked order | expected={0} tracked={1} missingBars={2}",
+                        expectedName,
+                        FormatOrderRef(trackedOrder),
+                        missingBars));
+                }
+
+                trackedOrder = null;
+                missingBars = 0;
+            }
+        }
+
+        private string FormatOrderRef(Order order)
+        {
+            if (order == null)
+                return "null";
+
+            string name = order.Name ?? string.Empty;
+            string id = order.OrderId ?? string.Empty;
+            return string.Format("{0}:{1}:{2}", name, id, order.OrderState);
         }
 
         private bool IsBullishBar(int barsAgo)
