@@ -45,6 +45,13 @@ namespace NinjaTrader.NinjaScript.Strategies
             ProjectX
         }
 
+        public enum ExitMode
+        {
+            EmaOnly,
+            OppositeCandlesOnly,
+            Both
+        }
+
         private Order longEntryOrder;
         private Order shortEntryOrder;
         private int lastLoggedBar = -1;
@@ -238,6 +245,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0.0;
                 RequireEntryConfirmation = false;
+                OppositeCandleExitCount = 0;
+                PositionExitMode = ExitMode.Both;
 
                 DebugLogging = false;
             }
@@ -394,7 +403,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
-                if (Close[0] <= emaValue - activeExitCrossPoints)
+                bool useOppositeExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.OppositeCandlesOnly;
+                bool useEmaExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.EmaOnly;
+
+                if (useOppositeExit && ShouldExitOnOppositeCandles(MarketPosition.Long))
+                {
+                    ExitLong("OppositeCandleExit", "LongEntry");
+                    LogDebug(string.Format("Exit LONG | reason=OppositeCandles count={0}", OppositeCandleExitCount));
+                    return;
+                }
+
+                if (useEmaExit && Close[0] <= emaValue - activeExitCrossPoints)
                 {
                     bool shouldFlip = canTradeNow && bodyBelowPercent >= activeFlipBodyThresholdPercent;
                     if (shouldFlip)
@@ -428,7 +447,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
-                if (Close[0] >= emaValue + activeExitCrossPoints)
+                bool useOppositeExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.OppositeCandlesOnly;
+                bool useEmaExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.EmaOnly;
+
+                if (useOppositeExit && ShouldExitOnOppositeCandles(MarketPosition.Short))
+                {
+                    ExitShort("OppositeCandleExit", "ShortEntry");
+                    LogDebug(string.Format("Exit SHORT | reason=OppositeCandles count={0}", OppositeCandleExitCount));
+                    return;
+                }
+
+                if (useEmaExit && Close[0] >= emaValue + activeExitCrossPoints)
                 {
                     bool shouldFlip = canTradeNow && bodyAbovePercent >= activeFlipBodyThresholdPercent;
                     if (shouldFlip)
@@ -982,6 +1011,28 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool IsBearishBar(int barsAgo)
         {
             return Close[barsAgo] < Open[barsAgo];
+        }
+
+        private bool ShouldExitOnOppositeCandles(MarketPosition position)
+        {
+            if (OppositeCandleExitCount <= 0)
+                return false;
+
+            int required = OppositeCandleExitCount;
+            if (CurrentBar < required - 1)
+                return false;
+
+            for (int i = 0; i < required; i++)
+            {
+                bool opposite = position == MarketPosition.Long
+                    ? IsBearishBar(i)
+                    : IsBullishBar(i);
+
+                if (!opposite)
+                    return false;
+            }
+
+            return true;
         }
 
         private double BuildLongEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleLow)
@@ -2290,6 +2341,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 1)]
         public bool RequireEntryConfirmation { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Exit Mode", Description = "Choose EMA exits only, opposite-candle exits only, or both.", GroupName = "13. Risk", Order = 2)]
+        public ExitMode PositionExitMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Opposite Candle Exit Count", Description = "0 disables. If set to N, close an open position after N consecutive opposite candles.", GroupName = "13. Risk", Order = 3)]
+        public int OppositeCandleExitCount { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
