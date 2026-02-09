@@ -209,17 +209,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkSessionStart = new TimeSpan(9, 40, 0);
                 NewYorkSessionEnd = new TimeSpan(14, 30, 0);
                 NewYorkNoTradesAfter = new TimeSpan(14, 30, 0);
-                NewYorkEmaPeriod = 19;
+                NewYorkEmaPeriod = 21;
                 NewYorkContracts = 1;
-                NewYorkSignalBodyThresholdPercent = 40.0;
+                NewYorkSignalBodyThresholdPercent = 1;
                 NewYorkRequireEmaTouch = false;
                 NewYorkAdxPeriod = 14;
-                NewYorkAdxThreshold = 24.0;
-                NewYorkEntryStopMode = InitialStopMode.CandleOpen;
-                NewYorkExitCrossPoints = 2.0;
-                NewYorkFlipBodyThresholdPercent = 73.0;
+                NewYorkAdxThreshold = 12.9;
+                NewYorkEntryStopMode = InitialStopMode.WickExtreme;
+                NewYorkExitCrossPoints = 23;
+                NewYorkFlipBodyThresholdPercent = 99.0;
                 NewYorkFlipStopSetting = FlipStopMode.CandleOpen;
-                NewYorkMinEntryBodySize = 15.25;
+                NewYorkMinEntryBodySize = 10;
                 NewYorkContractDoublerStopThresholdPoints = 0.0;
 
                 CloseAtSessionEnd = true;
