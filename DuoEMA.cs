@@ -165,20 +165,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
 
                 UseAsiaSession = true;
-                AsiaSessionStart = new TimeSpan(19, 0, 0);
+                AsiaSessionStart = new TimeSpan(18, 30, 0);
                 AsiaSessionEnd = new TimeSpan(1, 30, 0);
-                AsiaNoTradesAfter = new TimeSpan(1, 0, 0);
+                AsiaNoTradesAfter = new TimeSpan(1, 30, 0);
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
-                AsiaSignalBodyThresholdPercent = 50.0;
+                AsiaSignalBodyThresholdPercent = 39.0;
                 AsiaRequireEmaTouch = false;
                 AsiaAdxPeriod = 14;
-                AsiaAdxThreshold = 20.0;
-                AsiaEntryStopMode = InitialStopMode.WickExtreme;
-                AsiaExitCrossPoints = 0.0;
-                AsiaFlipBodyThresholdPercent = 50.0;
-                AsiaFlipStopSetting = FlipStopMode.WickExtreme;
-                AsiaMinEntryBodySize = 0.0;
+                AsiaAdxThreshold = 16.1;
+                AsiaEntryStopMode = InitialStopMode.CandleOpen;
+                AsiaExitCrossPoints = 5.5;
+                AsiaFlipBodyThresholdPercent = 64.0;
+                AsiaFlipStopSetting = FlipStopMode.CandleOpen;
+                AsiaMinEntryBodySize = 2.75;
                 AsiaContractDoublerStopThresholdPoints = 0.0;
 
                 UseLondonSession = true;
@@ -313,7 +313,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LogDebug("Entered news block: canceling working entries.");
             }
 
-            bool inActiveSessionNow = activeSession != SessionSlot.None;
+            bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
             bool inNoTradesNow = inActiveSessionNow && TimeInNoTradesAfter(activeSession, Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
@@ -604,7 +604,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 activeSession = desired;
                 if (activeSession != SessionSlot.None)
+                {
                     ApplyInputsForSession(activeSession);
+                    LogSessionActivation("switch");
+                }
 
                 sessionInitialized = true;
                 LogDebug(string.Format("Active session switched to {0}", FormatSessionLabel(activeSession)));
@@ -614,23 +617,60 @@ namespace NinjaTrader.NinjaScript.Strategies
         private SessionSlot DetermineSessionForTime(DateTime time)
         {
             TimeSpan now = time.TimeOfDay;
+            TimeSpan asiaStart = TimeSpan.Zero;
+            TimeSpan asiaEnd = TimeSpan.Zero;
+            TimeSpan londonStart = TimeSpan.Zero;
+            TimeSpan londonEnd = TimeSpan.Zero;
+            TimeSpan nyStart = TimeSpan.Zero;
+            TimeSpan nyEnd = TimeSpan.Zero;
 
-            if (IsSessionConfigured(SessionSlot.Asia)
-                && TryGetSessionWindow(SessionSlot.Asia, out TimeSpan asiaStart, out TimeSpan asiaEnd)
-                && IsTimeInRange(now, asiaStart, asiaEnd))
+            bool asiaConfigured = IsSessionConfigured(SessionSlot.Asia)
+                && TryGetSessionWindow(SessionSlot.Asia, out asiaStart, out asiaEnd);
+            bool londonConfigured = IsSessionConfigured(SessionSlot.London)
+                && TryGetSessionWindow(SessionSlot.London, out londonStart, out londonEnd);
+            bool newYorkConfigured = IsSessionConfigured(SessionSlot.NewYork)
+                && TryGetSessionWindow(SessionSlot.NewYork, out nyStart, out nyEnd);
+
+            if (asiaConfigured && IsTimeInRange(now, asiaStart, asiaEnd))
                 return SessionSlot.Asia;
-
-            if (IsSessionConfigured(SessionSlot.London)
-                && TryGetSessionWindow(SessionSlot.London, out TimeSpan londonStart, out TimeSpan londonEnd)
-                && IsTimeInRange(now, londonStart, londonEnd))
+            if (londonConfigured && IsTimeInRange(now, londonStart, londonEnd))
                 return SessionSlot.London;
-
-            if (IsSessionConfigured(SessionSlot.NewYork)
-                && TryGetSessionWindow(SessionSlot.NewYork, out TimeSpan nyStart, out TimeSpan nyEnd)
-                && IsTimeInRange(now, nyStart, nyEnd))
+            if (newYorkConfigured && IsTimeInRange(now, nyStart, nyEnd))
                 return SessionSlot.NewYork;
 
-            return SessionSlot.None;
+            if (!asiaConfigured && !londonConfigured && !newYorkConfigured)
+                return SessionSlot.None;
+
+            DateTime nextAsiaStart = DateTime.MaxValue;
+            DateTime nextLondonStart = DateTime.MaxValue;
+            DateTime nextNewYorkStart = DateTime.MaxValue;
+
+            if (asiaConfigured)
+            {
+                nextAsiaStart = time.Date + asiaStart;
+                if (nextAsiaStart <= time)
+                    nextAsiaStart = nextAsiaStart.AddDays(1);
+            }
+
+            if (londonConfigured)
+            {
+                nextLondonStart = time.Date + londonStart;
+                if (nextLondonStart <= time)
+                    nextLondonStart = nextLondonStart.AddDays(1);
+            }
+
+            if (newYorkConfigured)
+            {
+                nextNewYorkStart = time.Date + nyStart;
+                if (nextNewYorkStart <= time)
+                    nextNewYorkStart = nextNewYorkStart.AddDays(1);
+            }
+
+            if (nextAsiaStart <= nextLondonStart && nextAsiaStart <= nextNewYorkStart)
+                return SessionSlot.Asia;
+            if (nextLondonStart <= nextNewYorkStart)
+                return SessionSlot.London;
+            return SessionSlot.NewYork;
         }
 
         private SessionSlot GetFirstConfiguredSession()
@@ -753,6 +793,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 SetSessionClosed(slot, false);
                 LogDebug(string.Format("{0} session start.", FormatSessionLabel(slot)));
+                if (activeSession == slot)
+                    LogSessionActivation("start");
             }
 
             if (inPrev && !inNow && !GetSessionClosed(slot))
@@ -760,14 +802,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (CloseAtSessionEnd)
                 {
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("SessionEnd", "LongEntry");
+                        ExitLong("SessionEnd");
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("SessionEnd", "ShortEntry");
+                        ExitShort("SessionEnd");
                 }
 
                 CancelWorkingEntryOrders();
                 SetSessionClosed(slot, true);
-                LogDebug(string.Format("{0} session end: flatten/cancel.", FormatSessionLabel(slot)));
+                LogDebug(string.Format("{0} session end: flatten/cancel. closeAtSessionEnd={1}", FormatSessionLabel(slot), CloseAtSessionEnd));
             }
         }
 
@@ -1195,6 +1237,40 @@ namespace NinjaTrader.NinjaScript.Strategies
                 default:
                     return "None";
             }
+        }
+
+        private void LogSessionActivation(string reason)
+        {
+            TimeSpan start;
+            TimeSpan end;
+            TimeSpan noTradesAfter;
+            if (!TryGetSessionWindow(activeSession, out start, out end, out noTradesAfter))
+                return;
+
+            bool inNow = TimeInSession(activeSession, Time[0]);
+            bool noTradesNow = TimeInNoTradesAfter(activeSession, Time[0]);
+            LogDebug(string.Format(
+                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} start={5:hh\\:mm} end={6:hh\\:mm} noTradesAfter={7:hh\\:mm} ema={8} adx={9}/{10:0.##} contracts={11} body%={12:0.##} touchEMA={13} minBody={14:0.##} exitCross={15:0.##} flipBody%={16:0.##} flipStop={17} entryStop={18} doublerPts={19:0.##}",
+                reason,
+                FormatSessionLabel(activeSession),
+                inNow,
+                noTradesNow,
+                CloseAtSessionEnd,
+                start,
+                end,
+                noTradesAfter,
+                activeEmaPeriod,
+                activeAdxPeriod,
+                activeAdxThreshold,
+                activeContracts,
+                activeSignalBodyThresholdPercent,
+                activeRequireEmaTouch,
+                activeMinEntryBodySize,
+                activeExitCrossPoints,
+                activeFlipBodyThresholdPercent,
+                activeFlipStopSetting,
+                activeEntryStopMode,
+                activeContractDoublerStopThresholdPoints));
         }
 
         private void LogDebug(string message)
