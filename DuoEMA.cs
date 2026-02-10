@@ -92,6 +92,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private double pendingLongStopForWebhook;
         private double pendingShortStopForWebhook;
+        private double currentTradePeakAdx;
+        private MarketPosition trackedAdxPeakPosition = MarketPosition.Flat;
         private string projectXSessionToken;
         private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
         private int? projectXLastOrderId;
@@ -258,6 +260,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 MaxAccountBalance = 0.0;
                 RequireEntryConfirmation = false;
                 OppositeCandleExitCount = 0;
+                AdxPeakDrawdownExitUnits = 0.0;
                 PositionExitMode = ExitMode.Both;
 
                 DebugLogging = false;
@@ -294,6 +297,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 UpdateEmaPlotVisibility();
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
+                currentTradePeakAdx = 0.0;
+                trackedAdxPeakPosition = MarketPosition.Flat;
                 projectXSessionToken = null;
                 projectXTokenAcquiredUtc = Core.Globals.MinDate;
                 projectXLastOrderId = null;
@@ -348,6 +353,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool inNoTradesNow = inActiveSessionNow && TimeInNoTradesAfter(activeSession, Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+            UpdateAdxPeakTracker(adxValue);
             double adxSlope = GetAdxSlopePoints();
             bool adxThresholdPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
             bool adxSlopePass = !inActiveSessionNow || activeAdxMinSlopePoints <= 0.0 || adxSlope >= activeAdxMinSlopePoints;
@@ -426,6 +432,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
+                double adxDrawdown;
+                if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
+                {
+                    ExitLong("AdxDrawdownExit", "LongEntry");
+                    LogDebug(string.Format("Exit LONG | reason=AdxDrawdown adx={0:0.00} peak={1:0.00} drawdown={2:0.00} threshold={3:0.00}",
+                        adxValue, currentTradePeakAdx, adxDrawdown, AdxPeakDrawdownExitUnits));
+                    return;
+                }
+
                 bool useOppositeExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.OppositeCandlesOnly;
                 bool useEmaExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.EmaOnly;
 
@@ -470,6 +485,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
+                double adxDrawdown;
+                if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
+                {
+                    ExitShort("AdxDrawdownExit", "ShortEntry");
+                    LogDebug(string.Format("Exit SHORT | reason=AdxDrawdown adx={0:0.00} peak={1:0.00} drawdown={2:0.00} threshold={3:0.00}",
+                        adxValue, currentTradePeakAdx, adxDrawdown, AdxPeakDrawdownExitUnits));
+                    return;
+                }
+
                 bool useOppositeExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.OppositeCandlesOnly;
                 bool useEmaExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.EmaOnly;
 
@@ -1150,6 +1174,43 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return 0.0;
 
             return activeAdx[0] - activeAdx[1];
+        }
+
+        private void UpdateAdxPeakTracker(double adxValue)
+        {
+            MarketPosition currentPos = Position.MarketPosition;
+            if (currentPos == MarketPosition.Flat)
+            {
+                trackedAdxPeakPosition = MarketPosition.Flat;
+                currentTradePeakAdx = 0.0;
+                return;
+            }
+
+            if (trackedAdxPeakPosition != currentPos)
+            {
+                trackedAdxPeakPosition = currentPos;
+                currentTradePeakAdx = adxValue;
+                return;
+            }
+
+            if (adxValue > currentTradePeakAdx)
+                currentTradePeakAdx = adxValue;
+        }
+
+        private bool ShouldExitOnAdxDrawdown(double adxValue, out double drawdown)
+        {
+            drawdown = 0.0;
+            if (AdxPeakDrawdownExitUnits <= 0.0)
+                return false;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return false;
+
+            if (trackedAdxPeakPosition != Position.MarketPosition)
+                return false;
+
+            drawdown = currentTradePeakAdx - adxValue;
+            return drawdown >= AdxPeakDrawdownExitUnits;
         }
 
         private double GetBodyPercentAboveEma(double open, double close, double emaValue)
@@ -2477,6 +2538,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0, int.MaxValue)]
         [Display(Name = "Opposite Candle Exit Count", Description = "0 disables. If set to N, close an open position after N consecutive opposite candles.", GroupName = "13. Risk", Order = 3)]
         public int OppositeCandleExitCount { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "13. Risk", Order = 4)]
+        public double AdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
