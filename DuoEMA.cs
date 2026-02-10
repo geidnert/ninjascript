@@ -86,6 +86,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int activeAdxPeriod;
         private double activeAdxThreshold;
         private double activeContractDoublerStopThresholdPoints;
+        private double activeEmaMinSlopeAngleDegrees;
+        private double activeAdxMinSlopePoints;
+        private double activeStopPaddingPoints;
 
         private double pendingLongStopForWebhook;
         private double pendingShortStopForWebhook;
@@ -186,7 +189,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaRequireEmaTouch = false;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 16.1;
+                AsiaAdxMinSlopePoints = 0.0;
+                AsiaEmaMinSlopeAngleDegrees = 0.0;
                 AsiaEntryStopMode = InitialStopMode.CandleOpen;
+                AsiaStopPaddingPoints = 0.0;
                 AsiaExitCrossPoints = 5.5;
                 AsiaFlipBodyThresholdPercent = 64.0;
                 AsiaFlipStopSetting = FlipStopMode.CandleOpen;
@@ -204,7 +210,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LondonRequireEmaTouch = false;
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 13;
+                LondonAdxMinSlopePoints = 0.0;
+                LondonEmaMinSlopeAngleDegrees = 0.0;
                 LondonEntryStopMode = InitialStopMode.WickExtreme;
+                LondonStopPaddingPoints = 0.0;
                 LondonExitCrossPoints = 2.75;
                 LondonFlipBodyThresholdPercent = 28;
                 LondonFlipStopSetting = FlipStopMode.WickExtreme;
@@ -222,7 +231,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkRequireEmaTouch = false;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 12.9;
+                NewYorkAdxMinSlopePoints = 0.0;
+                NewYorkEmaMinSlopeAngleDegrees = 0.0;
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
+                NewYorkStopPaddingPoints = 0.0;
                 NewYorkExitCrossPoints = 23;
                 NewYorkFlipBodyThresholdPercent = 99.0;
                 NewYorkFlipStopSetting = FlipStopMode.CandleOpen;
@@ -336,7 +348,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool inNoTradesNow = inActiveSessionNow && TimeInNoTradesAfter(activeSession, Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
-            bool adxPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            double adxSlope = GetAdxSlopePoints();
+            bool adxThresholdPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool adxSlopePass = !inActiveSessionNow || activeAdxMinSlopePoints <= 0.0 || adxSlope >= activeAdxMinSlopePoints;
+            bool adxPass = adxThresholdPass && adxSlopePass;
             bool canTradeNow = inActiveSessionNow && !inNoTradesNow && !inNewsSkipNow && !accountBlocked && adxPass;
 
             if (CurrentBar > 0)
@@ -367,18 +382,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool bearish = Close[0] < Open[0];
             double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
             double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
+            double emaSlopeAngle = GetEmaSlopeAngleDegrees();
+            bool emaSlopeLongPass = EmaSlopePassesLong();
+            bool emaSlopeShortPass = EmaSlopePassesShort();
 
             bool bodySizePasses = bodySize >= activeMinEntryBodySize;
             bool touchPasses = !activeRequireEmaTouch || emaTouched;
-            bool longSignal = bullish && bodySizePasses && touchPasses && bodyAbovePercent >= activeSignalBodyThresholdPercent;
-            bool shortSignal = bearish && bodySizePasses && touchPasses && bodyBelowPercent >= activeSignalBodyThresholdPercent;
+            bool longSignal = bullish && bodySizePasses && touchPasses && emaSlopeLongPass && bodyAbovePercent >= activeSignalBodyThresholdPercent;
+            bool shortSignal = bearish && bodySizePasses && touchPasses && emaSlopeShortPass && bodyBelowPercent >= activeSignalBodyThresholdPercent;
 
             if (DebugLogging && CurrentBar != lastLoggedBar)
             {
                 lastLoggedBar = CurrentBar;
                 LogDebug(
                     string.Format(
-                        "BarSummary | session={0} pos={1} o={2:0.00} h={3:0.00} l={4:0.00} c={5:0.00} ema={6:0.00} adx={7:0.00}/{8:0.00} body={9:0.00} above%={10:0.0} below%={11:0.0} touch={12} longSig={13} shortSig={14} canTrade={15} noTrades={16} news={17} acctBlocked={18} minBody={19:0.00}",
+                        "BarSummary | session={0} pos={1} o={2:0.00} h={3:0.00} l={4:0.00} c={5:0.00} ema={6:0.00} emaSlopeDeg={7:0.00} adx={8:0.00}/{9:0.00} adxSlope={10:0.00}/{11:0.00} body={12:0.00} above%={13:0.0} below%={14:0.0} touch={15} emaLong={16} emaShort={17} longSig={18} shortSig={19} canTrade={20} noTrades={21} news={22} acctBlocked={23} minBody={24:0.00}",
                         FormatSessionLabel(activeSession),
                         Position.MarketPosition,
                         Open[0],
@@ -386,12 +404,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Low[0],
                         Close[0],
                         emaValue,
+                        emaSlopeAngle,
                         adxValue,
                         activeAdxThreshold,
+                        adxSlope,
+                        activeAdxMinSlopePoints,
                         bodySize,
                         bodyAbovePercent,
                         bodyBelowPercent,
                         emaTouched,
+                        emaSlopeLongPass,
+                        emaSlopeShortPass,
                         longSignal,
                         shortSignal,
                         canTradeNow,
@@ -415,7 +438,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (useEmaExit && Close[0] <= emaValue - activeExitCrossPoints)
                 {
-                    bool shouldFlip = canTradeNow && bodyBelowPercent >= activeFlipBodyThresholdPercent;
+                    bool shouldFlip = canTradeNow && EmaSlopePassesShort() && bodyBelowPercent >= activeFlipBodyThresholdPercent;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
@@ -459,7 +482,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (useEmaExit && Close[0] >= emaValue + activeExitCrossPoints)
                 {
-                    bool shouldFlip = canTradeNow && bodyAbovePercent >= activeFlipBodyThresholdPercent;
+                    bool shouldFlip = canTradeNow && EmaSlopePassesLong() && bodyAbovePercent >= activeFlipBodyThresholdPercent;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
@@ -494,7 +517,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (DebugLogging && (longSignal || shortSignal))
                 {
                     LogDebug(string.Format(
-                        "Signal blocked | session={0} longSig={1} shortSig={2} canTrade={3} inSession={4} noTrades={5} news={6} acctBlocked={7} adx={8:0.00}/{9:0.00}",
+                        "Signal blocked | session={0} longSig={1} shortSig={2} canTrade={3} inSession={4} noTrades={5} news={6} acctBlocked={7} adx={8:0.00}/{9:0.00} adxSlope={10:0.00}/{11:0.00}",
                         FormatSessionLabel(activeSession),
                         longSignal,
                         shortSignal,
@@ -504,7 +527,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                         inNewsSkipNow,
                         accountBlocked,
                         adxValue,
-                        activeAdxThreshold));
+                        activeAdxThreshold,
+                        adxSlope,
+                        activeAdxMinSlopePoints));
                 }
                 return;
             }
@@ -779,11 +804,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = AsiaEmaPeriod;
                     activeAdxPeriod = AsiaAdxPeriod;
                     activeAdxThreshold = AsiaAdxThreshold;
+                    activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
                     if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
                         activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = AsiaContracts;
                     activeSignalBodyThresholdPercent = AsiaSignalBodyThresholdPercent;
+                    activeEmaMinSlopeAngleDegrees = AsiaEmaMinSlopeAngleDegrees;
                     activeEntryStopMode = AsiaEntryStopMode;
+                    activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeExitCrossPoints = AsiaExitCrossPoints;
                     activeFlipBodyThresholdPercent = AsiaFlipBodyThresholdPercent;
                     activeFlipStopSetting = AsiaFlipStopSetting;
@@ -798,11 +826,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = LondonEmaPeriod;
                     activeAdxPeriod = LondonAdxPeriod;
                     activeAdxThreshold = LondonAdxThreshold;
+                    activeAdxMinSlopePoints = LondonAdxMinSlopePoints;
                     if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
                         activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = LondonContracts;
                     activeSignalBodyThresholdPercent = LondonSignalBodyThresholdPercent;
+                    activeEmaMinSlopeAngleDegrees = LondonEmaMinSlopeAngleDegrees;
                     activeEntryStopMode = LondonEntryStopMode;
+                    activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeExitCrossPoints = LondonExitCrossPoints;
                     activeFlipBodyThresholdPercent = LondonFlipBodyThresholdPercent;
                     activeFlipStopSetting = LondonFlipStopSetting;
@@ -817,11 +848,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = NewYorkEmaPeriod;
                     activeAdxPeriod = NewYorkAdxPeriod;
                     activeAdxThreshold = NewYorkAdxThreshold;
+                    activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
                     if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
                         activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = NewYorkContracts;
                     activeSignalBodyThresholdPercent = NewYorkSignalBodyThresholdPercent;
+                    activeEmaMinSlopeAngleDegrees = NewYorkEmaMinSlopeAngleDegrees;
                     activeEntryStopMode = NewYorkEntryStopMode;
+                    activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeExitCrossPoints = NewYorkExitCrossPoints;
                     activeFlipBodyThresholdPercent = NewYorkFlipBodyThresholdPercent;
                     activeFlipStopSetting = NewYorkFlipStopSetting;
@@ -836,9 +870,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = 0;
                     activeAdxPeriod = 0;
                     activeAdxThreshold = 0.0;
+                    activeAdxMinSlopePoints = 0.0;
                     activeContracts = 0;
                     activeSignalBodyThresholdPercent = 100.0;
+                    activeEmaMinSlopeAngleDegrees = 0.0;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeStopPaddingPoints = 0.0;
                     activeExitCrossPoints = 0.0;
                     activeFlipBodyThresholdPercent = 100.0;
                     activeFlipStopSetting = FlipStopMode.WickExtreme;
@@ -1038,6 +1075,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double BuildLongEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleLow)
         {
             double raw = activeEntryStopMode == InitialStopMode.CandleOpen ? candleOpen : candleLow;
+            raw -= activeStopPaddingPoints;
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
@@ -1048,6 +1086,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double BuildShortEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleHigh)
         {
             double raw = activeEntryStopMode == InitialStopMode.CandleOpen ? candleOpen : candleHigh;
+            raw += activeStopPaddingPoints;
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
@@ -1058,6 +1097,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double BuildFlipShortStopPrice(double entryPrice, double candleOpen, double candleHigh)
         {
             double raw = activeFlipStopSetting == FlipStopMode.CandleOpen ? candleOpen : candleHigh;
+            raw += activeStopPaddingPoints;
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
@@ -1067,10 +1107,49 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double BuildFlipLongStopPrice(double entryPrice, double candleOpen, double candleLow)
         {
             double raw = activeFlipStopSetting == FlipStopMode.CandleOpen ? candleOpen : candleLow;
+            raw -= activeStopPaddingPoints;
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
             return rounded;
+        }
+
+        private double GetEmaSlopePoints()
+        {
+            if (activeEma == null || CurrentBar < 1)
+                return 0.0;
+
+            return activeEma[0] - activeEma[1];
+        }
+
+        private double GetEmaSlopeAngleDegrees()
+        {
+            double slopePoints = GetEmaSlopePoints();
+            return Math.Atan(slopePoints) * (180.0 / Math.PI);
+        }
+
+        private bool EmaSlopePassesLong()
+        {
+            if (activeEmaMinSlopeAngleDegrees <= 0.0)
+                return true;
+
+            return GetEmaSlopeAngleDegrees() >= activeEmaMinSlopeAngleDegrees;
+        }
+
+        private bool EmaSlopePassesShort()
+        {
+            if (activeEmaMinSlopeAngleDegrees <= 0.0)
+                return true;
+
+            return GetEmaSlopeAngleDegrees() <= -activeEmaMinSlopeAngleDegrees;
+        }
+
+        private double GetAdxSlopePoints()
+        {
+            if (activeAdx == null || CurrentBar < 1)
+                return 0.0;
+
+            return activeAdx[0] - activeAdx[1];
         }
 
         private double GetBodyPercentAboveEma(double open, double close, double emaValue)
@@ -1506,7 +1585,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} adx={10}/{11:0.##} contracts={12} body%={13:0.##} touchEMA={14} minBody={15:0.##} exitCross={16:0.##} flipBody%={17:0.##} flipStop={18} entryStop={19} doublerPts={20:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMinDeg={10:0.##} adx={11}/{12:0.##} adxSlopeMin={13:0.##} contracts={14} body%={15:0.##} touchEMA={16} minBody={17:0.##} exitCross={18:0.##} flipBody%={19:0.##} flipStop={20} entryStop={21} slPad={22:0.##} doublerPts={23:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -1517,8 +1596,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 end,
                 noTradesAfter,
                 activeEmaPeriod,
+                activeEmaMinSlopeAngleDegrees,
                 activeAdxPeriod,
                 activeAdxThreshold,
+                activeAdxMinSlopePoints,
                 activeContracts,
                 activeSignalBodyThresholdPercent,
                 activeRequireEmaTouch,
@@ -1527,6 +1608,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 activeFlipBodyThresholdPercent,
                 activeFlipStopSetting,
                 activeEntryStopMode,
+                activeStopPaddingPoints,
                 activeContractDoublerStopThresholdPoints));
         }
 
@@ -2095,31 +2177,46 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double AsiaAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "Asia", Order = 10)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "Asia", Order = 10)]
+        public double AsiaAdxMinSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 89.0)]
+        [Display(Name = "EMA Min Slope Angle (Deg)", Description = "Minimum EMA angle from horizontal for entries. 0 disables slope filter.", GroupName = "Asia", Order = 11)]
+        public double AsiaEmaMinSlopeAngleDegrees { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "Asia", Order = 12)]
         public InitialStopMode AsiaEntryStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 11)]
+        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "Asia", Order = 13)]
+        public double AsiaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 14)]
         public double AsiaExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "Asia", Order = 12)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "Asia", Order = 15)]
         public double AsiaFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "Asia", Order = 13)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "Asia", Order = 16)]
         public FlipStopMode AsiaFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "Asia", Order = 14)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "Asia", Order = 17)]
         public double AsiaMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "Asia", Order = 15)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "Asia", Order = 18)]
         public double AsiaContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2172,31 +2269,46 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double LondonAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "London", Order = 10)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "London", Order = 10)]
+        public double LondonAdxMinSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 89.0)]
+        [Display(Name = "EMA Min Slope Angle (Deg)", Description = "Minimum EMA angle from horizontal for entries. 0 disables slope filter.", GroupName = "London", Order = 11)]
+        public double LondonEmaMinSlopeAngleDegrees { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "London", Order = 12)]
         public InitialStopMode LondonEntryStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London", Order = 11)]
+        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "London", Order = 13)]
+        public double LondonStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London", Order = 14)]
         public double LondonExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "London", Order = 12)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "London", Order = 15)]
         public double LondonFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "London", Order = 13)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "London", Order = 16)]
         public FlipStopMode LondonFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "London", Order = 14)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "London", Order = 17)]
         public double LondonMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "London", Order = 15)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "London", Order = 18)]
         public double LondonContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2249,31 +2361,46 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double NewYorkAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "New York", Order = 10)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "New York", Order = 10)]
+        public double NewYorkAdxMinSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 89.0)]
+        [Display(Name = "EMA Min Slope Angle (Deg)", Description = "Minimum EMA angle from horizontal for entries. 0 disables slope filter.", GroupName = "New York", Order = 11)]
+        public double NewYorkEmaMinSlopeAngleDegrees { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "New York", Order = 12)]
         public InitialStopMode NewYorkEntryStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 11)]
+        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "New York", Order = 13)]
+        public double NewYorkStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 14)]
         public double NewYorkExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "New York", Order = 12)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "New York", Order = 15)]
         public double NewYorkFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "New York", Order = 13)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "New York", Order = 16)]
         public FlipStopMode NewYorkFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "New York", Order = 14)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "New York", Order = 17)]
         public double NewYorkMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "New York", Order = 15)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "New York", Order = 18)]
         public double NewYorkContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
