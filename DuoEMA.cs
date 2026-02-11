@@ -64,6 +64,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private bool sessionInitialized;
         private SessionSlot activeSession = SessionSlot.None;
+        private SessionSlot lockedTradeSession = SessionSlot.None;
+        private int lastDeferredSessionLogBar = -1;
 
         private EMA emaAsia;
         private EMA emaLondon;
@@ -296,6 +298,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
+                lockedTradeSession = SessionSlot.None;
+                lastDeferredSessionLogBar = -1;
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
                 pendingLongStopForWebhook = 0.0;
@@ -701,6 +705,23 @@ namespace NinjaTrader.NinjaScript.Strategies
             string orderName = execution.Order.Name ?? string.Empty;
             double fillPrice = Instrument.MasterInstrument.RoundToTickSize(price);
 
+            if (orderName == "LongEntry" || orderName == "ShortEntry")
+            {
+                SessionSlot entrySession = activeSession != SessionSlot.None
+                    ? activeSession
+                    : DetermineSessionForTime(time);
+                if (entrySession != SessionSlot.None)
+                {
+                    lockedTradeSession = entrySession;
+                    LogDebug(string.Format("Session lock set to {0} on {1} fill.", FormatSessionLabel(lockedTradeSession), orderName));
+                }
+            }
+            else if (marketPosition == MarketPosition.Flat && lockedTradeSession != SessionSlot.None)
+            {
+                LogDebug(string.Format("Session lock released from {0} after flat execution ({1}).", FormatSessionLabel(lockedTradeSession), orderName));
+                lockedTradeSession = SessionSlot.None;
+            }
+
             if (orderName == "ExitLong" || orderName == "ExitShort" || orderName == "SessionEnd")
                 SendWebhook("exit", 0, 0, 0, true, quantity);
             else if (orderName == "TwoCandleReverse")
@@ -722,6 +743,49 @@ namespace NinjaTrader.NinjaScript.Strategies
         private void UpdateActiveSession(DateTime time)
         {
             SessionSlot desired = DetermineSessionForTime(time);
+            bool inPosition = Position.MarketPosition != MarketPosition.Flat;
+
+            if (inPosition)
+            {
+                if (lockedTradeSession == SessionSlot.None)
+                {
+                    SessionSlot inferredLock = activeSession != SessionSlot.None
+                        ? activeSession
+                        : desired;
+                    if (inferredLock != SessionSlot.None)
+                    {
+                        lockedTradeSession = inferredLock;
+                        LogDebug(string.Format("Session lock inferred as {0} while position is open.", FormatSessionLabel(lockedTradeSession)));
+                    }
+                }
+
+                if (lockedTradeSession != SessionSlot.None && activeSession != lockedTradeSession)
+                {
+                    activeSession = lockedTradeSession;
+                    ApplyInputsForSession(activeSession);
+                    LogSessionActivation("lock");
+                    LogDebug(string.Format("Active session held at {0} while position is open.", FormatSessionLabel(activeSession)));
+                }
+
+                sessionInitialized = true;
+                if (DebugLogging && desired != activeSession && CurrentBar != lastDeferredSessionLogBar)
+                {
+                    lastDeferredSessionLogBar = CurrentBar;
+                    LogDebug(string.Format(
+                        "Session switch deferred | current={0} desired={1} pos={2}",
+                        FormatSessionLabel(activeSession),
+                        FormatSessionLabel(desired),
+                        Position.MarketPosition));
+                }
+                return;
+            }
+
+            if (lockedTradeSession != SessionSlot.None)
+            {
+                LogDebug(string.Format("Session lock cleared while flat (was {0}).", FormatSessionLabel(lockedTradeSession)));
+                lockedTradeSession = SessionSlot.None;
+            }
+
             if (!sessionInitialized || desired != activeSession)
             {
                 activeSession = desired;
