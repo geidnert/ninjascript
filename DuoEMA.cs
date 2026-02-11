@@ -54,7 +54,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private Order longEntryOrder;
         private Order shortEntryOrder;
-        private int lastLoggedBar = -1;
         private int missingLongEntryOrderBars;
         private int missingShortEntryOrderBars;
 
@@ -66,6 +65,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private SessionSlot activeSession = SessionSlot.None;
         private SessionSlot lockedTradeSession = SessionSlot.None;
         private int lastDeferredSessionLogBar = -1;
+        private bool tradeAttemptOpen;
+        private int tradeAttemptId;
+        private string tradeAttemptSide = string.Empty;
 
         private EMA emaAsia;
         private EMA emaLondon;
@@ -286,20 +288,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                     adxNewYork.Lines[0].Value = NewYorkAdxThreshold;
 
                 AddChartIndicator(emaAsia);
-                if (LondonEmaPeriod != AsiaEmaPeriod)
-                    AddChartIndicator(emaLondon);
-                if (NewYorkEmaPeriod != AsiaEmaPeriod && NewYorkEmaPeriod != LondonEmaPeriod)
-                    AddChartIndicator(emaNewYork);
+                AddChartIndicator(emaLondon);
+                AddChartIndicator(emaNewYork);
                 AddChartIndicator(adxAsia);
-                if (LondonAdxPeriod != AsiaAdxPeriod)
-                    AddChartIndicator(adxLondon);
-                if (NewYorkAdxPeriod != AsiaAdxPeriod && NewYorkAdxPeriod != LondonAdxPeriod)
-                    AddChartIndicator(adxNewYork);
+                AddChartIndicator(adxLondon);
+                AddChartIndicator(adxNewYork);
 
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
                 lockedTradeSession = SessionSlot.None;
                 lastDeferredSessionLogBar = -1;
+                tradeAttemptOpen = false;
+                tradeAttemptId = 0;
+                tradeAttemptSide = string.Empty;
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
                 pendingLongStopForWebhook = 0.0;
@@ -395,7 +396,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool bearish = Close[0] < Open[0];
             double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
             double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
-            double emaSlopePointsPerBar = GetEmaSlopePointsPerBar();
             bool emaSlopeLongPass = EmaSlopePassesLong();
             bool emaSlopeShortPass = EmaSlopePassesShort();
 
@@ -403,39 +403,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool touchPasses = !activeRequireEmaTouch || emaTouched;
             bool longSignal = bullish && bodySizePasses && touchPasses && emaSlopeLongPass && bodyAbovePercent >= activeSignalBodyThresholdPercent;
             bool shortSignal = bearish && bodySizePasses && touchPasses && emaSlopeShortPass && bodyBelowPercent >= activeSignalBodyThresholdPercent;
-
-            if (DebugLogging && CurrentBar != lastLoggedBar)
-            {
-                lastLoggedBar = CurrentBar;
-                LogDebug(
-                    string.Format(
-                        "BarSummary | session={0} pos={1} o={2:0.00} h={3:0.00} l={4:0.00} c={5:0.00} ema={6:0.00} emaSlope={7:0.000} adx={8:0.00}/{9:0.00} adxSlope={10:0.00}/{11:0.00} body={12:0.00} above%={13:0.0} below%={14:0.0} touch={15} emaLong={16} emaShort={17} longSig={18} shortSig={19} canTrade={20} noTrades={21} news={22} acctBlocked={23} minBody={24:0.00}",
-                        FormatSessionLabel(activeSession),
-                        Position.MarketPosition,
-                        Open[0],
-                        High[0],
-                        Low[0],
-                        Close[0],
-                        emaValue,
-                        emaSlopePointsPerBar,
-                        adxValue,
-                        activeAdxThreshold,
-                        adxSlope,
-                        activeAdxMinSlopePoints,
-                        bodySize,
-                        bodyAbovePercent,
-                        bodyBelowPercent,
-                        emaTouched,
-                        emaSlopeLongPass,
-                        emaSlopeShortPass,
-                        longSignal,
-                        shortSignal,
-                        canTradeNow,
-                        inNoTradesNow,
-                        inNewsSkipNow,
-                        accountBlocked,
-                        activeMinEntryBodySize));
-            }
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
@@ -545,23 +512,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (!canTradeNow)
             {
-                if (DebugLogging && (longSignal || shortSignal))
-                {
-                    LogDebug(string.Format(
-                        "Signal blocked | session={0} longSig={1} shortSig={2} canTrade={3} inSession={4} noTrades={5} news={6} acctBlocked={7} adx={8:0.00}/{9:0.00} adxSlope={10:0.00}/{11:0.00}",
-                        FormatSessionLabel(activeSession),
-                        longSignal,
-                        shortSignal,
-                        canTradeNow,
-                        inActiveSessionNow,
-                        inNoTradesNow,
-                        inNewsSkipNow,
-                        accountBlocked,
-                        adxValue,
-                        activeAdxThreshold,
-                        adxSlope,
-                        activeAdxMinSlopePoints));
-                }
                 return;
             }
 
@@ -570,6 +520,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (longSignal)
             {
+                BeginTradeAttempt("Long");
+                LogDebug(string.Format("Setup ready | side=Long session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
+
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
 
                 if (!longOrderActive)
@@ -580,6 +533,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                     {
                         LogDebug("Entry confirmation declined | LONG.");
+                        EndTradeAttempt("confirmation-declined");
                         return;
                     }
 
@@ -592,10 +546,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else if (DebugLogging)
                 {
                     LogDebug(string.Format("LONG signal skipped | reason=longOrderActive tracked={0}", FormatOrderRef(longEntryOrder)));
+                    EndTradeAttempt("entry-order-active");
                 }
             }
             else if (shortSignal)
             {
+                BeginTradeAttempt("Short");
+                LogDebug(string.Format("Setup ready | side=Short session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
+
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
 
                 if (!shortOrderActive)
@@ -606,6 +564,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                     {
                         LogDebug("Entry confirmation declined | SHORT.");
+                        EndTradeAttempt("confirmation-declined");
                         return;
                     }
 
@@ -618,6 +577,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else if (DebugLogging)
                 {
                     LogDebug(string.Format("SHORT signal skipped | reason=shortOrderActive tracked={0}", FormatOrderRef(shortEntryOrder)));
+                    EndTradeAttempt("entry-order-active");
                 }
             }
         }
@@ -647,8 +607,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool isImportantState = orderState == OrderState.Filled
                 || orderState == OrderState.Cancelled
                 || orderState == OrderState.Rejected;
-            bool isEntryOrder = order.Name == "LongEntry" || order.Name == "ShortEntry";
-            bool shouldLogOrderState = DebugLogging && (isImportantState || isEntryOrder);
+            bool shouldLogOrderState = DebugLogging && isImportantState;
 
             if (shouldLogOrderState)
             {
@@ -669,6 +628,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                         FormatOrderRef(longEntryOrder),
                         FormatOrderRef(shortEntryOrder)));
             }
+
+            bool isEntryOrder = order.Name == "LongEntry" || order.Name == "ShortEntry";
+            if (isEntryOrder && orderState != OrderState.Filled &&
+                (orderState == OrderState.Cancelled || orderState == OrderState.Rejected) &&
+                Position.MarketPosition == MarketPosition.Flat)
+            {
+                EndTradeAttempt("entry-" + orderState);
+            }
         }
 
         private void HandleOrderRejected(Order order, ErrorCode error, string comment)
@@ -681,6 +648,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (name == "LongEntry" || name == "ShortEntry")
             {
                 CancelWorkingEntryOrders();
+                EndTradeAttempt("entry-rejected");
                 return;
             }
 
@@ -737,6 +705,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                         fillPrice,
                         marketPosition,
                         executionId));
+            }
+
+            if (orderName != "LongEntry" && orderName != "ShortEntry")
+            {
+                EndTradeAttempt("exit-" + orderName);
             }
         }
 
@@ -983,9 +956,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void UpdateEmaPlotVisibility()
         {
-            SetEmaVisible(emaAsia, activeSession == SessionSlot.Asia);
-            SetEmaVisible(emaLondon, activeSession == SessionSlot.London);
-            SetEmaVisible(emaNewYork, activeSession == SessionSlot.NewYork);
+            bool showAsia = activeSession == SessionSlot.Asia;
+            bool showLondon = activeSession == SessionSlot.London;
+            bool showNewYork = activeSession == SessionSlot.NewYork;
+
+            // NinjaTrader may return shared indicator instances when periods match.
+            // If two session EMA fields point to the same instance, visibility must be
+            // resolved across all aliases before applying the brush.
+            bool visAsia = showAsia
+                || (ReferenceEquals(emaAsia, emaLondon) && showLondon)
+                || (ReferenceEquals(emaAsia, emaNewYork) && showNewYork);
+            bool visLondon = showLondon
+                || (ReferenceEquals(emaLondon, emaAsia) && showAsia)
+                || (ReferenceEquals(emaLondon, emaNewYork) && showNewYork);
+            bool visNewYork = showNewYork
+                || (ReferenceEquals(emaNewYork, emaAsia) && showAsia)
+                || (ReferenceEquals(emaNewYork, emaLondon) && showLondon);
+
+            SetEmaVisible(emaAsia, visAsia);
+            SetEmaVisible(emaLondon, visLondon);
+            SetEmaVisible(emaNewYork, visNewYork);
         }
 
         private void SetEmaVisible(EMA ema, bool visible)
@@ -1831,6 +1821,34 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             return londonTimeZone;
+        }
+
+        private void BeginTradeAttempt(string side)
+        {
+            if (!DebugLogging)
+                return;
+
+            if (tradeAttemptOpen && string.Equals(tradeAttemptSide, side, StringComparison.Ordinal))
+                return;
+
+            if (tradeAttemptOpen)
+                EndTradeAttempt("interrupted");
+
+            tradeAttemptOpen = true;
+            tradeAttemptId++;
+            tradeAttemptSide = side;
+            LogDebug(string.Format("Attempt #{0} start | side={1} session={2}", tradeAttemptId, side, FormatSessionLabel(activeSession)));
+        }
+
+        private void EndTradeAttempt(string reason)
+        {
+            if (!DebugLogging || !tradeAttemptOpen)
+                return;
+
+            LogDebug(string.Format("Attempt #{0} end | reason={1}", tradeAttemptId, reason));
+            Print(string.Empty);
+            tradeAttemptOpen = false;
+            tradeAttemptSide = string.Empty;
         }
 
         private void LogDebug(string message)
