@@ -86,7 +86,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int activeAdxPeriod;
         private double activeAdxThreshold;
         private double activeContractDoublerStopThresholdPoints;
-        private double activeEmaMinSlopeAngleDegrees;
+        private double activeEmaMinSlopePointsPerBar;
         private double activeAdxMinSlopePoints;
         private double activeStopPaddingPoints;
 
@@ -192,7 +192,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 16.1;
                 AsiaAdxMinSlopePoints = 0.0;
-                AsiaEmaMinSlopeAngleDegrees = 0.0;
+                AsiaEmaMinSlopePointsPerBar = 0.0;
                 AsiaEntryStopMode = InitialStopMode.CandleOpen;
                 AsiaStopPaddingPoints = 0.0;
                 AsiaExitCrossPoints = 5.5;
@@ -213,7 +213,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 13;
                 LondonAdxMinSlopePoints = 0.0;
-                LondonEmaMinSlopeAngleDegrees = 0.0;
+                LondonEmaMinSlopePointsPerBar = 0.0;
                 LondonEntryStopMode = InitialStopMode.WickExtreme;
                 LondonStopPaddingPoints = 0.0;
                 LondonExitCrossPoints = 2.75;
@@ -234,7 +234,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 12.9;
                 NewYorkAdxMinSlopePoints = 0.0;
-                NewYorkEmaMinSlopeAngleDegrees = 0.0;
+                NewYorkEmaMinSlopePointsPerBar = 0.0;
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
                 NewYorkStopPaddingPoints = 0.0;
                 NewYorkExitCrossPoints = 23;
@@ -388,7 +388,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool bearish = Close[0] < Open[0];
             double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
             double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
-            double emaSlopeAngle = GetEmaSlopeAngleDegrees();
+            double emaSlopePointsPerBar = GetEmaSlopePointsPerBar();
             bool emaSlopeLongPass = EmaSlopePassesLong();
             bool emaSlopeShortPass = EmaSlopePassesShort();
 
@@ -402,7 +402,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 lastLoggedBar = CurrentBar;
                 LogDebug(
                     string.Format(
-                        "BarSummary | session={0} pos={1} o={2:0.00} h={3:0.00} l={4:0.00} c={5:0.00} ema={6:0.00} emaSlopeDeg={7:0.00} adx={8:0.00}/{9:0.00} adxSlope={10:0.00}/{11:0.00} body={12:0.00} above%={13:0.0} below%={14:0.0} touch={15} emaLong={16} emaShort={17} longSig={18} shortSig={19} canTrade={20} noTrades={21} news={22} acctBlocked={23} minBody={24:0.00}",
+                        "BarSummary | session={0} pos={1} o={2:0.00} h={3:0.00} l={4:0.00} c={5:0.00} ema={6:0.00} emaSlope={7:0.000} adx={8:0.00}/{9:0.00} adxSlope={10:0.00}/{11:0.00} body={12:0.00} above%={13:0.0} below%={14:0.0} touch={15} emaLong={16} emaShort={17} longSig={18} shortSig={19} canTrade={20} noTrades={21} news={22} acctBlocked={23} minBody={24:0.00}",
                         FormatSessionLabel(activeSession),
                         Position.MarketPosition,
                         Open[0],
@@ -410,7 +410,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Low[0],
                         Close[0],
                         emaValue,
-                        emaSlopeAngle,
+                        emaSlopePointsPerBar,
                         adxValue,
                         activeAdxThreshold,
                         adxSlope,
@@ -833,7 +833,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = AsiaContracts;
                     activeSignalBodyThresholdPercent = AsiaSignalBodyThresholdPercent;
-                    activeEmaMinSlopeAngleDegrees = AsiaEmaMinSlopeAngleDegrees;
+                    activeEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
                     activeEntryStopMode = AsiaEntryStopMode;
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeExitCrossPoints = AsiaExitCrossPoints;
@@ -855,7 +855,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = LondonContracts;
                     activeSignalBodyThresholdPercent = LondonSignalBodyThresholdPercent;
-                    activeEmaMinSlopeAngleDegrees = LondonEmaMinSlopeAngleDegrees;
+                    activeEmaMinSlopePointsPerBar = LondonEmaMinSlopePointsPerBar;
                     activeEntryStopMode = LondonEntryStopMode;
                     activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeExitCrossPoints = LondonExitCrossPoints;
@@ -877,7 +877,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         activeAdx.Lines[0].Value = activeAdxThreshold;
                     activeContracts = NewYorkContracts;
                     activeSignalBodyThresholdPercent = NewYorkSignalBodyThresholdPercent;
-                    activeEmaMinSlopeAngleDegrees = NewYorkEmaMinSlopeAngleDegrees;
+                    activeEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
                     activeEntryStopMode = NewYorkEntryStopMode;
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeExitCrossPoints = NewYorkExitCrossPoints;
@@ -897,7 +897,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxMinSlopePoints = 0.0;
                     activeContracts = 0;
                     activeSignalBodyThresholdPercent = 100.0;
-                    activeEmaMinSlopeAngleDegrees = 0.0;
+                    activeEmaMinSlopePointsPerBar = 0.0;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeStopPaddingPoints = 0.0;
                     activeExitCrossPoints = 0.0;
@@ -1146,26 +1146,25 @@ namespace NinjaTrader.NinjaScript.Strategies
             return activeEma[0] - activeEma[1];
         }
 
-        private double GetEmaSlopeAngleDegrees()
+        private double GetEmaSlopePointsPerBar()
         {
-            double slopePoints = GetEmaSlopePoints();
-            return Math.Atan(slopePoints) * (180.0 / Math.PI);
+            return GetEmaSlopePoints();
         }
 
         private bool EmaSlopePassesLong()
         {
-            if (activeEmaMinSlopeAngleDegrees <= 0.0)
+            if (activeEmaMinSlopePointsPerBar <= 0.0)
                 return true;
 
-            return GetEmaSlopeAngleDegrees() >= activeEmaMinSlopeAngleDegrees;
+            return GetEmaSlopePointsPerBar() >= activeEmaMinSlopePointsPerBar;
         }
 
         private bool EmaSlopePassesShort()
         {
-            if (activeEmaMinSlopeAngleDegrees <= 0.0)
+            if (activeEmaMinSlopePointsPerBar <= 0.0)
                 return true;
 
-            return GetEmaSlopeAngleDegrees() <= -activeEmaMinSlopeAngleDegrees;
+            return GetEmaSlopePointsPerBar() <= -activeEmaMinSlopePointsPerBar;
         }
 
         private double GetAdxSlopePoints()
@@ -1646,7 +1645,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMinDeg={10:0.##} adx={11}/{12:0.##} adxSlopeMin={13:0.##} contracts={14} body%={15:0.##} touchEMA={16} minBody={17:0.##} exitCross={18:0.##} flipBody%={19:0.##} flipStop={20} entryStop={21} slPad={22:0.##} doublerPts={23:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adx={11}/{12:0.##} adxSlopeMin={13:0.##} contracts={14} body%={15:0.##} touchEMA={16} minBody={17:0.##} exitCross={18:0.##} flipBody%={19:0.##} flipStop={20} entryStop={21} slPad={22:0.##} doublerPts={23:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -1657,7 +1656,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 end,
                 noTradesAfter,
                 activeEmaPeriod,
-                activeEmaMinSlopeAngleDegrees,
+                activeEmaMinSlopePointsPerBar,
                 activeAdxPeriod,
                 activeAdxThreshold,
                 activeAdxMinSlopePoints,
@@ -2243,9 +2242,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double AsiaAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 89.0)]
-        [Display(Name = "EMA Min Slope Angle (Deg)", Description = "Minimum EMA angle from horizontal for entries. 0 disables slope filter.", GroupName = "Asia", Order = 11)]
-        public double AsiaEmaMinSlopeAngleDegrees { get; set; }
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "Asia", Order = 11)]
+        public double AsiaEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "Asia", Order = 12)]
@@ -2335,9 +2334,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double LondonAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 89.0)]
-        [Display(Name = "EMA Min Slope Angle (Deg)", Description = "Minimum EMA angle from horizontal for entries. 0 disables slope filter.", GroupName = "London", Order = 11)]
-        public double LondonEmaMinSlopeAngleDegrees { get; set; }
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "London", Order = 11)]
+        public double LondonEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "London", Order = 12)]
@@ -2427,9 +2426,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double NewYorkAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 89.0)]
-        [Display(Name = "EMA Min Slope Angle (Deg)", Description = "Minimum EMA angle from horizontal for entries. 0 disables slope filter.", GroupName = "New York", Order = 11)]
-        public double NewYorkEmaMinSlopeAngleDegrees { get; set; }
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "New York", Order = 11)]
+        public double NewYorkEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "New York", Order = 12)]
