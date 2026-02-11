@@ -2165,6 +2165,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Time[0]), false);
 
             bool isFlat = Position.MarketPosition == MarketPosition.Flat;
+            bool hasPrimaryEntryInPlay =
+                IsOrderActive(longEntryOrder) ||
+                IsOrderActive(shortEntryOrder) ||
+                pendingLongWebhook ||
+                pendingShortWebhook;
+
+            if (isFlat && hasPrimaryEntryInPlay)
+            {
+                LogIfvgTrade(fvgTag, "BLOCKED (PrimaryEntryInPlay)", false);
+                return;
+            }
+
             if (isFlat && !IfvgAllowFromFlat)
             {
                 LogIfvgTrade(fvgTag, "BLOCKED (NoActivePosition)", false);
