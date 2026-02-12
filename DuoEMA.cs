@@ -83,6 +83,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double activeSignalBodyThresholdPercent;
         private InitialStopMode activeEntryStopMode;
         private double activeExitCrossPoints;
+        private double activeTakeProfitPoints;
         private double activeFlipBodyThresholdPercent;
         private FlipStopMode activeFlipStopSetting;
         private double activeMinEntryBodySize;
@@ -206,6 +207,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaEntryStopMode = InitialStopMode.CandleOpen;
                 AsiaStopPaddingPoints = 0.0;
                 AsiaExitCrossPoints = 5.5;
+                AsiaTakeProfitPoints = 0.0;
                 AsiaFlipBodyThresholdPercent = 64.0;
                 AsiaFlipStopSetting = FlipStopMode.CandleOpen;
                 AsiaMinEntryBodySize = 2.75;
@@ -229,6 +231,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LondonEntryStopMode = InitialStopMode.WickExtreme;
                 LondonStopPaddingPoints = 0.0;
                 LondonExitCrossPoints = 2.75;
+                LondonTakeProfitPoints = 0.0;
                 LondonFlipBodyThresholdPercent = 28;
                 LondonFlipStopSetting = FlipStopMode.WickExtreme;
                 LondonMinEntryBodySize = 26;
@@ -252,6 +255,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
                 NewYorkStopPaddingPoints = 0.0;
                 NewYorkExitCrossPoints = 23;
+                NewYorkTakeProfitPoints = 0.0;
                 NewYorkFlipBodyThresholdPercent = 99.0;
                 NewYorkFlipStopSetting = FlipStopMode.CandleOpen;
                 NewYorkMinEntryBodySize = 10;
@@ -272,6 +276,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProjectXAccountId = string.Empty;
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0.0;
+                MaxEntryDistanceFromEmaPoints = 0.0;
+                AdxAbsoluteExitLevel = 0.0;
                 RequireEntryConfirmation = false;
                 OppositeCandleExitCount = 0;
                 PositionExitMode = ExitMode.Both;
@@ -405,16 +411,38 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool bearish = Close[0] < Open[0];
             double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
             double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
+            double emaDistancePoints = Math.Abs(Close[0] - emaValue);
             bool emaSlopeLongPass = EmaSlopePassesLong();
             bool emaSlopeShortPass = EmaSlopePassesShort();
 
             bool bodySizePasses = bodySize >= activeMinEntryBodySize;
             bool touchPasses = !activeRequireEmaTouch || emaTouched;
-            bool longSignal = bullish && bodySizePasses && touchPasses && emaSlopeLongPass && bodyAbovePercent >= activeSignalBodyThresholdPercent;
-            bool shortSignal = bearish && bodySizePasses && touchPasses && emaSlopeShortPass && bodyBelowPercent >= activeSignalBodyThresholdPercent;
+            bool distancePasses = MaxEntryDistanceFromEmaPoints <= 0.0 || emaDistancePoints <= MaxEntryDistanceFromEmaPoints;
+            bool longBaseSignal = bullish && bodySizePasses && touchPasses && emaSlopeLongPass && bodyAbovePercent >= activeSignalBodyThresholdPercent;
+            bool shortBaseSignal = bearish && bodySizePasses && touchPasses && emaSlopeShortPass && bodyBelowPercent >= activeSignalBodyThresholdPercent;
+            bool longSignal = longBaseSignal && distancePasses;
+            bool shortSignal = shortBaseSignal && distancePasses;
+
+            if (DebugLogging && canTradeNow && !distancePasses && (longBaseSignal || shortBaseSignal))
+            {
+                LogDebug(string.Format(
+                    "Setup blocked | reason=EmaDistance side={0} distancePts={1:0.00} maxPts={2:0.00} session={3}",
+                    longBaseSignal ? "Long" : "Short",
+                    emaDistancePoints,
+                    MaxEntryDistanceFromEmaPoints,
+                    FormatSessionLabel(activeSession)));
+            }
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
+                if (AdxAbsoluteExitLevel > 0.0 && adxValue >= AdxAbsoluteExitLevel)
+                {
+                    ExitLong("AdxLevelExit", "LongEntry");
+                    LogDebug(string.Format("Exit LONG | reason=AdxLevel adx={0:0.00} threshold={1:0.00}",
+                        adxValue, AdxAbsoluteExitLevel));
+                    return;
+                }
+
                 double adxDrawdown;
                 if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
                 {
@@ -434,6 +462,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     return;
                 }
 
+                if (activeTakeProfitPoints > 0.0 && Close[0] >= Position.AveragePrice + activeTakeProfitPoints)
+                {
+                    ExitLong("TakeProfitExit", "LongEntry");
+                    LogDebug(string.Format("Exit LONG | reason=TakeProfit close={0:0.00} avg={1:0.00} tpPts={2:0.00}",
+                        Close[0], Position.AveragePrice, activeTakeProfitPoints));
+                    return;
+                }
+
                 bool useOppositeExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.OppositeCandlesOnly;
                 bool useEmaExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.EmaOnly;
 
@@ -446,7 +482,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (useEmaExit && Close[0] <= emaValue - activeExitCrossPoints)
                 {
-                    bool shouldFlip = canTradeNow && EmaSlopePassesShort() && bodyBelowPercent >= activeFlipBodyThresholdPercent;
+                    if (DebugLogging && canTradeNow && !distancePasses && EmaSlopePassesShort() && bodyBelowPercent >= activeFlipBodyThresholdPercent)
+                    {
+                        LogDebug(string.Format(
+                            "Flip blocked | reason=EmaDistance side=Short distancePts={0:0.00} maxPts={1:0.00} session={2}",
+                            emaDistancePoints,
+                            MaxEntryDistanceFromEmaPoints,
+                            FormatSessionLabel(activeSession)));
+                    }
+
+                    bool shouldFlip = canTradeNow && distancePasses && EmaSlopePassesShort() && bodyBelowPercent >= activeFlipBodyThresholdPercent;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
@@ -478,6 +523,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
+                if (AdxAbsoluteExitLevel > 0.0 && adxValue >= AdxAbsoluteExitLevel)
+                {
+                    ExitShort("AdxLevelExit", "ShortEntry");
+                    LogDebug(string.Format("Exit SHORT | reason=AdxLevel adx={0:0.00} threshold={1:0.00}",
+                        adxValue, AdxAbsoluteExitLevel));
+                    return;
+                }
+
                 double adxDrawdown;
                 if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
                 {
@@ -497,6 +550,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     return;
                 }
 
+                if (activeTakeProfitPoints > 0.0 && Close[0] <= Position.AveragePrice - activeTakeProfitPoints)
+                {
+                    ExitShort("TakeProfitExit", "ShortEntry");
+                    LogDebug(string.Format("Exit SHORT | reason=TakeProfit close={0:0.00} avg={1:0.00} tpPts={2:0.00}",
+                        Close[0], Position.AveragePrice, activeTakeProfitPoints));
+                    return;
+                }
+
                 bool useOppositeExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.OppositeCandlesOnly;
                 bool useEmaExit = PositionExitMode == ExitMode.Both || PositionExitMode == ExitMode.EmaOnly;
 
@@ -509,7 +570,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (useEmaExit && Close[0] >= emaValue + activeExitCrossPoints)
                 {
-                    bool shouldFlip = canTradeNow && EmaSlopePassesLong() && bodyAbovePercent >= activeFlipBodyThresholdPercent;
+                    if (DebugLogging && canTradeNow && !distancePasses && EmaSlopePassesLong() && bodyAbovePercent >= activeFlipBodyThresholdPercent)
+                    {
+                        LogDebug(string.Format(
+                            "Flip blocked | reason=EmaDistance side=Long distancePts={0:0.00} maxPts={1:0.00} session={2}",
+                            emaDistancePoints,
+                            MaxEntryDistanceFromEmaPoints,
+                            FormatSessionLabel(activeSession)));
+                    }
+
+                    bool shouldFlip = canTradeNow && distancePasses && EmaSlopePassesLong() && bodyAbovePercent >= activeFlipBodyThresholdPercent;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
@@ -908,6 +978,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEntryStopMode = AsiaEntryStopMode;
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeExitCrossPoints = AsiaExitCrossPoints;
+                    activeTakeProfitPoints = AsiaTakeProfitPoints;
                     activeFlipBodyThresholdPercent = AsiaFlipBodyThresholdPercent;
                     activeFlipStopSetting = AsiaFlipStopSetting;
                     activeMinEntryBodySize = AsiaMinEntryBodySize;
@@ -932,6 +1003,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEntryStopMode = LondonEntryStopMode;
                     activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeExitCrossPoints = LondonExitCrossPoints;
+                    activeTakeProfitPoints = LondonTakeProfitPoints;
                     activeFlipBodyThresholdPercent = LondonFlipBodyThresholdPercent;
                     activeFlipStopSetting = LondonFlipStopSetting;
                     activeMinEntryBodySize = LondonMinEntryBodySize;
@@ -956,6 +1028,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEntryStopMode = NewYorkEntryStopMode;
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeExitCrossPoints = NewYorkExitCrossPoints;
+                    activeTakeProfitPoints = NewYorkTakeProfitPoints;
                     activeFlipBodyThresholdPercent = NewYorkFlipBodyThresholdPercent;
                     activeFlipStopSetting = NewYorkFlipStopSetting;
                     activeMinEntryBodySize = NewYorkMinEntryBodySize;
@@ -978,6 +1051,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeStopPaddingPoints = 0.0;
                     activeExitCrossPoints = 0.0;
+                    activeTakeProfitPoints = 0.0;
                     activeFlipBodyThresholdPercent = 100.0;
                     activeFlipStopSetting = FlipStopMode.WickExtreme;
                     activeMinEntryBodySize = 0.0;
@@ -1793,7 +1867,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adx={11}/{12:0.##} adxSlopeMin={13:0.##} adxPeakDd={14:0.##} profitPeakDdPts={15:0.##} contracts={16} body%={17:0.##} touchEMA={18} minBody={19:0.##} exitCross={20:0.##} flipBody%={21:0.##} flipStop={22} entryStop={23} slPad={24:0.##} doublerPts={25:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adx={11}/{12:0.##} adxSlopeMin={13:0.##} adxPeakDd={14:0.##} profitPeakDdPts={15:0.##} tpPts={16:0.##} contracts={17} body%={18:0.##} touchEMA={19} minBody={20:0.##} exitCross={21:0.##} flipBody%={22:0.##} flipStop={23} entryStop={24} slPad={25:0.##} doublerPts={26:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -1810,6 +1884,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 activeAdxMinSlopePoints,
                 activeAdxPeakDrawdownExitUnits,
                 activeProfitPeakDrawdownExitPoints,
+                activeTakeProfitPoints,
                 activeContracts,
                 activeSignalBodyThresholdPercent,
                 activeRequireEmaTouch,
@@ -2450,21 +2525,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "Asia", Order = 17)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 17)]
+        public double AsiaTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "Asia", Order = 18)]
         public double AsiaFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "Asia", Order = 18)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "Asia", Order = 19)]
         public FlipStopMode AsiaFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "Asia", Order = 19)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "Asia", Order = 20)]
         public double AsiaMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "Asia", Order = 20)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "Asia", Order = 21)]
         public double AsiaContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2552,21 +2632,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "London", Order = 17)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London", Order = 17)]
+        public double LondonTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "London", Order = 18)]
         public double LondonFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "London", Order = 18)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "London", Order = 19)]
         public FlipStopMode LondonFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "London", Order = 19)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "London", Order = 20)]
         public double LondonMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "London", Order = 20)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "London", Order = 21)]
         public double LondonContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2654,21 +2739,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "New York", Order = 17)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 17)]
+        public double NewYorkTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "New York", Order = 18)]
         public double NewYorkFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "New York", Order = 18)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "New York", Order = 19)]
         public FlipStopMode NewYorkFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "New York", Order = 19)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "New York", Order = 20)]
         public double NewYorkMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "New York", Order = 20)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "New York", Order = 21)]
         public double NewYorkContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2734,17 +2824,27 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double MaxAccountBalance { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 1)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Entry Distance From EMA (Points)", Description = "0 disables. Block long/short entries and flips when close price is farther than this many points from the active EMA.", GroupName = "13. Risk", Order = 1)]
+        public double MaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 2)]
         public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Exit Mode", Description = "Choose EMA exits only, opposite-candle exits only, or both.", GroupName = "13. Risk", Order = 2)]
+        [Display(Name = "Exit Mode", Description = "Choose EMA exits only, opposite-candle exits only, or both.", GroupName = "13. Risk", Order = 3)]
         public ExitMode PositionExitMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Opposite Candle Exit Count", Description = "0 disables. If set to N, close an open position after N consecutive opposite candles.", GroupName = "13. Risk", Order = 3)]
+        [Display(Name = "Opposite Candle Exit Count", Description = "0 disables. If set to N, close an open position after N consecutive opposite candles.", GroupName = "13. Risk", Order = 4)]
         public int OppositeCandleExitCount { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. If ADX reaches or exceeds this value while in a trade, exit immediately.", GroupName = "13. Risk", Order = 5)]
+        public double AdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
