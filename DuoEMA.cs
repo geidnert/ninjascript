@@ -264,6 +264,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 CloseAtSessionEnd = true;
                 SessionBrush = Brushes.Gold;
                 ShowNoTradesAfterLine = false;
+                ShowEmaOnChart = true;
+                ShowAdxOnChart = true;
 
                 UseNewsSkip = true;
                 NewsBlockMinutes = 2;
@@ -299,12 +301,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (adxNewYork != null && adxNewYork.Lines != null && adxNewYork.Lines.Length > 0)
                     adxNewYork.Lines[0].Value = NewYorkAdxThreshold;
 
-                AddChartIndicator(emaAsia);
-                AddChartIndicator(emaLondon);
-                AddChartIndicator(emaNewYork);
-                AddChartIndicator(adxAsia);
-                AddChartIndicator(adxLondon);
-                AddChartIndicator(adxNewYork);
+                if (ShowEmaOnChart)
+                {
+                    AddChartIndicator(emaAsia);
+                    AddChartIndicator(emaLondon);
+                    AddChartIndicator(emaNewYork);
+                }
+
+                if (ShowAdxOnChart)
+                {
+                    AddChartIndicator(adxAsia);
+                    AddChartIndicator(adxLondon);
+                    AddChartIndicator(adxNewYork);
+                }
 
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
@@ -315,6 +324,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 tradeAttemptSide = string.Empty;
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
+                UpdateAdxPlotVisibility();
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
                 currentTradePeakAdx = 0.0;
@@ -362,6 +372,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             UpdateActiveSession(Time[0]);
             UpdateEmaPlotVisibility();
+            UpdateAdxPlotVisibility();
 
             bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
             bool inNewsSkipPrev = CurrentBar > 0 && TimeInNewsSkip(Time[1]);
@@ -1063,6 +1074,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void UpdateEmaPlotVisibility()
         {
+            if (!ShowEmaOnChart)
+            {
+                SetEmaVisible(emaAsia, false);
+                SetEmaVisible(emaLondon, false);
+                SetEmaVisible(emaNewYork, false);
+                return;
+            }
+
             bool showAsia = activeSession == SessionSlot.Asia;
             bool showLondon = activeSession == SessionSlot.London;
             bool showNewYork = activeSession == SessionSlot.NewYork;
@@ -1085,12 +1104,36 @@ namespace NinjaTrader.NinjaScript.Strategies
             SetEmaVisible(emaNewYork, visNewYork);
         }
 
+        private void UpdateAdxPlotVisibility()
+        {
+            if (!ShowAdxOnChart)
+            {
+                SetAdxVisible(adxAsia, false);
+                SetAdxVisible(adxLondon, false);
+                SetAdxVisible(adxNewYork, false);
+                return;
+            }
+
+            SetAdxVisible(adxAsia, true);
+            SetAdxVisible(adxLondon, true);
+            SetAdxVisible(adxNewYork, true);
+        }
+
         private void SetEmaVisible(EMA ema, bool visible)
         {
             if (ema == null || ema.Plots == null || ema.Plots.Length == 0)
                 return;
 
             ema.Plots[0].Brush = visible ? Brushes.Gold : Brushes.Transparent;
+        }
+
+        private void SetAdxVisible(ADX adx, bool visible)
+        {
+            if (adx == null || adx.Plots == null || adx.Plots.Length == 0)
+                return;
+
+            for (int i = 0; i < adx.Plots.Length; i++)
+                adx.Plots[i].Brush = visible ? Brushes.DodgerBlue : Brushes.Transparent;
         }
 
         private int GetMaxConfiguredEmaPeriod()
@@ -2780,6 +2823,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Show No-Trades Line", Description = "Draw a red vertical line at each session no-trades-after time.", GroupName = "10. Sessions", Order = 2)]
         public bool ShowNoTradesAfterLine { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show EMA On Chart", Description = "Show/hide EMA indicators on chart.", GroupName = "10. Sessions", Order = 3)]
+        public bool ShowEmaOnChart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show ADX On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 4)]
+        public bool ShowAdxOnChart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip", Description = "Block entries inside the configured minutes before and after listed news events.", GroupName = "11. News", Order = 0)]
