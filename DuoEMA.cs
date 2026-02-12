@@ -270,6 +270,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ShowNoTradesAfterLine = true;
                 ShowEmaOnChart = true;
                 ShowAdxOnChart = true;
+                ShowAdxThresholdLines = true;
 
                 UseNewsSkip = true;
                 NewsBlockMinutes = 2;
@@ -298,12 +299,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 adxAsia = ADX(AsiaAdxPeriod);
                 adxLondon = ADX(LondonAdxPeriod);
                 adxNewYork = ADX(NewYorkAdxPeriod);
-                if (adxAsia != null && adxAsia.Lines != null && adxAsia.Lines.Length > 0)
-                    adxAsia.Lines[0].Value = AsiaAdxThreshold;
-                if (adxLondon != null && adxLondon.Lines != null && adxLondon.Lines.Length > 0)
-                    adxLondon.Lines[0].Value = LondonAdxThreshold;
-                if (adxNewYork != null && adxNewYork.Lines != null && adxNewYork.Lines.Length > 0)
-                    adxNewYork.Lines[0].Value = NewYorkAdxThreshold;
+                UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
+                UpdateAdxReferenceLines(adxLondon, LondonAdxThreshold, LondonAdxMaxThreshold);
+                UpdateAdxReferenceLines(adxNewYork, NewYorkAdxThreshold, NewYorkAdxMaxThreshold);
 
                 if (ShowEmaOnChart)
                 {
@@ -988,8 +986,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
                     activeProfitPeakDrawdownExitPoints = AsiaProfitPeakDrawdownExitPoints;
-                    if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
-                        activeAdx.Lines[0].Value = activeAdxThreshold;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = AsiaContracts;
                     activeSignalBodyThresholdPercent = AsiaSignalBodyThresholdPercent;
                     activeEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
@@ -1014,8 +1011,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxMinSlopePoints = LondonAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = LondonAdxPeakDrawdownExitUnits;
                     activeProfitPeakDrawdownExitPoints = LondonProfitPeakDrawdownExitPoints;
-                    if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
-                        activeAdx.Lines[0].Value = activeAdxThreshold;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = LondonContracts;
                     activeSignalBodyThresholdPercent = LondonSignalBodyThresholdPercent;
                     activeEmaMinSlopePointsPerBar = LondonEmaMinSlopePointsPerBar;
@@ -1040,8 +1036,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
                     activeProfitPeakDrawdownExitPoints = NewYorkProfitPeakDrawdownExitPoints;
-                    if (activeAdx != null && activeAdx.Lines != null && activeAdx.Lines.Length > 0)
-                        activeAdx.Lines[0].Value = activeAdxThreshold;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYorkContracts;
                     activeSignalBodyThresholdPercent = NewYorkSignalBodyThresholdPercent;
                     activeEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
@@ -1144,6 +1139,49 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             for (int i = 0; i < adx.Plots.Length; i++)
                 adx.Plots[i].Brush = visible ? Brushes.DodgerBlue : Brushes.Transparent;
+        }
+
+        private void UpdateAdxReferenceLines(ADX adx, double minThreshold, double maxThreshold)
+        {
+            if (adx == null || adx.Lines == null || adx.Lines.Length == 0)
+                return;
+
+            bool showLines = ShowAdxThresholdLines && ShowAdxOnChart;
+
+            // ADX line 0 is the primary threshold line (min).
+            bool showMin = showLines && minThreshold > 0.0;
+            adx.Lines[0].Value = showMin ? minThreshold : double.NaN;
+            adx.Lines[0].Brush = showMin ? Brushes.LimeGreen : Brushes.Transparent;
+
+            // If a second line exists, use it for max threshold.
+            if (adx.Lines.Length > 1)
+            {
+                bool showMax = showLines && maxThreshold > 0.0;
+                adx.Lines[1].Value = showMax ? maxThreshold : double.NaN;
+                adx.Lines[1].Brush = showMax ? Brushes.OrangeRed : Brushes.Transparent;
+            }
+
+            // Draw explicit guide lines on the ADX panel so min/max are visible even when
+            // the built-in ADX indicator exposes only one threshold line slot.
+            string adxTagSuffix = adx.GetHashCode().ToString(CultureInfo.InvariantCulture);
+            bool drawMin = showLines && minThreshold > 0.0;
+            bool drawMax = showLines && maxThreshold > 0.0;
+
+            Draw.HorizontalLine(
+                adx,
+                "DuoEMA_ADX_Min_" + adxTagSuffix,
+                drawMin ? minThreshold : 0.0,
+                drawMin ? Brushes.LimeGreen : Brushes.Transparent,
+                DashStyleHelper.Solid,
+                2);
+
+            Draw.HorizontalLine(
+                adx,
+                "DuoEMA_ADX_Max_" + adxTagSuffix,
+                drawMax ? maxThreshold : 0.0,
+                drawMax ? Brushes.OrangeRed : Brushes.Transparent,
+                DashStyleHelper.Dash,
+                2);
         }
 
         private int GetMaxConfiguredEmaPeriod()
@@ -2856,6 +2894,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Show ADX On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 4)]
         public bool ShowAdxOnChart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show ADX Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 5)]
+        public bool ShowAdxThresholdLines { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip", Description = "Block entries inside the configured minutes before and after listed news events.", GroupName = "11. News", Order = 0)]
