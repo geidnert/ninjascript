@@ -90,6 +90,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool activeRequireEmaTouch;
         private int activeAdxPeriod;
         private double activeAdxThreshold;
+        private double activeAdxMaxThreshold;
         private double activeContractDoublerStopThresholdPoints;
         private double activeEmaMinSlopePointsPerBar;
         private double activeAdxMinSlopePoints;
@@ -200,6 +201,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaRequireEmaTouch = false;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 0;
+                AsiaAdxMaxThreshold = 0.0;
                 AsiaAdxMinSlopePoints = 1.2;
                 AsiaAdxPeakDrawdownExitUnits = 12;
                 AsiaProfitPeakDrawdownExitPoints = 0.0;
@@ -224,6 +226,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LondonRequireEmaTouch = false;
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 0.0;
+                LondonAdxMaxThreshold = 0.0;
                 LondonAdxMinSlopePoints = 1.5;
                 LondonAdxPeakDrawdownExitUnits = 1.2;
                 LondonProfitPeakDrawdownExitPoints = 0.0;
@@ -248,6 +251,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkRequireEmaTouch = false;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 0.0;
+                NewYorkAdxMaxThreshold = 0.0;
                 NewYorkAdxMinSlopePoints = 1.5;
                 NewYorkAdxPeakDrawdownExitUnits = 19.5;
                 NewYorkProfitPeakDrawdownExitPoints = 0.0;
@@ -389,7 +393,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             UpdateAdxPeakTracker(adxValue);
             UpdateProfitPeakTracker(Close[0]);
             double adxSlope = GetAdxSlopePoints();
-            bool adxThresholdPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool adxMinPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
+            bool adxThresholdPass = adxMinPass && adxMaxPass;
             bool adxSlopePass = !inActiveSessionNow || activeAdxMinSlopePoints <= 0.0 || adxSlope >= activeAdxMinSlopePoints;
             bool adxPass = adxThresholdPass && adxSlopePass;
             bool canTradeNow = inActiveSessionNow && !inNoTradesNow && !inNewsSkipNow && !accountBlocked && adxPass;
@@ -978,6 +984,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = AsiaEmaPeriod;
                     activeAdxPeriod = AsiaAdxPeriod;
                     activeAdxThreshold = AsiaAdxThreshold;
+                    activeAdxMaxThreshold = AsiaAdxMaxThreshold;
                     activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
                     activeProfitPeakDrawdownExitPoints = AsiaProfitPeakDrawdownExitPoints;
@@ -1003,6 +1010,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = LondonEmaPeriod;
                     activeAdxPeriod = LondonAdxPeriod;
                     activeAdxThreshold = LondonAdxThreshold;
+                    activeAdxMaxThreshold = LondonAdxMaxThreshold;
                     activeAdxMinSlopePoints = LondonAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = LondonAdxPeakDrawdownExitUnits;
                     activeProfitPeakDrawdownExitPoints = LondonProfitPeakDrawdownExitPoints;
@@ -1028,6 +1036,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = NewYorkEmaPeriod;
                     activeAdxPeriod = NewYorkAdxPeriod;
                     activeAdxThreshold = NewYorkAdxThreshold;
+                    activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
                     activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
                     activeProfitPeakDrawdownExitPoints = NewYorkProfitPeakDrawdownExitPoints;
@@ -1053,6 +1062,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeEmaPeriod = 0;
                     activeAdxPeriod = 0;
                     activeAdxThreshold = 0.0;
+                    activeAdxMaxThreshold = 0.0;
                     activeAdxMinSlopePoints = 0.0;
                     activeAdxPeakDrawdownExitUnits = 0.0;
                     activeProfitPeakDrawdownExitPoints = 0.0;
@@ -1910,7 +1920,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adx={11}/{12:0.##} adxSlopeMin={13:0.##} adxPeakDd={14:0.##} profitPeakDdPts={15:0.##} tpPts={16:0.##} contracts={17} body%={18:0.##} touchEMA={19} minBody={20:0.##} exitCross={21:0.##} flipBody%={22:0.##} flipStop={23} entryStop={24} slPad={25:0.##} doublerPts={26:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adxMin={11:0.##} adxMax={12:0.##} adxSlopeMin={13:0.##} adxPeakDd={14:0.##} profitPeakDdPts={15:0.##} tpPts={16:0.##} contracts={17} body%={18:0.##} touchEMA={19} minBody={20:0.##} exitCross={21:0.##} flipBody%={22:0.##} flipStop={23} entryStop={24} slPad={25:0.##} doublerPts={26:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -1922,8 +1932,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 noTradesAfter,
                 activeEmaPeriod,
                 activeEmaMinSlopePointsPerBar,
-                activeAdxPeriod,
                 activeAdxThreshold,
+                activeAdxMaxThreshold,
                 activeAdxMinSlopePoints,
                 activeAdxPeakDrawdownExitUnits,
                 activeProfitPeakDrawdownExitPoints,
@@ -2529,65 +2539,70 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Threshold", Description = "Asia entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 9)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 9)]
         public double AsiaAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "Asia", Order = 10)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia", Order = 10)]
+        public double AsiaAdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "Asia", Order = 11)]
         public double AsiaAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 11)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 12)]
         public double AsiaAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "Asia", Order = 12)]
+        [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "Asia", Order = 13)]
         public double AsiaProfitPeakDrawdownExitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "Asia", Order = 13)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "Asia", Order = 14)]
         public double AsiaEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "Asia", Order = 14)]
+        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "Asia", Order = 15)]
         public InitialStopMode AsiaEntryStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "Asia", Order = 15)]
+        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "Asia", Order = 16)]
         public double AsiaStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 16)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 17)]
         public double AsiaExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 17)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 18)]
         public double AsiaTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "Asia", Order = 18)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "Asia", Order = 19)]
         public double AsiaFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "Asia", Order = 19)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "Asia", Order = 20)]
         public FlipStopMode AsiaFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "Asia", Order = 20)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "Asia", Order = 21)]
         public double AsiaMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "Asia", Order = 21)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "Asia", Order = 22)]
         public double AsiaContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2636,65 +2651,70 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Threshold", Description = "London entries are allowed only when ADX is greater than or equal to this value.", GroupName = "London", Order = 9)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. London entries are allowed only when ADX is greater than or equal to this value.", GroupName = "London", Order = 9)]
         public double LondonAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "London", Order = 10)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. London entries are allowed only when ADX is less than or equal to this value.", GroupName = "London", Order = 10)]
+        public double LondonAdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "London", Order = 11)]
         public double LondonAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "London", Order = 11)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "London", Order = 12)]
         public double LondonAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "London", Order = 12)]
+        [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "London", Order = 13)]
         public double LondonProfitPeakDrawdownExitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "London", Order = 13)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "London", Order = 14)]
         public double LondonEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "London", Order = 14)]
+        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "London", Order = 15)]
         public InitialStopMode LondonEntryStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "London", Order = 15)]
+        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "London", Order = 16)]
         public double LondonStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London", Order = 16)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London", Order = 17)]
         public double LondonExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London", Order = 17)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London", Order = 18)]
         public double LondonTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "London", Order = 18)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "London", Order = 19)]
         public double LondonFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "London", Order = 19)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "London", Order = 20)]
         public FlipStopMode LondonFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "London", Order = 20)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "London", Order = 21)]
         public double LondonMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "London", Order = 21)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "London", Order = 22)]
         public double LondonContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2743,65 +2763,70 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Threshold", Description = "New York entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 9)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 9)]
         public double NewYorkAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "New York", Order = 10)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 10)]
+        public double NewYorkAdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "New York", Order = 11)]
         public double NewYorkAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 11)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 12)]
         public double NewYorkAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "New York", Order = 12)]
+        [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "New York", Order = 13)]
         public double NewYorkProfitPeakDrawdownExitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "New York", Order = 13)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope magnitude per bar required for entries. 0 disables slope filter.", GroupName = "New York", Order = 14)]
         public double NewYorkEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "New York", Order = 14)]
+        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "New York", Order = 15)]
         public InitialStopMode NewYorkEntryStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "New York", Order = 15)]
+        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "New York", Order = 16)]
         public double NewYorkStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 16)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 17)]
         public double NewYorkExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 17)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 18)]
         public double NewYorkTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "New York", Order = 18)]
+        [Display(Name = "Flip Body % Threshold", Description = "Minimum opposite-side body percent needed to reverse position instead of exit only.", GroupName = "New York", Order = 19)]
         public double NewYorkFlipBodyThresholdPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "New York", Order = 19)]
+        [Display(Name = "Flip Stop Mode", Description = "Stop placement mode used for flip entries.", GroupName = "New York", Order = 20)]
         public FlipStopMode NewYorkFlipStopSetting { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "New York", Order = 20)]
+        [Display(Name = "Min Entry Candle Body Size", Description = "Minimum absolute body size required for a new entry candle.", GroupName = "New York", Order = 21)]
         public double NewYorkMinEntryBodySize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "New York", Order = 21)]
+        [Display(Name = "Contract Doubler SL Threshold", Description = "If initial stop distance is below this point value, entry size is doubled.", GroupName = "New York", Order = 22)]
         public double NewYorkContractDoublerStopThresholdPoints { get; set; }
 
         [NinjaScriptProperty]
