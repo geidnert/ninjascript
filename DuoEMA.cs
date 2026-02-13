@@ -21,6 +21,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     public class DuoEMA : Strategy
     {
+        public DuoEMA()
+        {
+            VendorLicense(337);
+        }
+
         public enum InitialStopMode
         {
             CandleOpen,
@@ -213,16 +218,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaSignalBodyThresholdPercent = 0;
                 AsiaRequireEmaTouch = false;
                 AsiaAdxPeriod = 14;
-                AsiaAdxThreshold = 0;
-                AsiaAdxMaxThreshold = 0.0;
-                AsiaAdxMinSlopePoints = 1.2;
-                AsiaAdxPeakDrawdownExitUnits = 12;
+                AsiaAdxThreshold = 0.6;
+                AsiaAdxMaxThreshold = 36.9;
+                AsiaAdxMinSlopePoints = 1.6;
+                AsiaAdxPeakDrawdownExitUnits = 13.8;
                 AsiaProfitPeakDrawdownExitPoints = 0.0;
                 AsiaEmaMinSlopePointsPerBar = 0.0;
                 AsiaEntryStopMode = InitialStopMode.WickExtreme;
-                AsiaStopPaddingPoints = 13.9;
-                AsiaExitCrossPoints = 3.75;
-                AsiaTakeProfitPoints = 0.0;
+                AsiaStopPaddingPoints = 13.2;
+                AsiaExitCrossPoints = 3.8;
+                AsiaTakeProfitPoints = 71;
                 AsiaFlipBodyThresholdPercent = 0.0;
                 AsiaFlipStopSetting = FlipStopMode.CandleOpen;
                 AsiaMinEntryBodySize = 0.0;
@@ -258,7 +263,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LondonAdxAbsoluteExitLevel = 0.0;
 
                 UseNewYorkSession = true;
-                NewYorkSessionStart = new TimeSpan(9, 35, 0);
+                NewYorkSessionStart = new TimeSpan(9, 40, 0);
                 NewYorkSessionEnd = new TimeSpan(15, 00, 0);
                 NewYorkNoTradesAfter = new TimeSpan(15, 00, 0);
                 AutoShiftNewYork = false;
@@ -267,16 +272,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkSignalBodyThresholdPercent = 0;
                 NewYorkRequireEmaTouch = false;
                 NewYorkAdxPeriod = 14;
-                NewYorkAdxThreshold = 0.0;
-                NewYorkAdxMaxThreshold = 0.0;
+                NewYorkAdxThreshold = 14;
+                NewYorkAdxMaxThreshold = 47.1;
                 NewYorkAdxMinSlopePoints = 1.5;
-                NewYorkAdxPeakDrawdownExitUnits = 19.5;
+                NewYorkAdxPeakDrawdownExitUnits = 16.5;
                 NewYorkProfitPeakDrawdownExitPoints = 0.0;
                 NewYorkEmaMinSlopePointsPerBar = 0.0;
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
                 NewYorkStopPaddingPoints = 16.75;
                 NewYorkExitCrossPoints = 2.75;
-                NewYorkTakeProfitPoints = 0.0;
+                NewYorkTakeProfitPoints = 68;
                 NewYorkFlipBodyThresholdPercent = 0.0;
                 NewYorkFlipStopSetting = FlipStopMode.CandleOpen;
                 NewYorkMinEntryBodySize = 0.0;
@@ -284,7 +289,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkDiMinSpread = 0.0;
                 NewYorkAdxAbsoluteExitLevel = 0.0;
 
-                CloseAtSessionEnd = true;
+                CloseAtSessionEnd = false;
                 SessionBrush = Brushes.Gold;
                 ShowNoTradesAfterLine = true;
                 ShowEmaOnChart = true;
@@ -292,7 +297,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ShowAdxThresholdLines = true;
 
                 UseNewsSkip = true;
-                NewsBlockMinutes = 2;
+                NewsBlockMinutes = 1;
 
                 WebhookUrl = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
