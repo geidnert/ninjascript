@@ -577,6 +577,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         pendingShortStopForWebhook = stopPrice;
                         SetStopLossByDistanceTicks("ShortEntry", Close[0], stopPrice);
+                        SetProfitTargetByDistanceTicks("ShortEntry", activeTakeProfitPoints);
                         SendWebhook("sell", Close[0], Close[0], stopPrice, true, qty);
                         StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                         EnterShort(qty, "ShortEntry");
@@ -666,6 +667,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         pendingLongStopForWebhook = stopPrice;
                         SetStopLossByDistanceTicks("LongEntry", Close[0], stopPrice);
+                        SetProfitTargetByDistanceTicks("LongEntry", activeTakeProfitPoints);
                         SendWebhook("buy", Close[0], Close[0], stopPrice, true, qty);
                         StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                         EnterLong(qty, "LongEntry");
@@ -711,6 +713,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                     pendingLongStopForWebhook = stopPrice;
                     SetStopLossByDistanceTicks("LongEntry", entryPrice, stopPrice);
+                    SetProfitTargetByDistanceTicks("LongEntry", activeTakeProfitPoints);
                     SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                     EnterLong(qty, "LongEntry");
@@ -743,6 +746,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                     pendingShortStopForWebhook = stopPrice;
                     SetStopLossByDistanceTicks("ShortEntry", entryPrice, stopPrice);
+                    SetProfitTargetByDistanceTicks("ShortEntry", activeTakeProfitPoints);
                     SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                     EnterShort(qty, "ShortEntry");
@@ -869,9 +873,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 lockedTradeSession = SessionSlot.None;
             }
 
-            if (orderName == "ExitLong" || orderName == "ExitShort" || orderName == "SessionEnd")
-                SendWebhook("exit", 0, 0, 0, true, quantity);
-            else if (orderName == "TwoCandleReverse")
+            if (ShouldSendExitWebhook(execution, orderName, marketPosition))
                 SendWebhook("exit", 0, 0, 0, true, quantity);
 
             if (DebugLogging)
@@ -894,6 +896,47 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             UpdateInfo();
+        }
+
+        private bool IsEntryOrderName(string orderName)
+        {
+            return orderName == "LongEntry" || orderName == "ShortEntry";
+        }
+
+        private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
+        {
+            if (execution?.Order == null)
+                return false;
+
+            if (IsEntryOrderName(orderName))
+                return false;
+
+            string fromEntry = execution.Order.FromEntrySignal ?? string.Empty;
+            if (fromEntry == "LongEntry" || fromEntry == "ShortEntry")
+                return true;
+
+            string normalized = orderName ?? string.Empty;
+            if (normalized.Length == 0)
+                return marketPosition == MarketPosition.Flat;
+
+            if (normalized.Equals("Stop loss", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("Profit target", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("Exit on session close", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("SessionEnd", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("ExitLong", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("ExitShort", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("AdxDrawdownExit", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("AdxLevelExit", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("TakeProfitExit", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("ProfitDrawdownExit", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("OppositeCandleExit", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("ProtectiveReject", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("TwoCandleReverse", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return marketPosition == MarketPosition.Flat;
         }
 
         private void StartTradeLines(double entryPrice, double stopPrice, double takeProfitPrice, bool hasTakeProfit)
@@ -2603,6 +2646,17 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (stopTicks < 1)
                 stopTicks = 1;
             SetStopLoss(fromEntrySignal, CalculationMode.Ticks, stopTicks, false);
+        }
+
+        private void SetProfitTargetByDistanceTicks(string fromEntrySignal, double takeProfitPoints)
+        {
+            if (takeProfitPoints <= 0.0)
+                return;
+
+            int targetTicks = PriceToTicks(takeProfitPoints);
+            if (targetTicks < 1)
+                targetTicks = 1;
+            SetProfitTarget(fromEntrySignal, CalculationMode.Ticks, targetTicks);
         }
 
         private bool IsAccountBalanceBlocked()
