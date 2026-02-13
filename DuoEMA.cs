@@ -233,7 +233,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaMinEntryBodySize = 0.0;
                 AsiaContractDoublerStopThresholdPoints = 0.0;
                 AsiaDiMinSpread = 0.0;
-                AsiaAdxAbsoluteExitLevel = 0.0;
+                AsiaAdxAbsoluteExitLevel = 56;
 
                 UseLondonSession = false;
                 LondonSessionStart = new TimeSpan(3, 00, 0);
@@ -287,7 +287,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkMinEntryBodySize = 0.0;
                 NewYorkContractDoublerStopThresholdPoints = 0.0;
                 NewYorkDiMinSpread = 0.0;
-                NewYorkAdxAbsoluteExitLevel = 0.0;
+                NewYorkAdxAbsoluteExitLevel = 60;
 
                 CloseAtSessionEnd = false;
                 SessionBrush = Brushes.Gold;
@@ -471,8 +471,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool bodySizePasses = bodySize >= activeMinEntryBodySize;
             bool touchPasses = !activeRequireEmaTouch || emaTouched;
             bool distancePasses = MaxEntryDistanceFromEmaPoints <= 0.0 || emaDistancePoints <= MaxEntryDistanceFromEmaPoints;
-            bool longPreDiSignal = bullish && bodySizePasses && touchPasses && emaSlopeLongPass && bodyAbovePercent >= activeSignalBodyThresholdPercent;
-            bool shortPreDiSignal = bearish && bodySizePasses && touchPasses && emaSlopeShortPass && bodyBelowPercent >= activeSignalBodyThresholdPercent;
+            bool longEmaSidePass = Close[0] > emaValue;
+            bool shortEmaSidePass = Close[0] < emaValue;
+            bool longPreDiSignal = bullish && bodySizePasses && touchPasses && emaSlopeLongPass && longEmaSidePass && bodyAbovePercent >= activeSignalBodyThresholdPercent;
+            bool shortPreDiSignal = bearish && bodySizePasses && touchPasses && emaSlopeShortPass && shortEmaSidePass && bodyBelowPercent >= activeSignalBodyThresholdPercent;
             bool longBaseSignal = longPreDiSignal && diLongPass;
             bool shortBaseSignal = shortPreDiSignal && diShortPass;
             bool longSignal = longBaseSignal && distancePasses;
