@@ -95,6 +95,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double activeEmaMinSlopePointsPerBar;
         private double activeAdxMinSlopePoints;
         private double activeAdxPeakDrawdownExitUnits;
+        private double activeAdxAbsoluteExitLevel;
         private double activeProfitPeakDrawdownExitPoints;
         private double activeStopPaddingPoints;
 
@@ -204,6 +205,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaAdxMaxThreshold = 0.0;
                 AsiaAdxMinSlopePoints = 1.2;
                 AsiaAdxPeakDrawdownExitUnits = 12;
+                AsiaAdxAbsoluteExitLevel = 0.0;
                 AsiaProfitPeakDrawdownExitPoints = 0.0;
                 AsiaEmaMinSlopePointsPerBar = 0.0;
                 AsiaEntryStopMode = InitialStopMode.WickExtreme;
@@ -229,6 +231,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LondonAdxMaxThreshold = 0.0;
                 LondonAdxMinSlopePoints = 1.5;
                 LondonAdxPeakDrawdownExitUnits = 1.2;
+                LondonAdxAbsoluteExitLevel = 0.0;
                 LondonProfitPeakDrawdownExitPoints = 0.0;
                 LondonEmaMinSlopePointsPerBar = 0.0;
                 LondonEntryStopMode = InitialStopMode.WickExtreme;
@@ -254,6 +257,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkAdxMaxThreshold = 0.0;
                 NewYorkAdxMinSlopePoints = 1.5;
                 NewYorkAdxPeakDrawdownExitUnits = 19.5;
+                NewYorkAdxAbsoluteExitLevel = 0.0;
                 NewYorkProfitPeakDrawdownExitPoints = 0.0;
                 NewYorkEmaMinSlopePointsPerBar = 0.0;
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
@@ -284,7 +288,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0.0;
                 MaxEntryDistanceFromEmaPoints = 0.0;
-                AdxAbsoluteExitLevel = 0.0;
                 RequireEntryConfirmation = false;
                 OppositeCandleExitCount = 0;
                 PositionExitMode = ExitMode.EmaOnly;
@@ -450,11 +453,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
-                if (AdxAbsoluteExitLevel > 0.0 && adxValue >= AdxAbsoluteExitLevel)
+                if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
                     ExitLong("AdxLevelExit", "LongEntry");
                     LogDebug(string.Format("Exit LONG | reason=AdxLevel adx={0:0.00} threshold={1:0.00}",
-                        adxValue, AdxAbsoluteExitLevel));
+                        adxValue, activeAdxAbsoluteExitLevel));
                     return;
                 }
 
@@ -538,11 +541,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
-                if (AdxAbsoluteExitLevel > 0.0 && adxValue >= AdxAbsoluteExitLevel)
+                if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
                     ExitShort("AdxLevelExit", "ShortEntry");
                     LogDebug(string.Format("Exit SHORT | reason=AdxLevel adx={0:0.00} threshold={1:0.00}",
-                        adxValue, AdxAbsoluteExitLevel));
+                        adxValue, activeAdxAbsoluteExitLevel));
                     return;
                 }
 
@@ -985,6 +988,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxMaxThreshold = AsiaAdxMaxThreshold;
                     activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
                     activeProfitPeakDrawdownExitPoints = AsiaProfitPeakDrawdownExitPoints;
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = AsiaContracts;
@@ -1010,6 +1014,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxMaxThreshold = LondonAdxMaxThreshold;
                     activeAdxMinSlopePoints = LondonAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = LondonAdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = LondonAdxAbsoluteExitLevel;
                     activeProfitPeakDrawdownExitPoints = LondonProfitPeakDrawdownExitPoints;
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = LondonContracts;
@@ -1035,6 +1040,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
                     activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
                     activeProfitPeakDrawdownExitPoints = NewYorkProfitPeakDrawdownExitPoints;
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYorkContracts;
@@ -1060,6 +1066,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxMaxThreshold = 0.0;
                     activeAdxMinSlopePoints = 0.0;
                     activeAdxPeakDrawdownExitUnits = 0.0;
+                    activeAdxAbsoluteExitLevel = 0.0;
                     activeProfitPeakDrawdownExitPoints = 0.0;
                     activeContracts = 0;
                     activeSignalBodyThresholdPercent = 100.0;
@@ -1958,7 +1965,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adxMin={11:0.##} adxMax={12:0.##} adxSlopeMin={13:0.##} adxPeakDd={14:0.##} profitPeakDdPts={15:0.##} tpPts={16:0.##} contracts={17} body%={18:0.##} touchEMA={19} minBody={20:0.##} exitCross={21:0.##} flipBody%={22:0.##} flipStop={23} entryStop={24} slPad={25:0.##} doublerPts={26:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adxMin={11:0.##} adxMax={12:0.##} adxSlopeMin={13:0.##} adxPeakDd={14:0.##} adxAbsExit={15:0.##} profitPeakDdPts={16:0.##} tpPts={17:0.##} contracts={18} body%={19:0.##} touchEMA={20} minBody={21:0.##} exitCross={22:0.##} flipBody%={23:0.##} flipStop={24} entryStop={25} slPad={26:0.##} doublerPts={27:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -1974,6 +1981,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 activeAdxMaxThreshold,
                 activeAdxMinSlopePoints,
                 activeAdxPeakDrawdownExitUnits,
+                activeAdxAbsoluteExitLevel,
                 activeProfitPeakDrawdownExitPoints,
                 activeTakeProfitPoints,
                 activeContracts,
@@ -2596,6 +2604,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double AsiaAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia", Order = 90)]
+        public double AsiaAdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "Asia", Order = 13)]
         public double AsiaProfitPeakDrawdownExitPoints { get; set; }
@@ -2620,7 +2633,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double AsiaExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
+        [Range(0.0, double.MaxValue)]
         [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 18)]
         public double AsiaTakeProfitPoints { get; set; }
 
@@ -2708,6 +2721,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double LondonAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "London", Order = 90)]
+        public double LondonAdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "London", Order = 13)]
         public double LondonProfitPeakDrawdownExitPoints { get; set; }
@@ -2732,7 +2750,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double LondonExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
+        [Range(0.0, double.MaxValue)]
         [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London", Order = 18)]
         public double LondonTakeProfitPoints { get; set; }
 
@@ -2820,6 +2838,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double NewYorkAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York", Order = 90)]
+        public double NewYorkAdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Profit Peak Drawdown Exit (Pts)", Description = "0 disables. Track best unrealized profit (points) per trade and exit after this many points of pullback from that peak.", GroupName = "New York", Order = 13)]
         public double NewYorkProfitPeakDrawdownExitPoints { get; set; }
@@ -2844,7 +2867,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double NewYorkExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
+        [Range(0.0, double.MaxValue)]
         [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 18)]
         public double NewYorkTakeProfitPoints { get; set; }
 
@@ -2958,11 +2981,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0, int.MaxValue)]
         [Display(Name = "Opposite Candle Exit Count", Description = "0 disables. If set to N, close an open position after N consecutive opposite candles.", GroupName = "13. Risk", Order = 4)]
         public int OppositeCandleExitCount { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. If ADX reaches or exceeds this value while in a trade, exit immediately.", GroupName = "13. Risk", Order = 5)]
-        public double AdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
