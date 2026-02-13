@@ -91,6 +91,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int activeAdxPeriod;
         private double activeAdxThreshold;
         private double activeAdxMaxThreshold;
+        private double activeDiMinSpread;
         private double activeContractDoublerStopThresholdPoints;
         private double activeEmaMinSlopePointsPerBar;
         private double activeAdxMinSlopePoints;
@@ -203,6 +204,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 0;
                 AsiaAdxMaxThreshold = 0.0;
+                AsiaDiMinSpread = 0.0;
                 AsiaAdxMinSlopePoints = 1.2;
                 AsiaAdxPeakDrawdownExitUnits = 12;
                 AsiaAdxAbsoluteExitLevel = 0.0;
@@ -229,6 +231,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 0.0;
                 LondonAdxMaxThreshold = 0.0;
+                LondonDiMinSpread = 0.0;
                 LondonAdxMinSlopePoints = 1.5;
                 LondonAdxPeakDrawdownExitUnits = 1.2;
                 LondonAdxAbsoluteExitLevel = 0.0;
@@ -255,6 +258,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 0.0;
                 NewYorkAdxMaxThreshold = 0.0;
+                NewYorkDiMinSpread = 0.0;
                 NewYorkAdxMinSlopePoints = 1.5;
                 NewYorkAdxPeakDrawdownExitUnits = 19.5;
                 NewYorkAdxAbsoluteExitLevel = 0.0;
@@ -430,14 +434,23 @@ namespace NinjaTrader.NinjaScript.Strategies
             double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
             double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
             double emaDistancePoints = Math.Abs(Close[0] - emaValue);
+            double diPlus;
+            double diMinus;
+            bool hasDiValues = TryGetAdxDirectionalValues(out diPlus, out diMinus);
+            double diSpread = hasDiValues ? Math.Abs(diPlus - diMinus) : 0.0;
+            bool diFilterEnabled = activeDiMinSpread > 0.0;
+            bool diLongPass = !diFilterEnabled || (hasDiValues && diPlus > diMinus && diSpread >= activeDiMinSpread);
+            bool diShortPass = !diFilterEnabled || (hasDiValues && diMinus > diPlus && diSpread >= activeDiMinSpread);
             bool emaSlopeLongPass = EmaSlopePassesLong();
             bool emaSlopeShortPass = EmaSlopePassesShort();
 
             bool bodySizePasses = bodySize >= activeMinEntryBodySize;
             bool touchPasses = !activeRequireEmaTouch || emaTouched;
             bool distancePasses = MaxEntryDistanceFromEmaPoints <= 0.0 || emaDistancePoints <= MaxEntryDistanceFromEmaPoints;
-            bool longBaseSignal = bullish && bodySizePasses && touchPasses && emaSlopeLongPass && bodyAbovePercent >= activeSignalBodyThresholdPercent;
-            bool shortBaseSignal = bearish && bodySizePasses && touchPasses && emaSlopeShortPass && bodyBelowPercent >= activeSignalBodyThresholdPercent;
+            bool longPreDiSignal = bullish && bodySizePasses && touchPasses && emaSlopeLongPass && bodyAbovePercent >= activeSignalBodyThresholdPercent;
+            bool shortPreDiSignal = bearish && bodySizePasses && touchPasses && emaSlopeShortPass && bodyBelowPercent >= activeSignalBodyThresholdPercent;
+            bool longBaseSignal = longPreDiSignal && diLongPass;
+            bool shortBaseSignal = shortPreDiSignal && diShortPass;
             bool longSignal = longBaseSignal && distancePasses;
             bool shortSignal = shortBaseSignal && distancePasses;
 
@@ -448,6 +461,22 @@ namespace NinjaTrader.NinjaScript.Strategies
                     longBaseSignal ? "Long" : "Short",
                     emaDistancePoints,
                     MaxEntryDistanceFromEmaPoints,
+                    FormatSessionLabel(activeSession)));
+            }
+
+            if (DebugLogging && diFilterEnabled && !hasDiValues && (longPreDiSignal || shortPreDiSignal))
+                LogDebug(string.Format("Setup blocked | reason=DiUnavailable session={0} diMinSpread={1:0.00}", FormatSessionLabel(activeSession), activeDiMinSpread));
+
+            if (DebugLogging && diFilterEnabled && hasDiValues && ((longPreDiSignal && !diLongPass) || (shortPreDiSignal && !diShortPass)))
+            {
+                string blockedSide = longPreDiSignal && !diLongPass ? "Long" : "Short";
+                LogDebug(string.Format(
+                    "Setup blocked | reason=DiFilter side={0} +DI={1:0.00} -DI={2:0.00} spread={3:0.00} minSpread={4:0.00} session={5}",
+                    blockedSide,
+                    diPlus,
+                    diMinus,
+                    diSpread,
+                    activeDiMinSpread,
                     FormatSessionLabel(activeSession)));
             }
 
@@ -527,7 +556,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         SendWebhook("sell", Close[0], Close[0], stopPrice, true, qty);
                         EnterShort(qty, "ShortEntry");
 
-                        LogDebug(string.Format("Flip LONG->SHORT | close={0:0.00} ema={1:0.00} below%={2:0.0} stop={3:0.00} qty={4}", Close[0], emaValue, bodyBelowPercent, stopPrice, qty));
+                        LogDebug(string.Format("Flip LONG->SHORT | close={0:0.00} ema={1:0.00} below%={2:0.0} stop={3:0.00} qty={4} {5}", Close[0], emaValue, bodyBelowPercent, stopPrice, qty, FormatDiForLog()));
                     }
                     else
                     {
@@ -615,7 +644,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         SendWebhook("buy", Close[0], Close[0], stopPrice, true, qty);
                         EnterLong(qty, "LongEntry");
 
-                        LogDebug(string.Format("Flip SHORT->LONG | close={0:0.00} ema={1:0.00} above%={2:0.0} stop={3:0.00} qty={4}", Close[0], emaValue, bodyAbovePercent, stopPrice, qty));
+                        LogDebug(string.Format("Flip SHORT->LONG | close={0:0.00} ema={1:0.00} above%={2:0.0} stop={3:0.00} qty={4} {5}", Close[0], emaValue, bodyAbovePercent, stopPrice, qty, FormatDiForLog()));
                     }
                     else
                     {
@@ -658,7 +687,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     SetStopLossByDistanceTicks("LongEntry", entryPrice, stopPrice);
                     SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
                     EnterLong(qty, "LongEntry");
-                    LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
+                    LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2} {3}", FormatSessionLabel(activeSession), stopPrice, qty, FormatDiForLog()));
                 }
                 else if (DebugLogging)
                 {
@@ -689,7 +718,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     SetStopLossByDistanceTicks("ShortEntry", entryPrice, stopPrice);
                     SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
                     EnterShort(qty, "ShortEntry");
-                    LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
+                    LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2} {3}", FormatSessionLabel(activeSession), stopPrice, qty, FormatDiForLog()));
                 }
                 else if (DebugLogging)
                 {
@@ -986,6 +1015,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxPeriod = AsiaAdxPeriod;
                     activeAdxThreshold = AsiaAdxThreshold;
                     activeAdxMaxThreshold = AsiaAdxMaxThreshold;
+                    activeDiMinSpread = AsiaDiMinSpread;
                     activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
                     activeAdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
@@ -1012,6 +1042,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxPeriod = LondonAdxPeriod;
                     activeAdxThreshold = LondonAdxThreshold;
                     activeAdxMaxThreshold = LondonAdxMaxThreshold;
+                    activeDiMinSpread = LondonDiMinSpread;
                     activeAdxMinSlopePoints = LondonAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = LondonAdxPeakDrawdownExitUnits;
                     activeAdxAbsoluteExitLevel = LondonAdxAbsoluteExitLevel;
@@ -1038,6 +1069,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxPeriod = NewYorkAdxPeriod;
                     activeAdxThreshold = NewYorkAdxThreshold;
                     activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
+                    activeDiMinSpread = NewYorkDiMinSpread;
                     activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
                     activeAdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
@@ -1064,6 +1096,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     activeAdxPeriod = 0;
                     activeAdxThreshold = 0.0;
                     activeAdxMaxThreshold = 0.0;
+                    activeDiMinSpread = 0.0;
                     activeAdxMinSlopePoints = 0.0;
                     activeAdxPeakDrawdownExitUnits = 0.0;
                     activeAdxAbsoluteExitLevel = 0.0;
@@ -1439,6 +1472,93 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return 0.0;
 
             return activeAdx[0] - activeAdx[1];
+        }
+
+        private bool TryGetAdxDirectionalValues(out double diPlus, out double diMinus)
+        {
+            diPlus = double.NaN;
+            diMinus = double.NaN;
+
+            if (activeAdx == null)
+                return false;
+
+            if (TryGetIndicatorSeriesValue(activeAdx, new[] { "DiPlus", "DIPlus", "PlusDI", "DmiPlus", "DMIPlus" }, out diPlus) &&
+                TryGetIndicatorSeriesValue(activeAdx, new[] { "DiMinus", "DIMinus", "MinusDI", "DmiMinus", "DMIMinus" }, out diMinus))
+                return true;
+
+            try
+            {
+                if (activeAdx.Values != null && activeAdx.Values.Count >= 3)
+                {
+                    diPlus = activeAdx.Values[1][0];
+                    diMinus = activeAdx.Values[2][0];
+                    if (!double.IsNaN(diPlus) && !double.IsNaN(diMinus))
+                        return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private bool TryGetIndicatorSeriesValue(object indicator, string[] propertyNames, out double value)
+        {
+            value = double.NaN;
+            if (indicator == null || propertyNames == null)
+                return false;
+
+            for (int i = 0; i < propertyNames.Length; i++)
+            {
+                string propertyName = propertyNames[i];
+                if (string.IsNullOrWhiteSpace(propertyName))
+                    continue;
+
+                try
+                {
+                    PropertyInfo prop = indicator.GetType().GetProperty(
+                        propertyName,
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase);
+                    if (prop == null)
+                        continue;
+
+                    object raw = prop.GetValue(indicator, null);
+                    if (raw == null)
+                        continue;
+
+                    if (raw is ISeries<double>)
+                    {
+                        value = ((ISeries<double>)raw)[0];
+                        return !double.IsNaN(value);
+                    }
+
+                    if (raw is double)
+                    {
+                        value = (double)raw;
+                        return !double.IsNaN(value);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
+        }
+
+        private string FormatDiForLog()
+        {
+            double diPlus;
+            double diMinus;
+            if (!TryGetAdxDirectionalValues(out diPlus, out diMinus))
+                return "+DI=n/a -DI=n/a spread=n/a";
+
+            return string.Format(CultureInfo.InvariantCulture,
+                "+DI={0:0.00} -DI={1:0.00} spread={2:0.00}",
+                diPlus,
+                diMinus,
+                Math.Abs(diPlus - diMinus));
         }
 
         private void UpdateAdxPeakTracker(double adxValue)
@@ -1965,7 +2085,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adxMin={11:0.##} adxMax={12:0.##} adxSlopeMin={13:0.##} adxPeakDd={14:0.##} adxAbsExit={15:0.##} profitPeakDdPts={16:0.##} tpPts={17:0.##} contracts={18} body%={19:0.##} touchEMA={20} minBody={21:0.##} exitCross={22:0.##} flipBody%={23:0.##} flipStop={24} entryStop={25} slPad={26:0.##} doublerPts={27:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} noTradesNow={3} closeAtSessionEnd={4} autoShift={5} start={6:hh\\:mm} end={7:hh\\:mm} noTradesAfter={8:hh\\:mm} ema={9} emaSlopeMin={10:0.000} adxMin={11:0.##} adxMax={12:0.##} diMinSpread={13:0.##} adxSlopeMin={14:0.##} adxPeakDd={15:0.##} adxAbsExit={16:0.##} profitPeakDdPts={17:0.##} tpPts={18:0.##} contracts={19} body%={20:0.##} touchEMA={21} minBody={22:0.##} exitCross={23:0.##} flipBody%={24:0.##} flipStop={25} entryStop={26} slPad={27:0.##} doublerPts={28:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -1979,6 +2099,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 activeEmaMinSlopePointsPerBar,
                 activeAdxThreshold,
                 activeAdxMaxThreshold,
+                activeDiMinSpread,
                 activeAdxMinSlopePoints,
                 activeAdxPeakDrawdownExitUnits,
                 activeAdxAbsoluteExitLevel,
@@ -2595,6 +2716,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
+        [Display(Name = "DI Min Spread", Description = "0 disables DI filter. If > 0, longs require +DI > -DI with spread >= this value, shorts require -DI > +DI with spread >= this value.", GroupName = "Asia", Order = 90)]
+        public double AsiaDiMinSpread { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
         [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "Asia", Order = 11)]
         public double AsiaAdxMinSlopePoints { get; set; }
 
@@ -2712,6 +2838,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
+        [Display(Name = "DI Min Spread", Description = "0 disables DI filter. If > 0, longs require +DI > -DI with spread >= this value, shorts require -DI > +DI with spread >= this value.", GroupName = "London", Order = 90)]
+        public double LondonDiMinSpread { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
         [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "London", Order = 11)]
         public double LondonAdxMinSlopePoints { get; set; }
 
@@ -2826,6 +2957,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ADX Max Threshold", Description = "0 disables. New York entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 10)]
         public double NewYorkAdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "DI Min Spread", Description = "0 disables DI filter. If > 0, longs require +DI > -DI with spread >= this value, shorts require -DI > +DI with spread >= this value.", GroupName = "New York", Order = 90)]
+        public double NewYorkDiMinSpread { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
