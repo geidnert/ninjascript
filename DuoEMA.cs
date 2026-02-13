@@ -200,6 +200,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 40, 0);
                 NewYorkSessionEnd = new TimeSpan(15, 00, 0);
+                NewYorkSkipStart = new TimeSpan(12, 00, 0);
+                NewYorkSkipEnd = new TimeSpan(12, 30, 0);
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
                 NewYorkAdxPeriod = 14;
@@ -328,6 +330,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
+            bool inNySkipNow = activeSession == SessionSlot.NewYork && IsNewYorkSkipTime(Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             UpdateAdxPeakTracker(adxValue);
@@ -339,9 +342,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool adxPass = adxThresholdPass && adxSlopePass;
             int tradesThisSession = GetTradesThisSession(activeSession);
             bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !accountBlocked && adxPass && maxTradesPass;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !accountBlocked && adxPass && maxTradesPass;
 
             if (!inActiveSessionNow)
+                CancelWorkingEntryOrders();
+
+            if (inNySkipNow)
                 CancelWorkingEntryOrders();
 
             if (activeEma == null || CurrentBar < activeEmaPeriod)
@@ -354,6 +360,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
             bool longSignal = bullish && bodyAbovePercent > 0.0;
             bool shortSignal = bearish && bodyBelowPercent > 0.0;
+
+            if (DebugLogging && inActiveSessionNow && inNySkipNow && (longSignal || shortSignal))
+            {
+                LogDebug(string.Format(
+                    "Setup blocked | reason=NewYorkSkip start={0:hh\\:mm} end={1:hh\\:mm}",
+                    NewYorkSkipStart,
+                    NewYorkSkipEnd));
+            }
 
             if (DebugLogging && inActiveSessionNow && !maxTradesPass && (longSignal || shortSignal))
             {
@@ -1554,6 +1568,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             DrawSessionBackground(SessionSlot.Asia, "DuoEMA_Asia", SessionBrush ?? Brushes.LightSkyBlue);
             DrawSessionBackground(SessionSlot.NewYork, "DuoEMA_NewYork", SessionBrush ?? Brushes.LightSkyBlue);
+            DrawNewYorkSkipWindow(Time[0]);
         }
 
         private void DrawSessionBackground(SessionSlot slot, string tagPrefix, Brush fillBrush)
@@ -1586,6 +1601,69 @@ namespace NinjaTrader.NinjaScript.Strategies
                     fillBrush,
                     10).ZOrder = -1;
             }
+        }
+
+        private bool IsNewYorkSkipTime(DateTime time)
+        {
+            if (!UseNewYorkSession)
+                return false;
+
+            if (NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
+                return false;
+
+            TimeSpan now = time.TimeOfDay;
+            if (NewYorkSkipStart < NewYorkSkipEnd)
+                return now >= NewYorkSkipStart && now <= NewYorkSkipEnd;
+
+            return now >= NewYorkSkipStart || now <= NewYorkSkipEnd;
+        }
+
+        private void DrawNewYorkSkipWindow(DateTime barTime)
+        {
+            if (!UseNewYorkSession)
+                return;
+
+            if (NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
+                return;
+
+            DateTime windowStart = barTime.Date + NewYorkSkipStart;
+            DateTime windowEnd = barTime.Date + NewYorkSkipEnd;
+            if (NewYorkSkipStart > NewYorkSkipEnd)
+                windowEnd = windowEnd.AddDays(1);
+
+            int startBarsAgo = Bars.GetBar(windowStart);
+            int endBarsAgo = Bars.GetBar(windowEnd);
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+            try
+            {
+                if (areaBrush.CanFreeze)
+                    areaBrush.Freeze();
+                if (lineBrush.CanFreeze)
+                    lineBrush.Freeze();
+            }
+            catch
+            {
+            }
+
+            string tagBase = string.Format("DuoEMA_NewYorkSkip_{0:yyyyMMdd_HHmm}", windowStart);
+            Draw.Rectangle(
+                this,
+                tagBase + "_Rect",
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,
+                areaBrush,
+                2).ZOrder = -1;
+
+            Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
         }
 
         private void DrawNewsWindows(DateTime barTime)
@@ -1895,7 +1973,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             lines.Add(("SL:        ", slLine, Brushes.IndianRed));
             lines.Add(("Contracts: ", string.Format(CultureInfo.InvariantCulture, "{0}", activeContracts), Brushes.LightGray));
             lines.Add((FormatSessionLabel(activeSession), string.Empty, Brushes.LightGray));
-            lines.Add((string.Format("v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray));
+            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray));
 
             return lines;
         }
@@ -2472,6 +2550,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Session End", Description = "New York session end time in chart time zone.", GroupName = "New York", Order = 2)]
         public TimeSpan NewYorkSessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip Start", Description = "Start of New York skip window.", GroupName = "New York", Order = 3)]
+        public TimeSpan NewYorkSkipStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip End", Description = "End of New York skip window.", GroupName = "New York", Order = 4)]
+        public TimeSpan NewYorkSkipEnd { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
