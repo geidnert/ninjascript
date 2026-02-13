@@ -377,7 +377,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 accountBalanceLimitReached = false;
                 accountBalanceLimitReachedBar = -1;
                 lastPositionClosedTime = Core.Globals.MinDate;
-                priorBarMarketPosition = Position.MarketPosition;
+                priorBarMarketPosition = GetCurrentMarketPositionSafe();
                 asiaTradesThisSession = 0;
                 londonTradesThisSession = 0;
                 newYorkTradesThisSession = 0;
@@ -409,7 +409,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())))
                 return;
 
-            MarketPosition currentPos = Position.MarketPosition;
+            MarketPosition currentPos = GetCurrentMarketPositionSafe();
             if (currentPos == MarketPosition.Flat && priorBarMarketPosition != MarketPosition.Flat)
                 lastPositionClosedTime = Time[0];
             priorBarMarketPosition = currentPos;
@@ -1033,6 +1033,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 : 0;
 
             DrawTradeLinesAtBarsAgo(startBarsAgo, endBarsAgo);
+        }
+
+        private MarketPosition GetCurrentMarketPositionSafe()
+        {
+            try
+            {
+                return Position != null ? Position.MarketPosition : MarketPosition.Flat;
+            }
+            catch
+            {
+                return MarketPosition.Flat;
+            }
         }
 
         private void FinalizeTradeLines()
