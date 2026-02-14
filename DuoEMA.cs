@@ -32,6 +32,29 @@ namespace NinjaTrader.NinjaScript.Strategies
             WickExtreme
         }
 
+        private sealed class AdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
+        {
+            private static readonly double[] Presets = new double[]
+            {
+                1.15, 1.19, 1.23, 1.27, 1.31, 1.35, 1.39, 1.43, 1.47, 1.52
+            };
+
+            public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+            {
+                return new TypeConverter.StandardValuesCollection(Presets);
+            }
+        }
+
         private enum SessionSlot
         {
             None,
@@ -187,6 +210,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 UseAsiaSession = true;
                 AsiaSessionStart = new TimeSpan(18, 30, 0);
                 AsiaSessionEnd = new TimeSpan(2, 00, 0);
+                AsiaBlockSundayTrades = false;
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaAdxPeriod = 14;
@@ -212,7 +236,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 16;
                 NewYorkAdxMaxThreshold = 58.0;
-                NewYorkAdxMinSlopePoints = 1.58;
+                NewYorkAdxMinSlopePoints = 1.52;
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
@@ -338,6 +362,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
             bool inNySkipNow = activeSession == SessionSlot.NewYork && IsNewYorkSkipTime(Time[0]);
+            bool isAsiaSundayBlockedNow = activeSession == SessionSlot.Asia && AsiaBlockSundayTrades && Time[0].DayOfWeek == DayOfWeek.Sunday;
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             UpdateAdxPeakTracker(adxValue);
@@ -349,13 +374,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool adxPass = adxThresholdPass && adxSlopePass;
             int tradesThisSession = GetTradesThisSession(activeSession);
             bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !accountBlocked && adxPass && maxTradesPass;
-            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !accountBlocked;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
+            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked;
 
             if (!inActiveSessionNow)
                 CancelWorkingEntryOrders();
 
             if (inNySkipNow)
+                CancelWorkingEntryOrders();
+
+            if (isAsiaSundayBlockedNow)
                 CancelWorkingEntryOrders();
 
             if (activeEma == null || CurrentBar < activeEmaPeriod)
@@ -379,6 +407,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     "Setup blocked | reason=NewYorkSkip start={0:hh\\:mm} end={1:hh\\:mm}",
                     NewYorkSkipStart,
                     NewYorkSkipEnd));
+            }
+
+            if (DebugLogging && inActiveSessionNow && isAsiaSundayBlockedNow && (longSignal || shortSignal))
+            {
+                LogDebug("Setup blocked | reason=AsiaSundayBlock");
             }
 
             if (DebugLogging && inActiveSessionNow && !maxTradesPass && (longSignal || shortSignal))
@@ -2589,6 +2622,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         public TimeSpan AsiaSessionEnd { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia entries/flips on Sundays.", GroupName = "Asia", Order = 3)]
+        public bool AsiaBlockSundayTrades { get; set; }
+
+        [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "EMA Period", Description = "EMA period used by Asia entry and exit logic.", GroupName = "Asia", Order = 4)]
         public int AsiaEmaPeriod { get; set; }
@@ -2615,8 +2652,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [DisplayFormat(DataFormatString = "{0:0.00}", ApplyFormatInEditMode = true)]
-        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "Asia", Order = 11)]
+        [TypeConverter(typeof(AdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Min Slope (Points)", Description = "Preset minimum ADX slope per bar required for entries.", GroupName = "Asia", Order = 11)]
         public double AsiaAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2685,7 +2722,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York entries.", GroupName = "New York", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York entries.", GroupName = "New York", Order = 6)]
         public int NewYorkContracts { get; set; }
 
         [NinjaScriptProperty]
@@ -2705,8 +2742,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [DisplayFormat(DataFormatString = "{0:0.00}", ApplyFormatInEditMode = true)]
-        [Display(Name = "ADX Min Slope (Points)", Description = "Minimum positive ADX slope per bar required for entries. 0 disables slope filter.", GroupName = "New York", Order = 11)]
+        [TypeConverter(typeof(AdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Min Slope (Points)", Description = "Preset minimum ADX slope per bar required for entries.", GroupName = "New York", Order = 11)]
         public double NewYorkAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
