@@ -195,7 +195,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaAdxMinSlopePoints = 1.6;
                 AsiaAdxPeakDrawdownExitUnits = 13.8;
                 AsiaEntryStopMode = InitialStopMode.WickExtreme;
-                AsiaEmaMinSlopePointsPerBar = 0.0;
+                AsiaEmaMinSlopePointsPerBar = 1.0;
                 AsiaMaxEntryDistanceFromEmaPoints = 21.0;
                 AsiaStopPaddingPoints = 13.2;
                 AsiaExitCrossPoints = 3.8;
@@ -215,7 +215,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkAdxMinSlopePoints = 1.5;
                 NewYorkAdxPeakDrawdownExitUnits = 9.6;
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
-                NewYorkEmaMinSlopePointsPerBar = 0.0;
+                NewYorkEmaMinSlopePointsPerBar = 0.8;
                 NewYorkMaxEntryDistanceFromEmaPoints = 44.0;
                 NewYorkStopPaddingPoints = 24.75;
                 NewYorkExitCrossPoints = 1.75;
