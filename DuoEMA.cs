@@ -2653,7 +2653,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [TypeConverter(typeof(AdxSlopeDropdownConverter))]
-        [Display(Name = "ADX Min Slope (Points)", Description = "Preset minimum ADX slope per bar required for entries.", GroupName = "Asia", Order = 11)]
+        [Display(Name = "Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 11)]
         public double AsiaAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2743,7 +2743,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [TypeConverter(typeof(AdxSlopeDropdownConverter))]
-        [Display(Name = "ADX Min Slope (Points)", Description = "Preset minimum ADX slope per bar required for entries.", GroupName = "New York", Order = 11)]
+        [Display(Name = "Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 11)]
         public double NewYorkAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
