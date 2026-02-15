@@ -275,6 +275,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkAdxAbsoluteExitLevel = 70.0;
 
                 CloseAtSessionEnd = false;
+                AsiaSessionBrush = Brushes.DarkCyan;
+                NewYorkSessionBrush = Brushes.Gold;
                 SessionBrush = Brushes.Gold;
                 ShowEmaOnChart = true;
                 ShowAdxOnChart = true;
@@ -1771,8 +1773,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar < 1)
                 return;
 
-            DrawSessionBackground(SessionSlot.Asia, "DuoEMA_Asia", SessionBrush ?? Brushes.LightSkyBlue);
-            DrawSessionBackground(SessionSlot.NewYork, "DuoEMA_NewYork", SessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.Asia, "DuoEMA_Asia", AsiaSessionBrush ?? SessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.NewYork, "DuoEMA_NewYork", NewYorkSessionBrush ?? SessionBrush ?? Brushes.LightSkyBlue);
             DrawNewYorkSkipWindow(Time[0]);
         }
 
@@ -2854,7 +2856,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [XmlIgnore]
-        [Display(Name = "Session Fill", Description = "Background color used to highlight configured session windows.", GroupName = "10. Sessions", Order = 1)]
+        [Display(Name = "Asia Session Fill", Description = "Background color used to highlight Asia session windows.", GroupName = "10. Sessions", Order = 1)]
+        public Brush AsiaSessionBrush { get; set; }
+
+        [Browsable(false)]
+        public string AsiaSessionBrushSerializable
+        {
+            get { return Serialize.BrushToString(AsiaSessionBrush); }
+            set { AsiaSessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
+        [XmlIgnore]
+        [Display(Name = "New York Session Fill", Description = "Background color used to highlight New York session windows.", GroupName = "10. Sessions", Order = 2)]
+        public Brush NewYorkSessionBrush { get; set; }
+
+        [Browsable(false)]
+        public string NewYorkSessionBrushSerializable
+        {
+            get { return Serialize.BrushToString(NewYorkSessionBrush); }
+            set { NewYorkSessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
+        [XmlIgnore]
+        [Display(Name = "Session Fill (Legacy)", Description = "Legacy fallback background color if per-session colors are not set.", GroupName = "10. Sessions", Order = 99)]
         public Brush SessionBrush { get; set; }
 
         [Browsable(false)]
