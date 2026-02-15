@@ -294,7 +294,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 MaxAccountBalance = 0.0;
                 MaxTradesPerSession = 4;
                 RequireEntryConfirmation = false;
-                RequireAdxSlopeForFlipEntry = true;
 
                 DebugLogging = false;
             }
@@ -494,9 +493,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     bool flipCanTradePass = canFlipNow;
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeShortPass;
-                    bool flipAdxSlopePass = !RequireAdxSlopeForFlipEntry || adxSlopePass;
                     bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipAdxSlopePass && flipBodyPass;
+                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
@@ -530,11 +528,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} distancePass={1} emaSlopePass={2} adxSlopePass={3} bodyPass={4} below%={5:0.0} minBody%={6:0.0}",
+                                "Flip skipped | side=Short canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} below%={4:0.0} minBody%={5:0.0}",
                                 flipCanTradePass,
                                 flipDistancePass,
                                 flipSlopePass,
-                                flipAdxSlopePass,
                                 flipBodyPass,
                                 bodyBelowPercent,
                                 FlipBodyThresholdPercent));
@@ -588,9 +585,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     bool flipCanTradePass = canFlipNow;
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeLongPass;
-                    bool flipAdxSlopePass = !RequireAdxSlopeForFlipEntry || adxSlopePass;
                     bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipAdxSlopePass && flipBodyPass;
+                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
@@ -624,11 +620,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} distancePass={1} emaSlopePass={2} adxSlopePass={3} bodyPass={4} above%={5:0.0} minBody%={6:0.0}",
+                                "Flip skipped | side=Long canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} above%={4:0.0} minBody%={5:0.0}",
                                 flipCanTradePass,
                                 flipDistancePass,
                                 flipSlopePass,
-                                flipAdxSlopePass,
                                 flipBodyPass,
                                 bodyAbovePercent,
                                 FlipBodyThresholdPercent));
@@ -2776,10 +2771,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 5)]
         public bool RequireEntryConfirmation { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Require ADX Slope For Flip Entry", Description = "If enabled, flip entry is placed only when ADX slope filter passes. Flip close still runs.", GroupName = "13. Risk", Order = 6)]
-        public bool RequireAdxSlopeForFlipEntry { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
