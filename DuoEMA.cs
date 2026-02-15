@@ -150,7 +150,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int accountBalanceLimitReachedBar = -1;
         private int asiaTradesThisSession;
         private int newYorkTradesThisSession;
+        private string currentPositionEntrySignal = string.Empty;
         private const double FlipBodyThresholdPercent = 0.0;
+        private const string LongEntrySignal = "LongEntry";
+        private const string ShortEntrySignal = "ShortEntry";
+        private const string LongFlipEntrySignal = "LongFlipEntry";
+        private const string ShortFlipEntrySignal = "ShortFlipEntry";
 
         private static readonly string NewsDatesRaw =
 @"2025-01-10,08:30
@@ -451,7 +456,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
-                    ExitLong("AdxLevelExit", "LongEntry");
+                    ExitLong("AdxLevelExit", GetOpenLongEntrySignal());
                     LogDebug(string.Format("Exit LONG | reason=AdxLevel adx={0:0.00} threshold={1:0.00}",
                         adxValue, activeAdxAbsoluteExitLevel));
                     return;
@@ -460,7 +465,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double adxDrawdown;
                 if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
                 {
-                    ExitLong("AdxDrawdownExit", "LongEntry");
+                    ExitLong("AdxDrawdownExit", GetOpenLongEntrySignal());
                     LogDebug(string.Format("Exit LONG | reason=AdxDrawdown adx={0:0.00} peak={1:0.00} drawdown={2:0.00} threshold={3:0.00}",
                         adxValue, currentTradePeakAdx, adxDrawdown, activeAdxPeakDrawdownExitUnits));
                     return;
@@ -468,7 +473,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (activeTakeProfitPoints > 0.0 && Close[0] >= Position.AveragePrice + activeTakeProfitPoints)
                 {
-                    ExitLong("TakeProfitExit", "LongEntry");
+                    ExitLong("TakeProfitExit", GetOpenLongEntrySignal());
                     LogDebug(string.Format("Exit LONG | reason=TakeProfit close={0:0.00} avg={1:0.00} tpPts={2:0.00}",
                         Close[0], Position.AveragePrice, activeTakeProfitPoints));
                     return;
@@ -504,11 +509,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                             return;
                         }
                         pendingShortStopForWebhook = stopPrice;
-                        SetStopLossByDistanceTicks("ShortEntry", Close[0], stopPrice);
-                        SetProfitTargetByDistanceTicks("ShortEntry", activeTakeProfitPoints);
+                        SetStopLossByDistanceTicks(ShortFlipEntrySignal, Close[0], stopPrice);
+                        SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, activeTakeProfitPoints);
                         SendWebhook("sell", Close[0], Close[0], stopPrice, true, qty);
                         StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                        EnterShort(qty, "ShortEntry");
+                        EnterShort(qty, ShortFlipEntrySignal);
 
                         LogDebug(string.Format(
                             "Flip LONG->SHORT | close={0:0.00} ema={1:0.00} below%={2:0.0} stop={3:0.00} stopTicks={4} qty={5} {6}",
@@ -534,7 +539,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 bodyBelowPercent,
                                 FlipBodyThresholdPercent));
                         }
-                        ExitLong("EmaExitLong", "LongEntry");
+                        ExitLong("EmaExitLong", GetOpenLongEntrySignal());
                         LogDebug(string.Format("Exit LONG | close={0:0.00} ema={1:0.00} below%={2:0.0}", Close[0], emaValue, bodyBelowPercent));
                     }
                 }
@@ -546,7 +551,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
-                    ExitShort("AdxLevelExit", "ShortEntry");
+                    ExitShort("AdxLevelExit", GetOpenShortEntrySignal());
                     LogDebug(string.Format("Exit SHORT | reason=AdxLevel adx={0:0.00} threshold={1:0.00}",
                         adxValue, activeAdxAbsoluteExitLevel));
                     return;
@@ -555,7 +560,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double adxDrawdown;
                 if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
                 {
-                    ExitShort("AdxDrawdownExit", "ShortEntry");
+                    ExitShort("AdxDrawdownExit", GetOpenShortEntrySignal());
                     LogDebug(string.Format("Exit SHORT | reason=AdxDrawdown adx={0:0.00} peak={1:0.00} drawdown={2:0.00} threshold={3:0.00}",
                         adxValue, currentTradePeakAdx, adxDrawdown, activeAdxPeakDrawdownExitUnits));
                     return;
@@ -563,7 +568,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (activeTakeProfitPoints > 0.0 && Close[0] <= Position.AveragePrice - activeTakeProfitPoints)
                 {
-                    ExitShort("TakeProfitExit", "ShortEntry");
+                    ExitShort("TakeProfitExit", GetOpenShortEntrySignal());
                     LogDebug(string.Format("Exit SHORT | reason=TakeProfit close={0:0.00} avg={1:0.00} tpPts={2:0.00}",
                         Close[0], Position.AveragePrice, activeTakeProfitPoints));
                     return;
@@ -599,11 +604,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                             return;
                         }
                         pendingLongStopForWebhook = stopPrice;
-                        SetStopLossByDistanceTicks("LongEntry", Close[0], stopPrice);
-                        SetProfitTargetByDistanceTicks("LongEntry", activeTakeProfitPoints);
+                        SetStopLossByDistanceTicks(LongFlipEntrySignal, Close[0], stopPrice);
+                        SetProfitTargetByDistanceTicks(LongFlipEntrySignal, activeTakeProfitPoints);
                         SendWebhook("buy", Close[0], Close[0], stopPrice, true, qty);
                         StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                        EnterLong(qty, "LongEntry");
+                        EnterLong(qty, LongFlipEntrySignal);
 
                         LogDebug(string.Format(
                             "Flip SHORT->LONG | close={0:0.00} ema={1:0.00} above%={2:0.0} stop={3:0.00} stopTicks={4} qty={5} {6}",
@@ -629,7 +634,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 bodyAbovePercent,
                                 FlipBodyThresholdPercent));
                         }
-                        ExitShort("EmaExitShort", "ShortEntry");
+                        ExitShort("EmaExitShort", GetOpenShortEntrySignal());
                         LogDebug(string.Format("Exit SHORT | close={0:0.00} ema={1:0.00} above%={2:0.0}", Close[0], emaValue, bodyAbovePercent));
                     }
                 }
@@ -665,11 +670,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 
                     pendingLongStopForWebhook = stopPrice;
-                    SetStopLossByDistanceTicks("LongEntry", entryPrice, stopPrice);
-                    SetProfitTargetByDistanceTicks("LongEntry", activeTakeProfitPoints);
+                    SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
+                    SetProfitTargetByDistanceTicks(LongEntrySignal, activeTakeProfitPoints);
                     SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                    EnterLong(qty, "LongEntry");
+                    EnterLong(qty, LongEntrySignal);
                     LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2} {3}", FormatSessionLabel(activeSession), stopPrice, qty, FormatDiForLog()));
                 }
                 else if (DebugLogging)
@@ -698,11 +703,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 
                     pendingShortStopForWebhook = stopPrice;
-                    SetStopLossByDistanceTicks("ShortEntry", entryPrice, stopPrice);
-                    SetProfitTargetByDistanceTicks("ShortEntry", activeTakeProfitPoints);
+                    SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
+                    SetProfitTargetByDistanceTicks(ShortEntrySignal, activeTakeProfitPoints);
                     SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                    EnterShort(qty, "ShortEntry");
+                    EnterShort(qty, ShortEntrySignal);
                     LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2} {3}", FormatSessionLabel(activeSession), stopPrice, qty, FormatDiForLog()));
                 }
                 else if (DebugLogging)
@@ -719,9 +724,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (order == null)
                 return;
 
-            if (order.Name == "LongEntry")
+            if (IsLongEntryOrderName(order.Name))
                 longEntryOrder = order;
-            else if (order.Name == "ShortEntry")
+            else if (IsShortEntryOrderName(order.Name))
                 shortEntryOrder = order;
 
             if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected || orderState == OrderState.Filled)
@@ -760,7 +765,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         FormatOrderRef(shortEntryOrder)));
             }
 
-            bool isEntryOrder = order.Name == "LongEntry" || order.Name == "ShortEntry";
+            bool isEntryOrder = IsEntryOrderName(order.Name);
             if (isEntryOrder && orderState != OrderState.Filled &&
                 (orderState == OrderState.Cancelled || orderState == OrderState.Rejected) &&
                 Position.MarketPosition == MarketPosition.Flat)
@@ -781,7 +786,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             Print(string.Format("{0} | DuoEMA | bar={1} | Order rejected guard | name={2} state={3} error={4} comment={5}",
                 Time[0], CurrentBar, name, state, error, comment ?? string.Empty));
 
-            if (name == "LongEntry" || name == "ShortEntry")
+            if (IsEntryOrderName(name))
             {
                 CancelWorkingEntryOrders();
                 EndTradeAttempt("entry-rejected");
@@ -791,9 +796,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (name == "Stop loss" || name == "Profit target")
             {
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("ProtectiveReject", "LongEntry");
+                    ExitLong("ProtectiveReject", GetOpenLongEntrySignal());
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("ProtectiveReject", "ShortEntry");
+                    ExitShort("ProtectiveReject", GetOpenShortEntrySignal());
             }
         }
 
@@ -809,8 +814,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             string orderName = execution.Order.Name ?? string.Empty;
             double fillPrice = Instrument.MasterInstrument.RoundToTickSize(price);
 
-            if (orderName == "LongEntry" || orderName == "ShortEntry")
+            if (IsEntryOrderName(orderName))
             {
+                currentPositionEntrySignal = orderName;
                 SessionSlot entrySession = activeSession != SessionSlot.None
                     ? activeSession
                     : DetermineSessionForTime(time);
@@ -830,6 +836,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 LogDebug(string.Format("Session lock released from {0} after flat execution ({1}).", FormatSessionLabel(lockedTradeSession), orderName));
                 lockedTradeSession = SessionSlot.None;
+                currentPositionEntrySignal = string.Empty;
+            }
+            else if (marketPosition == MarketPosition.Flat)
+            {
+                currentPositionEntrySignal = string.Empty;
             }
 
             if (ShouldSendExitWebhook(execution, orderName, marketPosition))
@@ -847,7 +858,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         executionId));
             }
 
-            if (orderName != "LongEntry" && orderName != "ShortEntry")
+            if (!IsEntryOrderName(orderName))
             {
                 if (tradeLinesActive)
                     FinalizeTradeLines();
@@ -859,7 +870,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private bool IsEntryOrderName(string orderName)
         {
-            return orderName == "LongEntry" || orderName == "ShortEntry";
+            return IsLongEntryOrderName(orderName) || IsShortEntryOrderName(orderName);
+        }
+
+        private bool IsLongEntryOrderName(string orderName)
+        {
+            return string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, LongFlipEntrySignal, StringComparison.Ordinal);
+        }
+
+        private bool IsShortEntryOrderName(string orderName)
+        {
+            return string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, ShortFlipEntrySignal, StringComparison.Ordinal);
+        }
+
+        private string GetOpenLongEntrySignal()
+        {
+            return IsLongEntryOrderName(currentPositionEntrySignal) ? currentPositionEntrySignal : LongEntrySignal;
+        }
+
+        private string GetOpenShortEntrySignal()
+        {
+            return IsShortEntryOrderName(currentPositionEntrySignal) ? currentPositionEntrySignal : ShortEntrySignal;
         }
 
         private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
@@ -871,7 +904,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return false;
 
             string fromEntry = execution.Order.FromEntrySignal ?? string.Empty;
-            if (fromEntry == "LongEntry" || fromEntry == "ShortEntry")
+            if (IsEntryOrderName(fromEntry))
                 return true;
 
             string normalized = orderName ?? string.Empty;
@@ -1352,8 +1385,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void ReconcileTrackedEntryOrders()
         {
-            ReconcileTrackedEntryOrder(ref longEntryOrder, "LongEntry", ref missingLongEntryOrderBars);
-            ReconcileTrackedEntryOrder(ref shortEntryOrder, "ShortEntry", ref missingShortEntryOrderBars);
+            ReconcileTrackedEntryOrder(ref longEntryOrder, LongEntrySignal, ref missingLongEntryOrderBars);
+            ReconcileTrackedEntryOrder(ref shortEntryOrder, ShortEntrySignal, ref missingShortEntryOrderBars);
         }
 
         private void ReconcileTrackedEntryOrder(ref Order trackedOrder, string expectedName, ref int missingBars)
@@ -2293,9 +2326,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 accountBalanceLimitReachedBar = CurrentBar;
                 CancelWorkingEntryOrders();
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("MaxAccountBalance", "LongEntry");
+                    ExitLong("MaxAccountBalance", GetOpenLongEntrySignal());
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("MaxAccountBalance", "ShortEntry");
+                    ExitShort("MaxAccountBalance", GetOpenShortEntrySignal());
 
                 LogDebug(string.Format("Account balance target reached | cash={0:0.00} target={1:0.00} trading paused.", balance, MaxAccountBalance));
             }
