@@ -518,14 +518,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         EnterShort(qty, ShortFlipEntrySignal);
 
                         LogDebug(string.Format(
-                            "Flip LONG->SHORT | close={0:0.00} ema={1:0.00} below%={2:0.0} stop={3:0.00} stopTicks={4} qty={5} {6}",
+                            "Flip LONG->SHORT | close={0:0.00} ema={1:0.00} below%={2:0.0} stop={3:0.00} stopTicks={4} qty={5}",
                             Close[0],
                             emaValue,
                             bodyBelowPercent,
                             stopPrice,
                             PriceToTicks(Math.Abs(Close[0] - stopPrice)),
-                            qty,
-                            FormatDiForLog()));
+                            qty));
                     }
                     else
                     {
@@ -613,14 +612,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         EnterLong(qty, LongFlipEntrySignal);
 
                         LogDebug(string.Format(
-                            "Flip SHORT->LONG | close={0:0.00} ema={1:0.00} above%={2:0.0} stop={3:0.00} stopTicks={4} qty={5} {6}",
+                            "Flip SHORT->LONG | close={0:0.00} ema={1:0.00} above%={2:0.0} stop={3:0.00} stopTicks={4} qty={5}",
                             Close[0],
                             emaValue,
                             bodyAbovePercent,
                             stopPrice,
                             PriceToTicks(Math.Abs(Close[0] - stopPrice)),
-                            qty,
-                            FormatDiForLog()));
+                            qty));
                     }
                     else
                     {
@@ -677,7 +675,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                     EnterLong(qty, LongEntrySignal);
-                    LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2} {3}", FormatSessionLabel(activeSession), stopPrice, qty, FormatDiForLog()));
+                    LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -710,7 +708,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                     EnterShort(qty, ShortEntrySignal);
-                    LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2} {3}", FormatSessionLabel(activeSession), stopPrice, qty, FormatDiForLog()));
+                    LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1224,8 +1222,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void UpdateAdxPlotVisibility()
         {
-            SetAdxVisible(adxAsia, ShowAdxOnChart, false);
-            SetAdxVisible(adxNewYork, ShowAdxOnChart, false);
+            SetAdxVisible(adxAsia, ShowAdxOnChart);
+            SetAdxVisible(adxNewYork, ShowAdxOnChart);
         }
 
         private void SetEmaVisible(EMA ema, bool visible)
@@ -1236,20 +1234,18 @@ namespace NinjaTrader.NinjaScript.Strategies
             ema.Plots[0].Brush = visible ? Brushes.Gold : Brushes.Transparent;
         }
 
-        private void SetAdxVisible(DM adx, bool showAdx, bool forceShowDi)
+        private void SetAdxVisible(DM adx, bool showAdx)
         {
             if (adx == null || adx.Plots == null || adx.Plots.Length == 0)
                 return;
 
             Brush adxBrush = showAdx ? Brushes.DodgerBlue : Brushes.Transparent;
-            Brush diPlusBrush = (showAdx || forceShowDi) ? Brushes.LimeGreen : Brushes.Transparent;
-            Brush diMinusBrush = (showAdx || forceShowDi) ? Brushes.OrangeRed : Brushes.Transparent;
 
             adx.Plots[0].Brush = adxBrush;
             if (adx.Plots.Length > 1)
-                adx.Plots[1].Brush = diPlusBrush;
+                adx.Plots[1].Brush = Brushes.Transparent;
             if (adx.Plots.Length > 2)
-                adx.Plots[2].Brush = diMinusBrush;
+                adx.Plots[2].Brush = Brushes.Transparent;
         }
 
         private void UpdateAdxReferenceLines(DM adx, double minThreshold, double maxThreshold)
@@ -1538,93 +1534,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return true;
 
             return GetEmaSlopePointsPerBar() <= -activeEmaMinSlopePointsPerBar;
-        }
-
-        private bool TryGetAdxDirectionalValues(out double diPlus, out double diMinus)
-        {
-            diPlus = double.NaN;
-            diMinus = double.NaN;
-
-            if (activeAdx == null)
-                return false;
-
-            if (TryGetIndicatorSeriesValue(activeAdx, new[] { "DiPlus", "DIPlus", "PlusDI", "DmiPlus", "DMIPlus" }, out diPlus) &&
-                TryGetIndicatorSeriesValue(activeAdx, new[] { "DiMinus", "DIMinus", "MinusDI", "DmiMinus", "DMIMinus" }, out diMinus))
-                return true;
-
-            try
-            {
-                if (activeAdx.Values != null && activeAdx.Values.Length >= 3)
-                {
-                    diPlus = activeAdx.Values[1][0];
-                    diMinus = activeAdx.Values[2][0];
-                    if (!double.IsNaN(diPlus) && !double.IsNaN(diMinus))
-                        return true;
-                }
-            }
-            catch
-            {
-            }
-
-            return false;
-        }
-
-        private bool TryGetIndicatorSeriesValue(object indicator, string[] propertyNames, out double value)
-        {
-            value = double.NaN;
-            if (indicator == null || propertyNames == null)
-                return false;
-
-            for (int i = 0; i < propertyNames.Length; i++)
-            {
-                string propertyName = propertyNames[i];
-                if (string.IsNullOrWhiteSpace(propertyName))
-                    continue;
-
-                try
-                {
-                    PropertyInfo prop = indicator.GetType().GetProperty(
-                        propertyName,
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase);
-                    if (prop == null)
-                        continue;
-
-                    object raw = prop.GetValue(indicator, null);
-                    if (raw == null)
-                        continue;
-
-                    if (raw is ISeries<double>)
-                    {
-                        value = ((ISeries<double>)raw)[0];
-                        return !double.IsNaN(value);
-                    }
-
-                    if (raw is double)
-                    {
-                        value = (double)raw;
-                        return !double.IsNaN(value);
-                    }
-                }
-                catch
-                {
-                }
-            }
-
-            return false;
-        }
-
-        private string FormatDiForLog()
-        {
-            double diPlus;
-            double diMinus;
-            if (!TryGetAdxDirectionalValues(out diPlus, out diMinus))
-                return "+DI=n/a -DI=n/a spread=n/a";
-
-            return string.Format(CultureInfo.InvariantCulture,
-                "+DI={0:0.00} -DI={1:0.00} spread={2:0.00}",
-                diPlus,
-                diMinus,
-                Math.Abs(diPlus - diMinus));
         }
 
         private void UpdateAdxPeakTracker(double adxValue)
