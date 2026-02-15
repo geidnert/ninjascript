@@ -2081,85 +2081,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             var lines = new List<(string label, string value, Brush brush)>();
 
-            string tpLine;
-            string slLine;
-            GetPnLLines(out tpLine, out slLine);
-
-            lines.Add(("TP:        ", tpLine, Brushes.LimeGreen));
-            lines.Add(("SL:        ", slLine, Brushes.IndianRed));
+            double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+            lines.Add(("ADX:       ", string.Format(CultureInfo.InvariantCulture, "{0:0.00}", adxValue), Brushes.DodgerBlue));
             lines.Add(("Contracts: ", string.Format(CultureInfo.InvariantCulture, "{0}", activeContracts), Brushes.LightGray));
             lines.Add((FormatSessionLabel(activeSession), string.Empty, Brushes.LightGray));
             lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray));
 
             return lines;
-        }
-
-        private void GetPnLLines(out string tpLine, out string slLine)
-        {
-            bool hasPosition = Position.MarketPosition != MarketPosition.Flat;
-            bool hasLongOrder = IsOrderActive(longEntryOrder);
-            bool hasShortOrder = IsOrderActive(shortEntryOrder);
-            bool hasTrackedTrade = tradeLinesActive || tradeLineEntryPrice > 0.0;
-
-            if (!hasPosition && !hasLongOrder && !hasShortOrder && !hasTrackedTrade)
-            {
-                tpLine = "$0";
-                slLine = "$0";
-                return;
-            }
-
-            double entry = 0.0;
-            double tp = 0.0;
-            double sl = 0.0;
-
-            if (tradeLineEntryPrice > 0.0)
-            {
-                entry = tradeLineEntryPrice;
-                sl = tradeLineSlPrice;
-                tp = tradeLineHasTp ? tradeLineTpPrice : 0.0;
-            }
-            else if (hasPosition)
-            {
-                entry = Position.AveragePrice;
-                if (Position.MarketPosition == MarketPosition.Long)
-                {
-                    sl = pendingLongStopForWebhook;
-                    tp = activeTakeProfitPoints > 0.0 ? entry + activeTakeProfitPoints : 0.0;
-                }
-                else
-                {
-                    sl = pendingShortStopForWebhook;
-                    tp = activeTakeProfitPoints > 0.0 ? entry - activeTakeProfitPoints : 0.0;
-                }
-            }
-
-            if (entry <= 0.0 || sl <= 0.0)
-            {
-                tpLine = "$0";
-                slLine = "$0";
-                return;
-            }
-
-            double tickValue = Instrument.MasterInstrument.PointValue * TickSize;
-            if (Instrument.MasterInstrument.Name == "MNQ")
-                tickValue = 0.50;
-            else if (Instrument.MasterInstrument.Name == "NQ")
-                tickValue = 5.00;
-
-            double slTicks = Math.Abs(entry - sl) / TickSize;
-            double slDollars = slTicks * tickValue * Math.Max(1, activeContracts);
-            slLine = string.Format(CultureInfo.InvariantCulture, "${0:0}", slDollars);
-
-            if (tp > 0.0)
-            {
-                double tpTicks = Math.Abs(tp - entry) / TickSize;
-                double tpDollars = tpTicks * tickValue * Math.Max(1, activeContracts);
-                tpLine = string.Format(CultureInfo.InvariantCulture, "${0:0}", tpDollars);
-            }
-            else
-            {
-                tpLine = "$0";
-            }
         }
 
         private string GetAddOnVersion()
