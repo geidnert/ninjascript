@@ -531,7 +531,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 bodyBelowPercent,
                                 FlipBodyThresholdPercent));
                         }
-                        ExitLong("ExitLong", "LongEntry");
+                        ExitLong("EmaExitLong", "LongEntry");
                         LogDebug(string.Format("Exit LONG | close={0:0.00} ema={1:0.00} below%={2:0.0}", Close[0], emaValue, bodyBelowPercent));
                     }
                 }
@@ -624,7 +624,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 bodyAbovePercent,
                                 FlipBodyThresholdPercent));
                         }
-                        ExitShort("ExitShort", "ShortEntry");
+                        ExitShort("EmaExitShort", "ShortEntry");
                         LogDebug(string.Format("Exit SHORT | close={0:0.00} ema={1:0.00} above%={2:0.0}", Close[0], emaValue, bodyAbovePercent));
                     }
                 }
@@ -879,6 +879,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 || normalized.Equals("SessionEnd", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("ExitLong", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("ExitShort", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("EmaExitLong", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("EmaExitShort", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("AdxDrawdownExit", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("AdxLevelExit", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("TakeProfitExit", StringComparison.OrdinalIgnoreCase)
