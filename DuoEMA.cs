@@ -29,7 +29,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         public enum InitialStopMode
         {
             CandleOpen,
-            WickExtreme
+            WickExtreme,
+            EmaDistanceDynamic
         }
 
         private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
@@ -140,6 +141,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private double pendingLongStopForWebhook;
         private double pendingShortStopForWebhook;
+        private double lastSyncedLongDynamicStop = double.NaN;
+        private double lastSyncedShortDynamicStop = double.NaN;
         private double currentTradePeakAdx;
         private MarketPosition trackedAdxPeakPosition = MarketPosition.Flat;
         private string projectXSessionToken;
@@ -249,7 +252,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaEntryStopMode = InitialStopMode.WickExtreme;
                 AsiaEmaMinSlopePointsPerBar = 0.5;
                 AsiaMaxEntryDistanceFromEmaPoints = 21.0;
-                AsiaStopPaddingPoints = 12.5;
+                AsiaStopPaddingPoints = 63.0;
                 AsiaExitCrossPoints = 3.5;
                 AsiaTakeProfitPoints = 93.75;
                 AsiaAdxAbsoluteExitLevel = 57.7;
@@ -269,7 +272,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
                 NewYorkMaxEntryDistanceFromEmaPoints = 44.0;
-                NewYorkStopPaddingPoints = 24.5;
+                NewYorkStopPaddingPoints = 54.5;
                 NewYorkExitCrossPoints = 1.25;
                 NewYorkTakeProfitPoints = 123.75;
                 NewYorkAdxAbsoluteExitLevel = 70.0;
@@ -336,6 +339,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 UpdateAdxPlotVisibility();
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
+                lastSyncedLongDynamicStop = double.NaN;
+                lastSyncedShortDynamicStop = double.NaN;
                 currentTradePeakAdx = 0.0;
                 trackedAdxPeakPosition = MarketPosition.Flat;
                 projectXSessionToken = null;
@@ -430,6 +435,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool longSignal = bullish && bodyAbovePercent > 0.0;
             bool shortSignal = bearish && bodyBelowPercent > 0.0;
 
+            UpdateDynamicEmaStopIfNeeded(emaValue);
+
             if (DebugLogging && inActiveSessionNow && inNySkipNow && (longSignal || shortSignal))
             {
                 LogDebug(string.Format(
@@ -508,7 +515,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             return;
                         }
                         pendingShortStopForWebhook = stopPrice;
-                        SetStopLossByDistanceTicks(ShortFlipEntrySignal, Close[0], stopPrice);
+                        ApplyEntryStopLoss(ShortFlipEntrySignal, Close[0], stopPrice);
                         SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, activeTakeProfitPoints);
                         SendWebhook("sell", Close[0], Close[0], stopPrice, true, qty);
                         StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
@@ -600,7 +607,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             return;
                         }
                         pendingLongStopForWebhook = stopPrice;
-                        SetStopLossByDistanceTicks(LongFlipEntrySignal, Close[0], stopPrice);
+                        ApplyEntryStopLoss(LongFlipEntrySignal, Close[0], stopPrice);
                         SetProfitTargetByDistanceTicks(LongFlipEntrySignal, activeTakeProfitPoints);
                         SendWebhook("buy", Close[0], Close[0], stopPrice, true, qty);
                         StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
@@ -664,7 +671,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 
                     pendingLongStopForWebhook = stopPrice;
-                    SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
+                    ApplyEntryStopLoss(LongEntrySignal, entryPrice, stopPrice);
                     SetProfitTargetByDistanceTicks(LongEntrySignal, activeTakeProfitPoints);
                     SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
@@ -697,7 +704,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 
                     pendingShortStopForWebhook = stopPrice;
-                    SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
+                    ApplyEntryStopLoss(ShortEntrySignal, entryPrice, stopPrice);
                     SetProfitTargetByDistanceTicks(ShortEntrySignal, activeTakeProfitPoints);
                     SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
@@ -831,10 +838,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LogDebug(string.Format("Session lock released from {0} after flat execution ({1}).", FormatSessionLabel(lockedTradeSession), orderName));
                 lockedTradeSession = SessionSlot.None;
                 currentPositionEntrySignal = string.Empty;
+                lastSyncedLongDynamicStop = double.NaN;
+                lastSyncedShortDynamicStop = double.NaN;
             }
             else if (marketPosition == MarketPosition.Flat)
             {
                 currentPositionEntrySignal = string.Empty;
+                lastSyncedLongDynamicStop = double.NaN;
+                lastSyncedShortDynamicStop = double.NaN;
             }
 
             if (ShouldSendExitWebhook(execution, orderName, marketPosition))
@@ -1455,6 +1466,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private double BuildLongEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleLow)
         {
+            if (activeEntryStopMode == InitialStopMode.EmaDistanceDynamic)
+            {
+                double ema = activeEma != null ? activeEma[0] : entryPrice;
+                double rawDynamic = ema - activeStopPaddingPoints;
+                double roundedDynamic = Instrument.MasterInstrument.RoundToTickSize(rawDynamic);
+                if (roundedDynamic >= entryPrice)
+                    roundedDynamic = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
+                return roundedDynamic;
+            }
+
             double raw = activeEntryStopMode == InitialStopMode.CandleOpen ? candleOpen : candleLow;
             raw -= activeStopPaddingPoints;
 
@@ -1466,6 +1487,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private double BuildShortEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleHigh)
         {
+            if (activeEntryStopMode == InitialStopMode.EmaDistanceDynamic)
+            {
+                double ema = activeEma != null ? activeEma[0] : entryPrice;
+                double rawDynamic = ema + activeStopPaddingPoints;
+                double roundedDynamic = Instrument.MasterInstrument.RoundToTickSize(rawDynamic);
+                if (roundedDynamic <= entryPrice)
+                    roundedDynamic = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
+                return roundedDynamic;
+            }
+
             double raw = activeEntryStopMode == InitialStopMode.CandleOpen ? candleOpen : candleHigh;
             raw += activeStopPaddingPoints;
 
@@ -1477,6 +1508,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private double BuildFlipShortStopPrice(double entryPrice, double candleOpen, double candleHigh)
         {
+            if (activeEntryStopMode == InitialStopMode.EmaDistanceDynamic)
+            {
+                double ema = activeEma != null ? activeEma[0] : entryPrice;
+                double rawDynamic = ema + activeStopPaddingPoints;
+                double roundedDynamic = Instrument.MasterInstrument.RoundToTickSize(rawDynamic);
+                if (roundedDynamic <= entryPrice)
+                    roundedDynamic = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
+                return roundedDynamic;
+            }
+
             double raw = candleHigh + activeStopPaddingPoints;
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
@@ -1486,6 +1527,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private double BuildFlipLongStopPrice(double entryPrice, double candleOpen, double candleLow)
         {
+            if (activeEntryStopMode == InitialStopMode.EmaDistanceDynamic)
+            {
+                double ema = activeEma != null ? activeEma[0] : entryPrice;
+                double rawDynamic = ema - activeStopPaddingPoints;
+                double roundedDynamic = Instrument.MasterInstrument.RoundToTickSize(rawDynamic);
+                if (roundedDynamic >= entryPrice)
+                    roundedDynamic = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
+                return roundedDynamic;
+            }
+
             double raw = candleLow - activeStopPaddingPoints;
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
@@ -2122,12 +2173,83 @@ namespace NinjaTrader.NinjaScript.Strategies
             return baseQty;
         }
 
+        private void ApplyEntryStopLoss(string fromEntrySignal, double referenceEntryPrice, double plannedStopPrice)
+        {
+            if (activeEntryStopMode == InitialStopMode.EmaDistanceDynamic)
+            {
+                SetStopLossByPrice(fromEntrySignal, plannedStopPrice);
+                return;
+            }
+
+            SetStopLossByDistanceTicks(fromEntrySignal, referenceEntryPrice, plannedStopPrice);
+        }
+
         private void SetStopLossByDistanceTicks(string fromEntrySignal, double referenceEntryPrice, double plannedStopPrice)
         {
             int stopTicks = PriceToTicks(Math.Abs(referenceEntryPrice - plannedStopPrice));
             if (stopTicks < 1)
                 stopTicks = 1;
             SetStopLoss(fromEntrySignal, CalculationMode.Ticks, stopTicks, false);
+        }
+
+        private void SetStopLossByPrice(string fromEntrySignal, double plannedStopPrice)
+        {
+            double rounded = Instrument.MasterInstrument.RoundToTickSize(plannedStopPrice);
+            SetStopLoss(fromEntrySignal, CalculationMode.Price, rounded, false);
+        }
+
+        private void UpdateDynamicEmaStopIfNeeded(double emaValue)
+        {
+            if (activeEntryStopMode != InitialStopMode.EmaDistanceDynamic)
+                return;
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                string fromEntry = GetOpenLongEntrySignal();
+                double stopPrice = Instrument.MasterInstrument.RoundToTickSize(emaValue - activeStopPaddingPoints);
+                if (stopPrice >= Close[0])
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Close[0] - TickSize);
+                pendingLongStopForWebhook = stopPrice;
+                SetStopLossByPrice(fromEntry, stopPrice);
+                if (ShouldSyncDynamicStop(lastSyncedLongDynamicStop, stopPrice))
+                {
+                    SyncDynamicStopUpdate(stopPrice);
+                    lastSyncedLongDynamicStop = stopPrice;
+                }
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                string fromEntry = GetOpenShortEntrySignal();
+                double stopPrice = Instrument.MasterInstrument.RoundToTickSize(emaValue + activeStopPaddingPoints);
+                if (stopPrice <= Close[0])
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Close[0] + TickSize);
+                pendingShortStopForWebhook = stopPrice;
+                SetStopLossByPrice(fromEntry, stopPrice);
+                if (ShouldSyncDynamicStop(lastSyncedShortDynamicStop, stopPrice))
+                {
+                    SyncDynamicStopUpdate(stopPrice);
+                    lastSyncedShortDynamicStop = stopPrice;
+                }
+            }
+        }
+
+        private bool ShouldSyncDynamicStop(double lastSyncedStop, double currentStop)
+        {
+            if (double.IsNaN(lastSyncedStop))
+                return true;
+
+            return Math.Abs(currentStop - lastSyncedStop) >= TickSize * 0.5;
+        }
+
+        private void SyncDynamicStopUpdate(double stopPrice)
+        {
+            int qty = Math.Max(1, Position.Quantity);
+            double entryRef = Close[0];
+            double takeProfitRef = activeTakeProfitPoints > 0.0
+                ? (Position.MarketPosition == MarketPosition.Long ? entryRef + activeTakeProfitPoints : entryRef - activeTakeProfitPoints)
+                : 0.0;
+            SendWebhook("update_stop", entryRef, takeProfitRef, stopPrice, false, qty);
+            LogDebug(string.Format("Dynamic SL sync | provider={0} stop={1:0.00} qty={2}", WebhookProviderType, stopPrice, qty));
         }
 
         private void SetProfitTargetByDistanceTicks(string fromEntrySignal, double takeProfitPoints)
@@ -2237,6 +2359,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                         ticker,
                         time);
                 }
+                else if (action == "update_stop")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"exit\",\"orderType\":\"stop\",\"quantityType\":\"fixed_quantity\",\"quantity\":{1},\"signalPrice\":{2},\"stopPrice\":{3},\"cancel\":true,\"time\":\"{4}\"}}",
+                        ticker,
+                        orderQty,
+                        entryPrice,
+                        stopLoss,
+                        time);
+                }
 
                 if (string.IsNullOrWhiteSpace(json))
                     return;
@@ -2276,6 +2408,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                         break;
                     case "cancel":
                         ProjectXCancelOrders(accountId, contractId);
+                        break;
+                    case "update_stop":
+                        bool isLongPosition = Position.MarketPosition == MarketPosition.Long;
+                        ProjectXModifyStopOrder(accountId, contractId, stopLoss, isLongPosition);
                         break;
                 }
             }
@@ -2361,6 +2497,59 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             return response;
+        }
+
+        private string ProjectXModifyStopOrder(int accountId, string contractId, double stopPrice, bool isLongPosition)
+        {
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+
+            int targetSide = isLongPosition ? 1 : 0;
+            int stopOrderId = 0;
+            double bestDistance = double.MaxValue;
+
+            foreach (var order in ExtractProjectXOrders(searchResponse))
+            {
+                object contractObj;
+                if (!order.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                int type;
+                if (!TryGetOrderInt(order, "type", out type) || type != 4)
+                    continue;
+
+                int side;
+                if (!TryGetOrderInt(order, "side", out side) || side != targetSide)
+                    continue;
+
+                int id;
+                if (!TryGetOrderInt(order, "id", out id) || id <= 0)
+                    continue;
+
+                double currentStop = 0.0;
+                TryGetOrderDouble(order, "stopPrice", out currentStop);
+                double distance = Math.Abs(stopPrice - currentStop);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    stopOrderId = id;
+                }
+            }
+
+            if (stopOrderId <= 0)
+            {
+                LogDebug("ProjectX dynamic stop sync skipped | reason=no-open-stop-order");
+                return searchResponse;
+            }
+
+            string modifyJson = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"id\":{1},\"stopPrice\":{2}}}",
+                accountId,
+                stopOrderId,
+                Instrument.MasterInstrument.RoundToTickSize(stopPrice));
+            return ProjectXPost("/api/Order/modify", modifyJson, true);
         }
 
         private string ProjectXClosePosition(int accountId, string contractId)
@@ -2573,12 +2762,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double AsiaAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "Asia", Order = 15)]
+        [Display(Name = "Entry Stop Mode", Description = "How stop loss is positioned: CandleOpen, WickExtreme, or EmaDistanceDynamic (tracks EMA using SL Padding Points).", GroupName = "Asia", Order = 15)]
         public InitialStopMode AsiaEntryStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "Asia", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Padding in points. For CandleOpen/WickExtreme it is added beyond anchor. For EmaDistanceDynamic it is the EMA offset.", GroupName = "Asia", Order = 16)]
         public double AsiaStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2663,12 +2852,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double NewYorkAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Stop Mode", Description = "How the initial stop is positioned for a new entry.", GroupName = "New York", Order = 15)]
+        [Display(Name = "Entry Stop Mode", Description = "How stop loss is positioned: CandleOpen, WickExtreme, or EmaDistanceDynamic (tracks EMA using SL Padding Points).", GroupName = "New York", Order = 15)]
         public InitialStopMode NewYorkEntryStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the selected stop anchor (wick/open).", GroupName = "New York", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Padding in points. For CandleOpen/WickExtreme it is added beyond anchor. For EmaDistanceDynamic it is the EMA offset.", GroupName = "New York", Order = 16)]
         public double NewYorkStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -2695,6 +2884,32 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             get { return Serialize.BrushToString(AsiaSessionBrush); }
             set { AsiaSessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        private bool TryGetOrderInt(Dictionary<string, object> order, string key, out int value)
+        {
+            value = 0;
+            if (order == null || string.IsNullOrWhiteSpace(key))
+                return false;
+
+            object raw;
+            if (!order.TryGetValue(key, out raw) || raw == null)
+                return false;
+
+            return int.TryParse(raw.ToString(), out value);
+        }
+
+        private bool TryGetOrderDouble(Dictionary<string, object> order, string key, out double value)
+        {
+            value = 0.0;
+            if (order == null || string.IsNullOrWhiteSpace(key))
+                return false;
+
+            object raw;
+            if (!order.TryGetValue(key, out raw) || raw == null)
+                return false;
+
+            return double.TryParse(raw.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out value);
         }
 
         [NinjaScriptProperty]
