@@ -32,11 +32,34 @@ namespace NinjaTrader.NinjaScript.Strategies
             WickExtreme
         }
 
-        private sealed class AdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
+        private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
         {
             private static readonly double[] Presets = new double[]
             {
-                1.15, 1.19, 1.23, 1.27, 1.31, 1.35, 1.39, 1.43, 1.47, 1.52
+                1.33, 1.34, 1.35, 1.36, 1.37, 1.48, 1.49, 1.50, 1.51, 1.52, 1.53, 1.54, 1.55
+            };
+
+            public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+            {
+                return new TypeConverter.StandardValuesCollection(Presets);
+            }
+        }
+
+        private sealed class NewYorkAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
+        {
+            private static readonly double[] Presets = new double[]
+            {
+                1.55, 1.56, 1.57, 1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65
             };
 
             public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
@@ -216,7 +239,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 19.7;
                 AsiaAdxMaxThreshold = 43.6;
-                AsiaAdxMinSlopePoints = 1.52;
+                AsiaAdxMinSlopePoints = 1.37;
                 AsiaAdxPeakDrawdownExitUnits = 13.0;
                 AsiaEntryStopMode = InitialStopMode.WickExtreme;
                 AsiaEmaMinSlopePointsPerBar = 0.5;
@@ -236,7 +259,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 16;
                 NewYorkAdxMaxThreshold = 58.0;
-                NewYorkAdxMinSlopePoints = 1.52;
+                NewYorkAdxMinSlopePoints = 1.58;
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
                 NewYorkEntryStopMode = InitialStopMode.WickExtreme;
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
@@ -2652,7 +2675,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [TypeConverter(typeof(AdxSlopeDropdownConverter))]
+        [TypeConverter(typeof(AsiaAdxSlopeDropdownConverter))]
         [Display(Name = "Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 11)]
         public double AsiaAdxMinSlopePoints { get; set; }
 
@@ -2742,7 +2765,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [TypeConverter(typeof(AdxSlopeDropdownConverter))]
+        [TypeConverter(typeof(NewYorkAdxSlopeDropdownConverter))]
         [Display(Name = "Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 11)]
         public double NewYorkAdxMinSlopePoints { get; set; }
 
