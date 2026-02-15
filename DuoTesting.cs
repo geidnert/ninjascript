@@ -10,7 +10,6 @@ using System.Web.Script.Serialization;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using NinjaTrader.Cbi;
-using NinjaTrader.Gui;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
@@ -477,7 +476,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CancelOrderIfActive(shortEntryOrder, "FlipToShort");
 
                         double stopPrice = BuildFlipShortStopPrice(Close[0], Open[0], High[0]);
-                        int qty = GetEntryQuantity(Close[0], stopPrice);
+                        int qty = GetEntryQuantity();
                         if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], qty))
                         {
                             LogDebug("Entry confirmation declined | Flip LONG->SHORT.");
@@ -569,7 +568,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CancelOrderIfActive(shortEntryOrder, "FlipToLong");
 
                         double stopPrice = BuildFlipLongStopPrice(Close[0], Open[0], Low[0]);
-                        int qty = GetEntryQuantity(Close[0], stopPrice);
+                        int qty = GetEntryQuantity();
                         if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], qty))
                         {
                             LogDebug("Entry confirmation declined | Flip SHORT->LONG.");
@@ -665,7 +664,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     double entryPrice = Close[0];
                     double stopPrice = BuildLongEntryStopPrice(entryPrice, Open[0], Close[0], Low[0]);
-                    int qty = GetEntryQuantity(entryPrice, stopPrice);
+                    int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                     {
                         LogDebug("Entry confirmation declined | LONG.");
@@ -698,7 +697,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     double entryPrice = Close[0];
                     double stopPrice = BuildShortEntryStopPrice(entryPrice, Open[0], Close[0], High[0]);
-                    int qty = GetEntryQuantity(entryPrice, stopPrice);
+                    int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                     {
                         LogDebug("Entry confirmation declined | SHORT.");
@@ -2158,7 +2157,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return result;
         }
 
-        private int GetEntryQuantity(double entryPrice, double stopPrice)
+        private int GetEntryQuantity()
         {
             int baseQty = Math.Max(1, activeContracts);
             return baseQty;
