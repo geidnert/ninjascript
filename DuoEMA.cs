@@ -437,28 +437,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             UpdateDynamicEmaStopIfNeeded(emaValue);
 
-            if (DebugLogging && inActiveSessionNow && inNySkipNow && (longSignal || shortSignal))
-            {
-                LogDebug(string.Format(
-                    "Setup blocked | reason=NewYorkSkip start={0:hh\\:mm} end={1:hh\\:mm}",
-                    NewYorkSkipStart,
-                    NewYorkSkipEnd));
-            }
-
-            if (DebugLogging && inActiveSessionNow && isAsiaSundayBlockedNow && (longSignal || shortSignal))
-            {
-                LogDebug("Setup blocked | reason=AsiaSundayBlock");
-            }
-
-            if (DebugLogging && inActiveSessionNow && !maxTradesPass && (longSignal || shortSignal))
-            {
-                LogDebug(string.Format(
-                    "Setup blocked | reason=MaxTradesPerSession session={0} max={1} tradesTaken={2}",
-                    FormatSessionLabel(activeSession),
-                    MaxTradesPerSession,
-                    tradesThisSession));
-            }
-
             if (Position.MarketPosition == MarketPosition.Long)
             {
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
@@ -645,6 +623,40 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (!canTradeNow)
             {
+                if (DebugLogging && Position.MarketPosition == MarketPosition.Flat && (longSignal || shortSignal))
+                {
+                    string setupSide = longSignal ? "Long" : "Short";
+                    var reasons = new List<string>();
+
+                    if (!inActiveSessionNow)
+                        reasons.Add(string.Format("OutOfSession active={0}", FormatSessionLabel(activeSession)));
+                    if (inNewsSkipNow)
+                        reasons.Add(string.Format("NewsSkip minutes={0}", NewsBlockMinutes));
+                    if (inNySkipNow)
+                        reasons.Add(string.Format("NewYorkSkip {0:hh\\:mm}-{1:hh\\:mm}", NewYorkSkipStart, NewYorkSkipEnd));
+                    if (isAsiaSundayBlockedNow)
+                        reasons.Add("AsiaSundayBlock");
+                    if (accountBlocked)
+                        reasons.Add(string.Format("AccountBlocked maxBalance={0:0.##}", MaxAccountBalance));
+                    if (!adxMinPass)
+                        reasons.Add(string.Format("AdxBelowMin adx={0:0.00} min={1:0.00}", adxValue, activeAdxThreshold));
+                    if (!adxMaxPass)
+                        reasons.Add(string.Format("AdxAboveMax adx={0:0.00} max={1:0.00}", adxValue, activeAdxMaxThreshold));
+                    if (!adxSlopePass)
+                        reasons.Add(string.Format("AdxSlopeBelowMin slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
+                    if (!maxTradesPass)
+                        reasons.Add(string.Format("MaxTradesPerSession session={0} max={1} taken={2}", FormatSessionLabel(activeSession), MaxTradesPerSession, tradesThisSession));
+
+                    if (reasons.Count == 0)
+                        reasons.Add("UnknownGate");
+
+                    LogDebug(string.Format(
+                        "Setup blocked | side={0} close={1:0.00} ema={2:0.00} reasons={3}",
+                        setupSide,
+                        Close[0],
+                        emaValue,
+                        string.Join(" | ", reasons)));
+                }
                 return;
             }
 
