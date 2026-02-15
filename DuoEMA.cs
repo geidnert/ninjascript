@@ -2139,7 +2139,39 @@ namespace NinjaTrader.NinjaScript.Strategies
             var lines = new List<(string label, string value, Brush brush)>();
 
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
-            lines.Add(("ADX:       ", string.Format(CultureInfo.InvariantCulture, "{0:0.00}", adxValue), Brushes.DodgerBlue));
+            double adxSlope = GetAdxSlopePoints();
+            bool adxMinEnabled = activeAdxThreshold > 0.0;
+            bool adxMaxEnabled = activeAdxMaxThreshold > 0.0;
+            bool slopeEnabled = activeAdxMinSlopePoints > 0.0;
+            bool aboveMin = !adxMinEnabled || adxValue >= activeAdxThreshold;
+            bool belowMin = adxMinEnabled && adxValue < activeAdxThreshold;
+            bool overMax = adxMaxEnabled && adxValue > activeAdxMaxThreshold;
+            bool slopeValid = !slopeEnabled || adxSlope >= activeAdxMinSlopePoints;
+
+            string paState;
+            Brush paBrush;
+            if (overMax)
+            {
+                paState = "Peaking";
+                paBrush = Brushes.OrangeRed;
+            }
+            else if (belowMin)
+            {
+                paState = "Weak";
+                paBrush = Brushes.IndianRed;
+            }
+            else if (aboveMin && slopeValid)
+            {
+                paState = string.Format(CultureInfo.InvariantCulture, "Trending {0:0.00}", adxSlope);
+                paBrush = Brushes.LimeGreen;
+            }
+            else
+            {
+                paState = "Ranging";
+                paBrush = Brushes.Gold;
+            }
+
+            lines.Add(("PA:        ", paState, paBrush));
             lines.Add(("Contracts: ", string.Format(CultureInfo.InvariantCulture, "{0}", activeContracts), Brushes.LightGray));
             lines.Add((FormatSessionLabel(activeSession), string.Empty, Brushes.LightGray));
             lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray));
