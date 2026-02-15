@@ -1,3499 +1,1754 @@
 #region Using declarations
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Reflection;
-    using System.Windows.Media;
-    using System.ComponentModel.DataAnnotations;
-    using System.Windows;
-    using System.ComponentModel;
-    using System.Xml.Serialization;
-    using System.IO;
-    using System.Globalization;
-    using System.Web.Script.Serialization;
-    using NinjaTrader.Cbi;
-    using NinjaTrader.Data;
-    using NinjaTrader.Gui;
-    using NinjaTrader.Gui.Tools;
-    using NinjaTrader.NinjaScript;
-    using NinjaTrader.NinjaScript.Indicators;
-    using NinjaTrader.NinjaScript.DrawingTools;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Globalization;
+using System.Linq;
+using System.Reflection;
+using System.Web.Script.Serialization;
+using System.Windows.Media;
+using System.Xml.Serialization;
+using NinjaTrader.Cbi;
+using NinjaTrader.Gui;
+using NinjaTrader.Gui.Tools;
+using NinjaTrader.NinjaScript;
+using NinjaTrader.NinjaScript.DrawingTools;
+using NinjaTrader.NinjaScript.Indicators;
 #endregion
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
-    public class DuoTesing : Strategy
+    public class DuoTesting : Strategy
     {
-        public DuoTesing()
+        public DuoTesting()
         {
-            // VendorLicense(337);
+            VendorLicense(337);
         }
 
-        [NinjaScriptProperty]
-		[Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 1, GroupName = "Config")]
-		public bool RequireEntryConfirmation { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Show EMA On Chart", Description = "Plot EMA filter on chart (if enabled)", Order = 12, GroupName = "Config")]
-        public bool ShowEmaOnChart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 2, GroupName = "Config")]
-        public bool AntiHedge {
-            get; set;
-        }
-
-        [NinjaScriptProperty]
-        [Display(Name = "TradersPost Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 9, GroupName = "Config")]
-        public string WebhookUrl { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Webhook Provider", Description = "Choose which provider to send webhook orders to", Order = 3, GroupName = "Config")]
-        public WebhookProvider WebhookProviderType { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Reverse On Signal", Description = "If true, flatten current position when a reverse signal is generated, then place the new limit order", Order = 10, GroupName = "Config")]
-        public bool ReverseOnSignal { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Use iFVG Addon", Description = "Enable iFVG add-on override entries", Order = 11, GroupName = "Config")]
-        public bool UseIfvgAddon { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ProjectX API Base URL", Description = "Base URL for ProjectX Gateway API", Order = 4, GroupName = "Config")]
-        public string ProjectXApiBaseUrl { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ProjectX Username", Description = "ProjectX dashboard username", Order = 5, GroupName = "Config")]
-        public string ProjectXUsername { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ProjectX API Key", Description = "ProjectX API key", Order = 6, GroupName = "Config")]
-        public string ProjectXApiKey { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ProjectX Account ID", Description = "ProjectX account ID", Order = 7, GroupName = "Config")]
-        public string ProjectXAccountId { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ProjectX Contract ID", Description = "ProjectX contract ID (e.g., CON.F.US.DA6.M25)", Order = 8, GroupName = "Config")]
-        public string ProjectXContractId { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Min Size (Points)", Description = "Minimum iFVG size in price units", Order = 1, GroupName = "London iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double London_IfvgMinSizePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Max Size (Points)", Description = "Maximum iFVG size in price units (0 = no max)", Order = 2, GroupName = "London iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double London_IfvgMaxSizePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Min TP/SL Distance (Points)", Description = "Minimum distance between entry and pivot targets/stops", Order = 3, GroupName = "London iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double London_IfvgMinTpSlDistancePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Swing Strength", Description = "Bars on each side required to form a swing pivot", Order = 4, GroupName = "London iFVG Addon")]
-        [Range(1, int.MaxValue)]
-        public int London_IfvgSwingStrength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Swing Draw Bars", Description = "Number of bars to keep swing sweeps active", Order = 5, GroupName = "London iFVG Addon")]
-        [Range(0, int.MaxValue)]
-        public int London_IfvgSwingDrawBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Max Bars Between Sweep And iFVG", Description = "Maximum bars allowed between the sweep and the iFVG invalidation", Order = 6, GroupName = "London iFVG Addon")]
-        [Range(0, int.MaxValue)]
-        public int London_IfvgMaxBarsBetweenSweepAndIfvg { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London Use iFVG Break-Even Wick", Description = "Enable break-even wick logic for iFVG", Order = 7, GroupName = "London iFVG Addon")]
-        public bool London_IfvgUseBreakEvenWickLine { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London Use iFVG Volume SMA Filter", Description = "Require fast volume SMA to exceed slow SMA by a multiplier", Order = 8, GroupName = "London iFVG Addon")]
-        public bool London_IfvgUseVolumeSmaFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Volume SMA Fast Period", Description = "Fast period for the volume SMA filter", Order = 9, GroupName = "London iFVG Addon")]
-        [Range(1, int.MaxValue)]
-        public int London_IfvgVolumeFastSmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Volume SMA Slow Period", Description = "Slow period for the volume SMA filter", Order = 10, GroupName = "London iFVG Addon")]
-        [Range(1, int.MaxValue)]
-        public int London_IfvgVolumeSlowSmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London iFVG Volume SMA Multiplier", Description = "Fast volume SMA must exceed slow SMA times this multiplier", Order = 11, GroupName = "London iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double London_IfvgVolumeSmaMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Min Size (Points)", Description = "Minimum iFVG size in price units", Order = 1, GroupName = "New York iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double NewYork_IfvgMinSizePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Max Size (Points)", Description = "Maximum iFVG size in price units (0 = no max)", Order = 2, GroupName = "New York iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double NewYork_IfvgMaxSizePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Min TP/SL Distance (Points)", Description = "Minimum distance between entry and pivot targets/stops", Order = 3, GroupName = "New York iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double NewYork_IfvgMinTpSlDistancePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Swing Strength", Description = "Bars on each side required to form a swing pivot", Order = 4, GroupName = "New York iFVG Addon")]
-        [Range(1, int.MaxValue)]
-        public int NewYork_IfvgSwingStrength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Swing Draw Bars", Description = "Number of bars to keep swing sweeps active", Order = 5, GroupName = "New York iFVG Addon")]
-        [Range(0, int.MaxValue)]
-        public int NewYork_IfvgSwingDrawBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Max Bars Between Sweep And iFVG", Description = "Maximum bars allowed between the sweep and the iFVG invalidation", Order = 6, GroupName = "New York iFVG Addon")]
-        [Range(0, int.MaxValue)]
-        public int NewYork_IfvgMaxBarsBetweenSweepAndIfvg { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York Use iFVG Break-Even Wick", Description = "Enable break-even wick logic for iFVG", Order = 7, GroupName = "New York iFVG Addon")]
-        public bool NewYork_IfvgUseBreakEvenWickLine { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York Use iFVG Volume SMA Filter", Description = "Require fast volume SMA to exceed slow SMA by a multiplier", Order = 8, GroupName = "New York iFVG Addon")]
-        public bool NewYork_IfvgUseVolumeSmaFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Volume SMA Fast Period", Description = "Fast period for the volume SMA filter", Order = 9, GroupName = "New York iFVG Addon")]
-        [Range(1, int.MaxValue)]
-        public int NewYork_IfvgVolumeFastSmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Volume SMA Slow Period", Description = "Slow period for the volume SMA filter", Order = 10, GroupName = "New York iFVG Addon")]
-        [Range(1, int.MaxValue)]
-        public int NewYork_IfvgVolumeSlowSmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York iFVG Volume SMA Multiplier", Description = "Fast volume SMA must exceed slow SMA times this multiplier", Order = 11, GroupName = "New York iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double NewYork_IfvgVolumeSmaMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Debug Logging", Description = "Enable iFVG add-on debug logs", Order = 18, GroupName = "iFVG Addon")]
-        public bool IfvgDebugLogging { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Verbose Logging", Description = "Enable iFVG add-on verbose logs", Order = 19, GroupName = "iFVG Addon")]
-        public bool IfvgVerboseDebugLogging { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Allow When Losing", Description = "Allow iFVG entries only when the current position is losing", Order = 11, GroupName = "iFVG Addon")]
-        public bool IfvgAllowWhenLosing { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Allow When Green", Description = "Allow iFVG entries even if the current position is green", Order = 12, GroupName = "iFVG Addon")]
-        public bool IfvgAllowWhenGreen { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Allow From Flat", Description = "Allow iFVG entries even when flat (forces pivot TP/SL)", Order = 13, GroupName = "iFVG Addon")]
-        public bool IfvgAllowFromFlat { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG Allow Reversal Entries", Description = "If false, iFVG reversals will only flatten the current position (no new entry)", Order = 14, GroupName = "iFVG Addon")]
-        public bool IfvgAllowReversalEntries { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG TP Mode", Description = "TP source for iFVG trades", Order = 15, GroupName = "iFVG Addon")]
-        public IfvgTpMode IfvgTpSetting { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG TP % of Duo C1+C2 Body", Description = "Percent of Duo C1+C2 body used for iFVG TP when TP mode is Percent", Order = 16, GroupName = "iFVG Addon")]
-        [Range(0, double.MaxValue)]
-        public double IfvgTpPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "iFVG SL Mode", Description = "SL source for iFVG trades", Order = 17, GroupName = "iFVG Addon")]
-        public IfvgSlMode IfvgSlSetting { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "London Parameters", Order = 1)]
-        public double London_MinC12Body { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Minimum Candle Body (Points)", Description = "Minimum body size per candle for the two entry candles", GroupName = "London Parameters", Order = 2)]
-        [Range(0, double.MaxValue)]
-        public double London_MinCandlePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Maximum 1st+2nd Candle Body", GroupName = "London Parameters", Order = 2)]
-        public double London_MaxC12Body { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Offset % of 1st+2nd Candle Body", GroupName = "London Parameters", Order = 5)]
-        public double London_OffsetPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Take Profit % of 1st+2nd Candle Body", GroupName = "London Parameters", Order = 6)]
-        public double London_TpPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Cancel Order % of 1st+2nd Candle Body", GroupName = "London Parameters", Order = 7)]
-        public double London_CancelPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Number of Contracts", GroupName = "London Parameters", Order = 0)]
-        [Range(1, int.MaxValue)]
-        public int London_Contracts { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", Order = 8, GroupName = "London Parameters")]
-        [Range(0, double.MaxValue)]
-        public double London_DeviationPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "SL Padding", Description = "Extra padding added to stop loss (in price units, 0.25 increments)", GroupName = "London Parameters", Order = 9)]
-        [Range(0, double.MaxValue)]
-        public double London_SLPadding { get; set; }
-
-		[NinjaScriptProperty]
-        [Display(Name = "Max SL/TP Ratio %", Description = "Skip trades if SL is more than this % of TP (e.g., 200 = SL can be at most 2x TP)", Order = 10, GroupName = "London Parameters")]
-        [Range(0, 1000)]
-        public double London_MaxSLTPRatioPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "SL type", Description = "Select the sl type you want", Order = 11, GroupName = "London Parameters")]
-        public SLPreset London_SLPresetSetting { get; set; }
-
-		[NinjaScriptProperty]
-        [Display(Name = "SL % of 1st Candle", Description = "0% = High of 1st candle (long), 100% = Low of 1st candle (long)", Order = 12, GroupName = "London Parameters")]
-        [Range(0, 100)]
-        public double London_SLPercentFirstCandle { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "London Parameters")]
-        public double London_MaxSLPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Max Session Gain (Points)", Description = "Pause trading for the rest of the London session after this realized gain in points. 0 = disabled.", Order = 14, GroupName = "London Parameters")]
-        public double London_MaxSessionGain { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Use Market Entry", Description = "If true, entries use market orders instead of limit orders for London session", Order = 15, GroupName = "London Parameters")]
-        public bool London_UseMarketEntry { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EMA Period (0 = Off)", Description = "EMA period for London session filter", Order = 1, GroupName = "London EMA Filter")]
-        [Range(0, int.MaxValue)]
-        public int London_EmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EMA Body Filter", Description = "Which candle bodies must be fully beyond EMA", Order = 2, GroupName = "London EMA Filter")]
-        public EmaBodyFilterMode London_EmaBodyFilterMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "London Time")]
-        public TimeSpan London_SessionStart
+        public enum InitialStopMode
         {
-            get {
-                return sessionStart;
-            }
-            set {
-                sessionStart = new TimeSpan(value.Hours, value.Minutes, 0);
-            }
+            WickExtreme
         }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "When session is ending, all positions and orders will be canceled when this time is passed", Order = 2, GroupName = "London Time")]
-        public TimeSpan London_SessionEnd
+        private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
         {
-            get {
-                return sessionEnd;
+            private static readonly double[] Presets = new double[]
+            {
+                1.33, 1.34, 1.35, 1.36, 1.37, 1.48, 1.49, 1.50, 1.51, 1.52, 1.53, 1.54, 1.55
+            };
+
+            public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
+            {
+                return true;
             }
-            set {
-                sessionEnd = new TimeSpan(value.Hours, value.Minutes, 0);
+
+            public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+            {
+                return new TypeConverter.StandardValuesCollection(Presets);
             }
         }
 
-		[NinjaScriptProperty]
-		[Display(Name = "No Trades After", Description = "No more orders is being placed between this time and session end,", Order = 3, GroupName = "London Time")]
-		public TimeSpan London_NoTradesAfter
-		{
-			get {
-				return noTradesAfter;
-			}
-			set {
-				noTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0);
-			}
-		}
-
-        [NinjaScriptProperty]
-        [Display(Name = "Minimum 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 1)]
-        public double NewYork_MinC12Body { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Minimum Candle Body (Points)", Description = "Minimum body size per candle for the two entry candles", GroupName = "New York Parameters", Order = 2)]
-        [Range(0, double.MaxValue)]
-        public double NewYork_MinCandlePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Maximum 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 2)]
-        public double NewYork_MaxC12Body { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Offset % of 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 5)]
-        public double NewYork_OffsetPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Take Profit % of 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 6)]
-        public double NewYork_TpPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Cancel Order % of 1st+2nd Candle Body", GroupName = "New York Parameters", Order = 7)]
-        public double NewYork_CancelPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Number of Contracts", GroupName = "New York Parameters", Order = 0)]
-        [Range(1, int.MaxValue)]
-        public int NewYork_Contracts { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Deviation %", Description = "Max random deviation applied to entry/TP %", Order = 8, GroupName = "New York Parameters")]
-        [Range(0, double.MaxValue)]
-        public double NewYork_DeviationPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "SL Padding", Description = "Extra padding added to stop loss (in price units, 0.25 increments)", GroupName = "New York Parameters", Order = 9)]
-        [Range(0, double.MaxValue)]
-        public double NewYork_SLPadding { get; set; }
-
-		[NinjaScriptProperty]
-        [Display(Name = "Max SL/TP Ratio %", Description = "Skip trades if SL is more than this % of TP (e.g., 200 = SL can be at most 2x TP)", Order = 10, GroupName = "New York Parameters")]
-        [Range(0, 1000)]
-        public double NewYork_MaxSLTPRatioPerc { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "SL type", Description = "Select the sl type you want", Order = 11, GroupName = "New York Parameters")]
-        public SLPreset NewYork_SLPresetSetting { get; set; }
-
-		[NinjaScriptProperty]
-        [Display(Name = "SL % of 1st Candle", Description = "0% = High of 1st candle (long), 100% = Low of 1st candle (long)", Order = 12, GroupName = "New York Parameters")]
-        [Range(0, 100)]
-        public double NewYork_SLPercentFirstCandle { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Max SL (Points)", Description = "Maximum allowed stop loss in points. 0 = Disabled", Order = 13, GroupName = "New York Parameters")]
-        public double NewYork_MaxSLPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Max Session Gain (Points)", Description = "Pause trading for the rest of the New York session after this realized gain in points. 0 = disabled.", Order = 14, GroupName = "New York Parameters")]
-        public double NewYork_MaxSessionGain { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Use Market Entry", Description = "If true, entries use market orders instead of limit orders for New York session", Order = 15, GroupName = "New York Parameters")]
-        public bool NewYork_UseMarketEntry { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EMA Period (0 = Off)", Description = "EMA period for New York session filter", Order = 1, GroupName = "New York EMA Filter")]
-        [Range(0, int.MaxValue)]
-        public int NewYork_EmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EMA Body Filter", Description = "Which candle bodies must be fully beyond EMA", Order = 2, GroupName = "New York EMA Filter")]
-        public EmaBodyFilterMode NewYork_EmaBodyFilterMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Flatten On Max Session Gain", Description = "If true, flatten open positions when max session gain is reached.", Order = 1, GroupName = "Session Limits")]
-        public bool FlattenOnMaxSessionGain { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "When session is starting", Order = 1, GroupName = "New York Time")]
-        public TimeSpan NewYork_SessionStart
+        private sealed class NewYorkAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
         {
-            get {
-                return session2SessionStart;
+            private static readonly double[] Presets = new double[]
+            {
+                1.55, 1.56, 1.57, 1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65
+            };
+
+            public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
+            {
+                return true;
             }
-            set {
-                session2SessionStart = new TimeSpan(value.Hours, value.Minutes, 0);
+
+            public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+            {
+                return new TypeConverter.StandardValuesCollection(Presets);
             }
         }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "When session is ending, all positions and orders will be canceled when this time is passed", Order = 2, GroupName = "New York Time")]
-        public TimeSpan NewYork_SessionEnd
+        private enum SessionSlot
         {
-            get {
-                return session2SessionEnd;
-            }
-            set {
-                session2SessionEnd = new TimeSpan(value.Hours, value.Minutes, 0);
-            }
+            None,
+            Asia,
+            NewYork
         }
 
-		[NinjaScriptProperty]
-		[Display(Name = "No Trades After", Description = "No more orders is being placed between this time and session end,", Order = 3, GroupName = "New York Time")]
-		public TimeSpan NewYork_NoTradesAfter
-		{
-			get {
-				return session2NoTradesAfter;
-			}
-			set {
-				session2NoTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0);
-			}
-		}
+        public enum WebhookProvider
+        {
+            TradersPost,
+            ProjectX
+        }
 
-        [XmlIgnore]
-        [NinjaScriptProperty]
-        [Display(Name = "Session Fill", Description = "Color of the session background", Order = 4, GroupName = "Sessions")]
-        public Brush SessionBrush { get; set; }
+        private Order longEntryOrder;
+        private Order shortEntryOrder;
+        private int missingLongEntryOrderBars;
+        private int missingShortEntryOrderBars;
 
-        [NinjaScriptProperty]
-        [Display(Name = "Trade London (1:30-5:30)", Description = "Allow trading during London", Order = 1, GroupName = "Sessions")]
-        public bool UseSession1 { get; set; }
+        private bool asiaSessionClosed;
+        private bool newYorkSessionClosed;
 
-        [NinjaScriptProperty]
-        [Display(Name = "Trade New York (9:40-15:00)", Description = "Allow trading during New York", Order = 2, GroupName = "Sessions")]
-        public bool UseSession2 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Auto Shift London", Description = "Apply London DST auto-shift to London times", Order = 3, GroupName = "Sessions")]
-        public bool AutoShiftSession1 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Auto Shift NewYork", Description = "Apply London DST auto-shift to New York times", Order = 4, GroupName = "Sessions")]
-        public bool AutoShiftSession2 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Close at Session End", Description = "If true, open trades will be closed and working orders canceled at session end", Order = 5, GroupName = "Sessions")]
-        public bool CloseAtSessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "London Skip Times")]
-        public TimeSpan London_SkipStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "London Skip Times")]
-        public TimeSpan London_SkipEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "London Skip Times")]
-        public TimeSpan London_Skip2Start { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "London Skip Times")]
-        public TimeSpan London_Skip2End { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "New York Skip Times")]
-        public TimeSpan NewYork_SkipStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "New York Skip Times")]
-        public TimeSpan NewYork_SkipEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip Start 2", Description = "Start of 2nd skip window", Order = 3, GroupName = "New York Skip Times")]
-        public TimeSpan NewYork_Skip2Start { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip End 2", Description = "End of 2nd skip window", Order = 4, GroupName = "New York Skip Times")]
-        public TimeSpan NewYork_Skip2End { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Force Close at Skip Start", Description = "If true, flatten/cancel as soon as a skip window begins", Order = 5, GroupName = "Skip Times")]
-        public bool ForceCloseAtSkipStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Use FOMC Skip Filter", Description = "Skip trading during FOMC window on listed dates", Order = 6, GroupName = "Skip Times")]
-        public bool UseFomcSkip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "FOMC Skip Start", Description = "Start of FOMC skip window (chart time)", Order = 7, GroupName = "Skip Times")]
-        public TimeSpan FomcSkipStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "FOMC Skip End", Description = "End of FOMC skip window (chart time)", Order = 8, GroupName = "Skip Times")]
-        public TimeSpan FomcSkipEnd { get; set; }
-
-        // State tracking
-        private bool longOrderPlaced = false;
-        private bool shortOrderPlaced = false;
-        private Order longEntryOrder = null;
-        private Order shortEntryOrder = null;
-        private TimeSpan sessionStart = new TimeSpan(9, 40, 0);
-        private TimeSpan sessionEnd = new TimeSpan(15, 00, 0);  
-		private TimeSpan noTradesAfter = new TimeSpan(14, 30, 0);
-        private TimeSpan session2SessionStart = new TimeSpan(9, 40, 0);
-        private TimeSpan session2SessionEnd = new TimeSpan(15, 00, 0);
-        private TimeSpan session2NoTradesAfter = new TimeSpan(14, 30, 0);
-        private TimeSpan skipStart = new TimeSpan(00, 00, 0);
-        private TimeSpan skipEnd = new TimeSpan(00, 00, 0);
-        private TimeSpan skip2Start = new TimeSpan(00, 00, 0);
-        private TimeSpan skip2End = new TimeSpan(00, 00, 0); 
-        private int skipBarUntil = -1;
-        private int lastBarProcessed = -1;
-        private double currentLongTP = 0;
-        private double currentShortTP = 0;
-        private double currentLongEntry = 0;
-        private double currentShortEntry = 0;
-        private double currentLongSL = 0;
-        private double currentShortSL = 0;
-        private double currentLongC1High = 0;
-        private double currentLongC1Low = 0;
-        private double currentLongC2High = 0;
-        private double currentLongC2Low = 0;
-        private double currentLongC12Body = 0;
-        private double currentShortC1High = 0;
-        private double currentShortC1Low = 0;
-        private double currentShortC2High = 0;
-        private double currentShortC2Low = 0;
-        private double currentShortC12Body = 0;
-        private bool First_Candle_High_Low = true;
-        private bool First_Candle_Open = false;
-        private bool Second_Candle_High_Low = false;
-        private bool Second_Candle_Open= false;
-        private double currentLongCancelPrice = 0;
-        private double currentShortCancelPrice = 0;
-        private double ifvgLastEntryPriceLong = 0;
-        private double ifvgLastEntryPriceShort = 0;
-        private double lastPrimaryEntryPrice = 0;
-        private bool lastPrimaryEntryIsLong = true;
-        private Random rng;
-        private string displayText = "Waiting...";
-        private bool sessionClosed = false;
-        private bool debug = true;
-        private int longSignalBar = -1;
-        private int shortSignalBar = -1;
-        private bool longLinesActive = false;
-        private bool shortLinesActive = false;
-        private int longExitBar = -1;
-        private int shortExitBar = -1;
-        private SessionSlot activeSession = SessionSlot.None;
         private bool sessionInitialized;
-        private DateTime effectiveTimesDate = DateTime.MinValue;
-        private TimeSpan effectiveSessionStart;
-        private TimeSpan effectiveSessionEnd;
-        private TimeSpan effectiveNoTradesAfter;
-        private TimeSpan effectiveSkipStart;
-        private TimeSpan effectiveSkipEnd;
-        private TimeSpan effectiveSkip2Start;
-        private TimeSpan effectiveSkip2End;
-        private bool activeAutoShiftTimes;
-        private double activeMinC12Body;
-        private double activeMaxC12Body;
-        private double activeMinCandlePoints;
-        private double activeOffsetPerc;
-        private double activeTpPerc;
-        private double activeCancelPerc;
-        private double activeDeviationPerc;
-        private double activeSLPadding;
-        private double activeMaxSLTPRatioPerc;
-        private SLPreset activeSLPresetSetting;
-        private double activeSLPercentFirstCandle;
-        private double activeMaxSLPoints;
-        private double activeMaxSessionGain;
-        private int activeContracts;
-        private TimeSpan activeSessionStart;
-        private TimeSpan activeSessionEnd;
-        private TimeSpan activeNoTradesAfter;
-        private TimeSpan activeSkipStart;
-        private TimeSpan activeSkipEnd;
-        private TimeSpan activeSkip2Start;
-        private TimeSpan activeSkip2End;
-        private bool activeUseMarketEntry;
+        private SessionSlot activeSession = SessionSlot.None;
+        private SessionSlot lockedTradeSession = SessionSlot.None;
+        private int lastDeferredSessionLogBar = -1;
+        private bool tradeAttemptOpen;
+        private int tradeAttemptId;
+        private string tradeAttemptSide = string.Empty;
+        private int tradeLineTagCounter;
+        private string tradeLineTagPrefix = string.Empty;
+        private bool tradeLinesActive;
+        private bool tradeLineHasTp;
+        private int tradeLineSignalBar = -1;
+        private int tradeLineExitBar = -1;
+        private double tradeLineEntryPrice;
+        private double tradeLineTpPrice;
+        private double tradeLineSlPrice;
+
+        private EMA emaAsia;
+        private EMA emaNewYork;
+        private EMA activeEma;
+        private DM adxAsia;
+        private DM adxNewYork;
+        private DM activeAdx;
+
         private int activeEmaPeriod;
-        private EmaBodyFilterMode activeEmaBodyFilterMode;
-		private TimeZoneInfo targetTimeZone;
-		private TimeZoneInfo londonTimeZone;
-        private int lineTagCounter = 0;
-        private string longLineTagPrefix = "LongLine_0_";
-        private string shortLineTagPrefix = "ShortLine_0_";
-        private const string FomcDatesRaw = 
-            "2025-01-29\n" +
-            "2025-03-19\n" +
-            "2025-05-07\n" +
-            "2025-06-18\n" +
-            "2025-07-30\n" +
-            "2025-09-17\n" +
-            "2025-10-29\n" +
-            "2025-12-10\n" +
-            "2026-01-28\n" +
-            "2026-03-18\n" +
-            "2026-04-29\n" +
-            "2026-06-17\n" +
-            "2026-07-29\n" +
-            "2026-09-16\n" +
-            "2026-10-28\n" +
-            "2026-12-09";
-        private HashSet<DateTime> fomcDates;
-        private bool fomcDatesInitialized;
-        private TimeZoneInfo easternTimeZone;
-        // --- Webhook state (send entry only after order Accepted/Working) ---
-        private bool pendingLongWebhook;
-        private double pendingLongEntry;
-        private double pendingLongTP;
-        private double pendingLongSL;
-        private bool pendingShortWebhook;
-        private double pendingShortEntry;
-        private double pendingShortTP;
-        private double pendingShortSL;
-        private bool pendingIfvgLongWebhook;
-        private bool pendingIfvgShortWebhook;
-        private double pendingIfvgLongEntry;
-        private double pendingIfvgLongTP;
-        private double pendingIfvgLongSL;
-        private double pendingIfvgShortEntry;
-        private double pendingIfvgShortTP;
-        private double pendingIfvgShortSL;
-        private bool pendingIfvgLongMarketEntry;
-        private bool pendingIfvgShortMarketEntry;
-        private string lastLongWebhookOrderId;
-        private string lastShortWebhookOrderId;
-        private string lastIfvgLongWebhookOrderId;
-        private string lastIfvgShortWebhookOrderId;
-        private double lastLongWebhookEntry;
-        private double lastLongWebhookTP;
-        private double lastLongWebhookSL;
-        private double lastShortWebhookEntry;
-        private double lastShortWebhookTP;
-        private double lastShortWebhookSL;
-        private double lastIfvgLongWebhookEntry;
-        private double lastIfvgLongWebhookTP;
-        private double lastIfvgLongWebhookSL;
-        private double lastIfvgShortWebhookEntry;
-        private double lastIfvgShortWebhookTP;
-        private double lastIfvgShortWebhookSL;
-        private int lastCancelWebhookBar = -1;
-        private int lastExitWebhookBar = -1;
-        private string lastCancelWebhookOrderId;
-        private double lastCancelWebhookLimitPrice;
-        private string lastExitWebhookExecutionId;
+        private int activeContracts;
+        private InitialStopMode activeEntryStopMode;
+        private double activeEmaMinSlopePointsPerBar;
+        private double activeMaxEntryDistanceFromEmaPoints;
+        private double activeExitCrossPoints;
+        private double activeTakeProfitPoints;
+        private int activeAdxPeriod;
+        private double activeAdxThreshold;
+        private double activeAdxMaxThreshold;
+        private double activeAdxMinSlopePoints;
+        private double activeAdxPeakDrawdownExitUnits;
+        private double activeAdxAbsoluteExitLevel;
+        private double activeStopPaddingPoints;
+
+        private double pendingLongStopForWebhook;
+        private double pendingShortStopForWebhook;
+        private double currentTradePeakAdx;
+        private MarketPosition trackedAdxPeakPosition = MarketPosition.Flat;
         private string projectXSessionToken;
-        private DateTime projectXTokenAcquiredUtc = DateTime.MinValue;
+        private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
         private int? projectXLastOrderId;
         private string projectXLastOrderContractId;
+        private bool accountBalanceLimitReached;
+        private int accountBalanceLimitReachedBar = -1;
+        private int asiaTradesThisSession;
+        private int newYorkTradesThisSession;
+        private string currentPositionEntrySignal = string.Empty;
+        private const double FlipBodyThresholdPercent = 0.0;
+        private const string LongEntrySignal = "LongEntry";
+        private const string ShortEntrySignal = "ShortEntry";
+        private const string LongFlipEntrySignal = "LongFlipEntry";
+        private const string ShortFlipEntrySignal = "ShortFlipEntry";
 
-        // --- Heartbeat reporting ---
-        private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
-        private System.Timers.Timer heartbeatTimer;
-        private DateTime lastHeartbeatWrite = DateTime.MinValue;
-        private int heartbeatIntervalSeconds = 10; // send heartbeat every 10 seconds
-        private static readonly object heartbeatFileLock = new object();
-        private string heartbeatId;
+        private static readonly string NewsDatesRaw =
+@"2025-01-10,08:30
+2025-01-14,08:30
+2025-01-15,08:30
+2025-02-07,08:30
+2025-02-12,08:30
+2025-03-07,08:30
+2025-03-12,08:30
+2025-04-04,08:30
+2025-04-10,08:30
+2025-05-02,08:30
+2025-05-13,08:30
+2025-06-06,08:30
+2025-06-11,08:30
+2025-07-03,08:30
+2025-07-15,08:30
+2025-08-01,08:30
+2025-08-12,08:30
+2025-09-04,08:30
+2025-09-11,08:30
+2025-11-20,08:30
+2025-12-03,08:30
+2026-01-09,08:30
+2026-01-13,08:30
+2026-02-06,08:30
+2026-02-10,08:30
+2026-02-11,08:30
+2026-03-05,08:30
+2026-03-11,08:30
+2026-04-03,08:30
+2026-04-10,08:30
+2026-05-07,08:30
+2026-05-12,08:30
+2026-06-05,08:30
+2026-06-10,08:30
+2026-07-02,08:30
+2026-07-14,08:30
+2026-08-06,08:30
+2026-08-12,08:30
+2026-09-03,08:30
+2026-09-11,08:30
+2026-10-02,08:30
+2026-10-14,08:30
+2026-11-05,08:30
+2026-11-10,08:30
+2026-12-04,08:30
+2025-01-28,14:00
+2025-03-19,14:00
+2025-05-07,14:00
+2025-06-18,14:00
+2025-07-30,14:00
+2025-09-17,14:00
+2025-10-29,14:00
+2025-12-10,14:00
+2026-01-28,14:00
+2026-03-18,14:00
+2026-04-29,14:00
+2026-06-17,14:00
+2026-07-29,14:00
+2026-09-15,14:00
+2026-10-27,14:00
+2026-12-09,14:00";
 
-        // === Shared Anti-Hedge Lock System ===
-        private static readonly object hedgeLockSync = new object();
-        private static readonly string hedgeLockFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "AntiHedgeLock.csv");
-        private double sessionStartCumProfit;
-        private bool sessionGainLimitReached;
-        private List<IfvgBox> ifvgActiveFvgs;
-        private List<IfvgBox> ifvgBreakEvenFvgs;
-        private List<IfvgSwingLine> ifvgSwingLines;
-        private int ifvgCounter;
-        private bool ifvgOverrideActive;
-        private IfvgDirection? ifvgActiveDirection;
-        private double ifvgEntryLower;
-        private double ifvgEntryUpper;
-        private int ifvgLastEntryBar = -1;
-        private SMA ifvgVolumeFastSmaLondon;
-        private SMA ifvgVolumeSlowSmaLondon;
-        private SMA ifvgVolumeFastSmaNewYork;
-        private SMA ifvgVolumeSlowSmaNewYork;
-        private SMA ifvgVolumeFastSmaActive;
-        private SMA ifvgVolumeSlowSmaActive;
-        private EMA emaLondon;
-        private EMA emaNewYork;
-        private EMA emaActive;
-        private IfvgSweepEvent ifvgLastSwingSweep;
-        private bool ifvgBreakEvenActive;
-        private bool ifvgBreakEvenTriggered;
-        private double ifvgBreakEvenPrice;
-        private IfvgDirection? ifvgBreakEvenDirection;
-        private string ifvgActiveTradeTag;
-        private string ifvgLastTradeLabelPrinted;
-        private double activeIfvgMinSizePoints;
-        private double activeIfvgMaxSizePoints;
-        private double activeIfvgMinTpSlDistancePoints;
-        private int activeIfvgSwingStrength;
-        private int activeIfvgSwingDrawBars;
-        private int activeIfvgMaxBarsBetweenSweepAndIfvg;
-        private bool activeIfvgUseBreakEvenWickLine;
-        private bool activeIfvgUseVolumeSmaFilter;
-        private int activeIfvgVolumeFastSmaPeriod;
-        private int activeIfvgVolumeSlowSmaPeriod;
-        private double activeIfvgVolumeSmaMultiplier;
-        private const string IfvgLongSignalName = "iFVG_Long";
-        private const string IfvgShortSignalName = "iFVG_Short";
-
-        private class IfvgBox
-        {
-            public string Tag;
-            public int StartBarIndex;
-            public int EndBarIndex;
-            public int CreatedBarIndex;
-            public double Upper;
-            public double Lower;
-            public bool IsBullish;
-            public bool IsActive;
-        }
-
-        private class IfvgSwingLine
-        {
-            public string Tag;
-            public double Price;
-            public int StartBarIndex;
-            public int EndBarIndex;
-            public bool IsActive;
-            public bool IsHigh;
-        }
-
-        private class IfvgSweepEvent
-        {
-            public IfvgDirection Direction;
-            public double Price;
-            public int BarIndex;
-        }
+        private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static bool newsDatesInitialized;
 
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
-                Name = "DuoTesting";
+                Name = "DuoTesting2";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
+                IsExitOnSessionCloseStrategy = true;
                 IsInstantiatedOnEachOptimizationIteration = false;
-                ShowEmaOnChart = true;
+                RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
 
-                // London
-                London_Contracts     = 2;
-                London_MinC12Body  = 13;
-                London_MinCandlePoints = 0;
-                London_MaxC12Body  = 112.5;
-                London_OffsetPerc  = 5.7;
-                London_TpPerc      = 31.7;
-                London_CancelPerc  = 180.5;
-                London_DeviationPerc = 0;
-                London_SLPadding = 0;
-                London_MaxSLTPRatioPerc = 445;
-                London_SLPresetSetting = SLPreset.First_Candle_High_Low;
-                London_SLPercentFirstCandle = 100;
-                London_MaxSLPoints = 112;
-                London_MaxSessionGain = 160;
-                London_UseMarketEntry = false;
-                London_EmaPeriod = 21;
-                London_EmaBodyFilterMode = EmaBodyFilterMode.SecondBodyOnly;
-                London_SessionStart  = new TimeSpan(1, 30, 0);
-                London_SessionEnd    = new TimeSpan(5, 30, 0);
-                London_NoTradesAfter = new TimeSpan(5, 00, 0);
-                London_SkipStart     = new TimeSpan(0, 0, 0);
-                London_SkipEnd       = new TimeSpan(0, 0, 0);
-                London_Skip2Start     = new TimeSpan(0, 0, 0);
-                London_Skip2End       = new TimeSpan(0, 0, 0);
-                London_IfvgMinSizePoints = 8.25;
-                London_IfvgMaxSizePoints = 14.75;
-                London_IfvgMinTpSlDistancePoints = 3;
-                London_IfvgSwingStrength = 1;
-                London_IfvgSwingDrawBars = 300;
-                London_IfvgMaxBarsBetweenSweepAndIfvg = 12;
-                London_IfvgUseBreakEvenWickLine = true;
-                London_IfvgUseVolumeSmaFilter = false;
-                London_IfvgVolumeFastSmaPeriod = 5;
-                London_IfvgVolumeSlowSmaPeriod = 20;
-                London_IfvgVolumeSmaMultiplier = 1;
-                // New York
-                NewYork_Contracts     = 1;
-                NewYork_MinC12Body  = 19;
-                NewYork_MinCandlePoints = 1;
-                NewYork_MaxC12Body  = 132;
-                NewYork_OffsetPerc  = 0.2;
-                NewYork_TpPerc      = 28.3;
-                NewYork_CancelPerc  = 114.5;
-                NewYork_DeviationPerc = 0;
-                NewYork_SLPadding = 0;
-                NewYork_MaxSLTPRatioPerc = 479;
-                NewYork_SLPresetSetting = SLPreset.First_Candle_High_Low;
-                NewYork_SLPercentFirstCandle = 100;
-                NewYork_MaxSLPoints = 139;
-                NewYork_MaxSessionGain = 145;
-                NewYork_UseMarketEntry = false;
-                NewYork_EmaPeriod = 21;
-                NewYork_EmaBodyFilterMode = EmaBodyFilterMode.SecondBodyOnly;
-                NewYork_SessionStart = new TimeSpan(9, 40, 0);
-                NewYork_SessionEnd = new TimeSpan(15, 00, 0);
-                NewYork_NoTradesAfter = new TimeSpan(14, 30, 0);
-                NewYork_SkipStart = new TimeSpan(11, 45, 0);
-                NewYork_SkipEnd = new TimeSpan(13, 15, 0);
-                NewYork_Skip2Start = new TimeSpan(0, 0, 0);
-                NewYork_Skip2End = new TimeSpan(0, 0, 0);
-                NewYork_IfvgMinSizePoints = 6;
-                NewYork_IfvgMaxSizePoints = 27;
-                NewYork_IfvgMinTpSlDistancePoints = 0;
-                NewYork_IfvgSwingStrength = 2;
-                NewYork_IfvgSwingDrawBars = 300;
-                NewYork_IfvgMaxBarsBetweenSweepAndIfvg = 17;
-                NewYork_IfvgUseBreakEvenWickLine = true;
-                NewYork_IfvgUseVolumeSmaFilter = true;
-                NewYork_IfvgVolumeFastSmaPeriod = 5;
-                NewYork_IfvgVolumeSlowSmaPeriod = 20;
-                NewYork_IfvgVolumeSmaMultiplier = 1;
-                // Other defaults
-                SessionBrush  = Brushes.Gold;
-                CloseAtSessionEnd = true;
-                UseSession1 = true;
-                UseSession2 = true;
-                AutoShiftSession1 = true;
-                AutoShiftSession2 = false;
-                ForceCloseAtSkipStart = true;
-                UseFomcSkip = true;
-                FomcSkipStart = new TimeSpan(14, 5, 0);
-                FomcSkipEnd = new TimeSpan(14, 10, 0);
-                RequireEntryConfirmation = false;
-                AntiHedge = false;
-                WebhookUrl = "";
+                UseAsiaSession = true;
+                AsiaSessionStart = new TimeSpan(18, 30, 0);
+                AsiaSessionEnd = new TimeSpan(2, 00, 0);
+                AsiaBlockSundayTrades = false;
+                AsiaEmaPeriod = 21;
+                AsiaContracts = 1;
+                AsiaAdxPeriod = 14;
+                AsiaAdxThreshold = 19.7;
+                AsiaAdxMaxThreshold = 43.6;
+                AsiaAdxMinSlopePoints = 1.37;
+                AsiaAdxPeakDrawdownExitUnits = 13.0;
+                AsiaEmaMinSlopePointsPerBar = 0.5;
+                AsiaMaxEntryDistanceFromEmaPoints = 21.0;
+                AsiaStopPaddingPoints = 54.5;
+                AsiaExitCrossPoints = 3.5;
+                AsiaTakeProfitPoints = 93.75;
+                AsiaAdxAbsoluteExitLevel = 57.7;
+
+                UseNewYorkSession = true;
+                NewYorkSessionStart = new TimeSpan(9, 40, 0);
+                NewYorkSessionEnd = new TimeSpan(13, 30, 0);
+                NewYorkSkipStart = new TimeSpan(12, 00, 0);
+                NewYorkSkipEnd = new TimeSpan(12, 25, 0);
+                NewYorkEmaPeriod = 16;
+                NewYorkContracts = 1;
+                NewYorkAdxPeriod = 14;
+                NewYorkAdxThreshold = 16;
+                NewYorkAdxMaxThreshold = 58.0;
+                NewYorkAdxMinSlopePoints = 1.58;
+                NewYorkAdxPeakDrawdownExitUnits = 19.6;
+                NewYorkEmaMinSlopePointsPerBar = 0.8;
+                NewYorkMaxEntryDistanceFromEmaPoints = 44.0;
+                NewYorkStopPaddingPoints = 63;
+                NewYorkExitCrossPoints = 1.25;
+                NewYorkTakeProfitPoints = 123.75;
+                NewYorkAdxAbsoluteExitLevel = 70.0;
+
+                CloseAtSessionEnd = false;
+                AsiaSessionBrush = Brushes.Gold;
+                NewYorkSessionBrush = Brushes.Gold;
+                SessionBrush = Brushes.Gold;
+                ShowEmaOnChart = true;
+                ShowAdxOnChart = true;
+                ShowAdxThresholdLines = true;
+
+                UseNewsSkip = true;
+                NewsBlockMinutes = 1;
+
+                WebhookUrl = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
-                ReverseOnSignal = true;
                 ProjectXApiBaseUrl = "https://gateway-api-demo.s2f.projectx.com";
-                ProjectXUsername = "";
-                ProjectXApiKey = "";
-                ProjectXAccountId = "";
-                ProjectXContractId = "";
-                FlattenOnMaxSessionGain = false;
-                UseIfvgAddon = true;
-                IfvgDebugLogging = false;
-                IfvgVerboseDebugLogging = false;
-                IfvgAllowWhenLosing = true;
-                IfvgAllowWhenGreen = false;
-                IfvgAllowFromFlat = true;
-                IfvgAllowReversalEntries = true;
-                IfvgTpSetting = IfvgTpMode.OriginalDuoStop;
-                IfvgTpPerc = 100;
-                IfvgSlSetting = IfvgSlMode.OriginalCandle2Wick;
+                ProjectXUsername = string.Empty;
+                ProjectXApiKey = string.Empty;
+                ProjectXAccountId = string.Empty;
+                ProjectXContractId = string.Empty;
+                MaxAccountBalance = 0.0;
+                MaxTradesPerSession = 4;
+                RequireEntryConfirmation = false;
+
+                DebugLogging = false;
             }
             else if (State == State.DataLoaded)
             {
-                // heartbeatId = BuildHeartbeatId();
-                // //--- Heartbeat timer setup ---
-                // heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
-                // heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
-                // heartbeatTimer.AutoReset = true;
-                // heartbeatTimer.Start();
-
-                ApplyStopLossPreset(London_SLPresetSetting);
-                ifvgActiveFvgs = new List<IfvgBox>();
-                ifvgBreakEvenFvgs = new List<IfvgBox>();
-                ifvgSwingLines = new List<IfvgSwingLine>();
-                ifvgCounter = 0;
-                ifvgOverrideActive = false;
-                ifvgActiveDirection = null;
-                ifvgEntryLower = 0;
-                ifvgEntryUpper = 0;
-                ifvgVolumeFastSmaLondon = SMA(Volume, London_IfvgVolumeFastSmaPeriod);
-                ifvgVolumeSlowSmaLondon = SMA(Volume, London_IfvgVolumeSlowSmaPeriod);
-                ifvgVolumeFastSmaNewYork = SMA(Volume, NewYork_IfvgVolumeFastSmaPeriod);
-                ifvgVolumeSlowSmaNewYork = SMA(Volume, NewYork_IfvgVolumeSlowSmaPeriod);
-                emaLondon = London_EmaPeriod > 0 ? EMA(Close, London_EmaPeriod) : null;
-                emaNewYork = NewYork_EmaPeriod > 0 ? EMA(Close, NewYork_EmaPeriod) : null;
+                emaAsia = EMA(AsiaEmaPeriod);
+                emaNewYork = EMA(NewYorkEmaPeriod);
+                adxAsia = DM(AsiaAdxPeriod);
+                adxNewYork = DM(NewYorkAdxPeriod);
+                UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
+                UpdateAdxReferenceLines(adxNewYork, NewYorkAdxThreshold, NewYorkAdxMaxThreshold);
 
                 if (ShowEmaOnChart)
                 {
-                    if (emaLondon != null)
-                        AddChartIndicator(emaLondon);
-                    if (emaNewYork != null)
-                        AddChartIndicator(emaNewYork);
+                    AddChartIndicator(emaAsia);
+                    AddChartIndicator(emaNewYork);
                 }
-            }
-            else if (State == State.Configure)
-            {
-                rng = new Random();
-            }
-            else if (State == State.Terminated)
-            {
-                //--- Clean up heartbeat timer ---
-                // if (heartbeatTimer != null)
-                // {
-                //     heartbeatTimer.Stop();
-                //     heartbeatTimer.Dispose();
-                //     heartbeatTimer = null;
-                // }
+
+                AddChartIndicator(adxAsia);
+                AddChartIndicator(adxNewYork);
+
+                sessionInitialized = false;
+                activeSession = GetFirstConfiguredSession();
+                lockedTradeSession = SessionSlot.None;
+                lastDeferredSessionLogBar = -1;
+                tradeAttemptOpen = false;
+                tradeAttemptId = 0;
+                tradeAttemptSide = string.Empty;
+                tradeLineTagCounter = 0;
+                tradeLineTagPrefix = string.Empty;
+                tradeLinesActive = false;
+                tradeLineHasTp = false;
+                tradeLineSignalBar = -1;
+                tradeLineExitBar = -1;
+                tradeLineEntryPrice = 0.0;
+                tradeLineTpPrice = 0.0;
+                tradeLineSlPrice = 0.0;
+                ApplyInputsForSession(activeSession);
+                UpdateEmaPlotVisibility();
+                UpdateAdxPlotVisibility();
+                pendingLongStopForWebhook = 0.0;
+                pendingShortStopForWebhook = 0.0;
+                currentTradePeakAdx = 0.0;
+                trackedAdxPeakPosition = MarketPosition.Flat;
+                projectXSessionToken = null;
+                projectXTokenAcquiredUtc = Core.Globals.MinDate;
+                projectXLastOrderId = null;
+                projectXLastOrderContractId = null;
+                accountBalanceLimitReached = false;
+                accountBalanceLimitReachedBar = -1;
+                asiaTradesThisSession = 0;
+                newYorkTradesThisSession = 0;
+
+                EnsureNewsDatesInitialized();
+
+                LogDebug(
+                    string.Format(
+                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} MaxTradesPerSession={5} ExitCross={6:0.##} EntryStop={7}",
+                        FormatSessionLabel(activeSession),
+                        activeEmaPeriod,
+                        activeAdxPeriod,
+                        activeAdxThreshold,
+                        activeContracts,
+                        MaxTradesPerSession,
+                        activeExitCrossPoints,
+                        activeEntryStopMode));
             }
         }
 
         protected override void OnBarUpdate()
         {
-            if (CurrentBar < 2)
+            if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())))
                 return;
 
-			EnsureActiveSession(Time[0]);
-			EnsureEffectiveTimes(Time[0], false);
-			TimeSpan noTradesAfter = effectiveNoTradesAfter;
-			
-			// Reset sessionClosed when a new session starts
-			if (IsFirstTickOfBar && TimeInSession(Time[0]) && sessionClosed)
-			{
-			    sessionClosed = false;
-                sessionStartCumProfit = GetTotalCumProfitPoints();
-                sessionGainLimitReached = false;
-			
-			    longOrderPlaced = false;
-			    shortOrderPlaced = false;
-			    longEntryOrder = null;
-			    shortEntryOrder = null;
-			
-			    currentLongEntry = 0;
-			    currentShortEntry = 0;
-			    currentLongTP = 0;
-			    currentShortTP = 0;
-                currentLongSL = 0;
-			    currentShortSL = 0;
-			    currentLongCancelPrice = 0;
-			    currentShortCancelPrice = 0;
-			
-			    skipBarUntil = -1;
-			    lastBarProcessed = -1;
-                longSignalBar = -1;
-                shortSignalBar = -1;
-                longLinesActive = false;
-                shortLinesActive = false;
-                longExitBar = -1;
-                shortExitBar = -1;
-            
-                displayText = "Waiting...";
-
-                if (UseIfvgAddon && ifvgActiveFvgs != null)
-                {
-                    ifvgActiveFvgs.Clear();
-                    if (ifvgBreakEvenFvgs != null)
-                        ifvgBreakEvenFvgs.Clear();
-                    if (ifvgSwingLines != null)
-                        ifvgSwingLines.Clear();
-                    ifvgCounter = 0;
-                    ifvgOverrideActive = false;
-                    ifvgActiveDirection = null;
-                    ifvgEntryLower = 0;
-                    ifvgEntryUpper = 0;
-                    ifvgLastSwingSweep = null;
-                    ifvgBreakEvenActive = false;
-                    ifvgBreakEvenTriggered = false;
-                    ifvgBreakEvenPrice = 0;
-                    ifvgBreakEvenDirection = null;
-                    ifvgActiveTradeTag = null;
-                    ifvgLastTradeLabelPrinted = null;
-                }
-            
-                Print($"{Time[0]} - New session started, state reset.");
-				}
-
-            DrawSessionBackground();
+            DrawSessionBackgrounds();
+            DrawNewsWindows(Time[0]);
+            UpdateTradeLines();
             UpdateInfo();
 
-			// === Skip window cross detection ===
-			bool crossedSkipWindow =
-				(!TimeInSkip(Time[1]) && TimeInSkip(Time[0]))   // just entered a skip window
-				|| (TimeInSkip(Time[1]) && !TimeInSkip(Time[0])); // just exited a skip window
+            ProcessSessionTransitions(SessionSlot.Asia);
+            ProcessSessionTransitions(SessionSlot.NewYork);
+            ReconcileTrackedEntryOrders();
 
-			if (crossedSkipWindow)
-			{
-				if (TimeInSkip(Time[0]))
-				{
-					// 🔹 We just entered a skip window
-                    if (debug)
-					    Print($"{Time[0]} - ⛔ Entered skip window");
+            UpdateActiveSession(Time[0]);
+            UpdateEmaPlotVisibility();
+            UpdateAdxPlotVisibility();
 
-	                    if (ForceCloseAtSkipStart)
-	                    {
-	                        FlattenAll("SkipWindow");
-	                    }
-				}
-				else
-				{
-					// 🔹 We just exited the skip window
-                    if (debug)
-					    Print($"{Time[0]} - ✅ Exited skip window");
-				}
-			}
-
-
-			// === Session check ===
-			bool crossedSessionEnd = CrossedSessionEnd(Time[1], Time[0]);
-            
-            bool isLastBarOfTradingSession = Bars.IsLastBarOfSession && !sessionClosed;
-            
-			if (crossedSessionEnd || isLastBarOfTradingSession)
+            bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
+            bool inNewsSkipPrev = CurrentBar > 0 && TimeInNewsSkip(Time[1]);
+            if (!inNewsSkipPrev && inNewsSkipNow)
             {
-                if (CloseAtSessionEnd)
+                CancelWorkingEntryOrders();
+                LogDebug("Entered news block: canceling working entries.");
+            }
+
+            bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
+            bool inNySkipNow = activeSession == SessionSlot.NewYork && IsNewYorkSkipTime(Time[0]);
+            bool isAsiaSundayBlockedNow = activeSession == SessionSlot.Asia && AsiaBlockSundayTrades && Time[0].DayOfWeek == DayOfWeek.Sunday;
+            bool accountBlocked = IsAccountBalanceBlocked();
+            double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+            UpdateAdxPeakTracker(adxValue);
+            double adxSlope = GetAdxSlopePoints();
+            bool adxMinPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
+            bool adxThresholdPass = adxMinPass && adxMaxPass;
+            bool adxSlopePass = !inActiveSessionNow || activeAdxMinSlopePoints <= 0.0 || adxSlope >= activeAdxMinSlopePoints;
+            bool adxPass = adxThresholdPass && adxSlopePass;
+            int tradesThisSession = GetTradesThisSession(activeSession);
+            bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
+            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked;
+
+            if (!inActiveSessionNow)
+                CancelWorkingEntryOrders();
+
+            if (inNySkipNow)
+                CancelWorkingEntryOrders();
+
+            if (isAsiaSundayBlockedNow)
+                CancelWorkingEntryOrders();
+
+            if (activeEma == null || CurrentBar < activeEmaPeriod)
+                return;
+
+            double emaValue = activeEma[0];
+            bool bullish = Close[0] > Open[0];
+            bool bearish = Close[0] < Open[0];
+            double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
+            double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
+            double emaDistancePoints = Math.Abs(Close[0] - emaValue);
+            bool distancePasses = activeMaxEntryDistanceFromEmaPoints <= 0.0 || emaDistancePoints <= activeMaxEntryDistanceFromEmaPoints;
+            bool emaSlopeLongPass = EmaSlopePassesLong();
+            bool emaSlopeShortPass = EmaSlopePassesShort();
+            bool longSignal = bullish && bodyAbovePercent > 0.0;
+            bool shortSignal = bearish && bodyBelowPercent > 0.0;
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
-                    if (Position.MarketPosition != MarketPosition.Flat)
+                    ExitLong("AdxLevelExit", GetOpenLongEntrySignal());
+                    LogDebug(string.Format("Exit LONG | reason=AdxLevel adx={0:0.00} threshold={1:0.00}",
+                        adxValue, activeAdxAbsoluteExitLevel));
+                    return;
+                }
+
+                double adxDrawdown;
+                if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
+                {
+                    ExitLong("AdxDrawdownExit", GetOpenLongEntrySignal());
+                    LogDebug(string.Format("Exit LONG | reason=AdxDrawdown adx={0:0.00} peak={1:0.00} drawdown={2:0.00} threshold={3:0.00}",
+                        adxValue, currentTradePeakAdx, adxDrawdown, activeAdxPeakDrawdownExitUnits));
+                    return;
+                }
+
+                if (activeTakeProfitPoints > 0.0 && Close[0] >= Position.AveragePrice + activeTakeProfitPoints)
+                {
+                    ExitLong("TakeProfitExit", GetOpenLongEntrySignal());
+                    LogDebug(string.Format("Exit LONG | reason=TakeProfit close={0:0.00} avg={1:0.00} tpPts={2:0.00}",
+                        Close[0], Position.AveragePrice, activeTakeProfitPoints));
+                    return;
+                }
+
+                if (Close[0] <= emaValue - activeExitCrossPoints)
+                {
+                    if (DebugLogging && canTradeNow && !distancePasses && emaSlopeShortPass && bodyBelowPercent >= FlipBodyThresholdPercent)
                     {
-                        // Case 1: In a position -> flatten (Managed Mode removes TP/SL too)
-                        FlattenAll("SessionEnd");
+                        LogDebug(string.Format(
+                            "Flip blocked | reason=EmaDistance side=Short distancePts={0:0.00} maxPts={1:0.00} session={2}",
+                            emaDistancePoints,
+                            activeMaxEntryDistanceFromEmaPoints,
+                            FormatSessionLabel(activeSession)));
+                    }
+
+                    bool flipCanTradePass = canFlipNow;
+                    bool flipDistancePass = distancePasses;
+                    bool flipSlopePass = emaSlopeShortPass;
+                    bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
+                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    if (shouldFlip)
+                    {
+                        CancelOrderIfActive(longEntryOrder, "FlipToShort");
+                        CancelOrderIfActive(shortEntryOrder, "FlipToShort");
+
+                        double stopPrice = BuildFlipShortStopPrice(Close[0], Open[0], High[0]);
+                        int qty = GetEntryQuantity(Close[0], stopPrice);
+                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], qty))
+                        {
+                            LogDebug("Entry confirmation declined | Flip LONG->SHORT.");
+                            return;
+                        }
+                        pendingShortStopForWebhook = stopPrice;
+                        SetStopLossByDistanceTicks(ShortFlipEntrySignal, Close[0], stopPrice);
+                        SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, activeTakeProfitPoints);
+                        SendWebhook("sell", Close[0], Close[0], stopPrice, true, qty);
+                        StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                        EnterShort(qty, ShortFlipEntrySignal);
+
+                        LogDebug(string.Format(
+                            "Flip LONG->SHORT | close={0:0.00} ema={1:0.00} below%={2:0.0} stop={3:0.00} stopTicks={4} qty={5}",
+                            Close[0],
+                            emaValue,
+                            bodyBelowPercent,
+                            stopPrice,
+                            PriceToTicks(Math.Abs(Close[0] - stopPrice)),
+                            qty));
                     }
                     else
                     {
-                        // Case 2: No position but entry orders active -> cancel only entries
-                        //CancelEntryOrders("SessionEnd");
-							CancelOrder(shortEntryOrder);
-							CancelOrder(longEntryOrder);
-	                        SendWebhookCancelSafe();
-	                    }
-	                }
-	                else // CloseAtSessionEnd == false
-	                {
-                    if (Position.MarketPosition == MarketPosition.Flat)
+                        if (DebugLogging)
+                        {
+                            LogDebug(string.Format(
+                                "Flip skipped | side=Short canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} below%={4:0.0} minBody%={5:0.0}",
+                                flipCanTradePass,
+                                flipDistancePass,
+                                flipSlopePass,
+                                flipBodyPass,
+                                bodyBelowPercent,
+                                FlipBodyThresholdPercent));
+                        }
+                        ExitLong("EmaExitLong", GetOpenLongEntrySignal());
+                        LogDebug(string.Format("Exit LONG | close={0:0.00} ema={1:0.00} below%={2:0.0}", Close[0], emaValue, bodyBelowPercent));
+                    }
+                }
+
+                return;
+            }
+
+            if (Position.MarketPosition == MarketPosition.Short)
+            {
+                if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
+                {
+                    ExitShort("AdxLevelExit", GetOpenShortEntrySignal());
+                    LogDebug(string.Format("Exit SHORT | reason=AdxLevel adx={0:0.00} threshold={1:0.00}",
+                        adxValue, activeAdxAbsoluteExitLevel));
+                    return;
+                }
+
+                double adxDrawdown;
+                if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
+                {
+                    ExitShort("AdxDrawdownExit", GetOpenShortEntrySignal());
+                    LogDebug(string.Format("Exit SHORT | reason=AdxDrawdown adx={0:0.00} peak={1:0.00} drawdown={2:0.00} threshold={3:0.00}",
+                        adxValue, currentTradePeakAdx, adxDrawdown, activeAdxPeakDrawdownExitUnits));
+                    return;
+                }
+
+                if (activeTakeProfitPoints > 0.0 && Close[0] <= Position.AveragePrice - activeTakeProfitPoints)
+                {
+                    ExitShort("TakeProfitExit", GetOpenShortEntrySignal());
+                    LogDebug(string.Format("Exit SHORT | reason=TakeProfit close={0:0.00} avg={1:0.00} tpPts={2:0.00}",
+                        Close[0], Position.AveragePrice, activeTakeProfitPoints));
+                    return;
+                }
+
+                if (Close[0] >= emaValue + activeExitCrossPoints)
+                {
+                    if (DebugLogging && canTradeNow && !distancePasses && emaSlopeLongPass && bodyAbovePercent >= FlipBodyThresholdPercent)
                     {
-                        // Case 4: No position -> cancel only entries
-                        //CancelEntryOrders("SessionEnd (CloseAtSessionEnd=false)");
-							CancelOrder(shortEntryOrder);
-							CancelOrder(longEntryOrder);
-	                        SendWebhookCancelSafe();
-	                    }
-	                    // Case 3: In a position -> do nothing, let TP/SL handle it
-	                }
+                        LogDebug(string.Format(
+                            "Flip blocked | reason=EmaDistance side=Long distancePts={0:0.00} maxPts={1:0.00} session={2}",
+                            emaDistancePoints,
+                            activeMaxEntryDistanceFromEmaPoints,
+                            FormatSessionLabel(activeSession)));
+                    }
 
-                longLinesActive = false;
-                shortLinesActive = false;
-                longSignalBar = -1;
-                shortSignalBar = -1;
-                longExitBar = -1;
-                shortExitBar = -1;
-
-                sessionClosed = true;
-            }
-
-			// === No Trades After check ===
-			bool crossedNoTradesAfter = 
-				activeSession != SessionSlot.None
-				&& (Time[1].TimeOfDay <= noTradesAfter && Time[0].TimeOfDay > noTradesAfter);
-
-			if (crossedNoTradesAfter)
-			{
-                if (debug)
-				    Print($"{Time[0]} - ⛔ NoTradesAfter time crossed — canceling entry orders");
-					CancelOrder(shortEntryOrder);
-					CancelOrder(longEntryOrder);
-	                SendWebhookCancelSafe();
-				}
-
-            // 🔒 HARD GUARD: absolutely no logic inside skip windows
-            if (TimeInSkip(Time[0]))
-                return;
-
-            // 🔒 HARD GUARD: absolutely no new logic/entries outside session
-            if (!TimeInSession(Time[0]))
-                return;
-
-            // ✅ Always keep preview lines updating while in session
-            UpdatePreviewLines();
-
-            if (UseIfvgAddon)
-                UpdateIfvgAddon();
-
-            // 🔒 HARD GUARD: no entries after London_NoTradesAfter (but keep lines)
-            if (TimeInNoTradesAfter(Time[0])) {
-				CancelEntryIfAfterNoTrades();
-				return;
-			}
-
-            if (HasReachedSessionGainLimit())
-            {
-                CancelOrder(shortEntryOrder);
-                CancelOrder(longEntryOrder);
-                SendWebhookCancelSafe();
-                return;
-            }
-
-            if (UseIfvgAddon && ifvgOverrideActive)
-                return;
-
-            // 🔒 HARD GUARD: no signal/order logic while a position is open
-            if (Position.MarketPosition != MarketPosition.Flat)
-                return;
-
-            // === Long Cancel: TP hit before entry === 
-            if (longEntryOrder != null && longEntryOrder.OrderState == OrderState.Working)
-            {
-                if (High[0] >= currentLongCancelPrice && Low[0] > currentLongEntry)
-                //if (High[0] >= currentLongTP && Low[0] > currentLongEntry)
-                {
-	                    if (debug)
-	                        Print($"{Time[0]} - 🚫 Long cancel price hit before entry fill. Canceling order.");
-	                    CancelOrder(longEntryOrder);
-	                    SendWebhookCancelSafe(longEntryOrder);
-	                    longOrderPlaced = false;
-	                    longEntryOrder = null;
-
-                    int longCancelStartBarsAgo = longSignalBar >= 0 ? CurrentBar - longSignalBar : 1;
-
-                    Draw.Line(this, longLineTagPrefix + "LongEntryLineActive", false,
-                        longCancelStartBarsAgo, currentLongEntry,
-                        0, currentLongEntry,
-                        Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, longLineTagPrefix + "LongTPLineActive", false,
-                        longCancelStartBarsAgo, currentLongTP,
-                        0, currentLongTP,
-                        Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, longLineTagPrefix + "LongSLLineActive", false,
-                        longCancelStartBarsAgo, currentLongSL,
-                        0, currentLongSL,
-                        Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, longLineTagPrefix + "LongCancelLineActive", false,
-                        longCancelStartBarsAgo, currentLongCancelPrice,
-                        0, currentLongCancelPrice,
-                        Brushes.Gray, DashStyleHelper.Dot, 2);
-
-                    longLinesActive = false;
-                    longSignalBar = -1;
-                    longExitBar = -1;
-
-                    skipBarUntil = CurrentBar;
-                    if (debug)
-                        Print($"{Time[0]} - ➡️ Skipping signals until bar > {skipBarUntil}");
-                }
-            }
-
-            // === Short Cancel: TP hit before entry ===
-            if (shortEntryOrder != null && shortEntryOrder.OrderState == OrderState.Working)
-            {
-                if (Low[0] <= currentShortCancelPrice && High[0] < currentShortEntry)
-                //if (Low[0] <= currentShortTP && High[0] < currentShortEntry)
-                {
-	                    if (debug)
-	                        Print($"{Time[0]} - 🚫 Short cancel price hit before entry fill. Canceling order.");
-	                    CancelOrder(shortEntryOrder);
-	                    SendWebhookCancelSafe(shortEntryOrder);
-	                    shortOrderPlaced = false;
-	                    shortEntryOrder = null;
-
-                    int shortCancelStartBarsAgo = shortSignalBar >= 0 ? CurrentBar - shortSignalBar : 1;
-
-                    Draw.Line(this, shortLineTagPrefix + "ShortEntryLineActive", false,
-                        shortCancelStartBarsAgo, currentShortEntry,
-                        0, currentShortEntry,
-                        Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, shortLineTagPrefix + "ShortTPLineActive", false,
-                        shortCancelStartBarsAgo, currentShortTP,
-                        0, currentShortTP,
-                        Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, shortLineTagPrefix + "ShortSLLineActive", false,
-                        shortCancelStartBarsAgo, currentShortSL,
-                        0, currentShortSL,
-                        Brushes.Gray, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, shortLineTagPrefix + "ShortCancelLineActive", false,
-                        shortCancelStartBarsAgo, currentShortCancelPrice,
-                        0, currentShortCancelPrice,
-                        Brushes.Gray, DashStyleHelper.Dot, 2);
-
-                    shortLinesActive = false;
-                    shortSignalBar = -1;
-                    shortExitBar = -1;
-
-                    skipBarUntil = CurrentBar;
-                    if (debug)
-                        Print($"{Time[0]} - ➡️ Skipping signals until bar > {skipBarUntil}");
-                }
-            }
-
-            // === Strategy signal logic (on bar close only) ===
-            if (Calculate == Calculate.OnBarClose 
-                && CurrentBar > skipBarUntil 
-                && CurrentBar != lastBarProcessed)
-            {
-                double c1Open = Open[1];
-                double c1Close = Close[1];
-                double c1High = High[1];
-                double c1Low = Low[1];
-
-                double c2Open = Open[0];
-                double c2Close = Close[0];
-                double c2High = High[0];
-                double c2Low = Low[0];
-
-                bool c1Bull = c1Close > c1Open;
-                bool c2Bull = c2Close > c2Open;
-                bool c1Bear = c1Close < c1Open;
-                bool c2Bear = c2Close < c2Open;
-
-                bool validBull = c1Bull && c2Bull;
-                bool validBear = c1Bear && c2Bear;
-				bool shouldLog = debug && (validBull || validBear);
-                if (!validBull && !validBear)
-                    return;
-
-                double c1Body = Math.Abs(c1Close - c1Open);
-                double c2Body = Math.Abs(c2Close - c2Open);
-                if (activeMinCandlePoints > 0 && (c1Body < activeMinCandlePoints || c2Body < activeMinCandlePoints))
-                {
-                    Print($"\n{Time[0]} - 🚫 Skipping signals: candle body below min {activeMinCandlePoints:0.00}. C1={c1Body:0.00}, C2={c2Body:0.00}");
-                    return;
-                }
-
-                double c12Body = Math.Abs(c2Close - c1Open);
-
-                if (c12Body < activeMinC12Body || c12Body > activeMaxC12Body)
-                {
-                    if (shouldLog)
-                        Print($"\n{Time[0]} - 🚫 Skipping signals: c12Body {c12Body:0.00} outside [{activeMinC12Body:0.00}, {activeMaxC12Body:0.00}]");
-                    return;
-                }
-
-                if (activeEmaPeriod > 0)
-                {
-                    if (emaActive == null || CurrentBar < activeEmaPeriod)
+                    bool flipCanTradePass = canFlipNow;
+                    bool flipDistancePass = distancePasses;
+                    bool flipSlopePass = emaSlopeLongPass;
+                    bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
+                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    if (shouldFlip)
                     {
-                        if (shouldLog)
-                            Print($"\n{Time[0]} - 🚫 Skipping signals: EMA not ready (period {activeEmaPeriod}).");
+                        CancelOrderIfActive(longEntryOrder, "FlipToLong");
+                        CancelOrderIfActive(shortEntryOrder, "FlipToLong");
+
+                        double stopPrice = BuildFlipLongStopPrice(Close[0], Open[0], Low[0]);
+                        int qty = GetEntryQuantity(Close[0], stopPrice);
+                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], qty))
+                        {
+                            LogDebug("Entry confirmation declined | Flip SHORT->LONG.");
+                            return;
+                        }
+                        pendingLongStopForWebhook = stopPrice;
+                        SetStopLossByDistanceTicks(LongFlipEntrySignal, Close[0], stopPrice);
+                        SetProfitTargetByDistanceTicks(LongFlipEntrySignal, activeTakeProfitPoints);
+                        SendWebhook("buy", Close[0], Close[0], stopPrice, true, qty);
+                        StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                        EnterLong(qty, LongFlipEntrySignal);
+
+                        LogDebug(string.Format(
+                            "Flip SHORT->LONG | close={0:0.00} ema={1:0.00} above%={2:0.0} stop={3:0.00} stopTicks={4} qty={5}",
+                            Close[0],
+                            emaValue,
+                            bodyAbovePercent,
+                            stopPrice,
+                            PriceToTicks(Math.Abs(Close[0] - stopPrice)),
+                            qty));
+                    }
+                    else
+                    {
+                        if (DebugLogging)
+                        {
+                            LogDebug(string.Format(
+                                "Flip skipped | side=Long canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} above%={4:0.0} minBody%={5:0.0}",
+                                flipCanTradePass,
+                                flipDistancePass,
+                                flipSlopePass,
+                                flipBodyPass,
+                                bodyAbovePercent,
+                                FlipBodyThresholdPercent));
+                        }
+                        ExitShort("EmaExitShort", GetOpenShortEntrySignal());
+                        LogDebug(string.Format("Exit SHORT | close={0:0.00} ema={1:0.00} above%={2:0.0}", Close[0], emaValue, bodyAbovePercent));
+                    }
+                }
+
+                return;
+            }
+
+            if (!canTradeNow)
+            {
+                if (DebugLogging && Position.MarketPosition == MarketPosition.Flat && (longSignal || shortSignal))
+                {
+                    string setupSide = longSignal ? "Long" : "Short";
+                    var reasons = new List<string>();
+
+                    if (!inActiveSessionNow)
+                        reasons.Add(string.Format("OutOfSession active={0}", FormatSessionLabel(activeSession)));
+                    if (inNewsSkipNow)
+                        reasons.Add(string.Format("NewsSkip minutes={0}", NewsBlockMinutes));
+                    if (inNySkipNow)
+                        reasons.Add(string.Format("NewYorkSkip {0:hh\\:mm}-{1:hh\\:mm}", NewYorkSkipStart, NewYorkSkipEnd));
+                    if (isAsiaSundayBlockedNow)
+                        reasons.Add("AsiaSundayBlock");
+                    if (accountBlocked)
+                        reasons.Add(string.Format("AccountBlocked maxBalance={0:0.##}", MaxAccountBalance));
+                    if (!adxMinPass)
+                        reasons.Add(string.Format("AdxBelowMin adx={0:0.00} min={1:0.00}", adxValue, activeAdxThreshold));
+                    if (!adxMaxPass)
+                        reasons.Add(string.Format("AdxAboveMax adx={0:0.00} max={1:0.00}", adxValue, activeAdxMaxThreshold));
+                    if (!adxSlopePass)
+                        reasons.Add(string.Format("AdxSlopeBelowMin slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
+                    if (!maxTradesPass)
+                        reasons.Add(string.Format("MaxTradesPerSession session={0} max={1} taken={2}", FormatSessionLabel(activeSession), MaxTradesPerSession, tradesThisSession));
+
+                    if (reasons.Count == 0)
+                        reasons.Add("UnknownGate");
+
+                    LogDebug(string.Format(
+                        "Setup blocked | side={0} close={1:0.00} ema={2:0.00} reasons={3}",
+                        setupSide,
+                        Close[0],
+                        emaValue,
+                        string.Join(" | ", reasons)));
+                }
+                return;
+            }
+
+            bool longOrderActive = IsOrderActive(longEntryOrder);
+            bool shortOrderActive = IsOrderActive(shortEntryOrder);
+
+            if (longSignal)
+            {
+                BeginTradeAttempt("Long");
+                LogDebug(string.Format("Setup ready | side=Long session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
+
+                CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
+
+                if (!longOrderActive)
+                {
+                    double entryPrice = Close[0];
+                    double stopPrice = BuildLongEntryStopPrice(entryPrice, Open[0], Close[0], Low[0]);
+                    int qty = GetEntryQuantity(entryPrice, stopPrice);
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
+                    {
+                        LogDebug("Entry confirmation declined | LONG.");
+                        EndTradeAttempt("confirmation-declined");
                         return;
                     }
 
-                    double emaValue = emaActive[0];
-                    if (validBull)
+                    pendingLongStopForWebhook = stopPrice;
+                    SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
+                    SetProfitTargetByDistanceTicks(LongEntrySignal, activeTakeProfitPoints);
+                    SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
+                    StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                    EnterLong(qty, LongEntrySignal);
+                    LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
+                }
+                else if (DebugLogging)
+                {
+                    LogDebug(string.Format("LONG signal skipped | reason=longOrderActive tracked={0}", FormatOrderRef(longEntryOrder)));
+                    EndTradeAttempt("entry-order-active");
+                }
+            }
+            else if (shortSignal)
+            {
+                BeginTradeAttempt("Short");
+                LogDebug(string.Format("Setup ready | side=Short session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
+
+                CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
+
+                if (!shortOrderActive)
+                {
+                    double entryPrice = Close[0];
+                    double stopPrice = BuildShortEntryStopPrice(entryPrice, Open[0], Close[0], High[0]);
+                    int qty = GetEntryQuantity(entryPrice, stopPrice);
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                     {
-                        if (activeEmaBodyFilterMode != EmaBodyFilterMode.None)
-                        {
-                            double c1BodyLow = Math.Min(c1Open, c1Close);
-                            double c2BodyLow = Math.Min(c2Open, c2Close);
-                            bool c1Ok = c1BodyLow > emaValue;
-                            bool c2Ok = c2BodyLow > emaValue;
-                            bool passes = activeEmaBodyFilterMode == EmaBodyFilterMode.SecondBodyOnly ? c2Ok : (c1Ok && c2Ok);
-                            if (!passes)
-                            {
-                                if (shouldLog)
-                                    Print($"\n{Time[0]} - 🚫 Skipping LONG: candle bodies not fully above EMA {emaValue:0.00}.");
-                                return;
-                            }
-                        }
-                        else if (Close[0] < emaValue)
-                        {
-                            if (shouldLog)
-                                Print($"\n{Time[0]} - 🚫 Skipping LONG: Close {Close[0]:0.00} below EMA {emaValue:0.00}.");
-                            return;
-                        }
-                    }
-                    if (validBear)
-                    {
-                        if (activeEmaBodyFilterMode != EmaBodyFilterMode.None)
-                        {
-                            double c1BodyHigh = Math.Max(c1Open, c1Close);
-                            double c2BodyHigh = Math.Max(c2Open, c2Close);
-                            bool c1Ok = c1BodyHigh < emaValue;
-                            bool c2Ok = c2BodyHigh < emaValue;
-                            bool passes = activeEmaBodyFilterMode == EmaBodyFilterMode.SecondBodyOnly ? c2Ok : (c1Ok && c2Ok);
-                            if (!passes)
-                            {
-                                if (shouldLog)
-                                    Print($"\n{Time[0]} - 🚫 Skipping SHORT: candle bodies not fully below EMA {emaValue:0.00}.");
-                                return;
-                            }
-                        }
-                        else if (Close[0] > emaValue)
-                        {
-                            if (shouldLog)
-                                Print($"\n{Time[0]} - 🚫 Skipping SHORT: Close {Close[0]:0.00} above EMA {emaValue:0.00}.");
-                            return;
-                        }
-                    }
-                }
-
-                double longSL = 0;
-                double shortSL = 0;
-
-                if (First_Candle_High_Low)
-                {
-                    longSL = c1Low;
-                    shortSL = c1High;
-                }
-                else if (First_Candle_Open)
-                {
-                    longSL = c1Open;
-                    shortSL = c1Open;
-                }
-                else if (Second_Candle_High_Low)
-                {
-                    longSL = c2Low;
-                    shortSL = c2High;
-                }
-                else if (Second_Candle_Open)
-                {
-                    longSL = c2Open;
-                    shortSL = c2Open;
-                }
-                else
-                {
-                    // Fallback/default (optional)
-                    longSL = c1Open;
-                    shortSL = c1Open;
-                }
-
-                // Randomize % within London_DeviationPerc
-                double randomizedOffsetPerc = activeOffsetPerc + (rng.NextDouble() * 2 - 1) * activeDeviationPerc;
-                double randomizedTpPerc     = activeTpPerc     + (rng.NextDouble() * 2 - 1) * activeDeviationPerc;
-
-                // Ensure no negative values
-                randomizedOffsetPerc = Math.Max(0, randomizedOffsetPerc);
-                randomizedTpPerc     = Math.Max(0, randomizedTpPerc);
-
-                // Apply to calculations
-                double offset = c12Body * (randomizedOffsetPerc / 100.0);
-                double longEntry = c2Close - offset;
-                double shortEntry = c2Close + offset;
-
-                double longTP = longEntry + c12Body * (randomizedTpPerc / 100.0);
-                double shortTP = shortEntry - c12Body * (randomizedTpPerc / 100.0);
-
-                double longCancelPrice = longEntry + c12Body * (activeCancelPerc / 100.0);
-                double shortCancelPrice = shortEntry - c12Body * (activeCancelPerc / 100.0);
-                double longSLPoints = Math.Abs(longEntry - longSL) / TickSize;
-                double shortSLPoints = Math.Abs(shortEntry - shortSL) / TickSize;
-
-                longEntry = RoundToTickSize(longEntry);
-                shortEntry = RoundToTickSize(shortEntry);
-                longTP = RoundToTickSize(longTP);
-                shortTP = RoundToTickSize(shortTP);
-                longCancelPrice = RoundToTickSize(longCancelPrice);
-                shortCancelPrice = RoundToTickSize(shortCancelPrice);
-                longSL = RoundToTickSize(longSL);
-                shortSL = RoundToTickSize(shortSL);
-
-                if (debug) {
-                    Print($"\n{Time[0]} - Candle body sizes:");
-                    Print($"  ➤ c12Body = {c12Body:0.00} (Min allowed: {activeMinC12Body:0.00}, Max allowed: {activeMaxC12Body:0.00})");
-                    Print($"  ➤ Entry Offset = {offset:0.00}");
-                    Print($"  ➤ Long TP = {longTP:0.00}, Short TP = {shortTP:0.00}");
-                }
-                if (Position.MarketPosition == MarketPosition.Flat)
-                {
-                    if (debug)
-                        Print($"{Time[0]} - Flat position, resetting orderPlaced flags.");
-                    longOrderPlaced = false;
-                    shortOrderPlaced = false;
-                }
-
-	                if (validBull && !longOrderPlaced)
-	                {
-	                    HandleReverseOnSignal(MarketPosition.Long);
-	                    if (RequireEntryConfirmation)
-	                    {
-	                        if (!ShowEntryConfirmation("Long", longEntry, activeContracts))
-	                        {
-                            if (debug)
-                                Print($"User declined Long entry via confirmation dialog.");
-                            return;
-                        }
-                    }
-
-                    // Long RR check
-                    if (activeMaxSLTPRatioPerc > 0)  // only enforce if enabled
-                    {
-                        double longTPPoints2 = Math.Abs(longTP - longEntry) / TickSize;
-                        double longSLPoints2 = Math.Abs(longEntry - longSL) / TickSize;
-                        if (longTPPoints2 > 0)
-                        {
-                            double ratioPerc = (longSLPoints2 / longTPPoints2) * 100.0;
-                            if (ratioPerc > activeMaxSLTPRatioPerc)
-                            {
-                                if (debug)
-                                    Print($"{Time[0]} - ❌ Skipping LONG trade. SL/TP ratio = {ratioPerc:0.00}% exceeds max {activeMaxSLTPRatioPerc}%");
-                                return; // Skip this trade
-                            }
-                        }
-                    }
-
-                    //double paddedLongSL = longSL - London_SLPadding;
-					double paddedLongSL = RoundToTickSize(GetSLForLong());
-                    double slInPoints = Math.Abs(longEntry - paddedLongSL);
-
-                    if (activeMaxSLPoints > 0 && slInPoints > activeMaxSLPoints)
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - 🚫 Skipping long trade: SL = {slInPoints:0.00} points > MaxSL = {activeMaxSLPoints}");
+                        LogDebug("Entry confirmation declined | SHORT.");
+                        EndTradeAttempt("confirmation-declined");
                         return;
                     }
 
-                    if (debug)
-                        Print($"{Time[0]} - 📈 Valid long signal detected. Entry={longEntry:0.00}, SL={paddedLongSL:0.00}, TP={longTP:0.00}");
-
-                    // Anti Hedge
-                    string otherSymbol = GetOtherInstrument();
-                    if (AntiHedge && (HasOppositePosition(otherSymbol, MarketPosition.Long) || HasOppositeOrder(otherSymbol, MarketPosition.Long)))
-                    {
-                        // Draw the 3 lines in black when anti-hedge prevents the trade
-                        Draw.Line(this, "LongEntryLine_" + CurrentBar, false,
-                            1, longEntry, 0, longEntry, Brushes.Black, DashStyleHelper.Solid, 2);
-
-                        Draw.Line(this, "LongTPLine_" + CurrentBar, false,
-                            1, longTP, 0, longTP, Brushes.Black, DashStyleHelper.Solid, 2);
-
-                        Draw.Line(this, "LongSLLine_" + CurrentBar, false,
-                            1, paddedLongSL, 0, paddedLongSL, Brushes.Black, DashStyleHelper.Solid, 2);
-                        
-                        Draw.Line(this, "LongCancelLine_" + CurrentBar, false, 1, longCancelPrice, 0, longCancelPrice, Brushes.Black, DashStyleHelper.Dot, 2);
-                        
-                        if (debug)
-                            Print($"SKIP {Instrument.MasterInstrument.Name} LONG, {otherSymbol} is SHORT.");
-                        return;
-                    }
-
-                    MarketPosition desiredDirection = MarketPosition.Long;
-                    string instrument = Instrument.MasterInstrument.Name;
-                    MarketPosition existing = GetHedgeLock(instrument);
-
-                    if (AntiHedge)
-                    {
-                        bool conflict =
-                            (desiredDirection == MarketPosition.Long && existing == MarketPosition.Short) ||
-                            (desiredDirection == MarketPosition.Short && existing == MarketPosition.Long);
-
-                        if (conflict)
-                        {
-                            Print($"🛑 AntiHedge active: {instrument} is already {existing}. Skipping {desiredDirection} entry.");
-                            return;
-                        }
-                    }
-
-	                    SetStopLoss("LongEntry", CalculationMode.Price, paddedLongSL, false);
-	                    SetProfitTarget("LongEntry", CalculationMode.Price, longTP);
-	                    QueueEntryWebhookLong(longEntry, longTP, paddedLongSL);
-						if (activeUseMarketEntry)
-							EnterLong(activeContracts, "LongEntry");
-						else
-							EnterLongLimit(0, true, activeContracts, longEntry, "LongEntry");
-
-                    SetHedgeLock(instrument, desiredDirection); 
-
-                    currentLongEntry = longEntry;
-                    currentLongTP = longTP;
-                    currentLongSL = paddedLongSL;
-                    currentLongC1High = c1High;
-                    currentLongC1Low = c1Low;
-                    currentLongC2High = c2High;
-                    currentLongC2Low = c2Low;
-                    currentLongC12Body = c12Body;
-                    currentLongCancelPrice = longCancelPrice;
-                    longSignalBar = CurrentBar;
-                    longLineTagPrefix = $"LongLine_{++lineTagCounter}_{CurrentBar}_";
-                    longLinesActive = true;
-                    Draw.Line(this, longLineTagPrefix + "LongEntryLineActive", false,
-                        1, currentLongEntry,
-                        0, currentLongEntry,
-                        Brushes.Gold, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, longLineTagPrefix + "LongTPLineActive", false,
-                        1, currentLongTP,
-                        0, currentLongTP,
-                        Brushes.LimeGreen, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, longLineTagPrefix + "LongSLLineActive", false,
-                        1, currentLongSL,
-                        0, currentLongSL,
-                        Brushes.Red, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, longLineTagPrefix + "LongCancelLineActive", false,
-                        1, currentLongCancelPrice,
-                        0, currentLongCancelPrice,
-                        Brushes.Gray, DashStyleHelper.Dot, 2);
-	                    longExitBar = -1;
-	                    longOrderPlaced = true;
-	                    shortOrderPlaced = false;
-	                    UpdateInfo();
-	                }
-					else if (shouldLog && validBull && longOrderPlaced)
-					{
-						Print($"{Time[0]} - 🚫 Skipping LONG: long order already placed/working");
-					}
-
-	                if (validBear && !shortOrderPlaced)
-	                {
-	                    HandleReverseOnSignal(MarketPosition.Short);
-	                    if (RequireEntryConfirmation)
-	                    {
-	                        if (!ShowEntryConfirmation("Short", shortEntry, activeContracts))
-	                        {
-                            if (debug)
-                                Print($"User declined Long entry via confirmation dialog.");
-                            return;
-                        }
-                    }
-
-                    // Short RR check
-                    if (activeMaxSLTPRatioPerc > 0)  // only enforce if enabled
-                    {
-                        double shortTPPoints2 = Math.Abs(shortEntry - shortTP) / TickSize;
-                        double shortSLPoints2 = Math.Abs(shortSL - shortEntry) / TickSize;
-                        if (shortTPPoints2 > 0)
-                        {
-                            double ratioPerc = (shortSLPoints2 / shortTPPoints2) * 100.0;
-                            if (ratioPerc > activeMaxSLTPRatioPerc)
-                            {
-                                if (debug)
-                                    Print($"{Time[0]} - ❌ Skipping SHORT trade. SL/TP ratio = {ratioPerc:0.00}% exceeds max {activeMaxSLTPRatioPerc}%");
-                                return; // Skip this trade
-                            }
-                        }
-                    }
-
-                    //double paddedShortSL = shortSL + London_SLPadding;
-					double paddedShortSL = RoundToTickSize(GetSLForShort());
-                    double slInPoints = Math.Abs(shortEntry - paddedShortSL);
-
-                    if (activeMaxSLPoints > 0 && slInPoints > activeMaxSLPoints)
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - 🚫 Skipping short trade: SL = {slInPoints:0.00} points > MaxSL = {activeMaxSLPoints}");
-                        return;
-                    }
-                    
-                    if (debug)
-                        Print($"{Time[0]} - 📉 Valid short signal detected. Entry={shortEntry:0.00}, SL={paddedShortSL:0.00}, TP={shortTP:0.00}");
-
-                    // Anti Hedge
-                    string otherSymbol = GetOtherInstrument();
-                    if (AntiHedge && (HasOppositePosition(otherSymbol, MarketPosition.Short) || HasOppositeOrder(otherSymbol, MarketPosition.Short)))
-                    {                        
-                        // Draw the 3 lines in black when anti-hedge prevents the trade
-                        Draw.Line(this, "ShortEntryLine_" + CurrentBar, false,
-                            1, shortEntry, 0, shortEntry, Brushes.Black, DashStyleHelper.Solid, 2);
-
-                        Draw.Line(this, "ShortTPLine_" + CurrentBar, false,
-                            1, shortTP, 0, shortTP, Brushes.Black, DashStyleHelper.Solid, 2);
-
-                        Draw.Line(this, "ShortSLLine_" + CurrentBar, false,
-                            1, paddedShortSL, 0, paddedShortSL, Brushes.Black, DashStyleHelper.Solid, 2);
-                        
-                        Draw.Line(this, "ShortCancelLine_" + CurrentBar, false, 1, currentShortCancelPrice, 0, currentShortCancelPrice, Brushes.Black, DashStyleHelper.Dot, 2);
-                        
-                        if (debug)
-                            Print($"SKIP {Instrument.MasterInstrument.Name} SHORT, {otherSymbol} is LONG.");
-                        return;
-                    }
-                    
-                    MarketPosition desiredDirection = MarketPosition.Short;
-                    string instrument = Instrument.MasterInstrument.Name;
-                    MarketPosition existing = GetHedgeLock(instrument);
-
-                    if (AntiHedge)
-                    {
-                        bool conflict =
-                            (desiredDirection == MarketPosition.Long && existing == MarketPosition.Short) ||
-                            (desiredDirection == MarketPosition.Short && existing == MarketPosition.Long);
-
-                        if (conflict)
-                        {
-                            Print($"🛑 AntiHedge active: {instrument} is already {existing}. Skipping {desiredDirection} entry.");
-                            return;
-                        }
-                    }
-
-	                    SetStopLoss("ShortEntry", CalculationMode.Price, paddedShortSL, false);
-	                    SetProfitTarget("ShortEntry", CalculationMode.Price, shortTP);
-	                    QueueEntryWebhookShort(shortEntry, shortTP, paddedShortSL);
-						if (activeUseMarketEntry)
-							EnterShort(activeContracts, "ShortEntry");
-						else
-							EnterShortLimit(0, true, activeContracts, shortEntry, "ShortEntry");
-
-                    SetHedgeLock(instrument, desiredDirection);
-
-                    currentShortEntry = shortEntry;
-                    currentShortTP = shortTP;
-                    currentShortSL = paddedShortSL;
-                    currentShortC1High = c1High;
-                    currentShortC1Low = c1Low;
-                    currentShortC2High = c2High;
-                    currentShortC2Low = c2Low;
-                    currentShortC12Body = c12Body;
-                    currentShortCancelPrice = shortCancelPrice;
-                    shortSignalBar = CurrentBar;
-                    shortLineTagPrefix = $"ShortLine_{++lineTagCounter}_{CurrentBar}_";
-                    shortLinesActive = true;
-                    Draw.Line(this, shortLineTagPrefix + "ShortEntryLineActive", false,
-                        1, currentShortEntry,
-                        0, currentShortEntry,
-                        Brushes.Gold, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, shortLineTagPrefix + "ShortTPLineActive", false,
-                        1, currentShortTP,
-                        0, currentShortTP,
-                        Brushes.LimeGreen, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, shortLineTagPrefix + "ShortSLLineActive", false,
-                        1, currentShortSL,
-                        0, currentShortSL,
-                        Brushes.Red, DashStyleHelper.Solid, 2);
-                    Draw.Line(this, shortLineTagPrefix + "ShortCancelLineActive", false,
-                        1, currentShortCancelPrice,
-                        0, currentShortCancelPrice,
-                        Brushes.Gray, DashStyleHelper.Dot, 2);
-	                    shortExitBar = -1;
-	                    shortOrderPlaced = true;
-	                    longOrderPlaced = false;
-	                    UpdateInfo();
-	                }
-					else if (shouldLog && validBear && shortOrderPlaced)
-					{
-						Print($"{Time[0]} - 🚫 Skipping SHORT: short order already placed/working");
-					}
-                lastBarProcessed = CurrentBar;
-
-            }
-        }
-
-	        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
-	                                            double averageFillPrice, OrderState orderState, DateTime time,
-	                                            ErrorCode error, string comment)
-	        {
-	            if (order.Name == "LongEntry")
-	                longEntryOrder = order;
-	
-	            if (order.Name == "ShortEntry")
-	                shortEntryOrder = order;
-
-            if (order.Name == "LongEntry" && pendingLongWebhook)
-            {
-	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
-                    double resolvedEntryPrice = pendingLongEntry;
-                    double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
-                    if (orderLimitPrice > 0)
-                        resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
-                    double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
-                    double sendTP = RoundToTickSize(pendingLongTP);
-                    double sendSL = RoundToTickSize(pendingLongSL);
-	                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working;
-	                bool isNewOrderId = !string.Equals(lastLongWebhookOrderId, orderId, StringComparison.Ordinal);
-	                bool payloadChanged =
-	                    isNewOrderId ||
-	                    !PricesEqual(lastLongWebhookEntry, sendEntryPrice) ||
-	                    !PricesEqual(lastLongWebhookTP, sendTP) ||
-	                    !PricesEqual(lastLongWebhookSL, sendSL);
-
-	                if (isActive && payloadChanged)
-	                {
-                        if (!string.IsNullOrEmpty(lastLongWebhookOrderId))
-                        {
-                            if (debug)
-                                Print($"{Time[0]} - 🔁 Webhook updating LONG working order: {FormatPriceInvariant(lastLongWebhookEntry)}/{FormatPriceInvariant(lastLongWebhookTP)}/{FormatPriceInvariant(lastLongWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                            SendWebhook("cancel");
-                        }
-                        else if (debug)
-                        {
-                            Print($"{Time[0]} - 📤 Webhook sending initial LONG order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                        }
-	                    SendWebhook("buy", sendEntryPrice, sendTP, sendSL, activeUseMarketEntry);
-	                    pendingLongWebhook = false;
-	                    lastLongWebhookOrderId = orderId;
-                        lastLongWebhookEntry = sendEntryPrice;
-                        lastLongWebhookTP = sendTP;
-                        lastLongWebhookSL = sendSL;
-	                }
-	                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
-	                {
-	                    pendingLongWebhook = false;
-                        if (orderState == OrderState.Cancelled)
-                        {
-                            lastLongWebhookOrderId = null;
-                            lastLongWebhookEntry = 0;
-                            lastLongWebhookTP = 0;
-                            lastLongWebhookSL = 0;
-                        }
-	                }
-	            }
-
-            if (order.Name == "ShortEntry" && pendingShortWebhook)
-            {
-	                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
-                    double resolvedEntryPrice = pendingShortEntry;
-                    double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
-                    if (orderLimitPrice > 0)
-                        resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
-                    double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
-                    double sendTP = RoundToTickSize(pendingShortTP);
-                    double sendSL = RoundToTickSize(pendingShortSL);
-	                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working;
-	                bool isNewOrderId = !string.Equals(lastShortWebhookOrderId, orderId, StringComparison.Ordinal);
-	                bool payloadChanged =
-	                    isNewOrderId ||
-	                    !PricesEqual(lastShortWebhookEntry, sendEntryPrice) ||
-	                    !PricesEqual(lastShortWebhookTP, sendTP) ||
-	                    !PricesEqual(lastShortWebhookSL, sendSL);
-
-	                if (isActive && payloadChanged)
-	                {
-                        if (!string.IsNullOrEmpty(lastShortWebhookOrderId))
-                        {
-                            if (debug)
-                                Print($"{Time[0]} - 🔁 Webhook updating SHORT working order: {FormatPriceInvariant(lastShortWebhookEntry)}/{FormatPriceInvariant(lastShortWebhookTP)}/{FormatPriceInvariant(lastShortWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                            SendWebhook("cancel");
-                        }
-                        else if (debug)
-                        {
-                            Print($"{Time[0]} - 📤 Webhook sending initial SHORT order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                        }
-	                    SendWebhook("sell", sendEntryPrice, sendTP, sendSL, activeUseMarketEntry);
-	                    pendingShortWebhook = false;
-	                    lastShortWebhookOrderId = orderId;
-                        lastShortWebhookEntry = sendEntryPrice;
-                        lastShortWebhookTP = sendTP;
-                        lastShortWebhookSL = sendSL;
-	                }
-	                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
-	                {
-	                    pendingShortWebhook = false;
-                        if (orderState == OrderState.Cancelled)
-                        {
-                            lastShortWebhookOrderId = null;
-                            lastShortWebhookEntry = 0;
-                            lastShortWebhookTP = 0;
-                            lastShortWebhookSL = 0;
-                        }
-	                }
-	            }
-	
-	            // 🧠 Only reset on cancellations (not fills)
-	            if (order.OrderState == OrderState.Cancelled)
-	            {
-                bool allOrdersInactive =
-                    (longEntryOrder == null || longEntryOrder.OrderState == OrderState.Cancelled || longEntryOrder.OrderState == OrderState.Filled) &&
-                    (shortEntryOrder == null || shortEntryOrder.OrderState == OrderState.Cancelled || shortEntryOrder.OrderState == OrderState.Filled);
-
-                // Only reset if we have no open position AND no active orders
-                if (allOrdersInactive && Position.MarketPosition == MarketPosition.Flat)
-                {
-                    if (debug)
-                        Print($"{Time[0]} - 🔁 Order canceled and flat — resetting info state");
-                    longEntryOrder = null;
-                    shortEntryOrder = null;
-                    longOrderPlaced = false;
-                    shortOrderPlaced = false;
-                    currentLongEntry = currentShortEntry = 0;
-                    currentLongTP = currentShortTP = 0;
-                    currentLongSL = currentShortSL = 0;
-                    currentLongCancelPrice = currentShortCancelPrice = 0;
-
-                    UpdateInfo();
+                    pendingShortStopForWebhook = stopPrice;
+                    SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
+                    SetProfitTargetByDistanceTicks(ShortEntrySignal, activeTakeProfitPoints);
+                    SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
+                    StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                    EnterShort(qty, ShortEntrySignal);
+                    LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
                 }
-            }
-
-            if (order.Name == IfvgLongSignalName && pendingIfvgLongWebhook)
-            {
-                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
-                double resolvedEntryPrice = pendingIfvgLongEntry;
-                double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
-                if (orderLimitPrice > 0)
-                    resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
-                double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
-                double sendTP = RoundToTickSize(pendingIfvgLongTP);
-                double sendSL = RoundToTickSize(pendingIfvgLongSL);
-                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working || orderState == OrderState.Filled;
-                bool isNewOrderId = !string.Equals(lastIfvgLongWebhookOrderId, orderId, StringComparison.Ordinal);
-                bool payloadChanged =
-                    isNewOrderId ||
-                    !PricesEqual(lastIfvgLongWebhookEntry, sendEntryPrice) ||
-                    !PricesEqual(lastIfvgLongWebhookTP, sendTP) ||
-                    !PricesEqual(lastIfvgLongWebhookSL, sendSL);
-
-                if (isActive && payloadChanged)
+                else if (DebugLogging)
                 {
-                    if (!string.IsNullOrEmpty(lastIfvgLongWebhookOrderId))
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - 🔁 Webhook updating iFVG LONG order: {FormatPriceInvariant(lastIfvgLongWebhookEntry)}/{FormatPriceInvariant(lastIfvgLongWebhookTP)}/{FormatPriceInvariant(lastIfvgLongWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                        SendWebhook("cancel");
-                    }
-                    else if (debug)
-                    {
-                        Print($"{Time[0]} - 📤 Webhook sending iFVG LONG order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                    }
-                    SendWebhook("buy", sendEntryPrice, sendTP, sendSL, pendingIfvgLongMarketEntry);
-                    pendingIfvgLongWebhook = false;
-                    lastIfvgLongWebhookOrderId = orderId;
-                    lastIfvgLongWebhookEntry = sendEntryPrice;
-                    lastIfvgLongWebhookTP = sendTP;
-                    lastIfvgLongWebhookSL = sendSL;
-                }
-                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
-                {
-                    pendingIfvgLongWebhook = false;
-                    if (orderState == OrderState.Cancelled)
-                    {
-                        lastIfvgLongWebhookOrderId = null;
-                        lastIfvgLongWebhookEntry = 0;
-                        lastIfvgLongWebhookTP = 0;
-                        lastIfvgLongWebhookSL = 0;
-                    }
-                }
-            }
-
-            if (order.Name == IfvgShortSignalName && pendingIfvgShortWebhook)
-            {
-                string orderId = order != null ? (order.OrderId ?? string.Empty) : string.Empty;
-                double resolvedEntryPrice = pendingIfvgShortEntry;
-                double orderLimitPrice = order != null ? order.LimitPrice : limitPrice;
-                if (orderLimitPrice > 0)
-                    resolvedEntryPrice = RoundToTickSize(orderLimitPrice);
-                double sendEntryPrice = RoundToTickSize(resolvedEntryPrice);
-                double sendTP = RoundToTickSize(pendingIfvgShortTP);
-                double sendSL = RoundToTickSize(pendingIfvgShortSL);
-                bool isActive = orderState == OrderState.Accepted || orderState == OrderState.Working || orderState == OrderState.Filled;
-                bool isNewOrderId = !string.Equals(lastIfvgShortWebhookOrderId, orderId, StringComparison.Ordinal);
-                bool payloadChanged =
-                    isNewOrderId ||
-                    !PricesEqual(lastIfvgShortWebhookEntry, sendEntryPrice) ||
-                    !PricesEqual(lastIfvgShortWebhookTP, sendTP) ||
-                    !PricesEqual(lastIfvgShortWebhookSL, sendSL);
-
-                if (isActive && payloadChanged)
-                {
-                    if (!string.IsNullOrEmpty(lastIfvgShortWebhookOrderId))
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - 🔁 Webhook updating iFVG SHORT order: {FormatPriceInvariant(lastIfvgShortWebhookEntry)}/{FormatPriceInvariant(lastIfvgShortWebhookTP)}/{FormatPriceInvariant(lastIfvgShortWebhookSL)} -> {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                        SendWebhook("cancel");
-                    }
-                    else if (debug)
-                    {
-                        Print($"{Time[0]} - 📤 Webhook sending iFVG SHORT order: {FormatPriceInvariant(sendEntryPrice)}/{FormatPriceInvariant(sendTP)}/{FormatPriceInvariant(sendSL)}");
-                    }
-                    SendWebhook("sell", sendEntryPrice, sendTP, sendSL, pendingIfvgShortMarketEntry);
-                    pendingIfvgShortWebhook = false;
-                    lastIfvgShortWebhookOrderId = orderId;
-                    lastIfvgShortWebhookEntry = sendEntryPrice;
-                    lastIfvgShortWebhookTP = sendTP;
-                    lastIfvgShortWebhookSL = sendSL;
-                }
-                else if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
-                {
-                    pendingIfvgShortWebhook = false;
-                    if (orderState == OrderState.Cancelled)
-                    {
-                        lastIfvgShortWebhookOrderId = null;
-                        lastIfvgShortWebhookEntry = 0;
-                        lastIfvgShortWebhookTP = 0;
-                        lastIfvgShortWebhookSL = 0;
-                    }
-                }
-            }
-            else
-            {
-                // For all other order updates (Submitted, Working, Filled), just refresh info
-                UpdateInfo();
-            }
-        }
-
-        private bool PricesEqual(double a, double b)
-        {
-            double tolerance = TickSize > 0 ? TickSize * 0.5 : 1e-10;
-            return Math.Abs(a - b) <= tolerance;
-        }
-
-        private double RoundToTickSize(double price)
-        {
-            if (Instrument == null || TickSize <= 0)
-                return price;
-
-            return Instrument.MasterInstrument.RoundToTickSize(price);
-        }
-
-        private string FormatPriceInvariant(double price)
-        {
-            return price.ToString("0.########", CultureInfo.InvariantCulture);
-        }
-
-        private double GetTotalCumProfit()
-        {
-            if (SystemPerformance == null || SystemPerformance.AllTrades == null || SystemPerformance.AllTrades.TradesPerformance == null)
-                return 0;
-
-            return SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
-        }
-
-        private double GetTotalCumProfitPoints()
-        {
-            double currencyProfit = GetTotalCumProfit();
-            if (Instrument == null || Instrument.MasterInstrument == null || Instrument.MasterInstrument.PointValue <= 0)
-                return currencyProfit;
-
-            return currencyProfit / Instrument.MasterInstrument.PointValue;
-        }
-
-        private bool HasReachedSessionGainLimit()
-        {
-            if (activeSession == SessionSlot.None)
-                return false;
-
-            if (activeMaxSessionGain <= 0)
-                return false;
-
-            if (sessionGainLimitReached)
-            {
-                if (FlattenOnMaxSessionGain && Position.MarketPosition != MarketPosition.Flat)
-                    FlattenAll("SessionGainLimit");
-                return true;
-            }
-
-            double sessionProfit = GetTotalCumProfitPoints() - sessionStartCumProfit;
-            if (sessionProfit >= activeMaxSessionGain)
-            {
-                sessionGainLimitReached = true;
-                if (debug)
-                    Print($"{Time[0]} - ⛔ Max session gain reached ({sessionProfit:0.00} pts >= {activeMaxSessionGain:0.00} pts). Pausing entries for session.");
-                if (FlattenOnMaxSessionGain && Position.MarketPosition != MarketPosition.Flat)
-                    FlattenAll("SessionGainLimit");
-                return true;
-            }
-
-            return false;
-        }
-
-        private void UpdateIfvgAddon()
-        {
-            if (CurrentBar < 2 || ifvgActiveFvgs == null)
-                return;
-
-            if (IfvgDebugLogging)
-            {
-                string pos = Position.MarketPosition.ToString();
-                double unrealized = Position.MarketPosition == MarketPosition.Flat
-                    ? 0
-                    : Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
-                LogIfvgDebug(string.Format(
-                    "State bar={0} pos={1} upnl={2:0.00} activeFvgs={3} override={4}",
-                    CurrentBar,
-                    pos,
-                    unrealized,
-                    ifvgActiveFvgs.Count,
-                    ifvgOverrideActive));
-            }
-
-            UpdateIfvgSwingLiquidity();
-            UpdateIfvgActiveFvgs();
-            UpdateIfvgBreakEvenFvgs();
-            DetectNewIfvg();
-
-            if (!ifvgOverrideActive)
-                return;
-
-            if (Position.MarketPosition == MarketPosition.Flat)
-                ResetIfvgOverride();
-            else
-            {
-                CheckIfvgExitOnCloseBeyondEntry();
-                CheckIfvgBreakEvenTrigger();
-            }
-        }
-
-        private void ResetIfvgOverride()
-        {
-            ifvgOverrideActive = false;
-            ifvgActiveDirection = null;
-            ifvgEntryLower = 0;
-            ifvgEntryUpper = 0;
-            ifvgBreakEvenActive = false;
-            ifvgBreakEvenTriggered = false;
-            ifvgBreakEvenPrice = 0;
-            ifvgBreakEvenDirection = null;
-            ifvgActiveTradeTag = null;
-            ifvgLastTradeLabelPrinted = null;
-        }
-
-        private void CheckIfvgExitOnCloseBeyondEntry()
-        {
-            if (!ifvgOverrideActive || ifvgActiveDirection == null)
-                return;
-
-            if (ifvgActiveDirection == IfvgDirection.Long && Position.MarketPosition == MarketPosition.Long && Close[0] < ifvgEntryLower)
-                ExitLong("iFVGCloseExit", IfvgLongSignalName);
-            else if (ifvgActiveDirection == IfvgDirection.Short && Position.MarketPosition == MarketPosition.Short && Close[0] > ifvgEntryUpper)
-                ExitShort("iFVGCloseExit", IfvgShortSignalName);
-        }
-
-        private void UpdateIfvgActiveFvgs()
-        {
-            if (ifvgActiveFvgs.Count == 0)
-                return;
-
-            for (int i = 0; i < ifvgActiveFvgs.Count; i++)
-            {
-                IfvgBox fvg = ifvgActiveFvgs[i];
-                if (!fvg.IsActive)
-                    continue;
-
-                bool invalidated = fvg.IsBullish
-                    ? (Close[0] < fvg.Lower && Close[0] < Open[0])
-                    : (Close[0] > fvg.Upper && Close[0] > Open[0]);
-
-                fvg.EndBarIndex = CurrentBar;
-
-                if (!invalidated)
-                    continue;
-
-                LogIfvgDebug(string.Format(
-                    "FVG invalidated tag={0} bullish={1} lower={2} upper={3} close={4} open={5}",
-                    fvg.Tag,
-                    fvg.IsBullish,
-                    fvg.Lower,
-                    fvg.Upper,
-                    Close[0],
-                    Open[0]));
-
-                LogIfvgTrade(fvg.Tag, string.Format(
-                    "ENTRY ATTEMPT {0} fvgLower={1} fvgUpper={2} close={3}",
-                    fvg.IsBullish ? "bullish" : "bearish",
-                    fvg.Lower,
-                    fvg.Upper,
-                    Close[0]), true);
-
-                IfvgDirection direction = fvg.IsBullish ? IfvgDirection.Short : IfvgDirection.Long;
-                TryEnterIfvg(direction, fvg.Lower, fvg.Upper, fvg.Tag);
-                fvg.IsActive = false;
-            }
-        }
-
-        private void DetectNewIfvg()
-        {
-            bool bullishFvg = Low[0] > High[2];
-            bool bearishFvg = High[0] < Low[2];
-
-            if (!bullishFvg && !bearishFvg)
-                return;
-
-            LogIfvgVerbose(string.Format(
-                "FVG detected {0} low0={1} high2={2} high0={3} low2={4}",
-                bullishFvg ? "bullish" : "bearish",
-                Low[0],
-                High[2],
-                High[0],
-                Low[2]));
-
-            IfvgBox fvg = new IfvgBox
-            {
-                IsBullish = bullishFvg,
-                Lower = bullishFvg ? High[2] : High[0],
-                Upper = bullishFvg ? Low[0] : Low[2],
-                StartBarIndex = CurrentBar - 2,
-                EndBarIndex = CurrentBar,
-                CreatedBarIndex = CurrentBar,
-                IsActive = true,
-                Tag = string.Format("iFVG_{0}_{1:yyyyMMdd_HHmmss}", ifvgCounter++, Time[0])
-            };
-
-            if (ifvgBreakEvenFvgs != null)
-                ifvgBreakEvenFvgs.Add(fvg);
-
-            double fvgSizePoints = Math.Abs(fvg.Upper - fvg.Lower);
-            if (activeIfvgMinSizePoints > 0 && fvgSizePoints < activeIfvgMinSizePoints)
-            {
-                LogIfvgVerbose(string.Format("FVG rejected: size {0} < min {1}", fvgSizePoints, activeIfvgMinSizePoints));
-                return;
-            }
-            if (activeIfvgMaxSizePoints > 0 && fvgSizePoints > activeIfvgMaxSizePoints)
-            {
-                LogIfvgVerbose(string.Format("FVG rejected: size {0} > max {1}", fvgSizePoints, activeIfvgMaxSizePoints));
-                return;
-            }
-
-            ifvgActiveFvgs.Add(fvg);
-        }
-
-        private void UpdateIfvgBreakEvenFvgs()
-        {
-            if (ifvgBreakEvenFvgs == null || ifvgBreakEvenFvgs.Count == 0)
-                return;
-
-            for (int i = 0; i < ifvgBreakEvenFvgs.Count; i++)
-            {
-                IfvgBox fvg = ifvgBreakEvenFvgs[i];
-                if (!fvg.IsActive)
-                    continue;
-
-                bool invalidated = fvg.IsBullish
-                    ? (Close[0] < fvg.Lower && Close[0] < Open[0])
-                    : (Close[0] > fvg.Upper && Close[0] > Open[0]);
-
-                if (invalidated)
-                    fvg.IsActive = false;
-            }
-        }
-
-        private bool TryGetIfvgOriginalDuoStop(IfvgDirection direction, out double stopPrice)
-        {
-            stopPrice = direction == IfvgDirection.Long ? currentShortSL : currentLongSL;
-            return stopPrice != 0;
-        }
-
-        private bool TryGetIfvgOriginalC12Body(IfvgDirection direction, out double c12Body)
-        {
-            c12Body = direction == IfvgDirection.Long ? currentShortC12Body : currentLongC12Body;
-            return c12Body > 0;
-        }
-
-        private bool TryGetIfvgOriginalCandleWick(IfvgDirection direction, int candleIndex, out double wickPrice)
-        {
-            wickPrice = 0;
-            if (candleIndex == 1)
-            {
-                wickPrice = direction == IfvgDirection.Long ? currentShortC1Low : currentLongC1High;
-                return wickPrice != 0;
-            }
-
-            if (candleIndex == 2)
-            {
-                wickPrice = direction == IfvgDirection.Long ? currentShortC2Low : currentLongC2High;
-                return wickPrice != 0;
-            }
-
-            return false;
-        }
-
-        private bool IsIfvgTpSlValid(IfvgDirection direction, double entryPrice, double targetPrice, double stopPrice)
-        {
-            if (direction == IfvgDirection.Long)
-                return targetPrice > entryPrice && stopPrice < entryPrice;
-
-            return targetPrice < entryPrice && stopPrice > entryPrice;
-        }
-
-        private void TryEnterIfvg(IfvgDirection direction, double fvgLower, double fvgUpper, string fvgTag)
-        {
-            if (!UseIfvgAddon)
-                return;
-
-            LogIfvgTrade(fvgTag, string.Format(
-                "EVAL start dir={0} pos={1} close={2} time={3:HH:mm:ss}",
-                direction,
-                Position.MarketPosition,
-                Close[0],
-                Time[0]), false);
-
-            bool isFlat = Position.MarketPosition == MarketPosition.Flat;
-            bool hasPrimaryEntryInPlay =
-                IsOrderActive(longEntryOrder) ||
-                IsOrderActive(shortEntryOrder) ||
-                pendingLongWebhook ||
-                pendingShortWebhook;
-
-            if (isFlat && hasPrimaryEntryInPlay)
-            {
-                LogIfvgTrade(fvgTag, "BLOCKED (PrimaryEntryInPlay)", false);
-                return;
-            }
-
-            if (isFlat && !IfvgAllowFromFlat)
-            {
-                LogIfvgTrade(fvgTag, "BLOCKED (NoActivePosition)", false);
-                return;
-            }
-
-            if (!isFlat)
-            {
-                double unrealizedPnl = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
-                bool isGreen = unrealizedPnl >= 0;
-                if (isGreen && !IfvgAllowWhenGreen)
-                {
-                    LogIfvgTrade(fvgTag, string.Format(
-                        "BLOCKED (PositionNotNegative) upnl={0:0.00}",
-                        unrealizedPnl), false);
-                    return;
-                }
-                if (!isGreen && !IfvgAllowWhenLosing)
-                {
-                    LogIfvgTrade(fvgTag, string.Format(
-                        "BLOCKED (PositionNegative) upnl={0:0.00}",
-                        unrealizedPnl), false);
-                    return;
-                }
-            }
-
-            if (!isFlat)
-            {
-                IfvgDirection requiredDirection = Position.MarketPosition == MarketPosition.Long
-                    ? IfvgDirection.Short
-                    : IfvgDirection.Long;
-                if (direction != requiredDirection)
-                {
-                    LogIfvgTrade(fvgTag, "BLOCKED (DirectionMismatch)", false);
-                    return;
-                }
-            }
-
-            if (ifvgOverrideActive)
-            {
-                LogIfvgTrade(fvgTag, "BLOCKED (ActivePosition)", false);
-                return;
-            }
-
-            if (ifvgLastEntryBar == CurrentBar)
-            {
-                LogIfvgTrade(fvgTag, "BLOCKED (AlreadyEnteredThisBar)", false);
-                return;
-            }
-
-            if (!TimeInSession(Time[0]))
-            {
-                LogIfvgTrade(fvgTag, "BLOCKED (OutsideSession)", false);
-                return;
-            }
-
-            if (TimeInNoTradesAfter(Time[0]))
-            {
-                LogIfvgTrade(fvgTag, "BLOCKED (NoTradesAfter)", false);
-                return;
-            }
-
-            if (TimeInSkip(Time[0]))
-            {
-                LogIfvgTrade(fvgTag, "BLOCKED (SkipWindow)", false);
-                return;
-            }
-
-            if (activeEmaPeriod > 0)
-            {
-                if (emaActive == null || CurrentBar < activeEmaPeriod)
-                {
-                    LogIfvgTrade(fvgTag, "BLOCKED (EMA not ready)", false);
-                    return;
-                }
-
-                double emaValue = emaActive[0];
-                if (direction == IfvgDirection.Long && Close[0] < emaValue)
-                {
-                    LogIfvgTrade(fvgTag, "BLOCKED (EMA filter long)", false);
-                    return;
-                }
-                if (direction == IfvgDirection.Short && Close[0] > emaValue)
-                {
-                    LogIfvgTrade(fvgTag, "BLOCKED (EMA filter short)", false);
-                    return;
-                }
-            }
-
-            if (HasReachedSessionGainLimit())
-                return;
-
-            IfvgSweepEvent sweep = GetEligibleIfvgSweep(direction, fvgTag);
-            if (sweep == null)
-                return;
-
-            if (!IfvgPassesVolumeSmaFilter(fvgTag))
-                return;
-
-            CancelOrder(longEntryOrder);
-            CancelOrder(shortEntryOrder);
-            SendWebhookCancelSafe(forceSend: true);
-
-            if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong("iFVGFlip");
-            else if (Position.MarketPosition == MarketPosition.Short)
-                ExitShort("iFVGFlip");
-
-            if (!isFlat && !IfvgAllowReversalEntries)
-            {
-                LogIfvgTrade(fvgTag, "INFO Reversal disabled; flatten only", false);
-                return;
-            }
-
-            longLinesActive = false;
-            shortLinesActive = false;
-            longSignalBar = -1;
-            shortSignalBar = -1;
-            longExitBar = -1;
-            shortExitBar = -1;
-
-            double entryPrice = Close[0];
-            double firstTargetPrice;
-            int firstTargetBarsAgo;
-            bool hasFirstTarget = direction == IfvgDirection.Long
-                ? TryGetNthBullishPivotHighAboveEntry(entryPrice, 1, activeIfvgMinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo)
-                : TryGetNthBearishPivotLowBelowEntry(entryPrice, 1, activeIfvgMinTpSlDistancePoints, out firstTargetPrice, out firstTargetBarsAgo);
-            if (!hasFirstTarget)
-            {
-                LogIfvgTrade(fvgTag, string.Format("BLOCKED (NoTarget: {0} entry={1})", direction, entryPrice), false);
-                return;
-            }
-
-            double targetPrice = firstTargetPrice;
-            int targetBarsAgo = firstTargetBarsAgo;
-
-            if (activeIfvgUseBreakEvenWickLine)
-            {
-                double minBeGap = activeIfvgMinTpSlDistancePoints;
-                bool foundTarget = false;
-                for (int occurrence = 2; occurrence <= 10; occurrence++)
-                {
-                    double candidatePrice;
-                    int candidateBarsAgo;
-                    bool hasCandidate = direction == IfvgDirection.Long
-                        ? TryGetNthBullishPivotHighAboveEntry(entryPrice, occurrence, activeIfvgMinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo)
-                        : TryGetNthBearishPivotLowBelowEntry(entryPrice, occurrence, activeIfvgMinTpSlDistancePoints, out candidatePrice, out candidateBarsAgo);
-                    if (!hasCandidate)
-                        break;
-
-                    bool beyondBe = direction == IfvgDirection.Long
-                        ? candidatePrice > firstTargetPrice
-                        : candidatePrice < firstTargetPrice;
-                    bool farEnough = minBeGap <= 0 || Math.Abs(candidatePrice - firstTargetPrice) >= minBeGap;
-
-                    if (beyondBe && farEnough)
-                    {
-                        targetPrice = candidatePrice;
-                        targetBarsAgo = candidateBarsAgo;
-                        if (occurrence > 2)
-                            LogIfvgTrade(fvgTag, string.Format("TP adjusted (Pivot {0}) price={1} barsAgo={2}", occurrence, candidatePrice, candidateBarsAgo), false);
-                        foundTarget = true;
-                        break;
-                    }
-                }
-
-                if (!foundTarget)
-                {
-                    LogIfvgTrade(fvgTag, string.Format("BLOCKED (NoTargetBeyondBE: {0} entry={1})", direction, entryPrice), false);
-                    return;
-                }
-            }
-
-            double stopPrice = 0;
-            int stopBarsAgo = -1;
-            bool hasStop = false;
-            bool hasAnyStop = false;
-            double fallbackStopPrice = 0;
-            int fallbackStopBarsAgo = -1;
-            int stopOccurrence = 1;
-            while (true)
-            {
-                bool foundStop = direction == IfvgDirection.Long
-                    ? TryGetNthBearishPivotLowBelowEntry(entryPrice, stopOccurrence, activeIfvgMinTpSlDistancePoints, out stopPrice, out stopBarsAgo)
-                    : TryGetNthBullishPivotHighAboveEntry(entryPrice, stopOccurrence, activeIfvgMinTpSlDistancePoints, out stopPrice, out stopBarsAgo);
-
-                if (!foundStop)
-                    break;
-
-                if (!hasAnyStop)
-                {
-                    hasAnyStop = true;
-                    fallbackStopPrice = stopPrice;
-                    fallbackStopBarsAgo = stopBarsAgo;
-                }
-
-                bool outsideFvg = direction == IfvgDirection.Long ? stopPrice < fvgLower : stopPrice > fvgUpper;
-                if (outsideFvg)
-                {
-                    hasStop = true;
-                    break;
-                }
-
-                stopOccurrence++;
-            }
-
-            if (!hasStop)
-            {
-                if (hasAnyStop)
-                {
-                    stopPrice = fallbackStopPrice;
-                    stopBarsAgo = fallbackStopBarsAgo;
-                    LogIfvgTrade(fvgTag, string.Format(
-                        "WARN StopInsideFVG {0} entry={1} stop={2} fvgLower={3} fvgUpper={4}",
-                        direction,
-                        entryPrice,
-                        stopPrice,
-                        fvgLower,
-                        fvgUpper), false);
-                }
-                else
-                {
-                    LogIfvgTrade(fvgTag, string.Format(
-                        "BLOCKED (NoStop: {0} entry={1})",
-                        direction,
-                        entryPrice), false);
-                    return;
-                }
-            }
-
-            bool forcePivotTpSl = isFlat && IfvgAllowFromFlat;
-            if (forcePivotTpSl && (IfvgTpSetting != IfvgTpMode.PivotTarget || IfvgSlSetting != IfvgSlMode.PivotStop))
-            {
-                LogIfvgTrade(fvgTag, "INFO Forcing pivot TP/SL (flat entry)", false);
-            }
-            if (!forcePivotTpSl && IfvgTpSetting == IfvgTpMode.OriginalDuoStop)
-            {
-                if (!TryGetIfvgOriginalDuoStop(direction, out targetPrice))
-                {
-                    string msg = $"iFVG TP invalid (OriginalDuoStop missing) dir={direction} entry={entryPrice:0.00}";
-                    Print($"{Time[0]} - {msg}");
-                    LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
-                    FlattenAll("IfvgTpInvalid");
-                    return;
-                }
-
-                targetBarsAgo = -1;
-            }
-            else if (!forcePivotTpSl && IfvgTpSetting == IfvgTpMode.DuoC12Percent)
-            {
-                double c12Body;
-                if (!TryGetIfvgOriginalC12Body(direction, out c12Body))
-                {
-                    string msg = $"iFVG TP invalid (DuoC12 missing) dir={direction} entry={entryPrice:0.00}";
-                    Print($"{Time[0]} - {msg}");
-                    LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
-                    FlattenAll("IfvgTpInvalid");
-                    return;
-                }
-
-                double tpOffset = c12Body * (IfvgTpPerc / 100.0);
-                targetPrice = direction == IfvgDirection.Long ? entryPrice + tpOffset : entryPrice - tpOffset;
-                targetBarsAgo = -1;
-            }
-
-            if (!forcePivotTpSl && IfvgSlSetting == IfvgSlMode.OriginalCandle1Wick)
-            {
-                if (!TryGetIfvgOriginalCandleWick(direction, 1, out stopPrice))
-                {
-                    string msg = $"iFVG SL invalid (C1 wick missing) dir={direction} entry={entryPrice:0.00}";
-                    Print($"{Time[0]} - {msg}");
-                    LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
-                    FlattenAll("IfvgSlInvalid");
-                    return;
-                }
-
-                stopBarsAgo = -1;
-            }
-            else if (!forcePivotTpSl && IfvgSlSetting == IfvgSlMode.OriginalCandle2Wick)
-            {
-                if (!TryGetIfvgOriginalCandleWick(direction, 2, out stopPrice))
-                {
-                    string msg = $"iFVG SL invalid (C2 wick missing) dir={direction} entry={entryPrice:0.00}";
-                    Print($"{Time[0]} - {msg}");
-                    LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
-                    FlattenAll("IfvgSlInvalid");
-                    return;
-                }
-
-                stopBarsAgo = -1;
-            }
-
-            double bePrice = firstTargetPrice;
-            int beBarsAgo = firstTargetBarsAgo;
-            if (activeIfvgUseBreakEvenWickLine)
-            {
-                double fvgBePrice;
-                int fvgBeBarsAgo;
-                if (TryGetBreakEvenFromFvg(direction, entryPrice, firstTargetPrice, out fvgBePrice, out fvgBeBarsAgo))
-                {
-                    bePrice = fvgBePrice;
-                    beBarsAgo = fvgBeBarsAgo;
-                    LogIfvgTrade(fvgTag, string.Format("BE LINE from FVG price={0} barsAgo={1}", bePrice, beBarsAgo), false);
-                }
-
-                ActivateIfvgBreakEvenLine(direction, bePrice);
-                if (bePrice == firstTargetPrice)
-                    LogIfvgTrade(fvgTag, string.Format("BE LINE price={0} barsAgo={1}", bePrice, beBarsAgo), false);
-            }
-
-            targetPrice = RoundToTickSize(targetPrice);
-            stopPrice = RoundToTickSize(stopPrice);
-
-            if (!IsIfvgTpSlValid(direction, entryPrice, targetPrice, stopPrice))
-            {
-                string msg = $"iFVG TP/SL invalid dir={direction} entry={entryPrice:0.00} stop={stopPrice:0.00} target={targetPrice:0.00}";
-                Print($"{Time[0]} - {msg}");
-                LogIfvgTrade(fvgTag, $"BLOCKED ({msg})", false);
-                FlattenAll("IfvgTpSlInvalid");
-                return;
-            }
-
-            string signalName = direction == IfvgDirection.Long ? IfvgLongSignalName : IfvgShortSignalName;
-            SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
-            SetProfitTarget(signalName, CalculationMode.Price, targetPrice);
-
-            string beInfo = activeIfvgUseBreakEvenWickLine ? string.Format(" be={0}", RoundToTickSize(bePrice)) : string.Empty;
-            LogIfvgTrade(fvgTag, string.Format(
-                "ENTRY SENT {0} entry={1} stop={2} target={3}{4} stopBarsAgo={5} targetBarsAgo={6} sweepPrice={7} sweepBar={8}",
-                direction,
-                entryPrice,
-                stopPrice,
-                targetPrice,
-                beInfo,
-                stopBarsAgo,
-                targetBarsAgo,
-                sweep.Price,
-                sweep.BarIndex), false);
-
-            ifvgOverrideActive = true;
-            ifvgActiveDirection = direction;
-            ifvgEntryLower = fvgLower;
-            ifvgEntryUpper = fvgUpper;
-            ifvgLastEntryBar = CurrentBar;
-            ifvgActiveTradeTag = fvgTag;
-
-            if (direction == IfvgDirection.Long)
-            {
-                ifvgLastEntryPriceLong = entryPrice;
-                QueueIfvgWebhookLong(entryPrice, targetPrice, stopPrice, true);
-                EnterLong(activeContracts, signalName);
-            }
-            else
-            {
-                ifvgLastEntryPriceShort = entryPrice;
-                QueueIfvgWebhookShort(entryPrice, targetPrice, stopPrice, true);
-                EnterShort(activeContracts, signalName);
-            }
-        }
-
-        private void UpdateIfvgSwingLiquidity()
-        {
-            if (ifvgSwingLines == null)
-                return;
-
-            if (activeIfvgSwingDrawBars <= 0)
-            {
-                if (ifvgSwingLines.Count > 0)
-                    ifvgSwingLines.Clear();
-                return;
-            }
-
-            if (CurrentBar < activeIfvgSwingStrength * 2)
-                return;
-
-            int pivotBarsAgo = activeIfvgSwingStrength;
-            if (IsIfvgSwingHigh(pivotBarsAgo))
-                AddIfvgSwingLine(true, pivotBarsAgo, High[pivotBarsAgo]);
-            if (IsIfvgSwingLow(pivotBarsAgo))
-                AddIfvgSwingLine(false, pivotBarsAgo, Low[pivotBarsAgo]);
-
-            UpdateIfvgSwingLines();
-            PruneIfvgSwingLines();
-        }
-
-        private bool IsIfvgSwingHigh(int barsAgo)
-        {
-            int span = barsAgo * 2 + 1;
-            double max = MAX(High, span)[0];
-            return High[barsAgo] >= max;
-        }
-
-        private bool IsIfvgSwingLow(int barsAgo)
-        {
-            int span = barsAgo * 2 + 1;
-            double min = MIN(Low, span)[0];
-            return Low[barsAgo] <= min;
-        }
-
-        private void AddIfvgSwingLine(bool isHigh, int barsAgo, double price)
-        {
-            int startBarIndex = CurrentBar - barsAgo;
-            string tag = string.Format("iFVG_Swing_{0}_{1}", isHigh ? "H" : "L", startBarIndex);
-
-            IfvgSwingLine line = new IfvgSwingLine
-            {
-                Tag = tag,
-                Price = price,
-                StartBarIndex = startBarIndex,
-                EndBarIndex = CurrentBar,
-                IsActive = true,
-                IsHigh = isHigh
-            };
-
-            ifvgSwingLines.Add(line);
-        }
-
-        private void UpdateIfvgSwingLines()
-        {
-            for (int i = 0; i < ifvgSwingLines.Count; i++)
-            {
-                IfvgSwingLine line = ifvgSwingLines[i];
-                if (!line.IsActive)
-                    continue;
-
-                bool hit = line.IsHigh ? High[0] >= line.Price : Low[0] <= line.Price;
-                line.EndBarIndex = CurrentBar;
-
-                if (hit)
-                {
-                    RegisterIfvgSweep(line.IsHigh ? IfvgDirection.Short : IfvgDirection.Long, line.Price);
-                    line.IsActive = false;
+                    LogDebug(string.Format("SHORT signal skipped | reason=shortOrderActive tracked={0}", FormatOrderRef(shortEntryOrder)));
+                    EndTradeAttempt("entry-order-active");
                 }
             }
         }
 
-        private void PruneIfvgSwingLines()
-        {
-            int cutoffIndex = CurrentBar - activeIfvgSwingDrawBars;
-            for (int i = ifvgSwingLines.Count - 1; i >= 0; i--)
-            {
-                IfvgSwingLine line = ifvgSwingLines[i];
-                if (line.StartBarIndex < cutoffIndex)
-                    ifvgSwingLines.RemoveAt(i);
-            }
-        }
-
-        private void RegisterIfvgSweep(IfvgDirection direction, double price)
-        {
-            IfvgSweepEvent existing = ifvgLastSwingSweep;
-            if (existing != null &&
-                existing.Direction == direction &&
-                existing.Price == price &&
-                existing.BarIndex == CurrentBar)
-                return;
-
-            IfvgSweepEvent sweep = new IfvgSweepEvent
-            {
-                Direction = direction,
-                Price = price,
-                BarIndex = CurrentBar
-            };
-
-            ifvgLastSwingSweep = sweep;
-
-            LogIfvgVerbose(string.Format(
-                "Sweep registered {0} price={1} bar={2} source=swing",
-                direction,
-                price,
-                CurrentBar));
-        }
-
-        private IfvgSweepEvent GetEligibleIfvgSweep(IfvgDirection direction, string fvgTag)
-        {
-            IfvgSweepEvent best = null;
-
-            if (ifvgLastSwingSweep != null && ifvgLastSwingSweep.Direction == direction)
-                best = ifvgLastSwingSweep;
-
-            if (best == null)
-            {
-                LogIfvgTrade(fvgTag, string.Format("BLOCKED (SweepMissing: {0})", direction), false);
-                return null;
-            }
-
-            int barsSince = CurrentBar - best.BarIndex;
-            if (barsSince < 0 || barsSince > activeIfvgMaxBarsBetweenSweepAndIfvg)
-            {
-                LogIfvgTrade(fvgTag, string.Format(
-                    "BLOCKED (SweepExpired: {0} barsSince={1} max={2})",
-                    direction,
-                    barsSince,
-                    activeIfvgMaxBarsBetweenSweepAndIfvg), false);
-                return null;
-            }
-
-            LogIfvgTrade(fvgTag, string.Format(
-                "Eligible sweep {0} price={1} bar={2} barsSince={3}",
-                direction,
-                best.Price,
-                best.BarIndex,
-                barsSince), false);
-            return best;
-        }
-
-        private bool IfvgPassesVolumeSmaFilter(string fvgTag)
-        {
-            if (!activeIfvgUseVolumeSmaFilter)
-                return true;
-
-            if (ifvgVolumeFastSmaActive == null || ifvgVolumeSlowSmaActive == null)
-                return true;
-
-            int requiredBars = Math.Max(activeIfvgVolumeFastSmaPeriod, activeIfvgVolumeSlowSmaPeriod);
-            if (CurrentBar < requiredBars - 1)
-            {
-                LogIfvgTrade(fvgTag, string.Format(
-                    "BLOCKED (VolumeSmaWarmup: bars={0} need={1})",
-                    CurrentBar + 1,
-                    requiredBars), false);
-                return false;
-            }
-
-            double fast = ifvgVolumeFastSmaActive[0];
-            double slow = ifvgVolumeSlowSmaActive[0];
-            if (slow <= 0)
-            {
-                LogIfvgTrade(fvgTag, string.Format(
-                    "BLOCKED (VolumeSmaInvalid: fast={0} slow={1})",
-                    fast,
-                    slow), false);
-                return false;
-            }
-
-            if (fast <= slow * activeIfvgVolumeSmaMultiplier)
-            {
-                LogIfvgTrade(fvgTag, string.Format(
-                    "BLOCKED (VolumeSma: fast={0} slow={1} mult={2})",
-                    fast,
-                    slow,
-                    activeIfvgVolumeSmaMultiplier), false);
-                return false;
-            }
-
-            LogIfvgTrade(fvgTag, string.Format(
-                "Filter VolumeSma ok fast={0} slow={1} mult={2}",
-                fast,
-                slow,
-                activeIfvgVolumeSmaMultiplier), false);
-            return true;
-        }
-
-        private void CheckIfvgBreakEvenTrigger()
-        {
-            if (!activeIfvgUseBreakEvenWickLine || !ifvgBreakEvenActive || ifvgBreakEvenTriggered)
-                return;
-            if (Position.MarketPosition == MarketPosition.Flat || ifvgBreakEvenDirection == null)
-                return;
-
-            double high = High[0];
-            double low = Low[0];
-            bool hit = ifvgBreakEvenDirection == IfvgDirection.Long
-                ? high >= ifvgBreakEvenPrice
-                : low <= ifvgBreakEvenPrice;
-
-            if (!hit)
-                return;
-
-            string signalName = ifvgBreakEvenDirection == IfvgDirection.Long ? IfvgLongSignalName : IfvgShortSignalName;
-            double entryPrice = Position.AveragePrice;
-            double closePrice = Close[0];
-            bool wrongSide = ifvgBreakEvenDirection == IfvgDirection.Long
-                ? entryPrice >= closePrice
-                : entryPrice <= closePrice;
-            if (wrongSide)
-            {
-                LogIfvgTrade(ifvgActiveTradeTag, string.Format(
-                    "BE SKIP wrong-side dir={0} entry={1} close={2} be={3}",
-                    ifvgBreakEvenDirection,
-                    entryPrice,
-                    closePrice,
-                    ifvgBreakEvenPrice), true);
-                return;
-            }
-
-            ifvgBreakEvenTriggered = true;
-            SetStopLoss(signalName, CalculationMode.Price, entryPrice, false);
-            LogIfvgTrade(ifvgActiveTradeTag, string.Format("BE HIT move SL to entry={0}", entryPrice), true);
-        }
-
-        private void ActivateIfvgBreakEvenLine(IfvgDirection direction, double price)
-        {
-            ifvgBreakEvenActive = true;
-            ifvgBreakEvenTriggered = false;
-            ifvgBreakEvenPrice = RoundToTickSize(price);
-            ifvgBreakEvenDirection = direction;
-        }
-
-        private bool TryGetNthBullishPivotHighAboveEntry(double entryPrice, int occurrence, double minDistancePoints, out double price, out int barsAgo)
-        {
-            price = 0;
-            barsAgo = -1;
-            int found = 0;
-
-            for (int i = 1; i + 1 <= CurrentBars[0]; i++)
-            {
-                if (Highs[0][i] <= Highs[0][i - 1] || Highs[0][i] <= Highs[0][i + 1])
-                    continue;
-                if (Highs[0][i] <= entryPrice)
-                    continue;
-                if (minDistancePoints > 0 && (Highs[0][i] - entryPrice) < minDistancePoints)
-                    continue;
-
-                found++;
-                if (found == occurrence)
-                {
-                    price = Highs[0][i];
-                    barsAgo = i;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private bool TryGetNthBearishPivotLowBelowEntry(double entryPrice, int occurrence, double minDistancePoints, out double price, out int barsAgo)
-        {
-            price = 0;
-            barsAgo = -1;
-            int found = 0;
-
-            for (int i = 1; i + 1 <= CurrentBars[0]; i++)
-            {
-                if (Lows[0][i] >= Lows[0][i - 1] || Lows[0][i] >= Lows[0][i + 1])
-                    continue;
-                if (Lows[0][i] >= entryPrice)
-                    continue;
-                if (minDistancePoints > 0 && (entryPrice - Lows[0][i]) < minDistancePoints)
-                    continue;
-
-                found++;
-                if (found == occurrence)
-                {
-                    price = Lows[0][i];
-                    barsAgo = i;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private bool TryGetBreakEvenFromFvg(IfvgDirection direction, double entryPrice, double pivotPrice, out double bePrice, out int beBarsAgo)
-        {
-            bePrice = 0;
-            beBarsAgo = -1;
-
-            if (ifvgBreakEvenFvgs == null || ifvgBreakEvenFvgs.Count == 0)
-                return false;
-
-            bool found = false;
-            double bestPrice = 0;
-            int bestBarsAgo = -1;
-
-            for (int i = 0; i < ifvgBreakEvenFvgs.Count; i++)
-            {
-                IfvgBox fvg = ifvgBreakEvenFvgs[i];
-                if (!fvg.IsActive)
-                    continue;
-
-                double candidatePrice = direction == IfvgDirection.Long ? fvg.Lower : fvg.Upper;
-                if (direction == IfvgDirection.Long)
-                {
-                    if (candidatePrice <= entryPrice || candidatePrice >= pivotPrice)
-                        continue;
-                    if (!found || candidatePrice < bestPrice)
-                    {
-                        found = true;
-                        bestPrice = candidatePrice;
-                        bestBarsAgo = CurrentBar - fvg.CreatedBarIndex;
-                    }
-                }
-                else
-                {
-                    if (candidatePrice >= entryPrice || candidatePrice <= pivotPrice)
-                        continue;
-                    if (!found || candidatePrice > bestPrice)
-                    {
-                        found = true;
-                        bestPrice = candidatePrice;
-                        bestBarsAgo = CurrentBar - fvg.CreatedBarIndex;
-                    }
-                }
-            }
-
-            if (!found)
-                return false;
-
-            bePrice = RoundToTickSize(bestPrice);
-            beBarsAgo = bestBarsAgo;
-            return true;
-        }
-
-        private void LogIfvgDebug(string message)
-        {
-            if (!IfvgDebugLogging)
-                return;
-            Print(string.Format("{0} - iFVG {1}", Time[0], message));
-        }
-
-        private void LogIfvgVerbose(string message)
-        {
-            if (!IfvgDebugLogging || !IfvgVerboseDebugLogging)
-                return;
-            Print(string.Format("{0} - iFVG {1}", Time[0], message));
-        }
-
-        private void LogIfvgTrade(string tradeTag, string message, bool addSeparator)
-        {
-            if (!IfvgDebugLogging)
-                return;
-
-            string label = FormatIfvgLabel(tradeTag);
-            if (!string.IsNullOrEmpty(label) && label != ifvgLastTradeLabelPrinted)
-            {
-                if (!string.IsNullOrEmpty(ifvgLastTradeLabelPrinted) && addSeparator)
-                    Print(string.Empty);
-                ifvgLastTradeLabelPrinted = label;
-            }
-
-            if (!string.IsNullOrEmpty(label))
-                Print(string.Format("{0} - {1} {2}", Time[0], label, message));
-            else
-                Print(string.Format("{0} - {1}", Time[0], message));
-        }
-
-        private string FormatIfvgLabel(string tradeTag)
-        {
-            if (string.IsNullOrEmpty(tradeTag))
-                return string.Empty;
-
-            string[] parts = tradeTag.Split('_');
-            if (parts.Length >= 2 && !string.IsNullOrEmpty(parts[1]))
-                return "iFVG T" + parts[1];
-
-            return "iFVG";
-        }
-
-        private double ResolveEntryPriceForExitLabel(Order order, double fallbackPrice)
+        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
+            double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string comment)
         {
             if (order == null)
-                return fallbackPrice;
-            if (order.FromEntrySignal == "LongEntry")
-                return currentLongEntry;
-            if (order.FromEntrySignal == "ShortEntry")
-                return currentShortEntry;
-            if (order.FromEntrySignal == IfvgLongSignalName)
-                return ifvgLastEntryPriceLong;
-            if (order.FromEntrySignal == IfvgShortSignalName)
-                return ifvgLastEntryPriceShort;
-            return fallbackPrice;
+                return;
+
+            if (IsLongEntryOrderName(order.Name))
+                longEntryOrder = order;
+            else if (IsShortEntryOrderName(order.Name))
+                shortEntryOrder = order;
+
+            if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected || orderState == OrderState.Filled)
+            {
+                if (order == longEntryOrder)
+                    longEntryOrder = null;
+                else if (order == shortEntryOrder)
+                    shortEntryOrder = null;
+            }
+
+            if (orderState == OrderState.Rejected)
+                HandleOrderRejected(order, error, comment);
+
+            bool isImportantState = orderState == OrderState.Filled
+                || orderState == OrderState.Cancelled
+                || orderState == OrderState.Rejected;
+            bool shouldLogOrderState = DebugLogging && isImportantState;
+
+            if (shouldLogOrderState)
+            {
+                string currentOrderId = order.OrderId ?? string.Empty;
+                LogDebug(
+                    string.Format(
+                        "OrderUpdate | name={0} id={1} state={2} qty={3} filled={4} avg={5:0.00} limit={6:0.00} stop={7:0.00} error={8} comment={9} trackedLong={10} trackedShort={11}",
+                        order.Name,
+                        currentOrderId,
+                        orderState,
+                        quantity,
+                        filled,
+                        averageFillPrice,
+                        limitPrice,
+                        stopPrice,
+                        error,
+                        comment,
+                        FormatOrderRef(longEntryOrder),
+                        FormatOrderRef(shortEntryOrder)));
+            }
+
+            bool isEntryOrder = IsEntryOrderName(order.Name);
+            if (isEntryOrder && orderState != OrderState.Filled &&
+                (orderState == OrderState.Cancelled || orderState == OrderState.Rejected) &&
+                Position.MarketPosition == MarketPosition.Flat)
+            {
+                if (tradeLinesActive)
+                    FinalizeTradeLines();
+                EndTradeAttempt("entry-" + orderState);
+            }
+
+            if (orderState == OrderState.Filled || orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
+                UpdateInfo();
+        }
+
+        private void HandleOrderRejected(Order order, ErrorCode error, string comment)
+        {
+            string name = order != null ? (order.Name ?? string.Empty) : string.Empty;
+            string state = order != null ? order.OrderState.ToString() : "Unknown";
+            Print(string.Format("{0} | Duo | bar={1} | Order rejected guard | name={2} state={3} error={4} comment={5}",
+                Time[0], CurrentBar, name, state, error, comment ?? string.Empty));
+
+            if (IsEntryOrderName(name))
+            {
+                CancelWorkingEntryOrders();
+                EndTradeAttempt("entry-rejected");
+                return;
+            }
+
+            if (name == "Stop loss" || name == "Profit target")
+            {
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("ProtectiveReject", GetOpenLongEntrySignal());
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort("ProtectiveReject", GetOpenShortEntrySignal());
+            }
         }
 
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
             MarketPosition marketPosition, string orderId, DateTime time)
         {
-	            var smallFont = new SimpleFont("Arial", 8) { Bold = true };
+            if (execution?.Order == null)
+                return;
 
-            if (execution.Order != null &&
-                execution.Order.OrderState == OrderState.Filled &&
-                (execution.Order.Name == IfvgLongSignalName || execution.Order.Name == IfvgShortSignalName))
+            if (execution.Order.OrderState != OrderState.Filled)
+                return;
+
+            string orderName = execution.Order.Name ?? string.Empty;
+            double fillPrice = Instrument.MasterInstrument.RoundToTickSize(price);
+
+            if (IsEntryOrderName(orderName))
             {
-                if (execution.Order.Name == IfvgLongSignalName)
-                    ifvgLastEntryPriceLong = price;
-                else
-                    ifvgLastEntryPriceShort = price;
-            }
-
-            if (execution.Order != null &&
-                execution.Order.OrderState == OrderState.Filled &&
-                (execution.Order.Name == "LongEntry" || execution.Order.Name == "ShortEntry"))
-            {
-                lastPrimaryEntryIsLong = execution.Order.Name == "LongEntry";
-                lastPrimaryEntryPrice = price;
-            }
-
-            // ✅ Track TP fills
-	            if (execution.Order != null && execution.Order.Name == "Profit target"
-	                && execution.Order.OrderState == OrderState.Filled)
-	            {
-                double entryPrice = ResolveEntryPriceForExitLabel(execution.Order, price);
-                double points = Math.Abs(price - entryPrice);
-
-                double yOffset = (execution.Order.FromEntrySignal == "LongEntry")
-                    ? price + (2 * TickSize)
-                    : price - (2 * TickSize);
-
-                string tag = "TPText_" + CurrentBar + "_" + execution.Order.FromEntrySignal;
-                Draw.Text(this, tag, true,
-                    $"+{points:0.00} points",
-                    0, yOffset, 0,
-                    Brushes.Green,
-                    new SimpleFont("Arial", 15),
-                    TextAlignment.Center,
-                    null, null, 0);
-            }
-
-            // ✅ Track SL fills
-	            if (execution.Order != null && execution.Order.Name == "Stop loss"
-	                && execution.Order.OrderState == OrderState.Filled)
-	            {
-                double entryPrice = ResolveEntryPriceForExitLabel(execution.Order, price);
-                double points = Math.Abs(price - entryPrice);
-
-                double yOffset = (execution.Order.FromEntrySignal == "LongEntry")
-                    ? price - (2 * TickSize)   // place text below stop for long
-                    : price + (2 * TickSize);  // place text above stop for short
-
-                string tag = "SLText_" + CurrentBar + "_" + execution.Order.FromEntrySignal;
-                Draw.Text(this, tag, true,
-                    $"-{points:0.00} points",
-                    0, yOffset, 0,
-                    Brushes.Red,
-                    new SimpleFont("Arial", 15),
-                    TextAlignment.Center,
-                    null, null, 0);
-            }
-
-            if (execution.Order != null &&
-                execution.Order.OrderState == OrderState.Filled &&
-                (execution.Order.Name == "iFVGFlip" || execution.Order.Name.StartsWith("Exit_")) &&
-                (execution.Order.FromEntrySignal == "LongEntry" || execution.Order.FromEntrySignal == "ShortEntry"))
-            {
-                bool isLong = execution.Order.FromEntrySignal == "LongEntry";
-                double entryPrice = ResolveEntryPriceForExitLabel(execution.Order, price);
-                double rawPoints = isLong ? (price - entryPrice) : (entryPrice - price);
-                double points = Math.Abs(rawPoints);
-                bool isWin = rawPoints >= 0;
-
-                double yOffset;
-                if (isLong)
-                    yOffset = isWin ? price + (2 * TickSize) : price - (2 * TickSize);
-                else
-                    yOffset = isWin ? price - (2 * TickSize) : price + (2 * TickSize);
-
-                string tag = "ExitText_" + CurrentBar + "_" + execution.Order.FromEntrySignal;
-                Draw.Text(this, tag, true,
-                    $"{(isWin ? "+" : "-")}{points:0.00} points",
-                    0, yOffset, 0,
-                    isWin ? Brushes.Green : Brushes.Red,
-                    new SimpleFont("Arial", 15),
-                    TextAlignment.Center,
-                    null, null, 0);
-            }
-
-            if (execution.Order != null &&
-                execution.Order.OrderState == OrderState.Filled &&
-                execution.Order.Name != "Profit target" &&
-                execution.Order.Name != "Stop loss" &&
-                string.IsNullOrEmpty(execution.Order.FromEntrySignal) &&
-                lastPrimaryEntryPrice > 0 &&
-                (execution.Order.OrderAction == OrderAction.Sell || execution.Order.OrderAction == OrderAction.BuyToCover))
-            {
-                bool isLong = lastPrimaryEntryIsLong;
-                double entryPrice = lastPrimaryEntryPrice;
-                double rawPoints = isLong ? (price - entryPrice) : (entryPrice - price);
-                double points = Math.Abs(rawPoints);
-                bool isWin = rawPoints >= 0;
-
-                double yOffset;
-                if (isLong)
-                    yOffset = isWin ? price + (2 * TickSize) : price - (2 * TickSize);
-                else
-                    yOffset = isWin ? price - (2 * TickSize) : price + (2 * TickSize);
-
-                string tag = "ExitText_" + CurrentBar + "_PrimaryExit";
-                Draw.Text(this, tag, true,
-                    $"{(isWin ? "+" : "-")}{points:0.00} points",
-                    0, yOffset, 0,
-                    isWin ? Brushes.Green : Brushes.Red,
-                    new SimpleFont("Arial", 15),
-                    TextAlignment.Center,
-                    null, null, 0);
-            }
-
-            if (execution.Order != null &&
-                execution.Order.FromEntrySignal == "LongEntry" &&
-                (execution.Order.Name == "Profit target" || execution.Order.Name == "Stop loss") &&
-                execution.Order.OrderState == OrderState.Filled)
-            {
-                int barIndex = Bars.GetBar(time);
-                longExitBar = barIndex >= 0 ? barIndex : CurrentBar;
-            }
-
-            if (execution.Order != null &&
-                execution.Order.FromEntrySignal == "ShortEntry" &&
-                (execution.Order.Name == "Profit target" || execution.Order.Name == "Stop loss") &&
-                execution.Order.OrderState == OrderState.Filled)
-            {
-                int barIndex = Bars.GetBar(time);
-                shortExitBar = barIndex >= 0 ? barIndex : CurrentBar;
-            }
-
-            bool isExitExecution = execution.Order != null &&
-                execution.Order.OrderState == OrderState.Filled &&
-                (execution.Order.Name == "Profit target" ||
-                execution.Order.Name == "Stop loss" ||
-                execution.Order.Name.StartsWith("Exit_"));
-
-            if (isExitExecution && Position.MarketPosition == MarketPosition.Flat)
-            {
-                if (debug)
-                    Print($"{Time[0]} - 📤 Exit execution detected ({execution.Order.Name}), sending webhook exit (execId={executionId})");
-                SendWebhookExitSafe(executionId);
-            }
-
-            // ✅ Reset only after final exit (TP/SL/flatten) when position is truly flat
-            if (Position.MarketPosition == MarketPosition.Flat)
-            {
-                bool hasWorkingOrders =
-                    (longEntryOrder != null && longEntryOrder.OrderState == OrderState.Working) ||
-                    (shortEntryOrder != null && shortEntryOrder.OrderState == OrderState.Working);
-
-                // 🧠 Reset only if this execution was an exit, not an entry
-                if (isExitExecution && !hasWorkingOrders)
+                currentPositionEntrySignal = orderName;
+                SessionSlot entrySession = activeSession != SessionSlot.None
+                    ? activeSession
+                    : DetermineSessionForTime(time);
+                if (entrySession != SessionSlot.None)
                 {
-                    if (debug)
-                        Print($"{Time[0]} - ✅ Position closed, resetting info state");
-                    longEntryOrder = null;
-                    shortEntryOrder = null;
-                    longOrderPlaced = false;
-                    shortOrderPlaced = false;
-                    lastPrimaryEntryPrice = 0;
-                    lastPrimaryEntryIsLong = true;
-
-                    UpdateInfo();
+                    lockedTradeSession = entrySession;
+                    SetTradesThisSession(entrySession, GetTradesThisSession(entrySession) + 1);
+                    LogDebug(string.Format("Session lock set to {0} on {1} fill.", FormatSessionLabel(lockedTradeSession), orderName));
+                    LogDebug(string.Format(
+                        "Trade count | session={0} taken={1} max={2}",
+                        FormatSessionLabel(entrySession),
+                        GetTradesThisSession(entrySession),
+                        MaxTradesPerSession));
                 }
-                ClearHedgeLock(Instrument.MasterInstrument.Name);
-	            }
-
-            if (ifvgOverrideActive && Position.MarketPosition == MarketPosition.Flat)
-                ResetIfvgOverride();
-	        }
-
-	        private void UpdatePreviewLines()
-	        {
-	            if (longLinesActive && longSignalBar >= 0)
-	            {
-                int startBarsAgo = CurrentBar - longSignalBar;
-                int endBarsAgo = longExitBar >= 0 ? Math.Max(0, CurrentBar - longExitBar) : 0;
-
-                Draw.Line(this, longLineTagPrefix + "LongEntryLineActive", false,
-                    startBarsAgo, currentLongEntry,
-                    endBarsAgo, currentLongEntry,
-                    Brushes.Gold, DashStyleHelper.Solid, 2);
-
-                Draw.Line(this, longLineTagPrefix + "LongTPLineActive", false,
-                    startBarsAgo, currentLongTP,
-                    endBarsAgo, currentLongTP,
-                    Brushes.LimeGreen, DashStyleHelper.Solid, 2);
-
-                Draw.Line(this, longLineTagPrefix + "LongSLLineActive", false,
-                    startBarsAgo, currentLongSL,
-                    endBarsAgo, currentLongSL,
-                    Brushes.Red, DashStyleHelper.Solid, 2);
-
-                Draw.Line(this, longLineTagPrefix + "LongCancelLineActive", false,
-                    startBarsAgo, currentLongCancelPrice,
-                    endBarsAgo, currentLongCancelPrice,
-                    Brushes.Gray, DashStyleHelper.Dot, 2);
+            }
+            else if (marketPosition == MarketPosition.Flat && lockedTradeSession != SessionSlot.None)
+            {
+                LogDebug(string.Format("Session lock released from {0} after flat execution ({1}).", FormatSessionLabel(lockedTradeSession), orderName));
+                lockedTradeSession = SessionSlot.None;
+                currentPositionEntrySignal = string.Empty;
+            }
+            else if (marketPosition == MarketPosition.Flat)
+            {
+                currentPositionEntrySignal = string.Empty;
             }
 
-            if (shortLinesActive && shortSignalBar >= 0)
+            if (ShouldSendExitWebhook(execution, orderName, marketPosition))
+                SendWebhook("exit", 0, 0, 0, true, quantity);
+
+            if (DebugLogging)
             {
-                int startBarsAgo = CurrentBar - shortSignalBar;
-                int endBarsAgo = shortExitBar >= 0 ? Math.Max(0, CurrentBar - shortExitBar) : 0;
+                LogDebug(
+                    string.Format(
+                        "Execution | order={0} qty={1} price={2:0.00} posAfter={3} execId={4}",
+                        orderName,
+                        quantity,
+                        fillPrice,
+                        marketPosition,
+                        executionId));
+            }
 
-                Draw.Line(this, shortLineTagPrefix + "ShortEntryLineActive", false,
-                    startBarsAgo, currentShortEntry,
-                    endBarsAgo, currentShortEntry,
-                    Brushes.Gold, DashStyleHelper.Solid, 2);
+            if (!IsEntryOrderName(orderName))
+            {
+                if (tradeLinesActive)
+                    FinalizeTradeLines();
+                EndTradeAttempt("exit-" + orderName);
+            }
 
-                Draw.Line(this, shortLineTagPrefix + "ShortTPLineActive", false,
-                    startBarsAgo, currentShortTP,
-                    endBarsAgo, currentShortTP,
+            UpdateInfo();
+        }
+
+        private bool IsEntryOrderName(string orderName)
+        {
+            return IsLongEntryOrderName(orderName) || IsShortEntryOrderName(orderName);
+        }
+
+        private bool IsLongEntryOrderName(string orderName)
+        {
+            return string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, LongFlipEntrySignal, StringComparison.Ordinal);
+        }
+
+        private bool IsShortEntryOrderName(string orderName)
+        {
+            return string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, ShortFlipEntrySignal, StringComparison.Ordinal);
+        }
+
+        private string GetOpenLongEntrySignal()
+        {
+            return IsLongEntryOrderName(currentPositionEntrySignal) ? currentPositionEntrySignal : LongEntrySignal;
+        }
+
+        private string GetOpenShortEntrySignal()
+        {
+            return IsShortEntryOrderName(currentPositionEntrySignal) ? currentPositionEntrySignal : ShortEntrySignal;
+        }
+
+        private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
+        {
+            if (execution?.Order == null)
+                return false;
+
+            if (IsEntryOrderName(orderName))
+                return false;
+
+            string fromEntry = execution.Order.FromEntrySignal ?? string.Empty;
+            if (IsEntryOrderName(fromEntry))
+                return true;
+
+            string normalized = orderName ?? string.Empty;
+            if (normalized.Length == 0)
+                return marketPosition == MarketPosition.Flat;
+
+            if (normalized.Equals("Stop loss", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("Profit target", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("Exit on session close", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("SessionEnd", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("ExitLong", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("ExitShort", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("EmaExitLong", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("EmaExitShort", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("AdxDrawdownExit", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("AdxLevelExit", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("TakeProfitExit", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("ProtectiveReject", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("TwoCandleReverse", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return marketPosition == MarketPosition.Flat;
+        }
+
+        private void StartTradeLines(double entryPrice, double stopPrice, double takeProfitPrice, bool hasTakeProfit)
+        {
+            if (tradeLinesActive)
+                FinalizeTradeLines();
+
+            tradeLineTagPrefix = string.Format("Duo_TradeLine_{0}_{1}_", ++tradeLineTagCounter, CurrentBar);
+            tradeLinesActive = true;
+            tradeLineHasTp = hasTakeProfit;
+            tradeLineSignalBar = Math.Max(0, CurrentBar - 1);
+            tradeLineExitBar = -1;
+            tradeLineEntryPrice = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
+            tradeLineSlPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+            tradeLineTpPrice = hasTakeProfit ? Instrument.MasterInstrument.RoundToTickSize(takeProfitPrice) : 0.0;
+
+            DrawTradeLinesAtBarsAgo(1, 0);
+        }
+
+        private void UpdateTradeLines()
+        {
+            if (!tradeLinesActive || tradeLineSignalBar < 0)
+                return;
+
+            int startBarsAgo = Math.Max(0, CurrentBar - tradeLineSignalBar);
+            int endBarsAgo = tradeLineExitBar >= 0
+                ? Math.Max(0, CurrentBar - tradeLineExitBar)
+                : 0;
+
+            DrawTradeLinesAtBarsAgo(startBarsAgo, endBarsAgo);
+        }
+
+        private void FinalizeTradeLines()
+        {
+            if (!tradeLinesActive)
+                return;
+
+            tradeLineExitBar = CurrentBar;
+            UpdateTradeLines();
+            tradeLinesActive = false;
+            ClearTradeLineState();
+        }
+
+        private void ClearTradeLineState()
+        {
+            tradeLineHasTp = false;
+            tradeLineSignalBar = -1;
+            tradeLineExitBar = -1;
+            tradeLineEntryPrice = 0.0;
+            tradeLineTpPrice = 0.0;
+            tradeLineSlPrice = 0.0;
+        }
+
+        private void DrawTradeLinesAtBarsAgo(int startBarsAgo, int endBarsAgo)
+        {
+            if (string.IsNullOrEmpty(tradeLineTagPrefix))
+                return;
+
+            Draw.Line(this, tradeLineTagPrefix + "Entry", false,
+                startBarsAgo, tradeLineEntryPrice,
+                endBarsAgo, tradeLineEntryPrice,
+                Brushes.Gold, DashStyleHelper.Solid, 2);
+
+            Draw.Line(this, tradeLineTagPrefix + "SL", false,
+                startBarsAgo, tradeLineSlPrice,
+                endBarsAgo, tradeLineSlPrice,
+                Brushes.Red, DashStyleHelper.Solid, 2);
+
+            if (tradeLineHasTp)
+            {
+                Draw.Line(this, tradeLineTagPrefix + "TP", false,
+                    startBarsAgo, tradeLineTpPrice,
+                    endBarsAgo, tradeLineTpPrice,
                     Brushes.LimeGreen, DashStyleHelper.Solid, 2);
-
-                Draw.Line(this, shortLineTagPrefix + "ShortSLLineActive", false,
-                    startBarsAgo, currentShortSL,
-                    endBarsAgo, currentShortSL,
-                    Brushes.Red, DashStyleHelper.Solid, 2);
-
-                Draw.Line(this, shortLineTagPrefix + "ShortCancelLineActive", false,
-                    startBarsAgo, currentShortCancelPrice,
-                    endBarsAgo, currentShortCancelPrice,
-                    Brushes.Gray, DashStyleHelper.Dot, 2);
             }
         }
 
-		private void CancelEntryIfAfterNoTrades()
-		{
-			if (shortEntryOrder != null)
-			{
-                if (debug)
-				    Print($"{Time[0]} - ⏰ Canceling SHORT entry due to NoTradesAfter");
-					CancelOrder(shortEntryOrder);
-	                SendWebhookCancelSafe();
-				}
-	
-				if (longEntryOrder != null)
-				{
-	                if (debug)
-					    Print($"{Time[0]} - ⏰ Canceling LONG entry due to NoTradesAfter");
-					CancelOrder(longEntryOrder);
-	                SendWebhookCancelSafe();
-				}
-
-			longOrderPlaced = false;
-			shortOrderPlaced = false;
-			longEntryOrder = null;
-			shortEntryOrder = null;
-		}
-
-        private void HandleReverseOnSignal(MarketPosition desiredDirection)
+        private void UpdateActiveSession(DateTime time)
         {
-            if (!ReverseOnSignal)
-                return;
+            SessionSlot desired = DetermineSessionForTime(time);
+            bool inPosition = Position.MarketPosition != MarketPosition.Flat;
 
-            if (Position.MarketPosition != MarketPosition.Flat)
-                return;
-
-            if (Position.MarketPosition == MarketPosition.Flat)
+            if (inPosition)
             {
-                if (desiredDirection == MarketPosition.Long && IsOrderActive(shortEntryOrder))
+                if (lockedTradeSession == SessionSlot.None)
                 {
-                    if (debug)
-                        Print($"{Time[0]} - 🔁 Reverse signal while SHORT order working. Canceling SHORT entry.");
-                    CancelOrder(shortEntryOrder);
-                    shortEntryOrder = null;
-                    shortOrderPlaced = false;
+                    SessionSlot inferredLock = activeSession != SessionSlot.None
+                        ? activeSession
+                        : desired;
+                    if (inferredLock != SessionSlot.None)
+                    {
+                        lockedTradeSession = inferredLock;
+                        LogDebug(string.Format("Session lock inferred as {0} while position is open.", FormatSessionLabel(lockedTradeSession)));
+                    }
                 }
-                else if (desiredDirection == MarketPosition.Short && IsOrderActive(longEntryOrder))
+
+                if (lockedTradeSession != SessionSlot.None && activeSession != lockedTradeSession)
                 {
-                    if (debug)
-                        Print($"{Time[0]} - 🔁 Reverse signal while LONG order working. Canceling LONG entry.");
-                    CancelOrder(longEntryOrder);
-                    longEntryOrder = null;
-                    longOrderPlaced = false;
+                    activeSession = lockedTradeSession;
+                    ApplyInputsForSession(activeSession);
+                    LogSessionActivation("lock");
+                    LogDebug(string.Format("Active session held at {0} while position is open.", FormatSessionLabel(activeSession)));
                 }
+
+                sessionInitialized = true;
+                if (DebugLogging && desired != activeSession && CurrentBar != lastDeferredSessionLogBar)
+                {
+                    lastDeferredSessionLogBar = CurrentBar;
+                    LogDebug(string.Format(
+                        "Session switch deferred | current={0} desired={1} pos={2}",
+                        FormatSessionLabel(activeSession),
+                        FormatSessionLabel(desired),
+                        Position.MarketPosition));
+                }
+                return;
             }
+
+            if (lockedTradeSession != SessionSlot.None)
+            {
+                LogDebug(string.Format("Session lock cleared while flat (was {0}).", FormatSessionLabel(lockedTradeSession)));
+                lockedTradeSession = SessionSlot.None;
+            }
+
+            if (!sessionInitialized || desired != activeSession)
+            {
+                activeSession = desired;
+                if (activeSession != SessionSlot.None)
+                {
+                    ApplyInputsForSession(activeSession);
+                    LogSessionActivation("switch");
+                }
+
+                sessionInitialized = true;
+                LogDebug(string.Format("Active session switched to {0}", FormatSessionLabel(activeSession)));
+            }
+        }
+
+        private SessionSlot DetermineSessionForTime(DateTime time)
+        {
+            TimeSpan now = time.TimeOfDay;
+            TimeSpan asiaStart = TimeSpan.Zero;
+            TimeSpan asiaEnd = TimeSpan.Zero;
+            TimeSpan nyStart = TimeSpan.Zero;
+            TimeSpan nyEnd = TimeSpan.Zero;
+
+            bool asiaConfigured = IsSessionConfigured(SessionSlot.Asia)
+                && TryGetSessionWindow(SessionSlot.Asia, time, out asiaStart, out asiaEnd);
+            bool newYorkConfigured = IsSessionConfigured(SessionSlot.NewYork)
+                && TryGetSessionWindow(SessionSlot.NewYork, time, out nyStart, out nyEnd);
+
+            if (asiaConfigured && IsTimeInRange(now, asiaStart, asiaEnd))
+                return SessionSlot.Asia;
+            if (newYorkConfigured && IsTimeInRange(now, nyStart, nyEnd))
+                return SessionSlot.NewYork;
+
+            if (!asiaConfigured && !newYorkConfigured)
+                return SessionSlot.None;
+
+            DateTime nextAsiaStart = DateTime.MaxValue;
+            DateTime nextNewYorkStart = DateTime.MaxValue;
+
+            if (asiaConfigured)
+            {
+                nextAsiaStart = time.Date + asiaStart;
+                if (nextAsiaStart <= time)
+                    nextAsiaStart = nextAsiaStart.AddDays(1);
+            }
+
+            if (newYorkConfigured)
+            {
+                nextNewYorkStart = time.Date + nyStart;
+                if (nextNewYorkStart <= time)
+                    nextNewYorkStart = nextNewYorkStart.AddDays(1);
+            }
+
+            if (nextAsiaStart <= nextNewYorkStart)
+                return SessionSlot.Asia;
+            return SessionSlot.NewYork;
+        }
+
+        private SessionSlot GetFirstConfiguredSession()
+        {
+            if (IsSessionConfigured(SessionSlot.Asia))
+                return SessionSlot.Asia;
+            if (IsSessionConfigured(SessionSlot.NewYork))
+                return SessionSlot.NewYork;
+            return SessionSlot.None;
+        }
+
+        private bool IsSessionConfigured(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    return UseAsiaSession && AsiaSessionStart != AsiaSessionEnd;
+                case SessionSlot.NewYork:
+                    return UseNewYorkSession && NewYorkSessionStart != NewYorkSessionEnd;
+                default:
+                    return false;
+            }
+        }
+
+        private void ApplyInputsForSession(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Asia:
+                    activeEma = emaAsia;
+                    activeAdx = adxAsia;
+                    activeEmaPeriod = AsiaEmaPeriod;
+                    activeAdxPeriod = AsiaAdxPeriod;
+                    activeAdxThreshold = AsiaAdxThreshold;
+                    activeAdxMaxThreshold = AsiaAdxMaxThreshold;
+                    activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = AsiaContracts;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = AsiaStopPaddingPoints;
+                    activeExitCrossPoints = AsiaExitCrossPoints;
+                    activeTakeProfitPoints = AsiaTakeProfitPoints;
+                    break;
+
+                case SessionSlot.NewYork:
+                    activeEma = emaNewYork;
+                    activeAdx = adxNewYork;
+                    activeEmaPeriod = NewYorkEmaPeriod;
+                    activeAdxPeriod = NewYorkAdxPeriod;
+                    activeAdxThreshold = NewYorkAdxThreshold;
+                    activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
+                    activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = NewYorkContracts;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = NewYorkStopPaddingPoints;
+                    activeExitCrossPoints = NewYorkExitCrossPoints;
+                    activeTakeProfitPoints = NewYorkTakeProfitPoints;
+                    break;
+
+                default:
+                    activeEma = null;
+                    activeAdx = null;
+                    activeEmaPeriod = 0;
+                    activeAdxPeriod = 0;
+                    activeAdxThreshold = 0.0;
+                    activeAdxMaxThreshold = 0.0;
+                    activeAdxMinSlopePoints = 0.0;
+                    activeAdxPeakDrawdownExitUnits = 0.0;
+                    activeAdxAbsoluteExitLevel = 0.0;
+                    activeContracts = 0;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = 0.0;
+                    activeMaxEntryDistanceFromEmaPoints = 0.0;
+                    activeStopPaddingPoints = 0.0;
+                    activeExitCrossPoints = 0.0;
+                    activeTakeProfitPoints = 0.0;
+                    break;
+            }
+        }
+
+        private void UpdateEmaPlotVisibility()
+        {
+            if (!ShowEmaOnChart)
+            {
+                SetEmaVisible(emaAsia, false);
+                SetEmaVisible(emaNewYork, false);
+                return;
+            }
+
+            bool showAsia = activeSession == SessionSlot.Asia;
+            bool showNewYork = activeSession == SessionSlot.NewYork;
+
+            // NinjaTrader may return shared indicator instances when periods match.
+            // If two session EMA fields point to the same instance, visibility must be
+            // resolved across all aliases before applying the brush.
+            bool visAsia = showAsia
+                || (ReferenceEquals(emaAsia, emaNewYork) && showNewYork);
+            bool visNewYork = showNewYork
+                || (ReferenceEquals(emaNewYork, emaAsia) && showAsia);
+
+            SetEmaVisible(emaAsia, visAsia);
+            SetEmaVisible(emaNewYork, visNewYork);
+        }
+
+        private void UpdateAdxPlotVisibility()
+        {
+            SetAdxVisible(adxAsia, ShowAdxOnChart);
+            SetAdxVisible(adxNewYork, ShowAdxOnChart);
+        }
+
+        private void SetEmaVisible(EMA ema, bool visible)
+        {
+            if (ema == null || ema.Plots == null || ema.Plots.Length == 0)
+                return;
+
+            ema.Plots[0].Brush = visible ? Brushes.Gold : Brushes.Transparent;
+        }
+
+        private void SetAdxVisible(DM adx, bool showAdx)
+        {
+            if (adx == null || adx.Plots == null || adx.Plots.Length == 0)
+                return;
+
+            Brush adxBrush = showAdx ? Brushes.DodgerBlue : Brushes.Transparent;
+
+            adx.Plots[0].Brush = adxBrush;
+            if (adx.Plots.Length > 1)
+                adx.Plots[1].Brush = Brushes.Transparent;
+            if (adx.Plots.Length > 2)
+                adx.Plots[2].Brush = Brushes.Transparent;
+        }
+
+        private void UpdateAdxReferenceLines(DM adx, double minThreshold, double maxThreshold)
+        {
+            if (adx == null || adx.Lines == null || adx.Lines.Length == 0)
+                return;
+
+            bool showLines = ShowAdxThresholdLines && ShowAdxOnChart;
+
+            // ADX line 0 is the primary threshold line (min).
+            bool showMin = showLines && minThreshold > 0.0;
+            adx.Lines[0].Value = showMin ? minThreshold : double.NaN;
+            adx.Lines[0].Brush = showMin ? Brushes.LimeGreen : Brushes.Transparent;
+
+            // If a second line exists, use it for max threshold.
+            if (adx.Lines.Length > 1)
+            {
+                bool showMax = showLines && maxThreshold > 0.0;
+                adx.Lines[1].Value = showMax ? maxThreshold : double.NaN;
+                adx.Lines[1].Brush = showMax ? Brushes.OrangeRed : Brushes.Transparent;
+            }
+
+            // Draw explicit guide lines on the ADX panel so min/max are visible even when
+            // the built-in ADX indicator exposes only one threshold line slot.
+            string adxTagSuffix = adx.GetHashCode().ToString(CultureInfo.InvariantCulture);
+            bool drawMin = showLines && minThreshold > 0.0;
+            bool drawMax = showLines && maxThreshold > 0.0;
+
+            Draw.HorizontalLine(
+                adx,
+                "Duo_ADX_Min_" + adxTagSuffix,
+                drawMin ? minThreshold : 0.0,
+                drawMin ? Brushes.LimeGreen : Brushes.Transparent,
+                DashStyleHelper.Solid,
+                2);
+
+            Draw.HorizontalLine(
+                adx,
+                "Duo_ADX_Max_" + adxTagSuffix,
+                drawMax ? maxThreshold : 0.0,
+                drawMax ? Brushes.OrangeRed : Brushes.Transparent,
+                DashStyleHelper.Dash,
+                2);
+        }
+
+        private int GetMaxConfiguredEmaPeriod()
+        {
+            return Math.Max(AsiaEmaPeriod, NewYorkEmaPeriod);
+        }
+
+        private void ProcessSessionTransitions(SessionSlot slot)
+        {
+            bool inNow = TimeInSession(slot, Time[0]);
+            bool inPrev = CurrentBar > 0 ? TimeInSession(slot, Time[1]) : inNow;
+
+            if (inNow && !inPrev)
+            {
+                SetSessionClosed(slot, false);
+                SetTradesThisSession(slot, 0);
+                LogDebug(string.Format("{0} session start.", FormatSessionLabel(slot)));
+                LogDebug(string.Format("{0} trade counter reset.", FormatSessionLabel(slot)));
+                if (activeSession == slot)
+                    LogSessionActivation("start");
+            }
+
+            if (inPrev && !inNow && !GetSessionClosed(slot))
+            {
+                if (CloseAtSessionEnd)
+                {
+                    if (Position.MarketPosition == MarketPosition.Long)
+                        ExitLong("SessionEnd");
+                    else if (Position.MarketPosition == MarketPosition.Short)
+                        ExitShort("SessionEnd");
+                }
+
+                CancelWorkingEntryOrders();
+                SetSessionClosed(slot, true);
+                string sessionEndAction = CloseAtSessionEnd ? "flatten/cancel" : "cancel-only";
+                LogDebug(string.Format("{0} session end: {1}. closeAtSessionEnd={2}", FormatSessionLabel(slot), sessionEndAction, CloseAtSessionEnd));
+            }
+        }
+
+        private int GetTradesThisSession(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    return asiaTradesThisSession;
+                case SessionSlot.NewYork:
+                    return newYorkTradesThisSession;
+                default:
+                    return 0;
+            }
+        }
+
+        private void SetTradesThisSession(SessionSlot slot, int value)
+        {
+            int normalized = Math.Max(0, value);
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    asiaTradesThisSession = normalized;
+                    break;
+                case SessionSlot.NewYork:
+                    newYorkTradesThisSession = normalized;
+                    break;
+            }
+        }
+
+        private void CancelWorkingEntryOrders()
+        {
+            CancelOrderIfActive(longEntryOrder, "CancelWorkingEntries");
+            CancelOrderIfActive(shortEntryOrder, "CancelWorkingEntries");
+        }
+
+        private void CancelOrderIfActive(Order order, string reason)
+        {
+            if (!IsOrderActive(order))
+                return;
+
+            LogDebug(string.Format("CancelOrder | name={0} reason={1} state={2}", order.Name, reason, order.OrderState));
+            CancelOrder(order);
+            SendWebhook("cancel");
         }
 
         private bool IsOrderActive(Order order)
         {
             return order != null &&
                 (order.OrderState == OrderState.Working ||
-                order.OrderState == OrderState.Submitted ||
-                order.OrderState == OrderState.Accepted ||
-                order.OrderState == OrderState.ChangePending);
+                 order.OrderState == OrderState.Submitted ||
+                 order.OrderState == OrderState.Accepted ||
+                 order.OrderState == OrderState.ChangePending ||
+                 order.OrderState == OrderState.PartFilled);
         }
 
-	        private void Flatten(string reason)
-	        {
-	            if (Position.MarketPosition == MarketPosition.Long)
-	            {
-	                if (debug)
-	                    Print($"{Time[0]} - Flattening LONG due to {reason}");
-	                if (ifvgOverrideActive)
-	                    ExitLong("Exit_" + reason);
-	                else
-	                    ExitLong("Exit_" + reason, "LongEntry");
-	                
-	                // ✅ Send EXIT webhook for longs
-	                SendWebhookExitSafe();
-	            }
-	            else if (Position.MarketPosition == MarketPosition.Short)
-	            {
-	                if (debug)
-	                    Print($"{Time[0]} - Flattening SHORT due to {reason}");
-	                if (ifvgOverrideActive)
-	                    ExitShort("Exit_" + reason);
-	                else
-	                    ExitShort("Exit_" + reason, "ShortEntry");
-	                
-	                // ✅ Send EXIT webhook for shorts
-	                SendWebhookExitSafe();
-	            }
-
-            longLinesActive = false;
-            shortLinesActive = false;
-            longSignalBar = -1;
-            shortSignalBar = -1;
-            longExitBar = -1;
-            shortExitBar = -1;
-        }
-
-        private void FlattenAll(string reason)
+        private void ReconcileTrackedEntryOrders()
         {
-            CancelOrder(shortEntryOrder);
-            CancelOrder(longEntryOrder);
-            SendWebhookCancelSafe();
-
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                if (debug)
-                    Print($"{Time[0]} - Flattening LONG due to {reason}");
-                ExitLong("Exit_" + reason, "LongEntry");
-                ExitLong("Exit_" + reason + "_iFVG", IfvgLongSignalName);
-                SendWebhookExitSafe();
-            }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                if (debug)
-                    Print($"{Time[0]} - Flattening SHORT due to {reason}");
-                ExitShort("Exit_" + reason, "ShortEntry");
-                ExitShort("Exit_" + reason + "_iFVG", IfvgShortSignalName);
-                SendWebhookExitSafe();
-            }
-
-            longLinesActive = false;
-            shortLinesActive = false;
-            longSignalBar = -1;
-            shortSignalBar = -1;
-            longExitBar = -1;
-            shortExitBar = -1;
-        }
-	
-        private bool TimeInSkip(DateTime time)
-        {
-			EnsureActiveSession(time);
-			if (activeSession == SessionSlot.None)
-				return false;
-			EnsureEffectiveTimes(time, false);
-            TimeSpan now = time.TimeOfDay;
-
-            bool inSkip1 = false;
-            bool inSkip2 = false;
-            bool inFomc = IsFomcSkipTime(time);
-
-            // ✅ Skip1 only active if both are not 00:00:00
-            if (effectiveSkipStart != TimeSpan.Zero && effectiveSkipEnd != TimeSpan.Zero)
-            {
-                inSkip1 = (effectiveSkipStart < effectiveSkipEnd)
-                    ? (now >= effectiveSkipStart && now <= effectiveSkipEnd)
-                    : (now >= effectiveSkipStart || now <= effectiveSkipEnd); // overnight handling
-            }
-
-            // ✅ Skip2 only active if both are not 00:00:00
-            if (effectiveSkip2Start != TimeSpan.Zero && effectiveSkip2End != TimeSpan.Zero)
-            {
-                inSkip2 = (effectiveSkip2Start < effectiveSkip2End)
-                    ? (now >= effectiveSkip2Start && now <= effectiveSkip2End)
-                    : (now >= effectiveSkip2Start || now <= effectiveSkip2End); // overnight handling
-            }
-
-            return inSkip1 || inSkip2 || inFomc;
+            ReconcileTrackedEntryOrder(ref longEntryOrder, LongEntrySignal, ref missingLongEntryOrderBars);
+            ReconcileTrackedEntryOrder(ref shortEntryOrder, ShortEntrySignal, ref missingShortEntryOrderBars);
         }
 
-		private bool TimeInSession(DateTime time)
-		{
-			EnsureActiveSession(time);
-			if (activeSession == SessionSlot.None)
-				return false;
-			EnsureEffectiveTimes(time, false);
-		    TimeSpan now = time.TimeOfDay;
-		
-		    if (effectiveSessionStart < effectiveSessionEnd)
-		        return now >= effectiveSessionStart && now < effectiveSessionEnd;   // strictly less
-		    else
-		        return now >= effectiveSessionStart || now < effectiveSessionEnd;
-		}
-
-		private bool TimeInNoTradesAfter(DateTime time)
-		{
-			EnsureActiveSession(time);
-			if (activeSession == SessionSlot.None)
-				return false;
-			EnsureEffectiveTimes(time, false);
-			TimeSpan now = time.TimeOfDay;
-
-			// If the session doesn’t cross midnight
-			if (effectiveSessionStart < effectiveSessionEnd)
-				return now >= effectiveNoTradesAfter && now < effectiveSessionEnd;
-
-			// If the session crosses midnight
-			return (now >= effectiveNoTradesAfter || now < effectiveSessionEnd);
-		}
-
-        private void DrawSessionBackground()
+        private void ReconcileTrackedEntryOrder(ref Order trackedOrder, string expectedName, ref int missingBars)
         {
-            // Don't try drawing until we have a few bars
+            if (!IsOrderActive(trackedOrder))
+            {
+                missingBars = 0;
+                return;
+            }
+
+            if (Account == null)
+            {
+                missingBars = 0;
+                return;
+            }
+
+            string trackedId = trackedOrder.OrderId ?? string.Empty;
+            bool foundActive = false;
+
+            try
+            {
+                foreach (Order accountOrder in Account.Orders)
+                {
+                    if (accountOrder == null)
+                        continue;
+
+                    string accountOrderId = accountOrder.OrderId ?? string.Empty;
+                    if (trackedId.Length > 0 && string.Equals(accountOrderId, trackedId, StringComparison.Ordinal))
+                    {
+                        foundActive = IsOrderActive(accountOrder);
+                        break;
+                    }
+                }
+            }
+            catch
+            {
+                missingBars = 0;
+                return;
+            }
+
+            if (foundActive)
+            {
+                missingBars = 0;
+                return;
+            }
+
+            missingBars++;
+
+            if (missingBars >= 2)
+            {
+                if (DebugLogging)
+                {
+                    LogDebug(string.Format(
+                        "Clearing stale tracked order | expected={0} tracked={1} missingBars={2}",
+                        expectedName,
+                        FormatOrderRef(trackedOrder),
+                        missingBars));
+                }
+
+                trackedOrder = null;
+                missingBars = 0;
+            }
+        }
+
+        private string FormatOrderRef(Order order)
+        {
+            if (order == null)
+                return "null";
+
+            string name = order.Name ?? string.Empty;
+            string id = order.OrderId ?? string.Empty;
+            return string.Format("{0}:{1}:{2}", name, id, order.OrderState);
+        }
+
+        private double BuildLongEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleLow)
+        {
+            double raw = candleLow;
+            raw -= activeStopPaddingPoints;
+
+            double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
+            if (rounded >= entryPrice)
+                rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
+            return rounded;
+        }
+
+        private double BuildShortEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleHigh)
+        {
+            double raw = candleHigh;
+            raw += activeStopPaddingPoints;
+
+            double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
+            if (rounded <= entryPrice)
+                rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
+            return rounded;
+        }
+
+        private double BuildFlipShortStopPrice(double entryPrice, double candleOpen, double candleHigh)
+        {
+            double raw = candleHigh + activeStopPaddingPoints;
+            double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
+            if (rounded <= entryPrice)
+                rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
+            return rounded;
+        }
+
+        private double BuildFlipLongStopPrice(double entryPrice, double candleOpen, double candleLow)
+        {
+            double raw = candleLow - activeStopPaddingPoints;
+            double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
+            if (rounded >= entryPrice)
+                rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
+            return rounded;
+        }
+
+        private double GetAdxSlopePoints()
+        {
+            if (activeAdx == null || CurrentBar < 1)
+                return 0.0;
+
+            return activeAdx[0] - activeAdx[1];
+        }
+
+        private double GetEmaSlopePoints()
+        {
+            if (activeEma == null || CurrentBar < 1)
+                return 0.0;
+
+            return activeEma[0] - activeEma[1];
+        }
+
+        private double GetEmaSlopePointsPerBar()
+        {
+            return GetEmaSlopePoints();
+        }
+
+        private bool EmaSlopePassesLong()
+        {
+            if (activeEmaMinSlopePointsPerBar <= 0.0)
+                return true;
+
+            return GetEmaSlopePointsPerBar() >= activeEmaMinSlopePointsPerBar;
+        }
+
+        private bool EmaSlopePassesShort()
+        {
+            if (activeEmaMinSlopePointsPerBar <= 0.0)
+                return true;
+
+            return GetEmaSlopePointsPerBar() <= -activeEmaMinSlopePointsPerBar;
+        }
+
+        private void UpdateAdxPeakTracker(double adxValue)
+        {
+            MarketPosition currentPos = Position.MarketPosition;
+            if (currentPos == MarketPosition.Flat)
+            {
+                trackedAdxPeakPosition = MarketPosition.Flat;
+                currentTradePeakAdx = 0.0;
+                return;
+            }
+
+            if (trackedAdxPeakPosition != currentPos)
+            {
+                trackedAdxPeakPosition = currentPos;
+                currentTradePeakAdx = adxValue;
+                return;
+            }
+
+            if (adxValue > currentTradePeakAdx)
+                currentTradePeakAdx = adxValue;
+        }
+
+        private bool ShouldExitOnAdxDrawdown(double adxValue, out double drawdown)
+        {
+            drawdown = 0.0;
+            if (activeAdxPeakDrawdownExitUnits <= 0.0)
+                return false;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return false;
+
+            if (trackedAdxPeakPosition != Position.MarketPosition)
+                return false;
+
+            drawdown = currentTradePeakAdx - adxValue;
+            return drawdown >= activeAdxPeakDrawdownExitUnits;
+        }
+
+
+        private double GetBodyPercentAboveEma(double open, double close, double emaValue)
+        {
+            double bodyTop = Math.Max(open, close);
+            double bodyBottom = Math.Min(open, close);
+            double body = bodyTop - bodyBottom;
+            if (body <= 0)
+                return 0;
+
+            double above;
+            if (emaValue <= bodyBottom)
+                above = body;
+            else if (emaValue >= bodyTop)
+                above = 0;
+            else
+                above = bodyTop - emaValue;
+
+            return (above / body) * 100.0;
+        }
+
+        private double GetBodyPercentBelowEma(double open, double close, double emaValue)
+        {
+            double bodyTop = Math.Max(open, close);
+            double bodyBottom = Math.Min(open, close);
+            double body = bodyTop - bodyBottom;
+            if (body <= 0)
+                return 0;
+
+            double below;
+            if (emaValue >= bodyTop)
+                below = body;
+            else if (emaValue <= bodyBottom)
+                below = 0;
+            else
+                below = emaValue - bodyBottom;
+
+            return (below / body) * 100.0;
+        }
+
+        private bool TimeInSession(SessionSlot slot, DateTime time)
+        {
+            TimeSpan start;
+            TimeSpan end;
+            if (!TryGetSessionWindow(slot, time, out start, out end))
+                return false;
+
+            return IsTimeInRange(time.TimeOfDay, start, end);
+        }
+
+        private bool TryGetSessionWindow(SessionSlot slot, out TimeSpan start, out TimeSpan end)
+        {
+            return TryGetSessionWindow(slot, Time[0], out start, out end);
+        }
+
+        private bool TryGetSessionWindow(SessionSlot slot, DateTime referenceTime, out TimeSpan start, out TimeSpan end)
+        {
+            start = TimeSpan.Zero;
+            end = TimeSpan.Zero;
+
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    if (!UseAsiaSession || AsiaSessionStart == AsiaSessionEnd)
+                        return false;
+                    start = AsiaSessionStart;
+                    end = AsiaSessionEnd;
+                    return true;
+
+                case SessionSlot.NewYork:
+                    if (!UseNewYorkSession || NewYorkSessionStart == NewYorkSessionEnd)
+                        return false;
+                    start = NewYorkSessionStart;
+                    end = NewYorkSessionEnd;
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        private bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
+        {
+            if (start < end)
+                return now >= start && now < end;
+
+            return now >= start || now < end;
+        }
+
+        private DateTime GetSessionStartTime(SessionSlot slot, DateTime barTime)
+        {
+            TimeSpan start;
+            TimeSpan end;
+            if (!TryGetSessionWindow(slot, barTime, out start, out end))
+                return Core.Globals.MinDate;
+
+            if (start <= end)
+                return barTime.Date + start;
+
+            if (barTime.TimeOfDay < end)
+                return barTime.Date.AddDays(-1) + start;
+
+            return barTime.Date + start;
+        }
+
+        private void DrawSessionBackgrounds()
+        {
             if (CurrentBar < 1)
                 return;
 
-            // Find current bar time
-            DateTime barTime = Time[0];
-			EnsureActiveSession(barTime);
-			if (activeSession == SessionSlot.None)
-				return;
-			EnsureEffectiveTimes(barTime, false);
-            bool isOvernight = effectiveSessionStart > effectiveSessionEnd;
+            DrawSessionBackground(SessionSlot.Asia, "Duo_Asia", AsiaSessionBrush ?? SessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.NewYork, "Duo_NewYork", NewYorkSessionBrush ?? SessionBrush ?? Brushes.LightSkyBlue);
+            DrawNewYorkSkipWindow(Time[0]);
+        }
 
-            DateTime sessionStartTime = barTime.Date + effectiveSessionStart;
-            DateTime sessionEndTime = isOvernight
-                ? sessionStartTime.AddDays(1).Date + effectiveSessionEnd
-                : sessionStartTime.Date + effectiveSessionEnd;
-
-            // Get the bar indexes (barsAgo) for start and end
-            int startBarsAgo = Bars.GetBar(sessionStartTime);
-            int endBarsAgo = Bars.GetBar(sessionEndTime);
-
-            if (startBarsAgo < 0 || endBarsAgo < 0)
+        private void DrawSessionBackground(SessionSlot slot, string tagPrefix, Brush fillBrush)
+        {
+            TimeSpan start;
+            TimeSpan end;
+            if (!TryGetSessionWindow(slot, Time[0], out start, out end))
                 return;
 
-            string tag = $"DUO_SessionFill_{activeSession}_{sessionStartTime:yyyyMMdd_HHmm}";
+            DateTime sessionStart = GetSessionStartTime(slot, Time[0]);
+            if (sessionStart == Core.Globals.MinDate)
+                return;
 
-            if (DrawObjects[tag] == null)
+            DateTime sessionEnd = start > end
+                ? sessionStart.AddDays(1).Date + end
+                : sessionStart.Date + end;
+
+            string rectTag = string.Format("{0}_SessionFill_{1:yyyyMMdd_HHmm}", tagPrefix, sessionStart);
+            if (DrawObjects[rectTag] == null)
             {
-				// ✅ Use very high/low Y values to simulate full chart height
-				Draw.Rectangle(
-					this,
-					tag,
-					false,
-					sessionStartTime,
-					0,
-					sessionEndTime,
-					30000,
-					Brushes.Transparent,
-					SessionBrush ?? Brushes.DarkSlateGray,
-					10
-				).ZOrder = -1;
+                Draw.Rectangle(
+                    this,
+                    rectTag,
+                    false,
+                    sessionStart,
+                    0,
+                    sessionEnd,
+                    30000,
+                    Brushes.Transparent,
+                    fillBrush,
+                    10).ZOrder = -1;
             }
-			
-			var r = new SolidColorBrush(Color.FromArgb(70, 255, 0, 0));
-
-			// Calculate the exact DateTime for the London_NoTradesAfter time (on this chart date)
-			//DateTime sessionStartTime = Time[0].Date + London_SessionStart;
-			DateTime noTradesAfterTime = Time[0].Date + effectiveNoTradesAfter;
-
-			// Handle overnight sessions (when London_SessionEnd < London_SessionStart)
-			if (effectiveSessionStart > effectiveSessionEnd && effectiveNoTradesAfter < effectiveSessionStart)
-				noTradesAfterTime = noTradesAfterTime.AddDays(1);
-
-			// Draw the vertical line exactly at London_NoTradesAfter
-			Draw.VerticalLine(this, $"NoTradesAfter_{activeSession}_{sessionStartTime:yyyyMMdd_HHmm}", noTradesAfterTime, r,
-							DashStyleHelper.Solid, 2);
-
-            DrawSkipWindow("Skip1", effectiveSkipStart, effectiveSkipEnd);
-            DrawSkipWindow("Skip2", effectiveSkip2Start, effectiveSkip2End);
-            DrawFomcWindow(barTime);
         }
 
-        private void DrawSkipWindow(string tagPrefix, TimeSpan start, TimeSpan end)
+        private bool IsNewYorkSkipTime(DateTime time)
         {
-            // Only draw when both ends are configured
-            if (start == TimeSpan.Zero || end == TimeSpan.Zero)
-                return;
+            if (!UseNewYorkSession)
+                return false;
 
-            DateTime barDate = Time[0].Date;
+            if (NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
+                return false;
 
-            DateTime windowStart = barDate + start;
-            DateTime windowEnd = barDate + end;
+            TimeSpan now = time.TimeOfDay;
+            if (NewYorkSkipStart < NewYorkSkipEnd)
+                return now >= NewYorkSkipStart && now <= NewYorkSkipEnd;
 
-            if (start > end)
-                windowEnd = windowEnd.AddDays(1); // overnight skip window support
-
-            int startBarsAgo = Bars.GetBar(windowStart);
-            int endBarsAgo = Bars.GetBar(windowEnd);
-
-            if (startBarsAgo < 0 || endBarsAgo < 0)
-                return;
-
-            // Higher opacity fill, light dash-dot outlines
-            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));   // fill (~78% opaque)
-            areaBrush.Freeze();
-            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));    // lines (~35% opaque)
-            lineBrush.Freeze();
-
-            string rectTag = $"DUO_{tagPrefix}_Rect_{windowStart:yyyyMMdd}";
-            Draw.Rectangle(
-                this,
-                rectTag,
-                false,
-                windowStart,
-                0,
-                windowEnd,
-                30000,
-                lineBrush,   // outline
-                areaBrush,   // fill
-                2
-            ).ZOrder = -1;
-
-            string startTag = $"DUO_{tagPrefix}_Start_{windowStart:yyyyMMdd}";
-            Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.Solid, 2);
-
-            string endTag = $"DUO_{tagPrefix}_End_{windowEnd:yyyyMMdd}";
-            Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.Solid, 2);
+            return now >= NewYorkSkipStart || now <= NewYorkSkipEnd;
         }
 
-        private void DrawFomcWindow(DateTime barTime)
+        private void DrawNewYorkSkipWindow(DateTime barTime)
         {
-            if (!UseFomcSkip)
+            if (!UseNewYorkSession)
                 return;
 
-            EnsureFomcDatesInitialized();
-            if (fomcDates == null || fomcDates.Count == 0)
+            if (NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
                 return;
 
-            if (FomcSkipStart == FomcSkipEnd)
-                return;
-
-            if (!fomcDates.Contains(barTime.Date))
-                return;
-
-            DateTime windowStart = barTime.Date + FomcSkipStart;
-            DateTime windowEnd = barTime.Date + FomcSkipEnd;
-            if (FomcSkipStart > FomcSkipEnd)
+            DateTime windowStart = barTime.Date + NewYorkSkipStart;
+            DateTime windowEnd = barTime.Date + NewYorkSkipEnd;
+            if (NewYorkSkipStart > NewYorkSkipEnd)
                 windowEnd = windowEnd.AddDays(1);
 
             int startBarsAgo = Bars.GetBar(windowStart);
@@ -3501,15 +1756,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (startBarsAgo < 0 || endBarsAgo < 0)
                 return;
 
-            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));   // match regular skip fill
-            areaBrush.Freeze();
-            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));      // match regular skip lines
-            lineBrush.Freeze();
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+            try
+            {
+                if (areaBrush.CanFreeze)
+                    areaBrush.Freeze();
+                if (lineBrush.CanFreeze)
+                    lineBrush.Freeze();
+            }
+            catch
+            {
+            }
 
-            string rectTag = $"DUO_FOMC_Rect_{barTime:yyyyMMdd}";
+            string tagBase = string.Format("Duo_NewYorkSkip_{0:yyyyMMdd_HHmm}", windowStart);
             Draw.Rectangle(
                 this,
-                rectTag,
+                tagBase + "_Rect",
                 false,
                 windowStart,
                 0,
@@ -3517,307 +1780,249 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 30000,
                 lineBrush,
                 areaBrush,
-                2
-            ).ZOrder = -1;
+                2).ZOrder = -1;
 
-            string startTag = $"DUO_FOMC_Start_{barTime:yyyyMMdd}";
-            Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.Solid, 2);
-
-            string endTag = $"DUO_FOMC_End_{barTime:yyyyMMdd}";
-            Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.Solid, 2);
+            Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
         }
 
-        private void EnsureEffectiveTimes(DateTime barTime, bool log)
+        private void DrawNewsWindows(DateTime barTime)
         {
-            if (activeSession == SessionSlot.None)
-            {
-                effectiveSessionStart = TimeSpan.Zero;
-                effectiveSessionEnd = TimeSpan.Zero;
-                effectiveNoTradesAfter = TimeSpan.Zero;
-                effectiveSkipStart = TimeSpan.Zero;
-                effectiveSkipEnd = TimeSpan.Zero;
-                effectiveSkip2Start = TimeSpan.Zero;
-                effectiveSkip2End = TimeSpan.Zero;
-                return;
-            }
-
-            if (!activeAutoShiftTimes)
-            {
-                effectiveSessionStart = activeSessionStart;
-                effectiveSessionEnd = activeSessionEnd;
-                effectiveNoTradesAfter = activeNoTradesAfter;
-                effectiveSkipStart = activeSkipStart;
-                effectiveSkipEnd = activeSkipEnd;
-                effectiveSkip2Start = activeSkip2Start;
-                effectiveSkip2End = activeSkip2End;
-                return;
-            }
-
-            DateTime date = barTime.Date;
-            if (date == effectiveTimesDate)
+            if (!UseNewsSkip)
                 return;
 
-            effectiveTimesDate = date;
-
-            TimeSpan shift = GetLondonSessionShiftForDate(date);
-            effectiveSessionStart = ShiftTime(activeSessionStart, shift);
-            effectiveSessionEnd = ShiftTime(activeSessionEnd, shift);
-            effectiveNoTradesAfter = ShiftTime(activeNoTradesAfter, shift);
-            effectiveSkipStart = ShiftTime(activeSkipStart, shift);
-            effectiveSkipEnd = ShiftTime(activeSkipEnd, shift);
-            effectiveSkip2Start = ShiftTime(activeSkip2Start, shift);
-            effectiveSkip2End = ShiftTime(activeSkip2End, shift);
-
-            if (debug && log)
+            for (int i = 0; i < NewsDates.Count; i++)
             {
-                Print(
-                    $"{date:yyyy-MM-dd} - AutoShiftTimes recompute | " +
-                    $"Base SS={activeSessionStart:hh\\:mm} SE={activeSessionEnd:hh\\:mm} NTA={activeNoTradesAfter:hh\\:mm} | " +
-                    $"Eff SS={effectiveSessionStart:hh\\:mm} SE={effectiveSessionEnd:hh\\:mm} NTA={effectiveNoTradesAfter:hh\\:mm} | " +
-                    $"Shift={shift.TotalHours:0.##}h");
-            }
-        }
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barTime.Date)
+                    continue;
 
-        private TimeSpan GetLondonSessionShiftForDate(DateTime date)
-        {
-            // Use midday UTC to avoid DST transition hour edge cases.
-            DateTime utcSample = new DateTime(date.Year, date.Month, date.Day, 12, 0, 0, DateTimeKind.Utc);
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
 
-            // Compute a dynamic baseline for this year so we only shift during UK/US DST mismatch weeks.
-            // Jan 15 is a stable reference day (both typically on standard time).
-            DateTime utcRef = new DateTime(date.Year, 1, 15, 12, 0, 0, DateTimeKind.Utc);
-
-            TimeZoneInfo londonTz = GetLondonTimeZone();
-            TimeZoneInfo targetTz = GetTargetTimeZone();
-
-            TimeSpan baseline = londonTz.GetUtcOffset(utcRef) - targetTz.GetUtcOffset(utcRef);
-            TimeSpan actual = londonTz.GetUtcOffset(utcSample) - targetTz.GetUtcOffset(utcSample);
-
-            return baseline - actual;
-        }
-
-        private TimeSpan ShiftTime(TimeSpan baseTime, TimeSpan shift)
-        {
-            long ticks = (baseTime.Ticks + shift.Ticks) % TimeSpan.TicksPerDay;
-            if (ticks < 0)
-                ticks += TimeSpan.TicksPerDay;
-            return new TimeSpan(ticks);
-        }
-
-        private TimeZoneInfo GetTargetTimeZone()
-        {
-            if (targetTimeZone != null)
-                return targetTimeZone;
-
-            try
-            {
-                // Prefer the Bars/data-series time zone (matches Time[0]) if available.
-                // Use reflection to avoid compile-time dependency on specific NinjaTrader members.
-                var bars = Bars;
-                if (bars != null)
-                {
-                    var timeZoneProp = bars.GetType().GetProperty(
-                        "TimeZoneInfo",
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
-                    if (timeZoneProp != null && typeof(TimeZoneInfo).IsAssignableFrom(timeZoneProp.PropertyType))
-                        targetTimeZone = (TimeZoneInfo)timeZoneProp.GetValue(bars, null);
-                }
-
-                // Fallback to TradingHours template time zone.
-                if (targetTimeZone == null)
-                    targetTimeZone = Bars?.TradingHours?.TimeZoneInfo;
-            }
-            catch
-            {
-                targetTimeZone = null;
-            }
-
-            if (targetTimeZone == null)
-                targetTimeZone = TimeZoneInfo.Local;
-
-            return targetTimeZone;
-        }
-
-        private TimeZoneInfo GetEasternTimeZone()
-        {
-            if (easternTimeZone != null)
-                return easternTimeZone;
-
-            try
-            {
-                easternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
-            }
-            catch
-            {
+                var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
                 try
                 {
-                    easternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+                    if (areaBrush.CanFreeze)
+                        areaBrush.Freeze();
+                    if (lineBrush.CanFreeze)
+                        lineBrush.Freeze();
                 }
-                catch
-                {
-                    easternTimeZone = TimeZoneInfo.Utc;
-                }
-            }
+                catch { }
 
-            return easternTimeZone;
+                string tagBase = string.Format("Duo_News_{0:yyyyMMdd_HHmm}", newsTime);
+
+                Draw.Rectangle(
+                    this,
+                    tagBase + "_Rect",
+                    false,
+                    windowStart,
+                    0,
+                    windowEnd,
+                    30000,
+                    lineBrush,
+                    areaBrush,
+                    2).ZOrder = -1;
+
+                Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+                Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+            }
         }
 
-        private void EnsureFomcDatesInitialized()
+        private void EnsureNewsDatesInitialized()
         {
-            if (fomcDatesInitialized)
+            if (newsDatesInitialized)
                 return;
 
-            fomcDatesInitialized = true;
-            fomcDates = new HashSet<DateTime>();
+            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+            {
+                newsDatesInitialized = true;
+                return;
+            }
 
-            if (string.IsNullOrWhiteSpace(FomcDatesRaw))
+            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < entries.Length; i++)
+            {
+                string trimmed = entries[i].Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+
+                DateTime parsed;
+                if (!DateTime.TryParseExact(trimmed, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out parsed))
+                {
+                    LogDebug(string.Format("Invalid news date entry: {0}", trimmed));
+                    continue;
+                }
+
+                TimeSpan t = parsed.TimeOfDay;
+                if (t == new TimeSpan(8, 30, 0) || t == new TimeSpan(14, 0, 0))
+                    NewsDates.Add(parsed);
+            }
+
+            newsDatesInitialized = true;
+        }
+
+        private bool TimeInNewsSkip(DateTime time)
+        {
+            if (!UseNewsSkip)
+                return false;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != time.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+                if (time >= windowStart && time <= windowEnd)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool GetSessionClosed(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    return asiaSessionClosed;
+                case SessionSlot.NewYork:
+                    return newYorkSessionClosed;
+                default:
+                    return false;
+            }
+        }
+
+        private void SetSessionClosed(SessionSlot slot, bool value)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    asiaSessionClosed = value;
+                    break;
+                case SessionSlot.NewYork:
+                    newYorkSessionClosed = value;
+                    break;
+            }
+        }
+
+        private string FormatSessionLabel(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    return "Asia";
+                case SessionSlot.NewYork:
+                    return "New York";
+                default:
+                    return "None";
+            }
+        }
+
+        private void LogSessionActivation(string reason)
+        {
+            TimeSpan start;
+            TimeSpan end;
+            if (!TryGetSessionWindow(activeSession, Time[0], out start, out end))
                 return;
 
-            string[] entries = FomcDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (string entry in entries)
-            {
-                string trimmed = entry.Trim();
-                if (DateTime.TryParseExact(trimmed, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime date))
-                {
-                    fomcDates.Add(date.Date);
-                }
-                else if (debug)
-                {
-                    Print($"Invalid FOMC date entry: {trimmed}");
-                }
-            }
+            bool inNow = TimeInSession(activeSession, Time[0]);
+
+            LogDebug(string.Format(
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} maxTradesPerSession={14} exitCross={15:0.##} entryStop={16} slPad={17:0.##}",
+                reason,
+                FormatSessionLabel(activeSession),
+                inNow,
+                CloseAtSessionEnd,
+                start,
+                end,
+                activeEmaPeriod,
+                activeAdxThreshold,
+                activeAdxMaxThreshold,
+                activeAdxMinSlopePoints,
+                activeAdxPeakDrawdownExitUnits,
+                activeAdxAbsoluteExitLevel,
+                activeTakeProfitPoints,
+                activeContracts,
+                MaxTradesPerSession,
+                activeExitCrossPoints,
+                activeEntryStopMode,
+                activeStopPaddingPoints));
+
+            int adxPlotCount = activeAdx != null && activeAdx.Plots != null ? activeAdx.Plots.Length : 0;
+            int adxValueCount = activeAdx != null && activeAdx.Values != null ? activeAdx.Values.Length : 0;
+            string adxType = activeAdx != null ? activeAdx.GetType().Name : "null";
+            LogDebug(string.Format(
+                "AdxVisuals ({0}) | session={1} type={2} showAdx={3} showThresholds={4} plots={5} values={6}",
+                reason,
+                FormatSessionLabel(activeSession),
+                adxType,
+                ShowAdxOnChart,
+                ShowAdxThresholdLines,
+                adxPlotCount,
+                adxValueCount));
         }
 
-        private bool IsFomcSkipTime(DateTime time)
+        private void BeginTradeAttempt(string side)
         {
-            if (!UseFomcSkip)
-                return false;
+            if (!DebugLogging)
+                return;
 
-            EnsureFomcDatesInitialized();
-            if (fomcDates == null || fomcDates.Count == 0)
-                return false;
+            if (tradeAttemptOpen && string.Equals(tradeAttemptSide, side, StringComparison.Ordinal))
+                return;
 
-            if (!fomcDates.Contains(time.Date))
-                return false;
+            if (tradeAttemptOpen)
+                EndTradeAttempt("interrupted");
 
-            TimeSpan now = time.TimeOfDay;
-            TimeSpan start = FomcSkipStart;
-            TimeSpan end = FomcSkipEnd;
-
-            if (start == end)
-                return false;
-
-            return start < end
-                ? (now >= start && now < end)
-                : (now >= start || now < end);
+            tradeAttemptOpen = true;
+            tradeAttemptId++;
+            tradeAttemptSide = side;
+            LogDebug(string.Format("Attempt #{0} start | side={1} session={2}", tradeAttemptId, side, FormatSessionLabel(activeSession)));
         }
 
-        private TimeZoneInfo GetLondonTimeZone()
+        private void EndTradeAttempt(string reason)
         {
-            if (londonTimeZone != null)
-                return londonTimeZone;
+            if (!DebugLogging || !tradeAttemptOpen)
+                return;
 
-            try
-            {
-                // Windows time zone id (NinjaTrader runs on Windows).
-                londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
-            }
-            catch
-            {
-                try
-                {
-                    // Fallback for environments that support IANA ids.
-                    londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/London");
-                }
-                catch
-                {
-                    londonTimeZone = TimeZoneInfo.Utc;
-                }
-            }
-
-            return londonTimeZone;
+            LogDebug(string.Format("Attempt #{0} end | reason={1}", tradeAttemptId, reason));
+            Print(string.Empty);
+            tradeAttemptOpen = false;
+            tradeAttemptSide = string.Empty;
         }
 
-        private double GetSLForLong()
+        private void LogDebug(string message)
         {
-            if (activeSLPresetSetting == SLPreset.First_Candle_Percent)
+            if (!DebugLogging)
+                return;
+
+            if (Bars == null || CurrentBar < 0)
             {
-                double c1High = High[1];
-                double c1Low = Low[1];
-                double sl = c1High - (activeSLPercentFirstCandle / 100.0) * (c1High - c1Low);
-
-                if (debug)
-                    Print($"{Time[0]} - 📉 Long SL set at {activeSLPercentFirstCandle}% of Candle 1 range: {sl:0.00}");
-
-                return sl - activeSLPadding;
+                Print(string.Format("Duo | {0}", message));
+                return;
             }
 
-            double baseSL = First_Candle_High_Low ? Low[1] :
-                            First_Candle_Open ? Open[1] :
-                            Second_Candle_High_Low ? Low[0] :
-                            Second_Candle_Open ? Open[0] :
-                            Open[1];
-            return baseSL - activeSLPadding;
+            Print(string.Format("{0} | Duo | bar={1} | {2}", Time[0], CurrentBar, message));
         }
 
-        private double GetSLForShort()
+        public void UpdateInfo()
         {
-            if (activeSLPresetSetting == SLPreset.First_Candle_Percent)
-            {
-                double c1High = High[1];
-                double c1Low = Low[1];
-                double sl = c1Low + (activeSLPercentFirstCandle / 100.0) * (c1High - c1Low);
-
-                if (debug)
-                    Print($"{Time[0]} - 📈 Short SL set at {activeSLPercentFirstCandle}% of Candle 1 range: {sl:0.00}");
-
-                return sl + activeSLPadding;
-            }
-
-            double baseSL = First_Candle_High_Low ? High[1] :
-                            First_Candle_Open ? Open[1] :
-                            Second_Candle_High_Low ? High[0] :
-                            Second_Candle_Open ? Open[0] :
-                            Open[1];
-            return baseSL + activeSLPadding;
-        }
-		
-        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
-        {
-            bool result = false;
-            if (System.Windows.Application.Current == null) // Defensive: avoid crash in some headless NT environments
-                return false;
-
-            System.Windows.Application.Current.Dispatcher.Invoke(
-                () =>
-                {
-                    var message = $"Confirm {orderType} entry\nPrice: {price}\nQty: {quantity}";
-                    var res =
-                        System.Windows.MessageBox.Show(message, "Entry Confirmation", System.Windows.MessageBoxButton.YesNo,
-                                                    System.Windows.MessageBoxImage.Question);
-
-                    result = (res == System.Windows.MessageBoxResult.Yes);
-                });
-
-            return result;
-        }
-
-        public void UpdateInfo() {
             UpdateInfoText();
         }
 
         public void UpdateInfoText()
         {
             var lines = BuildInfoLines();
-            var font  = new SimpleFont("Consolas", 14); // monospaced
+            var font = new SimpleFont("Consolas", 14);
 
             int maxLabel = lines.Max(l => l.label.Length);
             int maxValue = Math.Max(1, lines.Max(l => l.value.Length));
 
-            // 1) BACKGROUND BLOCK – uses visible chars but transparent text so
-            //    NinjaTrader allocates full width (labels + values).
-            string valuePlaceholder = new string('0', maxValue); // dummy width
+            string valuePlaceholder = new string('0', maxValue);
             var bgLines = lines
                 .Select(l => l.label.PadRight(maxLabel + 1) + valuePlaceholder)
                 .ToArray();
@@ -3829,13 +2034,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tag: "myStatusLabel_bg",
                 text: bgText,
                 textPosition: TextPosition.BottomLeft,
-                textBrush: Brushes.Transparent,  // text invisible
+                textBrush: Brushes.Transparent,
                 font: font,
                 outlineBrush: null,
-                areaBrush: Brushes.Black,        // full background for whole block
+                areaBrush: Brushes.Black,
                 areaOpacity: 85);
 
-            // 2) LABEL BLOCK – labels only, no background
             var labelLines = lines
                 .Select(l => l.label)
                 .ToArray();
@@ -3853,20 +2057,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 areaBrush: null,
                 areaOpacity: 0);
 
-            // 3) VALUE OVERLAYS – one block per line, only that line has a value
             string spacesBeforeValue = new string(' ', maxLabel + 1);
-
             for (int i = 0; i < lines.Count; i++)
             {
-                string tag = $"myStatusLabel_val_{i}";
+                string tag = string.Format("myStatusLabel_val_{0}", i);
 
                 var overlayLines = new string[lines.Count];
                 for (int j = 0; j < lines.Count; j++)
-                {
-                    overlayLines[j] = (j == i)
-                        ? spacesBeforeValue + lines[i].value   // value at value column
-                        : string.Empty;                        // blank line
-                }
+                    overlayLines[j] = j == i ? spacesBeforeValue + lines[i].value : string.Empty;
 
                 string overlayText = string.Join(Environment.NewLine, overlayLines);
 
@@ -3887,942 +2085,272 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             var lines = new List<(string label, string value, Brush brush)>();
 
-            string tpLine, slLine;
-            GetPnLLines(out tpLine, out slLine);
+            double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+            double adxSlope = GetAdxSlopePoints();
+            bool adxMinEnabled = activeAdxThreshold > 0.0;
+            bool adxMaxEnabled = activeAdxMaxThreshold > 0.0;
+            bool slopeEnabled = activeAdxMinSlopePoints > 0.0;
+            bool aboveMin = !adxMinEnabled || adxValue >= activeAdxThreshold;
+            bool belowMin = adxMinEnabled && adxValue < activeAdxThreshold;
+            bool overMax = adxMaxEnabled && adxValue > activeAdxMaxThreshold;
+            bool slopeValid = !slopeEnabled || adxSlope >= activeAdxMinSlopePoints;
 
-            lines.Add(("TP:        ", $"{tpLine}", Brushes.LimeGreen));
-            lines.Add(("SL:        ", $"{slLine}", Brushes.IndianRed));
-            lines.Add(("Contracts: ", $"{activeContracts}", Brushes.LightGray));
-            //lines.Add(("Anti Hedge:", AntiHedge ? "✅" : "⛔", AntiHedge ? Brushes.LimeGreen : Brushes.IndianRed));
+            string paState;
+            Brush paBrush;
+            if (overMax)
+            {
+                paState = "Peaking";
+                paBrush = Brushes.OrangeRed;
+            }
+            else if (belowMin)
+            {
+                paState = "Weak";
+                paBrush = Brushes.IndianRed;
+            }
+            else if (aboveMin && slopeValid)
+            {
+                paState = string.Format(CultureInfo.InvariantCulture, "Trending {0:0.00}", adxSlope);
+                paBrush = Brushes.LimeGreen;
+            }
+            else
+            {
+                paState = "Ranging";
+                paBrush = Brushes.Gold;
+            }
+
+            lines.Add(("PA:        ", paState, paBrush));
+            lines.Add(("Contracts: ", string.Format(CultureInfo.InvariantCulture, "{0}", activeContracts), Brushes.LightGray));
             lines.Add((FormatSessionLabel(activeSession), string.Empty, Brushes.LightGray));
-
-            var version = $"v{GetAddOnVersion()}";
-            lines.Add(($"{version}", string.Empty, Brushes.LightGray));
+            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray));
 
             return lines;
         }
 
-        private void GetPnLLines(out string tpLine, out string slLine)
-        {
-            // --- Detect state ---
-            bool hasPosition = Position.MarketPosition != MarketPosition.Flat;
-
-            bool hasLongOrder =
-                longEntryOrder != null &&
-                (longEntryOrder.OrderState == OrderState.Working ||
-                longEntryOrder.OrderState == OrderState.Submitted ||
-                longEntryOrder.OrderState == OrderState.Accepted ||
-                longEntryOrder.OrderState == OrderState.ChangePending);
-
-            bool hasShortOrder =
-                shortEntryOrder != null &&
-                (shortEntryOrder.OrderState == OrderState.Working ||
-                shortEntryOrder.OrderState == OrderState.Submitted ||
-                shortEntryOrder.OrderState == OrderState.Accepted ||
-                shortEntryOrder.OrderState == OrderState.ChangePending);
-
-            // --- New logic: also consider our own flags ---
-            bool hasPendingLong  = longOrderPlaced && !hasPosition;
-            bool hasPendingShort = shortOrderPlaced && !hasPosition;
-
-            // Show $0 only if no position and nothing pending
-            if (!hasPosition && !hasLongOrder && !hasShortOrder && !hasPendingLong && !hasPendingShort)
-            {
-                tpLine = "$0";
-                slLine = "$0";
-                return;
-            }
-
-            // --- Tick value per instrument ---
-            double tickValue = Instrument.MasterInstrument.PointValue * TickSize;
-            if (Instrument.MasterInstrument.Name == "MNQ") tickValue = 0.50;
-            else if (Instrument.MasterInstrument.Name == "NQ") tickValue = 5.00;
-
-            double entry = 0, tp = 0, sl = 0;
-
-            // --- Active position ---
-            if (hasPosition)
-            {
-                if (Position.MarketPosition == MarketPosition.Long)
-                {
-                    entry = currentLongEntry;
-                    tp = currentLongTP;
-                    sl = currentLongSL;
-                }
-                else
-                {
-                    entry = currentShortEntry;
-                    tp = currentShortTP;
-                    sl = currentShortSL;
-                }
-            }
-            // --- Pending long order ---
-            else if (hasLongOrder || hasPendingLong)
-            {
-                entry = currentLongEntry;
-                tp = currentLongTP;
-                sl = currentLongSL;
-            }
-            // --- Pending short order ---
-            else if (hasShortOrder || hasPendingShort)
-            {
-                entry = currentShortEntry;
-                tp = currentShortTP;
-                sl = currentShortSL;
-            }
-
-            // Guard: if anything not set, show zero
-            if (entry == 0 || tp == 0 || sl == 0)
-            {
-                tpLine = "$0";
-                slLine = "$0";
-                return;
-            }
-
-            // --- Compute TP/SL distances ---
-            double tpTicks = Math.Abs(tp - entry) / TickSize;
-            double slTicks = Math.Abs(entry - sl) / TickSize;
-
-            double tpDollars = tpTicks * tickValue * activeContracts;
-            double slDollars = slTicks * tickValue * activeContracts;
-
-            tpLine = $"${tpDollars:0}";
-            slLine = $"${slDollars:0}";
-        }
-
-        string GetAddOnVersion()
+        private string GetAddOnVersion()
         {
             var assembly = Assembly.GetExecutingAssembly();
             Version version = assembly.GetName().Version;
-            return version.ToString();
+            return version != null ? version.ToString() : "0.0.0.0";
         }
 
-        private static readonly Dictionary<string, string> CrossPairs = new Dictionary<string, string> {
-            { "MNQ", "MES" },
-            { "MES", "MNQ" },
-            { "NQ", "ES" },
-            { "ES", "NQ" },
-        };
-
-        private string GetOtherInstrument()
+        private int GetMaxConfiguredAdxPeriod()
         {
-            string thisSymbol = Instrument.MasterInstrument.Name.ToUpper();
-
-            if (CrossPairs.ContainsKey(thisSymbol))
-                return CrossPairs[thisSymbol];
-
-            throw new Exception("Strategy not on supported instrument!");
+            return Math.Max(AsiaAdxPeriod, NewYorkAdxPeriod);
         }
 
-        private bool HasOppositeOrder(string targetInstrument, MarketPosition desiredDirection)
+        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
         {
-            foreach (var order in Account.Orders)
-            {
-                if (order.Instrument.MasterInstrument.Name.Equals(targetInstrument, StringComparison.OrdinalIgnoreCase) &&
-                    (order.OrderState == OrderState.Working || order.OrderState == OrderState.Accepted))
-                {
-                    if ((desiredDirection == MarketPosition.Long && order.OrderAction == OrderAction.SellShort) ||
-                        (desiredDirection == MarketPosition.Short && order.OrderAction == OrderAction.Buy))
-                    {
-                        if (debug)
-                            Print("Has Opposite Order");
-                        return true;
-                    }
-                }
-            }
-            if (debug)
-                Print("Has No Opposite Order");
-            return false;
-        }
-
-        private bool HasOppositePosition(string targetInstrument, MarketPosition desiredDirection)
-        {
-            foreach (var pos in Account.Positions)
-            {
-                if (pos.Instrument.MasterInstrument.Name.Equals(targetInstrument, StringComparison.OrdinalIgnoreCase))
-                {
-                    if ((desiredDirection == MarketPosition.Long && pos.MarketPosition == MarketPosition.Short &&
-                        pos.Quantity > 0) ||
-                        (desiredDirection == MarketPosition.Short && pos.MarketPosition == MarketPosition.Long &&
-                        pos.Quantity > 0))
-                    {
-                        if (debug)
-                            Print("Has Opposite Position");
-                        return true;
-                    }
-                }
-            }
-            if (debug)
-                Print("Has No Opposite Position");
-            return false;
-        }
-
-        private string BuildHeartbeatId()
-        {
-            string baseName = Name ?? GetType().Name;
-            string instrumentName = Instrument != null ? Instrument.FullName : "UnknownInstrument";
-            string accountName = Account != null ? Account.Name : "UnknownAccount";
-            string barsInfo = BarsPeriod != null
-                ? $"{BarsPeriod.BarsPeriodType}-{BarsPeriod.Value}"
-                : "NoBars";
-
-            string configKey = $"{activeContracts}-{activeOffsetPerc}-{activeTpPerc}-{activeCancelPerc}-{activeDeviationPerc}-{activeSLPadding}-{activeSLPresetSetting}-{activeMinCandlePoints}";
-
-            string raw = $"{baseName}-{instrumentName}-{barsInfo}-{accountName}-{configKey}";
-            return raw.Replace(",", "_").Replace(Environment.NewLine, " ").Trim();
-        }
-
-        private void WriteHeartbeat()
-        {
-            try
-            {
-                string name = heartbeatId ?? this.Name ?? GetType().Name;
-                string line = $"{name},{DateTime.Now:O}";
-                List<string> lines = new List<string>();
-
-                bool success = false;
-                lock (heartbeatFileLock)
-                {
-                    // --- Load existing lines (if any) ---
-                    if (System.IO.File.Exists(heartbeatFile))
-                    {
-                        for (int i = 0; i < 3; i++) // retry on read conflict
-                        {
-                            try
-                            {
-                                lines.AddRange(System.IO.File.ReadAllLines(heartbeatFile));
-                                break;
-                            }
-                            catch (IOException)
-                            {
-                                System.Threading.Thread.Sleep(100);
-                            }
-                        }
-                    }
-
-                    // --- Update or add this strategy’s line ---
-                    bool updated = false;
-                    for (int i = 0; i < lines.Count; i++)
-                    {
-                        if (lines[i].StartsWith(name + ",", StringComparison.OrdinalIgnoreCase))
-                        {
-                            lines[i] = line;
-                            updated = true;
-                            break;
-                        }
-                    }
-                    if (!updated)
-                        lines.Add(line);
-
-                    // --- Write back with retry ---
-                    for (int i = 0; i < 3; i++)
-                    {
-                        try
-                        {
-                            System.IO.File.WriteAllLines(heartbeatFile, lines.ToArray());
-                            success = true;
-                            break;
-                        }
-                        catch (IOException)
-                        {
-                            System.Threading.Thread.Sleep(100);
-                        }
-                    }
-                }
-
-                //if (!success)
-                //    Print($"⚠️ Failed to write heartbeat after 3 attempts — file still in use: {heartbeatFile}");
-                //else
-                //    Print($"💓 Heartbeat written for {name} at {DateTime.UtcNow:HH:mm:ss}");
-            }
-            catch (Exception ex)
-            {
-                if (debug)
-                    Print($"⚠️ Heartbeat write error: {ex.Message}");
-            }
-        }
-
-        public enum WebhookProvider
-        {
-            TradersPost,
-            ProjectX
-        }
-
-        public enum IfvgTpMode
-        {
-            PivotTarget,
-            OriginalDuoStop,
-            DuoC12Percent
-        }
-
-        public enum IfvgSlMode
-        {
-            PivotStop,
-            OriginalCandle1Wick,
-            OriginalCandle2Wick
-        }
-
-        public enum EmaBodyFilterMode
-        {
-            None,
-            SecondBodyOnly,
-            BothBodies
-        }
-
-        private enum IfvgDirection
-        {
-            Long,
-            Short
-        }
-
-        public enum SessionSlot
-        {
-            None,
-            Session1,
-            Session2
-        }
-
-        private DateTime lastSessionEvalTime = DateTime.MinValue;
-
-        private void EnsureActiveSession(DateTime time)
-        {
-            if (time <= lastSessionEvalTime)
-                return;
-            lastSessionEvalTime = time;
-
-            SessionSlot desired = DetermineSessionForTime(time);
-            if (!sessionInitialized || desired != activeSession)
-            {
-                if (debug)
-                {
-                    GetSessionWindowForSession(SessionSlot.Session1, time.Date, out TimeSpan s1Start, out TimeSpan s1End);
-                    GetSessionWindowForSession(SessionSlot.Session2, time.Date, out TimeSpan s2Start, out TimeSpan s2End);
-                    Print($"{time} - Session switch: desired={desired} | S1={s1Start:hh\\:mm}-{s1End:hh\\:mm} (AutoShift={AutoShiftSession1}) | S2={s2Start:hh\\:mm}-{s2End:hh\\:mm} (AutoShift={AutoShiftSession2})");
-                }
-
-                activeSession = desired;
-                if (activeSession != SessionSlot.None)
-                {
-                    ApplyInputsForSession(activeSession);
-                    sessionStartCumProfit = GetTotalCumProfitPoints();
-                    sessionGainLimitReached = false;
-                }
-                effectiveTimesDate = DateTime.MinValue;
-                sessionInitialized = true;
-            }
-        }
-
-        private SessionSlot DetermineSessionForTime(DateTime time)
-        {
-            TimeSpan now = time.TimeOfDay;
-
-            GetSessionWindowForSession(SessionSlot.Session1, time.Date, out TimeSpan session1Start, out TimeSpan session1End);
-            GetSessionWindowForSession(SessionSlot.Session2, time.Date, out TimeSpan session2Start, out TimeSpan session2End);
-
-            bool session1Configured = IsSessionConfigured(SessionSlot.Session1);
-            bool session2Configured = IsSessionConfigured(SessionSlot.Session2);
-
-            if (session1Configured && IsTimeInRange(now, session1Start, session1End))
-                return SessionSlot.Session1;
-            if (session2Configured && IsTimeInRange(now, session2Start, session2End))
-                return SessionSlot.Session2;
-
-            if (!session1Configured && !session2Configured)
-                return SessionSlot.None;
-
-            DateTime nextSession1Start = DateTime.MaxValue;
-            DateTime nextSession2Start = DateTime.MaxValue;
-
-            if (session1Configured)
-            {
-                nextSession1Start = time.Date + session1Start;
-                if (nextSession1Start <= time)
-                    nextSession1Start = nextSession1Start.AddDays(1);
-            }
-
-            if (session2Configured)
-            {
-                nextSession2Start = time.Date + session2Start;
-                if (nextSession2Start <= time)
-                    nextSession2Start = nextSession2Start.AddDays(1);
-            }
-
-            return nextSession1Start <= nextSession2Start
-                ? SessionSlot.Session1
-                : SessionSlot.Session2;
-        }
-
-        private string FormatSessionLabel(SessionSlot session)
-        {
-            switch (session)
-            {
-                case SessionSlot.Session1:
-                    return "London";
-                case SessionSlot.Session2:
-                    return "New York";
-                default:
-                    return "Outside Sessions";
-            }
-        }
-
-        private bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
-        {
-            if (start < end)
-                return now >= start && now < end;
-
-            return now >= start || now < end;
-        }
-
-        private bool CrossedSessionEnd(DateTime previousTime, DateTime currentTime)
-        {
-            return CrossedSessionEndForSession(SessionSlot.Session1, previousTime, currentTime)
-                || CrossedSessionEndForSession(SessionSlot.Session2, previousTime, currentTime);
-        }
-
-        private bool CrossedSessionEndForSession(
-            SessionSlot session,
-            DateTime previousTime,
-            DateTime currentTime)
-        {
-            if (!IsSessionConfigured(session))
+            bool result = false;
+            if (System.Windows.Application.Current == null)
                 return false;
 
-            GetSessionWindowForSession(session, currentTime.Date, out TimeSpan start, out TimeSpan end);
-
-            bool wasInSession = IsTimeInRange(previousTime.TimeOfDay, start, end);
-            bool nowInSession = IsTimeInRange(currentTime.TimeOfDay, start, end);
-            return wasInSession && !nowInSession;
-        }
-
-        private void GetSessionWindowForSession(
-            SessionSlot session,
-            DateTime date,
-            out TimeSpan start,
-            out TimeSpan end)
-        {
-            start = TimeSpan.Zero;
-            end = TimeSpan.Zero;
-            bool autoShift = false;
-
-            switch (session)
-            {
-                case SessionSlot.Session1:
-                    start = London_SessionStart;
-                    end = London_SessionEnd;
-                    autoShift = AutoShiftSession1;
-                    break;
-                case SessionSlot.Session2:
-                    start = NewYork_SessionStart;
-                    end = NewYork_SessionEnd;
-                    autoShift = AutoShiftSession2;
-                    break;
-            }
-
-            if (autoShift)
-            {
-                TimeSpan shift = GetLondonSessionShiftForDate(date);
-                start = ShiftTime(start, shift);
-                end = ShiftTime(end, shift);
-            }
-        }
-
-        private bool IsSessionConfigured(SessionSlot session)
-        {
-            switch (session)
-            {
-                case SessionSlot.Session1:
-                    return UseSession1 && London_SessionStart != London_SessionEnd;
-                case SessionSlot.Session2:
-                    return UseSession2 && NewYork_SessionStart != NewYork_SessionEnd;
-                default:
-                    return false;
-            }
-        }
-
-        private void ApplyInputsForSession(SessionSlot session)
-        {
-            switch (session)
-            {
-                case SessionSlot.Session1:
-                    activeAutoShiftTimes = AutoShiftSession1;
-                    activeContracts = London_Contracts;
-                    activeMinC12Body  = London_MinC12Body;
-                    activeMaxC12Body  = London_MaxC12Body;
-                    activeMinCandlePoints = London_MinCandlePoints;
-                    activeOffsetPerc  = London_OffsetPerc;
-                    activeTpPerc      = London_TpPerc;
-                    activeCancelPerc  = London_CancelPerc;
-                    activeDeviationPerc = London_DeviationPerc;
-                    activeSLPadding = London_SLPadding;
-                    activeMaxSLTPRatioPerc = London_MaxSLTPRatioPerc;
-                    activeSLPresetSetting = London_SLPresetSetting;
-                    activeSLPercentFirstCandle = London_SLPercentFirstCandle;
-                    activeMaxSLPoints = London_MaxSLPoints;
-                    activeMaxSessionGain = London_MaxSessionGain;
-                    activeUseMarketEntry = London_UseMarketEntry;
-                    activeEmaPeriod = London_EmaPeriod;
-                    activeEmaBodyFilterMode = London_EmaBodyFilterMode;
-
-                    activeSessionStart  = London_SessionStart;
-                    activeSessionEnd    = London_SessionEnd;
-                    activeNoTradesAfter = London_NoTradesAfter;
-                    activeSkipStart = London_SkipStart;
-                    activeSkipEnd = London_SkipEnd;
-                    activeSkip2Start = London_Skip2Start;
-                    activeSkip2End = London_Skip2End;
-                    activeIfvgMinSizePoints = London_IfvgMinSizePoints;
-                    activeIfvgMaxSizePoints = London_IfvgMaxSizePoints;
-                    activeIfvgMinTpSlDistancePoints = London_IfvgMinTpSlDistancePoints;
-                    activeIfvgSwingStrength = London_IfvgSwingStrength;
-                    activeIfvgSwingDrawBars = London_IfvgSwingDrawBars;
-                    activeIfvgMaxBarsBetweenSweepAndIfvg = London_IfvgMaxBarsBetweenSweepAndIfvg;
-                    activeIfvgUseBreakEvenWickLine = London_IfvgUseBreakEvenWickLine;
-                    activeIfvgUseVolumeSmaFilter = London_IfvgUseVolumeSmaFilter;
-                    activeIfvgVolumeFastSmaPeriod = London_IfvgVolumeFastSmaPeriod;
-                    activeIfvgVolumeSlowSmaPeriod = London_IfvgVolumeSlowSmaPeriod;
-                    activeIfvgVolumeSmaMultiplier = London_IfvgVolumeSmaMultiplier;
-                    ifvgVolumeFastSmaActive = ifvgVolumeFastSmaLondon;
-                    ifvgVolumeSlowSmaActive = ifvgVolumeSlowSmaLondon;
-                    emaActive = emaLondon;
-                    break;
-                case SessionSlot.Session2:
-                    activeAutoShiftTimes = AutoShiftSession2;
-                    activeContracts = NewYork_Contracts;
-                    activeMinC12Body  = NewYork_MinC12Body;
-                    activeMaxC12Body  = NewYork_MaxC12Body;
-                    activeMinCandlePoints = NewYork_MinCandlePoints;
-                    activeOffsetPerc  = NewYork_OffsetPerc;
-                    activeTpPerc      = NewYork_TpPerc;
-                    activeCancelPerc  = NewYork_CancelPerc;
-                    activeDeviationPerc = NewYork_DeviationPerc;
-                    activeSLPadding = NewYork_SLPadding;
-                    activeMaxSLTPRatioPerc = NewYork_MaxSLTPRatioPerc;
-                    activeSLPresetSetting = NewYork_SLPresetSetting;
-                    activeSLPercentFirstCandle = NewYork_SLPercentFirstCandle;
-                    activeMaxSLPoints = NewYork_MaxSLPoints;
-                    activeMaxSessionGain = NewYork_MaxSessionGain;
-                    activeUseMarketEntry = NewYork_UseMarketEntry;
-                    activeEmaPeriod = NewYork_EmaPeriod;
-                    activeEmaBodyFilterMode = NewYork_EmaBodyFilterMode;
-
-                    activeSessionStart  = NewYork_SessionStart;
-                    activeSessionEnd    = NewYork_SessionEnd;
-                    activeNoTradesAfter = NewYork_NoTradesAfter;
-                    activeSkipStart = NewYork_SkipStart;
-                    activeSkipEnd = NewYork_SkipEnd;
-                    activeSkip2Start = NewYork_Skip2Start;
-                    activeSkip2End = NewYork_Skip2End;
-                    activeIfvgMinSizePoints = NewYork_IfvgMinSizePoints;
-                    activeIfvgMaxSizePoints = NewYork_IfvgMaxSizePoints;
-                    activeIfvgMinTpSlDistancePoints = NewYork_IfvgMinTpSlDistancePoints;
-                    activeIfvgSwingStrength = NewYork_IfvgSwingStrength;
-                    activeIfvgSwingDrawBars = NewYork_IfvgSwingDrawBars;
-                    activeIfvgMaxBarsBetweenSweepAndIfvg = NewYork_IfvgMaxBarsBetweenSweepAndIfvg;
-                    activeIfvgUseBreakEvenWickLine = NewYork_IfvgUseBreakEvenWickLine;
-                    activeIfvgUseVolumeSmaFilter = NewYork_IfvgUseVolumeSmaFilter;
-                    activeIfvgVolumeFastSmaPeriod = NewYork_IfvgVolumeFastSmaPeriod;
-                    activeIfvgVolumeSlowSmaPeriod = NewYork_IfvgVolumeSlowSmaPeriod;
-                    activeIfvgVolumeSmaMultiplier = NewYork_IfvgVolumeSmaMultiplier;
-                    ifvgVolumeFastSmaActive = ifvgVolumeFastSmaNewYork;
-                    ifvgVolumeSlowSmaActive = ifvgVolumeSlowSmaNewYork;
-                    emaActive = emaNewYork;
-                    break;
-            }
-        }
-        private void ApplyStopLossPreset(SLPreset preset)
-        {
-            switch (preset)
-            {
-                case SLPreset.First_Candle_High_Low:
-                    First_Candle_High_Low = true;
-                    First_Candle_Open = false;
-                    Second_Candle_High_Low = false;
-                    Second_Candle_Open = false;
-                    break;
-                case SLPreset.First_Candle_Open:
-                    First_Candle_High_Low = false;
-                    First_Candle_Open = true;
-                    Second_Candle_High_Low = false;
-                    Second_Candle_Open = false;
-                    break;
-                case SLPreset.Second_Candle_High_Low:
-                    First_Candle_High_Low = false;
-                    First_Candle_Open = false;
-                    Second_Candle_High_Low = true;
-                    Second_Candle_Open = false;
-                    break;
-                case SLPreset.Second_Candle_Open:
-                    First_Candle_High_Low = false;
-                    First_Candle_Open = false;
-                    Second_Candle_High_Low = false;
-                    Second_Candle_Open = true;
-                    break;
-				case SLPreset.First_Candle_Percent:
-                    First_Candle_High_Low = false;
-                    First_Candle_Open = false;
-                    Second_Candle_High_Low = false;
-                    Second_Candle_Open = false;
-                    break;
-            }
-
-            //Print($"== SL PRESET APPLIED: {preset} ==");
-        }
-
-        public enum SLPreset
-	    {
-	        First_Candle_High_Low,
-	        First_Candle_Open,
-	        Second_Candle_High_Low,
-	        Second_Candle_Open,
-			First_Candle_Percent
-	    }
-
-        private void SetHedgeLock(string instrument, MarketPosition direction)
-        {
-            lock (hedgeLockSync)
-            {
-                var lines = File.Exists(hedgeLockFile)
-                    ? File.ReadAllLines(hedgeLockFile).ToList()
-                    : new List<string>();
-
-                bool updated = false;
-                for (int i = 0; i < lines.Count; i++)
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                () =>
                 {
-                    if (lines[i].StartsWith(instrument + ",", StringComparison.OrdinalIgnoreCase))
-                    {
-                        lines[i] = $"{instrument},{direction}";
-                        updated = true;
-                        break;
-                    }
-                }
-                if (!updated)
-                    lines.Add($"{instrument},{direction}");
+                    var message = string.Format(CultureInfo.InvariantCulture, "Confirm {0} entry\nPrice: {1}\nQty: {2}", orderType, price, quantity);
+                    var res =
+                        System.Windows.MessageBox.Show(message, "Entry Confirmation", System.Windows.MessageBoxButton.YesNo,
+                                                    System.Windows.MessageBoxImage.Question);
 
-                File.WriteAllLines(hedgeLockFile, lines);
-            }
+                    result = (res == System.Windows.MessageBoxResult.Yes);
+                });
+
+            return result;
         }
 
-        private MarketPosition GetHedgeLock(string instrument)
+        private int GetEntryQuantity(double entryPrice, double stopPrice)
         {
-            lock (hedgeLockSync)
-            {
-                if (!File.Exists(hedgeLockFile))
-                    return MarketPosition.Flat;
-
-                foreach (var line in File.ReadAllLines(hedgeLockFile))
-                {
-                    var parts = line.Split(',');
-                    if (parts.Length == 2 && parts[0].Equals(instrument, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (Enum.TryParse(parts[1], out MarketPosition pos))
-                            return pos;
-                    }
-                }
-                return MarketPosition.Flat;
-            }
+            int baseQty = Math.Max(1, activeContracts);
+            return baseQty;
         }
 
-        private void ClearHedgeLock(string instrument)
+        private void SetStopLossByDistanceTicks(string fromEntrySignal, double referenceEntryPrice, double plannedStopPrice)
         {
-            lock (hedgeLockSync)
-            {
-                if (!File.Exists(hedgeLockFile))
-                    return;
-
-                var lines = File.ReadAllLines(hedgeLockFile).ToList();
-                lines.RemoveAll(l => l.StartsWith(instrument + ",", StringComparison.OrdinalIgnoreCase));
-                File.WriteAllLines(hedgeLockFile, lines);
-            }
+            int stopTicks = PriceToTicks(Math.Abs(referenceEntryPrice - plannedStopPrice));
+            if (stopTicks < 1)
+                stopTicks = 1;
+            SetStopLoss(fromEntrySignal, CalculationMode.Ticks, stopTicks, false);
         }
 
-	        string GetTicker(Instrument instrument)
-	        {
-            // Get the month code letter (F=Jan, G=Feb, H=Mar, etc.)
-            string[] monthCodes = { "", "F", "G", "H", "J", "K", "M", "N", "Q", "U", "V", "X", "Z" };
-            string monthCode = monthCodes[instrument.Expiry.Month];
-            string yearCode = instrument.Expiry.Year.ToString().Substring(2, 2); // or full year if you prefer
-
-	            return $"{instrument.MasterInstrument.Name}{monthCode}20{yearCode}";
-	        }
-
-	        private void QueueEntryWebhookLong(double entryPrice, double takeProfit, double stopLoss)
-	        {
-	            if (Position.MarketPosition != MarketPosition.Flat)
-	                return;
-
-	            pendingLongWebhook = true;
-	            pendingLongEntry = RoundToTickSize(entryPrice);
-	            pendingLongTP = RoundToTickSize(takeProfit);
-	            pendingLongSL = RoundToTickSize(stopLoss);
-	        }
-
-        private void QueueEntryWebhookShort(double entryPrice, double takeProfit, double stopLoss)
+        private void SetProfitTargetByDistanceTicks(string fromEntrySignal, double takeProfitPoints)
         {
-            if (Position.MarketPosition != MarketPosition.Flat)
+            if (takeProfitPoints <= 0.0)
                 return;
 
-	            pendingShortWebhook = true;
-	            pendingShortEntry = RoundToTickSize(entryPrice);
-	            pendingShortTP = RoundToTickSize(takeProfit);
-            pendingShortSL = RoundToTickSize(stopLoss);
+            int targetTicks = PriceToTicks(takeProfitPoints);
+            if (targetTicks < 1)
+                targetTicks = 1;
+            SetProfitTarget(fromEntrySignal, CalculationMode.Ticks, targetTicks);
         }
 
-        private void QueueIfvgWebhookLong(double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry)
+        private bool IsAccountBalanceBlocked()
         {
-            pendingIfvgLongWebhook = true;
-            pendingIfvgLongEntry = RoundToTickSize(entryPrice);
-            pendingIfvgLongTP = RoundToTickSize(takeProfit);
-            pendingIfvgLongSL = RoundToTickSize(stopLoss);
-            pendingIfvgLongMarketEntry = isMarketEntry;
+            if (MaxAccountBalance <= 0.0)
+                return false;
+
+            double balance;
+            if (!TryGetCurrentCashValue(out balance))
+                return false;
+
+            if (balance < MaxAccountBalance)
+                return false;
+
+            if (!accountBalanceLimitReached || accountBalanceLimitReachedBar != CurrentBar)
+            {
+                accountBalanceLimitReached = true;
+                accountBalanceLimitReachedBar = CurrentBar;
+                CancelWorkingEntryOrders();
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("MaxAccountBalance", GetOpenLongEntrySignal());
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort("MaxAccountBalance", GetOpenShortEntrySignal());
+
+                LogDebug(string.Format("Account balance target reached | cash={0:0.00} target={1:0.00} trading paused.", balance, MaxAccountBalance));
+            }
+
+            return true;
         }
 
-        private void QueueIfvgWebhookShort(double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry)
+        private bool TryGetCurrentCashValue(out double cashValue)
         {
-            pendingIfvgShortWebhook = true;
-            pendingIfvgShortEntry = RoundToTickSize(entryPrice);
-            pendingIfvgShortTP = RoundToTickSize(takeProfit);
-            pendingIfvgShortSL = RoundToTickSize(stopLoss);
-            pendingIfvgShortMarketEntry = isMarketEntry;
+            cashValue = 0.0;
+            if (Account == null)
+                return false;
+
+            try
+            {
+                cashValue = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                return cashValue > 0.0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
-        private void SendWebhookCancelSafe(Order order, bool forceSend = false)
-        {
-            string orderId = order != null ? order.OrderId : null;
-            double limitPrice = 0;
-            if (order != null && order.LimitPrice > 0)
-                limitPrice = RoundToTickSize(order.LimitPrice);
-            SendWebhookCancelSafe(orderId, limitPrice, forceSend);
-        }
-
-        private void SendWebhookCancelSafe(string orderId = null, double limitPrice = 0, bool forceSend = false)
-        {
-            if (!forceSend && Position.MarketPosition != MarketPosition.Flat)
-                return;
-
-	            bool sameBar = CurrentBar == lastCancelWebhookBar;
-	            bool sameOrder = string.Equals(lastCancelWebhookOrderId ?? string.Empty, orderId ?? string.Empty, StringComparison.Ordinal);
-	            bool samePrice = PricesEqual(lastCancelWebhookLimitPrice, limitPrice);
-	            if (sameBar && sameOrder && samePrice)
-	                return;
-
-	            lastCancelWebhookBar = CurrentBar;
-	            lastCancelWebhookOrderId = orderId;
-	            lastCancelWebhookLimitPrice = limitPrice;
-	            SendWebhook("cancel");
-	        }
-
-	        private void SendWebhookExitSafe(string executionId = null)
-	        {
-	            if (CurrentBar == lastExitWebhookBar)
-	            {
-	                if (string.IsNullOrEmpty(executionId) ||
-	                    string.IsNullOrEmpty(lastExitWebhookExecutionId) ||
-	                    string.Equals(lastExitWebhookExecutionId, executionId, StringComparison.Ordinal))
-                    {
-                        if (debug)
-                            Print($"{Time[0]} - ⏭️ Exit webhook suppressed (idempotent guard).");
-	                    return;
-                    }
-	            }
-
-	            lastExitWebhookBar = CurrentBar;
-	            lastExitWebhookExecutionId = executionId;
-	            if (debug)
-	                Print($"{Time[0]} - 🚀 Sending EXIT webhook (execId={executionId ?? "n/a"}).");
-	            SendWebhook("exit");
-	        }
-
-        private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false)
+        private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
         {
             if (State != State.Realtime)
-            return;
+                return;
 
             if (WebhookProviderType == WebhookProvider.ProjectX)
             {
-                SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry);
+                int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : Math.Max(1, activeContracts);
+                SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
                 return;
             }
 
-            if (string.IsNullOrEmpty(WebhookUrl))
+            if (string.IsNullOrWhiteSpace(WebhookUrl))
                 return;
 
             try
             {
-                string ticker = GetTicker(Instrument);
-                double roundedEntry = RoundToTickSize(entryPrice);
-                double roundedTP = RoundToTickSize(takeProfit);
-                double roundedSL = RoundToTickSize(stopLoss);
-                string entryStr = FormatPriceInvariant(roundedEntry);
-                string tpStr = FormatPriceInvariant(roundedTP);
-                string slStr = FormatPriceInvariant(roundedSL);
+                int orderQty = quantityOverride > 0 ? quantityOverride : Math.Max(1, activeContracts);
+                string ticker = Instrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN";
+                string time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
+                string json = string.Empty;
+                string action = eventType.ToLowerInvariant();
 
-                string time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff");
-                string json = "";
-                string payloadLog = "";
-
-                switch (eventType.ToLower())
+                if (action == "buy" || action == "sell")
                 {
-                    case "buy":
-                    case "sell":
-                        if (isMarketEntry)
-                        {
-                            json = $@"
-                        {{
-                            ""ticker"": ""{ticker}"",
-                            ""action"": ""{eventType}"",
-                            ""orderType"": ""market"",
-                            ""quantityType"": ""fixed_quantity"",
-                            ""quantity"": {activeContracts},
-                            ""signalPrice"": {entryStr},
-                            ""time"": ""{time}"",
-                            ""takeProfit"": {{
-                                ""limitPrice"": {tpStr}
-                            }},
-                            ""stopLoss"": {{
-                                ""type"": ""stop"",
-                                ""stopPrice"": {slStr}
-                            }}
-                        }}";
-                            payloadLog = $"{eventType.ToUpper()} market tp={tpStr} sl={slStr}";
-                        }
-                        else
-                        {
-                            json = $@"
-                        {{
-                            ""ticker"": ""{ticker}"",
-                            ""action"": ""{eventType}"",
-                            ""orderType"": ""limit"",
-                            ""limitPrice"": {entryStr},
-                            ""quantityType"": ""fixed_quantity"",
-                            ""quantity"": {activeContracts},
-                            ""signalPrice"": {entryStr},
-                            ""time"": ""{time}"",
-                            ""takeProfit"": {{
-                                ""limitPrice"": {tpStr}
-                            }},
-                            ""stopLoss"": {{
-                                ""type"": ""stop"",
-                                ""stopPrice"": {slStr}
-                            }}
-                        }}";
-                            payloadLog = $"{eventType.ToUpper()} limit={entryStr} tp={tpStr} sl={slStr}";
-                        }
-                        break;
-
-	                    case "exit":
-	                        json = $@"
-	                        {{
-	                            ""ticker"": ""{ticker}"",
-	                            ""action"": ""exit"",
-	                            ""orderType"": ""market"",
-	                            ""quantityType"": ""fixed_quantity"",
-	                            ""quantity"": {activeContracts},
-	                            ""cancel"": true,
-	                            ""time"": ""{time}""
-	                        }}";
-	                        payloadLog = "EXIT market";
-	                        break;
-
-                    case "cancel":
-                        json = $@"
-                        {{
-                            ""ticker"": ""{ticker}"",
-                            ""action"": ""cancel"",
-                            ""time"": ""{time}""
-                        }}";
-                        payloadLog = "CANCEL";
-                        break;
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"time\":\"{5}\",\"takeProfit\":{{\"limitPrice\":{6}}},\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{7}}}}}",
+                        ticker,
+                        action,
+                        isMarketEntry ? "market" : "limit",
+                        orderQty,
+                        entryPrice,
+                        time,
+                        takeProfit,
+                        stopLoss);
+                }
+                else if (action == "exit")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"exit\",\"orderType\":\"market\",\"quantityType\":\"fixed_quantity\",\"quantity\":{1},\"cancel\":true,\"time\":\"{2}\"}}",
+                        ticker,
+                        orderQty,
+                        time);
+                }
+                else if (action == "cancel")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"cancel\",\"time\":\"{1}\"}}",
+                        ticker,
+                        time);
                 }
 
+                if (string.IsNullOrWhiteSpace(json))
+                    return;
 
                 using (var client = new System.Net.WebClient())
                 {
                     client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
                     client.UploadString(WebhookUrl, "POST", json);
                 }
-
-                if (!string.IsNullOrEmpty(payloadLog))
-                    Print($"📤 Webhook payload: {payloadLog} ({ticker})");
-                Print($"✅ Webhook sent to TradersPost: {eventType.ToUpper()} for {ticker}");
             }
             catch (Exception ex)
             {
-                Print($"⚠️ Webhook error: {ex.Message}");
+                LogDebug(string.Format("Webhook error: {0}", ex.Message));
             }
         }
 
-        private void SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry)
+        private void SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
         {
             if (!EnsureProjectXSession())
                 return;
 
-            if (!TryGetProjectXIds(out int accountId, out string contractId))
+            int accountId;
+            string contractId;
+            if (!TryGetProjectXIds(out accountId, out contractId))
                 return;
 
             try
             {
-                string response = null;
-                switch (eventType.ToLower())
+                switch (eventType.ToLowerInvariant())
                 {
                     case "buy":
                     case "sell":
-                        response = ProjectXPlaceOrder(eventType, accountId, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry);
+                        ProjectXPlaceOrder(eventType, accountId, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
                         break;
                     case "exit":
-                        response = ProjectXClosePosition(accountId, contractId);
+                        ProjectXClosePosition(accountId, contractId);
                         break;
                     case "cancel":
-                        response = ProjectXCancelOrders(accountId, contractId);
+                        ProjectXCancelOrders(accountId, contractId);
                         break;
-                    default:
-                        Print($"⚠️ ProjectX unsupported event type: {eventType}");
-                        return;
                 }
-
-                if (!string.IsNullOrEmpty(response))
-                    Print($"✅ ProjectX {eventType.ToUpper()} sent for {contractId}");
             }
             catch (Exception ex)
             {
-                Print($"⚠️ ProjectX error: {ex.Message}");
+                LogDebug(string.Format("ProjectX error: {0}", ex.Message));
             }
         }
 
         private bool EnsureProjectXSession()
         {
             if (string.IsNullOrWhiteSpace(ProjectXApiBaseUrl))
-            {
-                Print("⚠️ ProjectX API Base URL is empty.");
                 return false;
-            }
 
             if (!string.IsNullOrWhiteSpace(projectXSessionToken) &&
                 (DateTime.UtcNow - projectXTokenAcquiredUtc).TotalHours < 23)
-            {
                 return true;
-            }
 
             if (string.IsNullOrWhiteSpace(ProjectXUsername) || string.IsNullOrWhiteSpace(ProjectXApiKey))
-            {
-                Print("⚠️ ProjectX username or API key missing.");
                 return false;
-            }
 
-            string json = $@"
-            {{
-                ""userName"": ""{ProjectXUsername}"",
-                ""loginKey"": ""{ProjectXApiKey}""
-            }}";
+            string loginJson = string.Format(CultureInfo.InvariantCulture,
+                "{{\"userName\":\"{0}\",\"loginKey\":\"{1}\"}}",
+                ProjectXUsername,
+                ProjectXApiKey);
 
-            string response = ProjectXPost("/api/Auth/loginKey", json, requiresAuth: false);
+            string response = ProjectXPost("/api/Auth/loginKey", loginJson, false);
             if (string.IsNullOrWhiteSpace(response))
                 return false;
 
-            if (!TryGetJsonString(response, "token", out string token))
-            {
-                Print("⚠️ ProjectX login did not return a token.");
+            string token;
+            if (!TryGetJsonString(response, "token", out token))
                 return false;
-            }
 
             projectXSessionToken = token;
             projectXTokenAcquiredUtc = DateTime.UtcNow;
@@ -4835,56 +2363,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             contractId = null;
 
             if (!int.TryParse(ProjectXAccountId, out accountId) || accountId <= 0)
-            {
-                Print("⚠️ ProjectX Account ID is missing or invalid.");
                 return false;
-            }
-
             if (string.IsNullOrWhiteSpace(ProjectXContractId))
-            {
-                Print("⚠️ ProjectX Contract ID is missing.");
                 return false;
-            }
 
             contractId = ProjectXContractId.Trim();
             return true;
         }
 
-        private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry)
+        private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
         {
             int orderSide = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
-            int orderType = isMarketEntry ? 2 : 1; // 2 = Market, 1 = Limit
+            int orderType = isMarketEntry ? 2 : 1;
+            double entry = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
+            int tpTicks = Math.Max(1, PriceToTicks(Math.Abs(takeProfit - entry)));
+            int slTicks = Math.Max(1, PriceToTicks(Math.Abs(entry - stopLoss)));
 
-            double entry = RoundToTickSize(entryPrice);
-            int tpTicks = PriceToTicks(Math.Abs(takeProfit - entry));
-            int slTicks = PriceToTicks(Math.Abs(entry - stopLoss));
+            string limitPart = isMarketEntry
+                ? string.Empty
+                : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", entry);
 
-            string limitPart = isMarketEntry ? "" : $@",""limitPrice"": {FormatPriceInvariant(entry)}";
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":1,\"type\":1,\"ticks\":{6}}},\"stopLossBracket\":{{\"quantity\":1,\"type\":4,\"ticks\":{7}}}}}",
+                accountId,
+                contractId,
+                orderType,
+                orderSide,
+                Math.Max(1, quantity),
+                limitPart,
+                tpTicks,
+                slTicks);
 
-            string json = $@"
-            {{
-                ""accountId"": {accountId},
-                ""contractId"": ""{contractId}"",
-                ""type"": {orderType},
-                ""side"": {orderSide},
-                ""size"": {activeContracts}{limitPart},
-                ""takeProfitBracket"": {{
-                    ""quantity"": 1,
-                    ""type"": 1,
-                    ""ticks"": {Math.Max(1, tpTicks)}
-                }},
-                ""stopLossBracket"": {{
-                    ""quantity"": 1,
-                    ""type"": 4,
-                    ""ticks"": {Math.Max(1, slTicks)}
-                }}
-            }}";
-
-            string response = ProjectXPost("/api/Order/place", json, requiresAuth: true);
-            if (string.IsNullOrWhiteSpace(response))
-                return null;
-
-            if (TryGetJsonInt(response, "orderId", out int orderId))
+            string response = ProjectXPost("/api/Order/place", json, true);
+            int orderId;
+            if (TryGetJsonInt(response, "orderId", out orderId))
             {
                 projectXLastOrderId = orderId;
                 projectXLastOrderContractId = contractId;
@@ -4895,52 +2407,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string ProjectXClosePosition(int accountId, string contractId)
         {
-            string json = $@"
-            {{
-                ""accountId"": {accountId},
-                ""contractId"": ""{contractId}""
-            }}";
-            return ProjectXPost("/api/Position/closeContract", json, requiresAuth: true);
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\"}}",
+                accountId,
+                contractId);
+            return ProjectXPost("/api/Position/closeContract", json, true);
         }
 
         private string ProjectXCancelOrders(int accountId, string contractId)
         {
             if (projectXLastOrderId.HasValue && string.Equals(projectXLastOrderContractId, contractId, StringComparison.OrdinalIgnoreCase))
             {
-                string cancelJson = $@"
-                {{
-                    ""accountId"": {accountId},
-                    ""orderId"": {projectXLastOrderId.Value}
-                }}";
-                return ProjectXPost("/api/Order/cancel", cancelJson, requiresAuth: true);
+                string cancelJson = string.Format(CultureInfo.InvariantCulture,
+                    "{{\"accountId\":{0},\"orderId\":{1}}}",
+                    accountId,
+                    projectXLastOrderId.Value);
+                return ProjectXPost("/api/Order/cancel", cancelJson, true);
             }
 
-            string searchJson = $@"
-            {{
-                ""accountId"": {accountId}
-            }}";
-
-            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, requiresAuth: true);
-            if (string.IsNullOrWhiteSpace(searchResponse))
-                return null;
-
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
             foreach (var order in ExtractProjectXOrders(searchResponse))
             {
-                if (!order.TryGetValue("contractId", out object contractObj))
+                object contractObj;
+                if (!order.TryGetValue("contractId", out contractObj))
                     continue;
-                if (!string.Equals(contractObj?.ToString(), contractId, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (!order.TryGetValue("id", out object idObj))
-                    continue;
-                if (!int.TryParse(idObj?.ToString(), out int id) || id <= 0)
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                string cancelJson = $@"
-                {{
-                    ""accountId"": {accountId},
-                    ""orderId"": {id}
-                }}";
-                ProjectXPost("/api/Order/cancel", cancelJson, requiresAuth: true);
+                object idObj;
+                int id;
+                if (!order.TryGetValue("id", out idObj) || !int.TryParse(idObj != null ? idObj.ToString() : string.Empty, out id) || id <= 0)
+                    continue;
+
+                string cancelJson = string.Format(CultureInfo.InvariantCulture,
+                    "{{\"accountId\":{0},\"orderId\":{1}}}",
+                    accountId,
+                    id);
+                ProjectXPost("/api/Order/cancel", cancelJson, true);
             }
 
             return searchResponse;
@@ -4948,24 +2452,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string ProjectXPost(string path, string json, bool requiresAuth)
         {
-            string baseUrl = ProjectXApiBaseUrl?.TrimEnd('/');
+            string baseUrl = ProjectXApiBaseUrl != null ? ProjectXApiBaseUrl.TrimEnd('/') : string.Empty;
             if (string.IsNullOrWhiteSpace(baseUrl))
                 return null;
-
-            string url = baseUrl + path;
 
             using (var client = new System.Net.WebClient())
             {
                 client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
                 if (requiresAuth && !string.IsNullOrWhiteSpace(projectXSessionToken))
                     client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
-                return client.UploadString(url, "POST", json);
+                return client.UploadString(baseUrl + path, "POST", json);
             }
         }
 
         private int PriceToTicks(double priceDistance)
         {
-            if (TickSize <= 0)
+            if (TickSize <= 0.0)
                 return 0;
             return (int)Math.Round(priceDistance / TickSize, MidpointRounding.AwayFromZero);
         }
@@ -4973,39 +2475,351 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool TryGetJsonString(string json, string key, out string value)
         {
             value = null;
-            var serializer = new JavaScriptSerializer();
-            var data = serializer.Deserialize<Dictionary<string, object>>(json);
-            if (data == null || !data.TryGetValue(key, out object raw) || raw == null)
+            if (string.IsNullOrWhiteSpace(json))
                 return false;
-            value = raw.ToString();
-            return !string.IsNullOrWhiteSpace(value);
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                value = raw.ToString();
+                return !string.IsNullOrWhiteSpace(value);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private bool TryGetJsonInt(string json, string key, out int value)
         {
             value = 0;
-            var serializer = new JavaScriptSerializer();
-            var data = serializer.Deserialize<Dictionary<string, object>>(json);
-            if (data == null || !data.TryGetValue(key, out object raw) || raw == null)
+            if (string.IsNullOrWhiteSpace(json))
                 return false;
-            return int.TryParse(raw.ToString(), out value);
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return int.TryParse(raw.ToString(), out value);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private IEnumerable<Dictionary<string, object>> ExtractProjectXOrders(string json)
         {
-            var serializer = new JavaScriptSerializer();
-            var data = serializer.Deserialize<Dictionary<string, object>>(json);
-            if (data == null || !data.TryGetValue("orders", out object raw) || raw == null)
+            if (string.IsNullOrWhiteSpace(json))
                 yield break;
 
-            if (raw is object[] array)
+            var serializer = new JavaScriptSerializer();
+            Dictionary<string, object> data;
+            try
             {
-                foreach (var item in array)
-                {
-                    if (item is Dictionary<string, object> dict)
-                        yield return dict;
-                }
+                data = serializer.Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("orders", out raw) || raw == null)
+                yield break;
+
+            var array = raw as object[];
+            if (array == null)
+                yield break;
+
+            for (int i = 0; i < array.Length; i++)
+            {
+                var dict = array[i] as Dictionary<string, object>;
+                if (dict != null)
+                    yield return dict;
             }
         }
-	    }
-	}
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Asia Session", Description = "Enable trading logic during the Asia time window.", GroupName = "Asia", Order = 0)]
+        public bool UseAsiaSession { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "Asia session start time in chart time zone.", GroupName = "Asia", Order = 1)]
+        public TimeSpan AsiaSessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "Asia session end time in chart time zone.", GroupName = "Asia", Order = 2)]
+        public TimeSpan AsiaSessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia entries/flips on Sundays.", GroupName = "Asia", Order = 3)]
+        public bool AsiaBlockSundayTrades { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by Asia entry and exit logic.", GroupName = "Asia", Order = 4)]
+        public int AsiaEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia entries.", GroupName = "Asia", Order = 5)]
+        public int AsiaContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia trend filter.", GroupName = "Asia", Order = 8)]
+        public int AsiaAdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 9)]
+        public double AsiaAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia", Order = 10)]
+        public double AsiaAdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [TypeConverter(typeof(AsiaAdxSlopeDropdownConverter))]
+        [Display(Name = "Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 11)]
+        public double AsiaAdxMinSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 12)]
+        public double AsiaAdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for signals. 0 disables.", GroupName = "Asia", Order = 14)]
+        public double AsiaEmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 14)]
+        public double AsiaMaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia", Order = 90)]
+        public double AsiaAdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the entry candle wick extreme.", GroupName = "Asia", Order = 16)]
+        public double AsiaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 17)]
+        public double AsiaExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 18)]
+        public double AsiaTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use New York Session", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
+        public bool UseNewYorkSession { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "New York session start time in chart time zone.", GroupName = "New York", Order = 1)]
+        public TimeSpan NewYorkSessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "New York session end time in chart time zone.", GroupName = "New York", Order = 2)]
+        public TimeSpan NewYorkSessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip Start", Description = "Start of New York skip window.", GroupName = "New York", Order = 3)]
+        public TimeSpan NewYorkSkipStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip End", Description = "End of New York skip window.", GroupName = "New York", Order = 4)]
+        public TimeSpan NewYorkSkipEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by New York entry and exit logic.", GroupName = "New York", Order = 5)]
+        public int NewYorkEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York entries.", GroupName = "New York", Order = 6)]
+        public int NewYorkContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York trend filter.", GroupName = "New York", Order = 8)]
+        public int NewYorkAdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 9)]
+        public double NewYorkAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 10)]
+        public double NewYorkAdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [TypeConverter(typeof(NewYorkAdxSlopeDropdownConverter))]
+        [Display(Name = "Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 11)]
+        public double NewYorkAdxMinSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 12)]
+        public double NewYorkAdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for signals. 0 disables.", GroupName = "New York", Order = 14)]
+        public double NewYorkEmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 14)]
+        public double NewYorkMaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York", Order = 90)]
+        public double NewYorkAdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Additional stop padding in points beyond the entry candle wick extreme.", GroupName = "New York", Order = 16)]
+        public double NewYorkStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 17)]
+        public double NewYorkExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 18)]
+        public double NewYorkTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Close At Session End", Description = "If true, flatten positions and cancel entries at each configured session end.", GroupName = "10. Sessions", Order = 0)]
+        public bool CloseAtSessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [XmlIgnore]
+        [Display(Name = "Asia Session Fill", Description = "Background color used to highlight Asia session windows.", GroupName = "10. Sessions", Order = 1)]
+        public Brush AsiaSessionBrush { get; set; }
+
+        [Browsable(false)]
+        public string AsiaSessionBrushSerializable
+        {
+            get { return Serialize.BrushToString(AsiaSessionBrush); }
+            set { AsiaSessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
+        [XmlIgnore]
+        [Display(Name = "New York Session Fill", Description = "Background color used to highlight New York session windows.", GroupName = "10. Sessions", Order = 2)]
+        public Brush NewYorkSessionBrush { get; set; }
+
+        [Browsable(false)]
+        public string NewYorkSessionBrushSerializable
+        {
+            get { return Serialize.BrushToString(NewYorkSessionBrush); }
+            set { NewYorkSessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
+        [XmlIgnore]
+        [Display(Name = "Session Fill (Legacy)", Description = "Legacy fallback background color if per-session colors are not set.", GroupName = "10. Sessions", Order = 99)]
+        public Brush SessionBrush { get; set; }
+
+        [Browsable(false)]
+        public string SessionBrushSerializable
+        {
+            get { return Serialize.BrushToString(SessionBrush); }
+            set { SessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show EMA On Chart", Description = "Show/hide EMA indicators on chart.", GroupName = "10. Sessions", Order = 3)]
+        public bool ShowEmaOnChart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show ADX On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 4)]
+        public bool ShowAdxOnChart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show ADX Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 5)]
+        public bool ShowAdxThresholdLines { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use News Skip", Description = "Block entries inside the configured minutes before and after listed news events.", GroupName = "11. News", Order = 0)]
+        public bool UseNewsSkip { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 240)]
+        [Display(Name = "News Block Minutes", Description = "Minutes blocked before and after each news timestamp.", GroupName = "11. News", Order = 1)]
+        public int NewsBlockMinutes { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TradersPost Webhook URL", Description = "HTTP endpoint for TradersPost order webhooks. Leave empty to disable TradersPost webhooks.", GroupName = "12. Webhooks", Order = 0)]
+        public string WebhookUrl { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Webhook Provider", Description = "Select webhook target: TradersPost or ProjectX.", GroupName = "12. Webhooks", Order = 1)]
+        public WebhookProvider WebhookProviderType { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX API Base URL", Description = "ProjectX gateway base URL.", GroupName = "12. Webhooks", Order = 2)]
+        public string ProjectXApiBaseUrl { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX Username", Description = "ProjectX login username.", GroupName = "12. Webhooks", Order = 3)]
+        public string ProjectXUsername { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX API Key", Description = "ProjectX login key.", GroupName = "12. Webhooks", Order = 4)]
+        public string ProjectXApiKey { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX Account ID", Description = "ProjectX account id used for order routing.", GroupName = "12. Webhooks", Order = 5)]
+        public string ProjectXAccountId { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX Contract ID", Description = "ProjectX contract id (for example CON.F.US.DA6.M25).", GroupName = "12. Webhooks", Order = 6)]
+        public string ProjectXContractId { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Account Balance", Description = "When cash value reaches or exceeds this value, entries are blocked and position is flattened. 0 disables.", GroupName = "13. Risk", Order = 0)]
+        public double MaxAccountBalance { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Trades Per Session", Description = "0 disables. When this many trades have been opened in the active session, block new entries until that session starts again.", GroupName = "13. Risk", Order = 4)]
+        public int MaxTradesPerSession { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 5)]
+        public bool RequireEntryConfirmation { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
+        public bool DebugLogging { get; set; }
+    }
+}
