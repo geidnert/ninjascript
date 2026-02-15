@@ -246,7 +246,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxPeakDrawdownExitUnits = 13.0;
                 AsiaEmaMinSlopePointsPerBar = 0.5;
                 AsiaMaxEntryDistanceFromEmaPoints = 21.0;
-                AsiaStopPaddingPoints = 54.5;
+                AsiaStopPaddingPoints = 63;
                 AsiaExitCrossPoints = 3.5;
                 AsiaTakeProfitPoints = 93.75;
                 AsiaAdxAbsoluteExitLevel = 57.7;
@@ -265,7 +265,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
                 NewYorkMaxEntryDistanceFromEmaPoints = 44.0;
-                NewYorkStopPaddingPoints = 63;
+                NewYorkStopPaddingPoints = 54.5;
                 NewYorkExitCrossPoints = 1.25;
                 NewYorkTakeProfitPoints = 123.75;
                 NewYorkAdxAbsoluteExitLevel = 70.0;
