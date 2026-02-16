@@ -2390,7 +2390,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Child = infoBoxRowsPanel,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(8, 8, 8, 60),
+                Margin = new Thickness(5, 8, 8, 37),
                 Background = Brushes.Transparent
             };
 
