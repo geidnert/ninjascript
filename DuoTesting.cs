@@ -7,6 +7,9 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Web.Script.Serialization;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using NinjaTrader.Cbi;
@@ -155,7 +158,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortEntrySignal = "ShortEntry";
         private const string LongFlipEntrySignal = "LongFlipEntry";
         private const string ShortFlipEntrySignal = "ShortFlipEntry";
-        private const string DividerRowToken = "__DIVIDER__";
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
         private const string LiveNewsFeedUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 
@@ -241,6 +243,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static bool newsDatesInitialized;
         private static bool newsDatesSourceLive;
         private static DateTime liveNewsLoadedWeekStart = Core.Globals.MinDate;
+        private Border infoBoxContainer;
+        private StackPanel infoBoxRowsPanel;
+        private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
+            Color.FromRgb(0x2A, 0x2F, 0x45),
+            Color.FromRgb(0x1E, 0x23, 0x36),
+            Color.FromRgb(0x14, 0x18, 0x28));
+        private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(255, 0x0F, 0x0F, 0x17);
+        private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(255, 0x11, 0x11, 0x18);
+        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(210, 0xD3, 0xD3, 0xD3);
+        private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
+        private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
 
         protected override void OnStateChange()
         {
@@ -313,6 +326,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxAccountBalance = 0.0;
                 MaxTradesPerSession = 4;
                 RequireEntryConfirmation = false;
+                RequireMinAdxForFlips = false;
 
                 DebugLogging = false;
             }
@@ -383,6 +397,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         activeExitCrossPoints,
                         activeEntryStopMode));
             }
+            else if (State == State.Terminated)
+            {
+                DisposeInfoBoxOverlay();
+            }
         }
 
         protected override void OnBarUpdate()
@@ -430,7 +448,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int tradesThisSession = GetTradesThisSession(activeSession);
             bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
             bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
-            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked;
+            bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass;
 
             if (!inActiveSessionNow)
                 CancelWorkingEntryOrders();
@@ -532,8 +551,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} below%={4:0.0} minBody%={5:0.0}",
+                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} distancePass={2} emaSlopePass={3} bodyPass={4} below%={5:0.0} minBody%={6:0.0}",
                                 flipCanTradePass,
+                                flipAdxMinPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -624,8 +644,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} above%={4:0.0} minBody%={5:0.0}",
+                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} distancePass={2} emaSlopePass={3} bodyPass={4} above%={5:0.0} minBody%={6:0.0}",
                                 flipCanTradePass,
+                                flipAdxMinPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -2283,79 +2304,146 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public void UpdateInfoText()
         {
             var lines = BuildInfoLines();
-            var font = new SimpleFont("Consolas", 14);
-            var displayLabels = new string[lines.Count];
-            var displayValues = lines.Select(l => l.value ?? string.Empty).ToArray();
+            RemoveLegacyInfoBoxDrawings();
 
-            int maxVisibleRowLen = 0;
+            if (ChartControl == null || ChartControl.Dispatcher == null)
+                return;
+
+            ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines));
+        }
+
+        private void RenderInfoBoxOverlay(List<(string label, string value, Brush labelBrush, Brush valueBrush)> lines)
+        {
+            if (!EnsureInfoBoxOverlay())
+                return;
+
+            if (infoBoxRowsPanel == null)
+                return;
+
+            infoBoxRowsPanel.Children.Clear();
+
             for (int i = 0; i < lines.Count; i++)
             {
-                string label = lines[i].label == DividerRowToken ? string.Empty : (lines[i].label ?? string.Empty);
-                string value = displayValues[i];
-                string row = string.IsNullOrEmpty(value) ? label : label + " " + value;
-                if (row.Length > maxVisibleRowLen)
-                    maxVisibleRowLen = row.Length;
+                bool isHeader = i == 0;
+                bool isFooter = i == lines.Count - 1;
+                var rowBorder = new Border
+                {
+                    Background = (isHeader || isFooter)
+                        ? InfoHeaderFooterGradientBrush
+                        : (i % 2 == 0 ? InfoBodyEvenBrush : InfoBodyOddBrush),
+                    Padding = new Thickness(6, 2, 6, 2)
+                };
+
+                var text = new TextBlock
+                {
+                    FontFamily = new FontFamily("Segoe UI"),
+                    FontSize = isHeader ? 15 : 14,
+                    FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal
+                };
+                TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
+                TextOptions.SetTextRenderingMode(text, TextRenderingMode.ClearType);
+
+                string rawLabel = lines[i].label ?? string.Empty;
+                string value = lines[i].value ?? string.Empty;
+                string label = rawLabel;
+
+                if (string.IsNullOrEmpty(value) && rawLabel.StartsWith("News:", StringComparison.Ordinal))
+                {
+                    label = "News:";
+                    value = rawLabel.Substring("News:".Length).TrimStart();
+                }
+
+                text.Inlines.Add(new Run(label) { Foreground = isHeader ? InfoHeaderTextBrush : InfoLabelBrush });
+                if (!string.IsNullOrEmpty(value))
+                {
+                    text.Inlines.Add(new Run(" ") { Foreground = isHeader ? InfoHeaderTextBrush : InfoLabelBrush });
+
+                    Brush stateValueBrush = lines[i].valueBrush;
+                    if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
+                        stateValueBrush = lines[i].labelBrush;
+                    if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
+                        stateValueBrush = InfoValueBrush;
+
+                    text.Inlines.Add(new Run(value) { Foreground = stateValueBrush });
+                }
+
+                rowBorder.Child = text;
+                infoBoxRowsPanel.Children.Add(rowBorder);
             }
+        }
 
-            int dividerLen = Math.Max(8, maxVisibleRowLen);
-            for (int i = 0; i < lines.Count; i++)
-                displayLabels[i] = lines[i].label == DividerRowToken ? new string('─', dividerLen) : (lines[i].label ?? string.Empty);
+        private bool EnsureInfoBoxOverlay()
+        {
+            if (ChartControl == null)
+                return false;
 
-            var bgLines = lines
-                .Select((l, idx) => string.IsNullOrEmpty(displayValues[idx]) ? displayLabels[idx] : displayLabels[idx] + " " + displayValues[idx])
-                .ToArray();
+            if (infoBoxContainer != null && infoBoxRowsPanel != null)
+                return true;
 
-            string bgText = string.Join(Environment.NewLine, bgLines);
-            Draw.TextFixed(
-                owner: this,
-                tag: "myStatusLabel_bg",
-                text: bgText,
-                textPosition: TextPosition.BottomLeft,
-                textBrush: Brushes.Transparent,
-                font: font,
-                outlineBrush: null,
-                areaBrush: Brushes.Black,
-                areaOpacity: 85);
+            var host = ChartControl.Parent as System.Windows.Controls.Panel;
+            if (host == null)
+                return false;
 
-            for (int i = 0; i < lines.Count; i++)
+            infoBoxRowsPanel = new StackPanel
             {
-                string labelTag = string.Format("myStatusLabel_label_{0}", i);
-                string spacesBeforeValue = new string(' ', displayLabels[i].Length + 1);
+                Orientation = Orientation.Vertical
+            };
 
-                var labelOverlayLines = new string[lines.Count];
-                for (int j = 0; j < lines.Count; j++)
-                    labelOverlayLines[j] = j == i ? displayLabels[i] : string.Empty;
+            infoBoxContainer = new Border
+            {
+                Child = infoBoxRowsPanel,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(5, 8, 8, 37),
+                Background = Brushes.Transparent
+            };
 
-                string labelOverlayText = string.Join(Environment.NewLine, labelOverlayLines);
+            host.Children.Add(infoBoxContainer);
+            System.Windows.Controls.Panel.SetZIndex(infoBoxContainer, int.MaxValue);
+            return true;
+        }
 
-                Draw.TextFixed(
-                    owner: this,
-                    tag: labelTag,
-                    text: labelOverlayText,
-                    textPosition: TextPosition.BottomLeft,
-                    textBrush: lines[i].labelBrush,
-                    font: font,
-                    outlineBrush: null,
-                    areaBrush: null,
-                    areaOpacity: 0);
+        private void DisposeInfoBoxOverlay()
+        {
+            try
+            {
+                if (ChartControl == null || ChartControl.Dispatcher == null)
+                {
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                    return;
+                }
 
-                string valueTag = string.Format("myStatusLabel_val_{0}", i);
-                var valueOverlayLines = new string[lines.Count];
-                for (int j = 0; j < lines.Count; j++)
-                    valueOverlayLines[j] = j == i ? spacesBeforeValue + displayValues[i] : string.Empty;
+                ChartControl.Dispatcher.InvokeAsync(() =>
+                {
+                    if (infoBoxContainer != null)
+                    {
+                        var parent = infoBoxContainer.Parent as System.Windows.Controls.Panel;
+                        if (parent != null)
+                            parent.Children.Remove(infoBoxContainer);
+                    }
 
-                string valueOverlayText = string.Join(Environment.NewLine, valueOverlayLines);
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                });
+            }
+            catch
+            {
+                infoBoxRowsPanel = null;
+                infoBoxContainer = null;
+            }
+        }
 
-                Draw.TextFixed(
-                    owner: this,
-                    tag: valueTag,
-                    text: valueOverlayText,
-                    textPosition: TextPosition.BottomLeft,
-                    textBrush: lines[i].valueBrush,
-                    font: font,
-                    outlineBrush: null,
-                    areaBrush: null,
-                    areaOpacity: 0);
+        private void RemoveLegacyInfoBoxDrawings()
+        {
+            RemoveDrawObject("myStatusLabel_bg");
+            RemoveDrawObject("myStatusLabel_bg_top");
+            RemoveDrawObject("myStatusLabel_bg_bottom");
+            for (int i = 0; i < 64; i++)
+            {
+                RemoveDrawObject(string.Format("myStatusLabel_bg_{0}", i));
+                RemoveDrawObject(string.Format("myStatusLabel_label_{0}", i));
+                RemoveDrawObject(string.Format("myStatusLabel_val_{0}", i));
             }
         }
 
@@ -2396,8 +2484,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 paBrush = Brushes.Gold;
             }
 
-            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray, Brushes.Transparent));
-            lines.Add((DividerRowToken, string.Empty, Brushes.DimGray, Brushes.Transparent));
+            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
             List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
             if (weekNews.Count == 0)
@@ -2419,8 +2506,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             lines.Add(("Session:", FormatSessionLabel(activeSession), Brushes.LightGray, Brushes.LightGray));
-            lines.Add((DividerRowToken, string.Empty, Brushes.DimGray, Brushes.Transparent));
-            lines.Add(("AutoEdge Systems™", string.Empty, Brushes.LightGray, Brushes.Transparent));
+            lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
 
             return lines;
         }
@@ -2428,6 +2514,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
         {
             var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            try
+            {
+                if (brush.CanFreeze)
+                    brush.Freeze();
+            }
+            catch { }
+            return brush;
+        }
+
+        private static Brush CreateFrozenVerticalGradientBrush(Color top, Color mid, Color bottom)
+        {
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new Point(0.5, 0.0),
+                EndPoint = new Point(0.5, 1.0)
+            };
+            brush.GradientStops.Add(new GradientStop(top, 0.0));
+            brush.GradientStops.Add(new GradientStop(mid, 0.5));
+            brush.GradientStops.Add(new GradientStop(bottom, 1.0));
             try
             {
                 if (brush.CanFreeze)
@@ -3157,6 +3262,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 5)]
         public bool RequireEntryConfirmation { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Require Min ADX For Flips", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 6)]
+        public bool RequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
