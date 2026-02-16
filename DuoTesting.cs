@@ -10,6 +10,7 @@ using System.Web.Script.Serialization;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using NinjaTrader.Cbi;
+using NinjaTrader.Gui;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
@@ -271,7 +272,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxAbsoluteExitLevel = 70.0;
 
                 CloseAtSessionEnd = false;
-                AsiaSessionBrush = Brushes.Gold;
+                AsiaSessionBrush = Brushes.DarkCyan;
                 NewYorkSessionBrush = Brushes.Gold;
                 SessionBrush = Brushes.Gold;
                 ShowEmaOnChart = true;
@@ -309,8 +310,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     AddChartIndicator(emaNewYork);
                 }
 
-                AddChartIndicator(adxAsia);
-                AddChartIndicator(adxNewYork);
+                if (ShowAdxOnChart)
+                {
+                    AddChartIndicator(adxAsia);
+                    AddChartIndicator(adxNewYork);
+                }
 
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
