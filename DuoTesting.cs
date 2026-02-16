@@ -387,7 +387,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!inNewsSkipPrev && inNewsSkipNow)
             {
                 CancelWorkingEntryOrders();
-                LogDebug("Entered news block: canceling working entries.");
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("NewsSkip", GetOpenLongEntrySignal());
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort("NewsSkip", GetOpenShortEntrySignal());
+                LogDebug("Entered news block: canceling working entries and flattening open position.");
             }
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
@@ -2121,12 +2125,38 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 paBrush = Brushes.Gold;
             }
 
+            DateTime nextNewsTime;
+            bool hasNextNewsToday = TryGetNextNewsToday(Time[0], out nextNewsTime);
+            string newsValue = hasNextNewsToday
+                ? nextNewsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant()
+                : "⛔";
+            Brush newsBrush = hasNextNewsToday ? Brushes.LightGray : Brushes.IndianRed;
+
             lines.Add(("PA:        ", paState, paBrush));
-            lines.Add(("Contracts: ", string.Format(CultureInfo.InvariantCulture, "{0}", activeContracts), Brushes.LightGray));
-            lines.Add((FormatSessionLabel(activeSession), string.Empty, Brushes.LightGray));
+            lines.Add(("News:      ", newsValue, newsBrush));
+            lines.Add(("Session:   ", FormatSessionLabel(activeSession), Brushes.LightGray));
             lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray));
 
             return lines;
+        }
+
+        private bool TryGetNextNewsToday(DateTime time, out DateTime nextNewsTime)
+        {
+            EnsureNewsDatesInitialized();
+
+            nextNewsTime = Core.Globals.MinDate;
+            DateTime day = time.Date;
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime candidate = NewsDates[i];
+                if (candidate.Date != day || candidate < time)
+                    continue;
+
+                if (nextNewsTime == Core.Globals.MinDate || candidate < nextNewsTime)
+                    nextNewsTime = candidate;
+            }
+
+            return nextNewsTime != Core.Globals.MinDate;
         }
 
         private string GetAddOnVersion()
