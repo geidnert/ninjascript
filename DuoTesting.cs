@@ -157,67 +157,80 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortFlipEntrySignal = "ShortFlipEntry";
 
         private static readonly string NewsDatesRaw =
-@"2025-01-10,08:30
-2025-01-14,08:30
-2025-01-15,08:30
-2025-02-07,08:30
+@"2025-01-29,14:00
 2025-02-12,08:30
+2025-02-19,14:00
 2025-03-07,08:30
 2025-03-12,08:30
+2025-03-19,14:00
 2025-04-04,08:30
+2025-04-09,14:00
 2025-04-10,08:30
 2025-05-02,08:30
+2025-05-07,14:00
 2025-05-13,08:30
+2025-05-28,14:00
 2025-06-06,08:30
 2025-06-11,08:30
+2025-06-18,14:00
 2025-07-03,08:30
+2025-07-09,14:00
 2025-07-15,08:30
+2025-07-30,14:00
 2025-08-01,08:30
 2025-08-12,08:30
-2025-09-04,08:30
+2025-08-20,14:00
+2025-09-05,08:30
 2025-09-11,08:30
-2025-11-20,08:30
-2025-12-03,08:30
+2025-09-17,14:00
+2025-10-03,08:30
+2025-10-08,14:00
+2025-10-24,08:30
+2025-10-29,14:00
+2025-11-07,08:30
+2025-11-19,14:00
+2025-12-05,08:30
+2025-12-10,14:00
+2025-12-18,08:30
+2025-12-30,14:00
 2026-01-09,08:30
 2026-01-13,08:30
+2026-01-28,14:00
 2026-02-06,08:30
-2026-02-10,08:30
 2026-02-11,08:30
-2026-03-05,08:30
+2026-02-18,14:00
+2026-03-06,08:30
 2026-03-11,08:30
+2026-03-18,14:00
 2026-04-03,08:30
+2026-04-09,14:00
 2026-04-10,08:30
-2026-05-07,08:30
+2026-04-29,14:00
+2026-05-08,08:30
 2026-05-12,08:30
 2026-06-05,08:30
 2026-06-10,08:30
-2026-07-02,08:30
-2026-07-14,08:30
-2026-08-06,08:30
-2026-08-12,08:30
-2026-09-03,08:30
-2026-09-11,08:30
-2026-10-02,08:30
-2026-10-14,08:30
-2026-11-05,08:30
-2026-11-10,08:30
-2026-12-04,08:30
-2025-01-28,14:00
-2025-03-19,14:00
-2025-05-07,14:00
-2025-06-18,14:00
-2025-07-30,14:00
-2025-09-17,14:00
-2025-10-29,14:00
-2025-12-10,14:00
-2026-01-28,14:00
-2026-03-18,14:00
-2026-04-29,14:00
 2026-06-17,14:00
+2026-07-02,08:30
+2026-07-09,14:00
+2026-07-14,08:30
 2026-07-29,14:00
-2026-09-15,14:00
-2026-10-27,14:00
-2026-12-09,14:00";
+2026-08-07,08:30
+2026-08-12,08:30
+2026-08-20,14:00
+2026-09-04,08:30
+2026-09-11,08:30
+2026-09-16,14:00
+2026-10-02,08:30
+2026-10-08,14:00
+2026-10-14,08:30
+2026-10-28,14:00
+2026-11-06,08:30
+2026-11-10,08:30
+2026-11-19,14:00
+2026-12-04,08:30
+2026-12-09,14:00
+2026-12-10,08:30";
 
         private static readonly List<DateTime> NewsDates = new List<DateTime>();
         private static bool newsDatesInitialized;
@@ -2125,38 +2138,55 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 paBrush = Brushes.Gold;
             }
 
-            DateTime nextNewsTime;
-            bool hasNextNewsToday = TryGetNextNewsToday(Time[0], out nextNewsTime);
-            string newsValue = hasNextNewsToday
-                ? nextNewsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant()
-                : "⛔";
-            Brush newsBrush = hasNextNewsToday ? Brushes.LightGray : Brushes.IndianRed;
-
             lines.Add(("PA:        ", paState, paBrush));
-            lines.Add(("News:      ", newsValue, newsBrush));
+            List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
+            if (weekNews.Count == 0)
+            {
+                lines.Add(("News:      ", "⛔", Brushes.IndianRed));
+            }
+            else
+            {
+                for (int i = 0; i < weekNews.Count; i++)
+                {
+                    DateTime newsTime = weekNews[i];
+                    bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
+                    string labelPrefix = "News:      ";
+                    string label = labelPrefix + newsTime.ToString("ddd h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                    string value = "❎";
+                    Brush brush = blockPassed ? Brushes.LimeGreen : Brushes.Transparent;
+                    lines.Add((label, value, brush));
+                }
+            }
+
             lines.Add(("Session:   ", FormatSessionLabel(activeSession), Brushes.LightGray));
             lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray));
 
             return lines;
         }
 
-        private bool TryGetNextNewsToday(DateTime time, out DateTime nextNewsTime)
+        private List<DateTime> GetCurrentWeekNews(DateTime time)
         {
             EnsureNewsDatesInitialized();
 
-            nextNewsTime = Core.Globals.MinDate;
-            DateTime day = time.Date;
+            var weekNews = new List<DateTime>();
+            DateTime weekStart = GetWeekStart(time.Date);
+            DateTime weekEnd = weekStart.AddDays(7);
             for (int i = 0; i < NewsDates.Count; i++)
             {
                 DateTime candidate = NewsDates[i];
-                if (candidate.Date != day || candidate < time)
-                    continue;
-
-                if (nextNewsTime == Core.Globals.MinDate || candidate < nextNewsTime)
-                    nextNewsTime = candidate;
+                if (candidate >= weekStart && candidate < weekEnd)
+                    weekNews.Add(candidate);
             }
 
-            return nextNewsTime != Core.Globals.MinDate;
+            weekNews.Sort();
+            return weekNews;
+        }
+
+        private DateTime GetWeekStart(DateTime date)
+        {
+            DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+            int diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
+            return date.AddDays(-diff).Date;
         }
 
         private string GetAddOnVersion()
