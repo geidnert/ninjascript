@@ -2884,7 +2884,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Asia Session", Description = "Enable trading logic during the Asia time window.", GroupName = "Asia", Order = 0)]
+        [Display(Name = "Asia Session(18:30-2:00)", Description = "Enable trading logic during the Asia time window.", GroupName = "Asia", Order = 0)]
         public bool UseAsiaSession { get; set; }
 
         // [NinjaScriptProperty]
@@ -2966,7 +2966,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal double AsiaTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use New York Session", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
+        [Display(Name = "New York Session(9:40-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
         public bool UseNewYorkSession { get; set; }
 
         // [NinjaScriptProperty]
