@@ -155,6 +155,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortEntrySignal = "ShortEntry";
         private const string LongFlipEntrySignal = "LongFlipEntry";
         private const string ShortFlipEntrySignal = "ShortFlipEntry";
+        private const string DividerRowToken = "__DIVIDER__";
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
         private const string LiveNewsFeedUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 
@@ -2283,16 +2284,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             var lines = BuildInfoLines();
             var font = new SimpleFont("Consolas", 14);
+            var displayLabels = new string[lines.Count];
+            var displayValues = lines.Select(l => l.value ?? string.Empty).ToArray();
+
+            int maxVisibleRowLen = 0;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string label = lines[i].label == DividerRowToken ? string.Empty : (lines[i].label ?? string.Empty);
+                string value = displayValues[i];
+                string row = string.IsNullOrEmpty(value) ? label : label + " " + value;
+                if (row.Length > maxVisibleRowLen)
+                    maxVisibleRowLen = row.Length;
+            }
+
+            int dividerLen = Math.Max(8, maxVisibleRowLen);
+            for (int i = 0; i < lines.Count; i++)
+                displayLabels[i] = lines[i].label == DividerRowToken ? new string('─', dividerLen) : (lines[i].label ?? string.Empty);
 
             var bgLines = lines
-                .Select(l =>
-                {
-                    return string.IsNullOrEmpty(l.value) ? l.label : l.label + " " + l.value;
-                })
+                .Select((l, idx) => string.IsNullOrEmpty(displayValues[idx]) ? displayLabels[idx] : displayLabels[idx] + " " + displayValues[idx])
                 .ToArray();
 
             string bgText = string.Join(Environment.NewLine, bgLines);
-
             Draw.TextFixed(
                 owner: this,
                 tag: "myStatusLabel_bg",
@@ -2307,11 +2320,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             for (int i = 0; i < lines.Count; i++)
             {
                 string labelTag = string.Format("myStatusLabel_label_{0}", i);
-                string spacesBeforeValue = new string(' ', lines[i].label.Length + 1);
+                string spacesBeforeValue = new string(' ', displayLabels[i].Length + 1);
 
                 var labelOverlayLines = new string[lines.Count];
                 for (int j = 0; j < lines.Count; j++)
-                    labelOverlayLines[j] = j == i ? lines[i].label : string.Empty;
+                    labelOverlayLines[j] = j == i ? displayLabels[i] : string.Empty;
 
                 string labelOverlayText = string.Join(Environment.NewLine, labelOverlayLines);
 
@@ -2329,7 +2342,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 string valueTag = string.Format("myStatusLabel_val_{0}", i);
                 var valueOverlayLines = new string[lines.Count];
                 for (int j = 0; j < lines.Count; j++)
-                    valueOverlayLines[j] = j == i ? spacesBeforeValue + lines[i].value : string.Empty;
+                    valueOverlayLines[j] = j == i ? spacesBeforeValue + displayValues[i] : string.Empty;
 
                 string valueOverlayText = string.Join(Environment.NewLine, valueOverlayLines);
 
@@ -2383,6 +2396,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 paBrush = Brushes.Gold;
             }
 
+            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray, Brushes.Transparent));
+            lines.Add((DividerRowToken, string.Empty, Brushes.DimGray, Brushes.Transparent));
             lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
             List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
             if (weekNews.Count == 0)
@@ -2404,7 +2419,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             lines.Add(("Session:", FormatSessionLabel(activeSession), Brushes.LightGray, Brushes.LightGray));
-            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray, Brushes.Transparent));
+            lines.Add((DividerRowToken, string.Empty, Brushes.DimGray, Brushes.Transparent));
+            lines.Add(("AutoEdge Systems™", string.Empty, Brushes.LightGray, Brushes.Transparent));
 
             return lines;
         }
