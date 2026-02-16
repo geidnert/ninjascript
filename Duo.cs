@@ -156,6 +156,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string LongFlipEntrySignal = "LongFlipEntry";
         private const string ShortFlipEntrySignal = "ShortFlipEntry";
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
+        private const string LiveNewsFeedUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 
         private static readonly string NewsDatesRaw =
 @"2025-01-29,14:00
@@ -237,6 +238,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private static readonly List<DateTime> NewsDates = new List<DateTime>();
         private static bool newsDatesInitialized;
+        private static bool newsDatesSourceLive;
+        private static DateTime liveNewsLoadedWeekStart = Core.Globals.MinDate;
 
         protected override void OnStateChange()
         {
@@ -296,6 +299,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ShowAdxThresholdLines = false;
 
                 UseNewsSkip = true;
+                UseLiveNewsData = false;
                 NewsBlockMinutes = 1;
 
                 WebhookUrl = string.Empty;
@@ -309,7 +313,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxTradesPerSession = 4;
                 RequireEntryConfirmation = false;
 
-                DebugLogging = false;
+                DebugLogging = true;
             }
             else if (State == State.DataLoaded)
             {
@@ -1855,14 +1859,241 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void EnsureNewsDatesInitialized()
         {
-            if (newsDatesInitialized)
+            DateTime currentWeekStart = GetWeekStart(DateTime.Now.Date);
+
+            bool needsReload = !newsDatesInitialized;
+            if (!needsReload)
+            {
+                if (UseLiveNewsData)
+                    needsReload = !newsDatesSourceLive || liveNewsLoadedWeekStart != currentWeekStart;
+                else
+                    needsReload = newsDatesSourceLive;
+            }
+
+            if (!needsReload)
                 return;
 
-            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+            AppendNewsFetchLog(string.Format(
+                "Refresh requested | weekStart={0:yyyy-MM-dd} useLive={1}",
+                currentWeekStart,
+                UseLiveNewsData));
+
+            NewsDates.Clear();
+
+            bool loadedFromLive = false;
+            if (UseLiveNewsData)
+                loadedFromLive = TryLoadLiveNewsDates(currentWeekStart);
+
+            if (!loadedFromLive)
             {
-                newsDatesInitialized = true;
-                return;
+                LoadHardcodedNewsDates();
+                if (UseLiveNewsData)
+                    AppendNewsFetchLog("Live source unavailable; fallback to hardcoded list.");
             }
+
+            NewsDates.Sort();
+            newsDatesInitialized = true;
+            newsDatesSourceLive = loadedFromLive;
+            liveNewsLoadedWeekStart = loadedFromLive ? currentWeekStart : Core.Globals.MinDate;
+
+            AppendNewsFetchLog(string.Format(
+                "Refresh complete | source={0} count={1} weekStart={2:yyyy-MM-dd} events=[{3}]",
+                loadedFromLive ? "live" : "hardcoded",
+                NewsDates.Count,
+                currentWeekStart,
+                FormatNewsDatesForLog(NewsDates)));
+        }
+
+        private bool TryLoadLiveNewsDates(DateTime weekStart)
+        {
+            if (string.IsNullOrWhiteSpace(LiveNewsFeedUrl))
+                return false;
+
+            string json;
+            try
+            {
+                using (var client = new System.Net.WebClient())
+                    json = client.DownloadString(LiveNewsFeedUrl);
+            }
+            catch (Exception ex)
+            {
+                LogDebug(string.Format("Live news fetch failed: {0}", ex.Message));
+                AppendNewsFetchLog(string.Format("Live fetch failed | reason={0}", ex.Message));
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                AppendNewsFetchLog("Live fetch failed | reason=empty response");
+                return false;
+            }
+
+            object[] events;
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                events = serializer.DeserializeObject(json) as object[];
+            }
+            catch (Exception ex)
+            {
+                LogDebug(string.Format("Live news parse failed: {0}", ex.Message));
+                AppendNewsFetchLog(string.Format("Live parse failed | reason={0}", ex.Message));
+                return false;
+            }
+
+            if (events == null)
+            {
+                AppendNewsFetchLog("Live parse failed | reason=response is not an array");
+                return false;
+            }
+
+            DateTime weekEnd = weekStart.AddDays(7);
+            for (int i = 0; i < events.Length; i++)
+            {
+                var row = events[i] as Dictionary<string, object>;
+                if (row == null)
+                    continue;
+
+                string country;
+                if (!TryGetRowString(row, "country", out country) || !string.Equals(country, "USD", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string impact;
+                if (!TryGetRowString(row, "impact", out impact) || impact.IndexOf("high", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                DateTime newsTime;
+                if (!TryParseLiveNewsTime(row, out newsTime))
+                    continue;
+
+                if (newsTime < weekStart || newsTime >= weekEnd)
+                    continue;
+
+                TimeSpan t = newsTime.TimeOfDay;
+                if (t != new TimeSpan(8, 30, 0) && t != new TimeSpan(14, 0, 0))
+                    continue;
+
+                if (!NewsDates.Contains(newsTime))
+                    NewsDates.Add(newsTime);
+            }
+
+            return true;
+        }
+
+        private bool TryParseLiveNewsTime(Dictionary<string, object> row, out DateTime newsTime)
+        {
+            newsTime = Core.Globals.MinDate;
+
+            long unixSeconds;
+            if (TryGetRowLong(row, "timestamp", out unixSeconds) || TryGetRowLong(row, "ts", out unixSeconds))
+            {
+                try
+                {
+                    if (unixSeconds > 1000000000000L)
+                        unixSeconds /= 1000L;
+
+                    DateTimeOffset utc = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+                    newsTime = ConvertUtcOffsetToEastern(utc).DateTime;
+                    return true;
+                }
+                catch { }
+            }
+
+            string combined;
+            if (TryGetRowString(row, "date", out combined))
+            {
+                string timePart;
+                if (TryGetRowString(row, "time", out timePart) && combined.IndexOf(':') < 0)
+                    combined = combined + " " + timePart;
+
+                if (TryParseLiveNewsDateText(combined, out newsTime))
+                    return true;
+            }
+
+            if (TryGetRowString(row, "datetime", out combined) && TryParseLiveNewsDateText(combined, out newsTime))
+                return true;
+
+            return false;
+        }
+
+        private bool TryParseLiveNewsDateText(string raw, out DateTime newsTime)
+        {
+            newsTime = Core.Globals.MinDate;
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+
+            string cleaned = raw.Trim();
+
+            DateTimeOffset dto;
+            if (DateTimeOffset.TryParse(cleaned, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out dto))
+            {
+                newsTime = ConvertUtcOffsetToEastern(dto).DateTime;
+                return true;
+            }
+
+            DateTime parsed;
+            if (DateTime.TryParse(cleaned, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out parsed))
+            {
+                newsTime = parsed;
+                return true;
+            }
+
+            if (DateTime.TryParse(cleaned, CultureInfo.CurrentCulture, DateTimeStyles.AllowWhiteSpaces, out parsed))
+            {
+                newsTime = parsed;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static DateTimeOffset ConvertUtcOffsetToEastern(DateTimeOffset source)
+        {
+            TimeZoneInfo eastern = null;
+            try
+            {
+                eastern = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            }
+            catch
+            {
+                try
+                {
+                    eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+                }
+                catch { }
+            }
+
+            return eastern != null ? TimeZoneInfo.ConvertTime(source, eastern) : source;
+        }
+
+        private static bool TryGetRowString(Dictionary<string, object> row, string key, out string value)
+        {
+            value = null;
+            if (row == null || string.IsNullOrWhiteSpace(key))
+                return false;
+
+            object raw;
+            if (!row.TryGetValue(key, out raw) || raw == null)
+                return false;
+
+            value = raw.ToString();
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        private static bool TryGetRowLong(Dictionary<string, object> row, string key, out long value)
+        {
+            value = 0L;
+            string raw;
+            if (!TryGetRowString(row, key, out raw))
+                return false;
+
+            return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private void LoadHardcodedNewsDates()
+        {
+            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+                return;
 
             string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < entries.Length; i++)
@@ -1880,11 +2111,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 TimeSpan t = parsed.TimeOfDay;
-                if (t == new TimeSpan(8, 30, 0) || t == new TimeSpan(14, 0, 0))
+                if ((t == new TimeSpan(8, 30, 0) || t == new TimeSpan(14, 0, 0)) && !NewsDates.Contains(parsed))
                     NewsDates.Add(parsed);
             }
+        }
 
-            newsDatesInitialized = true;
+        private static string FormatNewsDatesForLog(List<DateTime> dates)
+        {
+            if (dates == null || dates.Count == 0)
+                return string.Empty;
+
+            return string.Join(", ", dates.Select(d => d.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)));
+        }
+
+        private void AppendNewsFetchLog(string message)
+        {
+            LogDebug(string.Format("NewsFetch | {0}", message ?? string.Empty));
         }
 
         private bool TimeInNewsSkip(DateTime time)
@@ -2850,8 +3092,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Use Live News Data", Description = "If enabled, pull USD high-impact 8:30am/2:00pm events from ForexFactory weekly feed. Fallback to hardcoded list if fetch fails.", GroupName = "11. News", Order = 1)]
+        public bool UseLiveNewsData { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, 240)]
-        [Display(Name = "News Block Minutes", Description = "Minutes blocked before and after each news timestamp.", GroupName = "11. News", Order = 1)]
+        [Display(Name = "News Block Minutes", Description = "Minutes blocked before and after each news timestamp.", GroupName = "11. News", Order = 2)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
