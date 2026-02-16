@@ -155,6 +155,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortEntrySignal = "ShortEntry";
         private const string LongFlipEntrySignal = "LongFlipEntry";
         private const string ShortFlipEntrySignal = "ShortFlipEntry";
+        private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
 
         private static readonly string NewsDatesRaw =
 @"2025-01-29,14:00
@@ -2039,12 +2040,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             var lines = BuildInfoLines();
             var font = new SimpleFont("Consolas", 14);
 
-            int maxLabel = lines.Max(l => l.label.Length);
-            int maxValue = Math.Max(1, lines.Max(l => l.value.Length));
-
-            string valuePlaceholder = new string('0', maxValue);
             var bgLines = lines
-                .Select(l => l.label.PadRight(maxLabel + 1) + valuePlaceholder)
+                .Select(l =>
+                {
+                    return string.IsNullOrEmpty(l.value) ? l.label : l.label + " " + l.value;
+                })
                 .ToArray();
 
             string bgText = string.Join(Environment.NewLine, bgLines);
@@ -2060,40 +2060,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 areaBrush: Brushes.Black,
                 areaOpacity: 85);
 
-            var labelLines = lines
-                .Select(l => l.label)
-                .ToArray();
-
-            string labelText = string.Join(Environment.NewLine, labelLines);
-
-            Draw.TextFixed(
-                owner: this,
-                tag: "myStatusLabel_labels",
-                text: labelText,
-                textPosition: TextPosition.BottomLeft,
-                textBrush: Brushes.LightGray,
-                font: font,
-                outlineBrush: null,
-                areaBrush: null,
-                areaOpacity: 0);
-
-            string spacesBeforeValue = new string(' ', maxLabel + 1);
             for (int i = 0; i < lines.Count; i++)
             {
-                string tag = string.Format("myStatusLabel_val_{0}", i);
+                string labelTag = string.Format("myStatusLabel_label_{0}", i);
+                string spacesBeforeValue = new string(' ', lines[i].label.Length + 1);
 
-                var overlayLines = new string[lines.Count];
+                var labelOverlayLines = new string[lines.Count];
                 for (int j = 0; j < lines.Count; j++)
-                    overlayLines[j] = j == i ? spacesBeforeValue + lines[i].value : string.Empty;
+                    labelOverlayLines[j] = j == i ? lines[i].label : string.Empty;
 
-                string overlayText = string.Join(Environment.NewLine, overlayLines);
+                string labelOverlayText = string.Join(Environment.NewLine, labelOverlayLines);
 
                 Draw.TextFixed(
                     owner: this,
-                    tag: tag,
-                    text: overlayText,
+                    tag: labelTag,
+                    text: labelOverlayText,
                     textPosition: TextPosition.BottomLeft,
-                    textBrush: lines[i].brush,
+                    textBrush: lines[i].labelBrush,
+                    font: font,
+                    outlineBrush: null,
+                    areaBrush: null,
+                    areaOpacity: 0);
+
+                string valueTag = string.Format("myStatusLabel_val_{0}", i);
+                var valueOverlayLines = new string[lines.Count];
+                for (int j = 0; j < lines.Count; j++)
+                    valueOverlayLines[j] = j == i ? spacesBeforeValue + lines[i].value : string.Empty;
+
+                string valueOverlayText = string.Join(Environment.NewLine, valueOverlayLines);
+
+                Draw.TextFixed(
+                    owner: this,
+                    tag: valueTag,
+                    text: valueOverlayText,
+                    textPosition: TextPosition.BottomLeft,
+                    textBrush: lines[i].valueBrush,
                     font: font,
                     outlineBrush: null,
                     areaBrush: null,
@@ -2101,9 +2102,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private List<(string label, string value, Brush brush)> BuildInfoLines()
+        private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
         {
-            var lines = new List<(string label, string value, Brush brush)>();
+            var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
 
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double adxSlope = GetAdxSlopePoints();
@@ -2138,11 +2139,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 paBrush = Brushes.Gold;
             }
 
-            lines.Add(("PA:        ", paState, paBrush));
+            lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
             List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
             if (weekNews.Count == 0)
             {
-                lines.Add(("News:      ", "⛔", Brushes.IndianRed));
+                lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.IndianRed));
             }
             else
             {
@@ -2150,18 +2151,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     DateTime newsTime = weekNews[i];
                     bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
-                    string labelPrefix = "News:      ";
-                    string label = labelPrefix + newsTime.ToString("ddd h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
-                    string value = "❎";
-                    Brush brush = blockPassed ? Brushes.LimeGreen : Brushes.Transparent;
-                    lines.Add((label, value, brush));
+                    string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
+                    string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                    string label = "News: " + dayPart + " " + timePart;
+                    Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                    lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
                 }
             }
 
-            lines.Add(("Session:   ", FormatSessionLabel(activeSession), Brushes.LightGray));
-            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray));
+            lines.Add(("Session:", FormatSessionLabel(activeSession), Brushes.LightGray, Brushes.LightGray));
+            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, Brushes.LightGray, Brushes.Transparent));
 
             return lines;
+        }
+
+        private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            try
+            {
+                if (brush.CanFreeze)
+                    brush.Freeze();
+            }
+            catch { }
+            return brush;
         }
 
         private List<DateTime> GetCurrentWeekNews(DateTime time)
