@@ -326,6 +326,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxAccountBalance = 0.0;
                 MaxTradesPerSession = 0;
                 RequireEntryConfirmation = false;
+                RequireMinAdxForFlips = true;
 
                 DebugLogging = false;
             }
@@ -447,7 +448,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int tradesThisSession = GetTradesThisSession(activeSession);
             bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
             bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
-            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked;
+            bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass;
 
             if (!inActiveSessionNow)
                 CancelWorkingEntryOrders();
@@ -555,8 +557,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} below%={4:0.0} minBody%={5:0.0}",
+                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} distancePass={2} emaSlopePass={3} bodyPass={4} below%={5:0.0} minBody%={6:0.0}",
                                 flipCanTradePass,
+                                flipAdxMinPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -653,8 +656,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} above%={4:0.0} minBody%={5:0.0}",
+                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} distancePass={2} emaSlopePass={3} bodyPass={4} above%={5:0.0} minBody%={6:0.0}",
                                 flipCanTradePass,
+                                flipAdxMinPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -3298,6 +3302,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 5)]
         public bool RequireEntryConfirmation { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Require Min ADX For Flips", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 6)]
+        internal bool RequireMinAdxForFlips { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
