@@ -250,6 +250,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static bool newsDatesInitialized;
         private Border infoBoxContainer;
         private StackPanel infoBoxRowsPanel;
+        private bool legacyInfoDrawingsCleared;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
             Color.FromArgb(240, 0x2A, 0x2F, 0x45),
             Color.FromArgb(240, 0x1E, 0x23, 0x36),
@@ -2134,16 +2135,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         public void UpdateInfo()
         {
+            if (ChartControl == null)
+                return;
             UpdateInfoText();
         }
 
         public void UpdateInfoText()
         {
-            var lines = BuildInfoLines();
-            RemoveLegacyInfoBoxDrawings();
+            if (State != State.Realtime && State != State.Historical)
+                return;
 
             if (ChartControl == null || ChartControl.Dispatcher == null)
                 return;
+
+            var lines = BuildInfoLines();
+            if (!legacyInfoDrawingsCleared)
+            {
+                RemoveLegacyInfoBoxDrawings();
+                legacyInfoDrawingsCleared = true;
+            }
 
             ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines));
         }
