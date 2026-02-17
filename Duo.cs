@@ -303,7 +303,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CloseAtSessionEnd = false;
                 AsiaSessionBrush = Brushes.DarkCyan;
                 NewYorkSessionBrush = Brushes.Gold;
-                SessionBrush = Brushes.Gold;
                 ShowEmaOnChart = false;
                 ShowAdxOnChart = false;
                 ShowAdxThresholdLines = false;
@@ -1742,8 +1741,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CurrentBar < 1)
                 return;
 
-            DrawSessionBackground(SessionSlot.Asia, "Duo_Asia", AsiaSessionBrush ?? SessionBrush ?? Brushes.LightSkyBlue);
-            DrawSessionBackground(SessionSlot.NewYork, "Duo_NewYork", NewYorkSessionBrush ?? SessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.Asia, "Duo_Asia", AsiaSessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.NewYork, "Duo_NewYork", NewYorkSessionBrush ?? Brushes.LightSkyBlue);
             DrawNewYorkSkipWindow(Time[0]);
         }
 
@@ -3000,18 +2999,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             get { return Serialize.BrushToString(NewYorkSessionBrush); }
             set { NewYorkSessionBrush = Serialize.StringToBrush(value); }
-        }
-
-        // [NinjaScriptProperty]
-        // [XmlIgnore]
-        // [Display(Name = "Session Fill (Legacy)", Description = "Legacy fallback background color if per-session colors are not set.", GroupName = "10. Sessions", Order = 99)]
-        internal Brush SessionBrush { get; set; }
-
-        [Browsable(false)]
-        public string SessionBrushSerializable
-        {
-            get { return Serialize.BrushToString(SessionBrush); }
-            set { SessionBrush = Serialize.StringToBrush(value); }
         }
 
         // [NinjaScriptProperty]
