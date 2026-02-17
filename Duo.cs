@@ -324,7 +324,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXAccountId = string.Empty;
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0.0;
-                MaxTradesPerSession = 4;
+                MaxTradesPerSession = 0;
                 RequireEntryConfirmation = false;
 
                 DebugLogging = false;
