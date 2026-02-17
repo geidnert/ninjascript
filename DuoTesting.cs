@@ -246,11 +246,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Border infoBoxContainer;
         private StackPanel infoBoxRowsPanel;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
-            Color.FromRgb(0x2A, 0x2F, 0x45),
-            Color.FromRgb(0x1E, 0x23, 0x36),
-            Color.FromRgb(0x14, 0x18, 0x28));
-        private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(255, 0x0F, 0x0F, 0x17);
-        private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(255, 0x11, 0x11, 0x18);
+            Color.FromArgb(240, 0x2A, 0x2F, 0x45),
+            Color.FromArgb(240, 0x1E, 0x23, 0x36),
+            Color.FromArgb(240, 0x14, 0x18, 0x28));
+        private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
+        private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
         private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(210, 0xD3, 0xD3, 0xD3);
         private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
         private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
