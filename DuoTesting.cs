@@ -326,9 +326,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxAccountBalance = 0.0;
                 MaxTradesPerSession = 0;
                 RequireEntryConfirmation = false;
-                RequireMinAdxForFlips = false;
+                RequireMinAdxForFlips = true;
 
-                DebugLogging = true;
+                DebugLogging = false;
             }
             else if (State == State.DataLoaded)
             {
