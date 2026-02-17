@@ -34,6 +34,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             WickExtreme
         }
 
+        public enum SessionTradeDirection
+        {
+            Both,
+            LongOnly,
+            ShortOnly
+        }
+
         private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
         {
             private static readonly double[] Presets = new double[]
@@ -127,6 +134,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private int activeEmaPeriod;
         private int activeContracts;
+        private SessionTradeDirection activeTradeDirection = SessionTradeDirection.Both;
         private InitialStopMode activeEntryStopMode;
         private double activeEmaMinSlopePointsPerBar;
         private double activeMaxEntryDistanceFromEmaPoints;
@@ -134,6 +142,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeTakeProfitPoints;
         private int activeAdxPeriod;
         private double activeAdxThreshold;
+        private double activeFlipAdxThreshold;
         private double activeAdxMaxThreshold;
         private double activeAdxMinSlopePoints;
         private double activeAdxPeakDrawdownExitUnits;
@@ -159,8 +168,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string LongFlipEntrySignal = "LongFlipEntry";
         private const string ShortFlipEntrySignal = "ShortFlipEntry";
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
-        private const string LiveNewsFeedUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
-
         private static readonly string NewsDatesRaw =
 @"2025-01-29,14:00
 2025-02-12,08:30
@@ -241,8 +248,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private static readonly List<DateTime> NewsDates = new List<DateTime>();
         private static bool newsDatesInitialized;
-        private static bool newsDatesSourceLive;
-        private static DateTime liveNewsLoadedWeekStart = Core.Globals.MinDate;
         private Border infoBoxContainer;
         private StackPanel infoBoxRowsPanel;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
@@ -273,8 +278,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaBlockSundayTrades = false;
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
+                AsiaTradeDirection = SessionTradeDirection.Both;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 19.7;
+                AsiaFlipAdxThreshold = AsiaAdxThreshold;
                 AsiaAdxMaxThreshold = 43.6;
                 AsiaAdxMinSlopePoints = 1.37;
                 AsiaAdxPeakDrawdownExitUnits = 13.0;
@@ -292,8 +299,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkSkipEnd = new TimeSpan(12, 25, 0);
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
+                NewYorkTradeDirection = SessionTradeDirection.Both;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 16;
+                NewYorkFlipAdxThreshold = NewYorkAdxThreshold;
                 NewYorkAdxMaxThreshold = 58.0;
                 NewYorkAdxMinSlopePoints = 1.58;
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
@@ -313,7 +322,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ShowAdxThresholdLines = true;
 
                 UseNewsSkip = true;
-                UseLiveNewsData = false;
                 NewsBlockMinutes = 1;
 
                 WebhookUrl = string.Empty;
@@ -448,8 +456,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int tradesThisSession = GetTradesThisSession(activeSession);
             bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
             bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
-            bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeFlipAdxThreshold <= 0.0 || adxValue >= activeFlipAdxThreshold;
             bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass;
+            bool allowLong = activeTradeDirection != SessionTradeDirection.ShortOnly;
+            bool allowShort = activeTradeDirection != SessionTradeDirection.LongOnly;
 
             if (!inActiveSessionNow)
                 CancelWorkingEntryOrders();
@@ -472,8 +482,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool distancePasses = activeMaxEntryDistanceFromEmaPoints <= 0.0 || emaDistancePoints <= activeMaxEntryDistanceFromEmaPoints;
             bool emaSlopeLongPass = EmaSlopePassesLong();
             bool emaSlopeShortPass = EmaSlopePassesShort();
-            bool longSignal = bullish && bodyAbovePercent > 0.0;
-            bool shortSignal = bearish && bodyBelowPercent > 0.0;
+            bool longSignalRaw = bullish && bodyAbovePercent > 0.0;
+            bool shortSignalRaw = bearish && bodyBelowPercent > 0.0;
+            bool longSignal = longSignalRaw && allowLong;
+            bool shortSignal = shortSignalRaw && allowShort;
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
@@ -514,10 +526,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     bool flipCanTradePass = canFlipNow;
+                    bool flipDirectionPass = allowShort;
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeShortPass;
                     bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
@@ -557,9 +570,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} distancePass={2} emaSlopePass={3} bodyPass={4} below%={5:0.0} minBody%={6:0.0}",
+                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} below%={6:0.0} minBody%={7:0.0}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
+                                flipDirectionPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -613,10 +627,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     bool flipCanTradePass = canFlipNow;
+                    bool flipDirectionPass = allowLong;
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeLongPass;
                     bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
@@ -656,9 +671,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} distancePass={2} emaSlopePass={3} bodyPass={4} above%={5:0.0} minBody%={6:0.0}",
+                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} above%={6:0.0} minBody%={7:0.0}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
+                                flipDirectionPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -671,6 +687,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 return;
+            }
+
+            if (DebugLogging && Position.MarketPosition == MarketPosition.Flat)
+            {
+                if (longSignalRaw && !allowLong)
+                {
+                    LogDebug(string.Format(
+                        "Setup blocked | side=Long close={0:0.00} ema={1:0.00} reasons=DirectionBlocked mode={2}",
+                        Close[0],
+                        emaValue,
+                        activeTradeDirection));
+                }
+                else if (shortSignalRaw && !allowShort)
+                {
+                    LogDebug(string.Format(
+                        "Setup blocked | side=Short close={0:0.00} ema={1:0.00} reasons=DirectionBlocked mode={2}",
+                        Close[0],
+                        emaValue,
+                        activeTradeDirection));
+                }
             }
 
             if (!canTradeNow)
@@ -1206,12 +1242,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEmaPeriod = AsiaEmaPeriod;
                     activeAdxPeriod = AsiaAdxPeriod;
                     activeAdxThreshold = AsiaAdxThreshold;
+                    activeFlipAdxThreshold = AsiaFlipAdxThreshold;
                     activeAdxMaxThreshold = AsiaAdxMaxThreshold;
                     activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
                     activeAdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = AsiaContracts;
+                    activeTradeDirection = AsiaTradeDirection;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
@@ -1226,12 +1264,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEmaPeriod = NewYorkEmaPeriod;
                     activeAdxPeriod = NewYorkAdxPeriod;
                     activeAdxThreshold = NewYorkAdxThreshold;
+                    activeFlipAdxThreshold = NewYorkFlipAdxThreshold;
                     activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
                     activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
                     activeAdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYorkContracts;
+                    activeTradeDirection = NewYorkTradeDirection;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
@@ -1246,11 +1286,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEmaPeriod = 0;
                     activeAdxPeriod = 0;
                     activeAdxThreshold = 0.0;
+                    activeFlipAdxThreshold = 0.0;
                     activeAdxMaxThreshold = 0.0;
                     activeAdxMinSlopePoints = 0.0;
                     activeAdxPeakDrawdownExitUnits = 0.0;
                     activeAdxAbsoluteExitLevel = 0.0;
                     activeContracts = 0;
+                    activeTradeDirection = SessionTradeDirection.Both;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = 0.0;
                     activeMaxEntryDistanceFromEmaPoints = 0.0;
@@ -1893,235 +1935,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void EnsureNewsDatesInitialized()
         {
-            DateTime currentWeekStart = GetWeekStart(DateTime.Now.Date);
-
-            bool needsReload = !newsDatesInitialized;
-            if (!needsReload)
-            {
-                if (UseLiveNewsData)
-                    needsReload = !newsDatesSourceLive || liveNewsLoadedWeekStart != currentWeekStart;
-                else
-                    needsReload = newsDatesSourceLive;
-            }
-
-            if (!needsReload)
+            if (newsDatesInitialized)
                 return;
 
-            AppendNewsFetchLog(string.Format(
-                "Refresh requested | weekStart={0:yyyy-MM-dd} useLive={1}",
-                currentWeekStart,
-                UseLiveNewsData));
-
             NewsDates.Clear();
-
-            bool loadedFromLive = false;
-            if (UseLiveNewsData)
-                loadedFromLive = TryLoadLiveNewsDates(currentWeekStart);
-
-            if (!loadedFromLive)
-            {
-                LoadHardcodedNewsDates();
-                if (UseLiveNewsData)
-                    AppendNewsFetchLog("Live source unavailable; fallback to hardcoded list.");
-            }
+            LoadHardcodedNewsDates();
 
             NewsDates.Sort();
             newsDatesInitialized = true;
-            newsDatesSourceLive = loadedFromLive;
-            liveNewsLoadedWeekStart = loadedFromLive ? currentWeekStart : Core.Globals.MinDate;
-
             AppendNewsFetchLog(string.Format(
-                "Refresh complete | source={0} count={1} weekStart={2:yyyy-MM-dd} events=[{3}]",
-                loadedFromLive ? "live" : "hardcoded",
+                "Refresh complete | source=hardcoded count={0} events=[{1}]",
                 NewsDates.Count,
-                currentWeekStart,
                 FormatNewsDatesForLog(NewsDates)));
-        }
-
-        private bool TryLoadLiveNewsDates(DateTime weekStart)
-        {
-            if (string.IsNullOrWhiteSpace(LiveNewsFeedUrl))
-                return false;
-
-            string json;
-            try
-            {
-                using (var client = new System.Net.WebClient())
-                    json = client.DownloadString(LiveNewsFeedUrl);
-            }
-            catch (Exception ex)
-            {
-                LogDebug(string.Format("Live news fetch failed: {0}", ex.Message));
-                AppendNewsFetchLog(string.Format("Live fetch failed | reason={0}", ex.Message));
-                return false;
-            }
-
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                AppendNewsFetchLog("Live fetch failed | reason=empty response");
-                return false;
-            }
-
-            object[] events;
-            try
-            {
-                var serializer = new JavaScriptSerializer();
-                events = serializer.DeserializeObject(json) as object[];
-            }
-            catch (Exception ex)
-            {
-                LogDebug(string.Format("Live news parse failed: {0}", ex.Message));
-                AppendNewsFetchLog(string.Format("Live parse failed | reason={0}", ex.Message));
-                return false;
-            }
-
-            if (events == null)
-            {
-                AppendNewsFetchLog("Live parse failed | reason=response is not an array");
-                return false;
-            }
-
-            DateTime weekEnd = weekStart.AddDays(7);
-            for (int i = 0; i < events.Length; i++)
-            {
-                var row = events[i] as Dictionary<string, object>;
-                if (row == null)
-                    continue;
-
-                string country;
-                if (!TryGetRowString(row, "country", out country) || !string.Equals(country, "USD", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string impact;
-                if (!TryGetRowString(row, "impact", out impact) || impact.IndexOf("high", StringComparison.OrdinalIgnoreCase) < 0)
-                    continue;
-
-                DateTime newsTime;
-                if (!TryParseLiveNewsTime(row, out newsTime))
-                    continue;
-
-                if (newsTime < weekStart || newsTime >= weekEnd)
-                    continue;
-
-                TimeSpan t = newsTime.TimeOfDay;
-                if (t != new TimeSpan(8, 30, 0) && t != new TimeSpan(14, 0, 0))
-                    continue;
-
-                if (!NewsDates.Contains(newsTime))
-                    NewsDates.Add(newsTime);
-            }
-
-            return true;
-        }
-
-        private bool TryParseLiveNewsTime(Dictionary<string, object> row, out DateTime newsTime)
-        {
-            newsTime = Core.Globals.MinDate;
-
-            long unixSeconds;
-            if (TryGetRowLong(row, "timestamp", out unixSeconds) || TryGetRowLong(row, "ts", out unixSeconds))
-            {
-                try
-                {
-                    if (unixSeconds > 1000000000000L)
-                        unixSeconds /= 1000L;
-
-                    DateTimeOffset utc = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
-                    newsTime = ConvertUtcOffsetToEastern(utc).DateTime;
-                    return true;
-                }
-                catch { }
-            }
-
-            string combined;
-            if (TryGetRowString(row, "date", out combined))
-            {
-                string timePart;
-                if (TryGetRowString(row, "time", out timePart) && combined.IndexOf(':') < 0)
-                    combined = combined + " " + timePart;
-
-                if (TryParseLiveNewsDateText(combined, out newsTime))
-                    return true;
-            }
-
-            if (TryGetRowString(row, "datetime", out combined) && TryParseLiveNewsDateText(combined, out newsTime))
-                return true;
-
-            return false;
-        }
-
-        private bool TryParseLiveNewsDateText(string raw, out DateTime newsTime)
-        {
-            newsTime = Core.Globals.MinDate;
-            if (string.IsNullOrWhiteSpace(raw))
-                return false;
-
-            string cleaned = raw.Trim();
-
-            DateTimeOffset dto;
-            if (DateTimeOffset.TryParse(cleaned, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out dto))
-            {
-                newsTime = ConvertUtcOffsetToEastern(dto).DateTime;
-                return true;
-            }
-
-            DateTime parsed;
-            if (DateTime.TryParse(cleaned, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out parsed))
-            {
-                newsTime = parsed;
-                return true;
-            }
-
-            if (DateTime.TryParse(cleaned, CultureInfo.CurrentCulture, DateTimeStyles.AllowWhiteSpaces, out parsed))
-            {
-                newsTime = parsed;
-                return true;
-            }
-
-            return false;
-        }
-
-        private static DateTimeOffset ConvertUtcOffsetToEastern(DateTimeOffset source)
-        {
-            TimeZoneInfo eastern = null;
-            try
-            {
-                eastern = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
-            }
-            catch
-            {
-                try
-                {
-                    eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
-                }
-                catch { }
-            }
-
-            return eastern != null ? TimeZoneInfo.ConvertTime(source, eastern) : source;
-        }
-
-        private static bool TryGetRowString(Dictionary<string, object> row, string key, out string value)
-        {
-            value = null;
-            if (row == null || string.IsNullOrWhiteSpace(key))
-                return false;
-
-            object raw;
-            if (!row.TryGetValue(key, out raw) || raw == null)
-                return false;
-
-            value = raw.ToString();
-            return !string.IsNullOrWhiteSpace(value);
-        }
-
-        private static bool TryGetRowLong(Dictionary<string, object> row, string key, out long value)
-        {
-            value = 0L;
-            string raw;
-            if (!TryGetRowString(row, key, out raw))
-                return false;
-
-            return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
         }
 
         private void LoadHardcodedNewsDates()
@@ -3055,6 +2880,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int AsiaContracts { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether Asia can take long, short, or both directions.", GroupName = "Asia", Order = 6)]
+        public SessionTradeDirection AsiaTradeDirection { get; set; }
+
+        [NinjaScriptProperty]
         [Range(1, 200)]
         [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia trend filter.", GroupName = "Asia", Order = 8)]
         public int AsiaAdxPeriod { get; set; }
@@ -3063,6 +2892,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, 100.0)]
         [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 9)]
         public double AsiaAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "Flip ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 10)]
+        public double AsiaFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
@@ -3141,6 +2975,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYorkContracts { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether New York can take long, short, or both directions.", GroupName = "New York", Order = 7)]
+        public SessionTradeDirection NewYorkTradeDirection { get; set; }
+
+        [NinjaScriptProperty]
         [Range(1, 200)]
         [Display(Name = "ADX Period", Description = "ADX lookback period for the New York trend filter.", GroupName = "New York", Order = 8)]
         public int NewYorkAdxPeriod { get; set; }
@@ -3149,6 +2987,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, 100.0)]
         [Display(Name = "ADX Min Threshold", Description = "0 disables. New York entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 9)]
         public double NewYorkAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "Flip ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 10)]
+        public double NewYorkFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
@@ -3253,12 +3096,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Live News Data", Description = "If enabled, pull USD high-impact 8:30am/2:00pm events from ForexFactory weekly feed. Fallback to hardcoded list if fetch fails.", GroupName = "11. News", Order = 1)]
-        public bool UseLiveNewsData { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0, 240)]
-        [Display(Name = "News Block Minutes", Description = "Minutes blocked before and after each news timestamp.", GroupName = "11. News", Order = 2)]
+        [Display(Name = "News Block Minutes", Description = "Minutes blocked before and after each news timestamp.", GroupName = "11. News", Order = 1)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
