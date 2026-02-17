@@ -533,7 +533,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         pendingShortStopForWebhook = stopPrice;
                         SetStopLossByDistanceTicks(ShortFlipEntrySignal, Close[0], stopPrice);
                         SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, activeTakeProfitPoints);
-                        SendWebhook("sell", Close[0], Close[0], stopPrice, true, qty);
+                        int webhookQty = Math.Max(1, Math.Abs(Position.Quantity) + qty);
+                        LogDebug(string.Format(
+                            "Flip webhook qty | side=sell posQty={0} entryQty={1} webhookQty={2}",
+                            Math.Abs(Position.Quantity),
+                            qty,
+                            webhookQty));
+                        SendWebhook("sell", Close[0], Close[0], stopPrice, true, webhookQty);
                         StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                         EnterShort(qty, ShortFlipEntrySignal);
 
@@ -626,7 +632,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         pendingLongStopForWebhook = stopPrice;
                         SetStopLossByDistanceTicks(LongFlipEntrySignal, Close[0], stopPrice);
                         SetProfitTargetByDistanceTicks(LongFlipEntrySignal, activeTakeProfitPoints);
-                        SendWebhook("buy", Close[0], Close[0], stopPrice, true, qty);
+                        int webhookQty = Math.Max(1, Math.Abs(Position.Quantity) + qty);
+                        LogDebug(string.Format(
+                            "Flip webhook qty | side=buy posQty={0} entryQty={1} webhookQty={2}",
+                            Math.Abs(Position.Quantity),
+                            qty,
+                            webhookQty));
+                        SendWebhook("buy", Close[0], Close[0], stopPrice, true, webhookQty);
                         StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                         EnterLong(qty, LongFlipEntrySignal);
 
@@ -2677,12 +2689,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (WebhookProviderType == WebhookProvider.ProjectX)
             {
                 int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : Math.Max(1, activeContracts);
+                LogDebug(string.Format(
+                    "Webhook attempt | provider=ProjectX event={0} qty={1} market={2} entry={3:0.00} tp={4:0.00} sl={5:0.00}",
+                    eventType,
+                    orderQtyForProvider,
+                    isMarketEntry,
+                    entryPrice,
+                    takeProfit,
+                    stopLoss));
                 SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(WebhookUrl))
+            {
+                LogDebug(string.Format("Webhook skipped | provider=TradersPost event={0} reason=empty-url", eventType));
                 return;
+            }
 
             try
             {
@@ -2722,13 +2745,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 if (string.IsNullOrWhiteSpace(json))
+                {
+                    LogDebug(string.Format(
+                        "Webhook skipped | provider=TradersPost event={0} reason=empty-payload qty={1}",
+                        eventType,
+                        orderQty));
                     return;
+                }
+
+                LogDebug(string.Format(
+                    "Webhook attempt | provider=TradersPost event={0} action={1} qty={2} market={3} url={4}",
+                    eventType,
+                    action,
+                    orderQty,
+                    isMarketEntry,
+                    WebhookUrl));
+                LogDebug(string.Format("Webhook payload | {0}", json));
 
                 using (var client = new System.Net.WebClient())
                 {
                     client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
                     client.UploadString(WebhookUrl, "POST", json);
                 }
+
+                LogDebug(string.Format("Webhook sent | provider=TradersPost event={0} action={1} qty={2}", eventType, action, orderQty));
             }
             catch (Exception ex)
             {
