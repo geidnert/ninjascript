@@ -328,7 +328,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RequireEntryConfirmation = false;
                 RequireMinAdxForFlips = false;
 
-                DebugLogging = false;
+                DebugLogging = true;
             }
             else if (State == State.DataLoaded)
             {

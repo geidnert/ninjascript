@@ -327,7 +327,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxTradesPerSession = 4;
                 RequireEntryConfirmation = false;
 
-                DebugLogging = true;
+                DebugLogging = false;
             }
             else if (State == State.DataLoaded)
             {
