@@ -134,6 +134,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeTakeProfitPoints;
         private int activeAdxPeriod;
         private double activeAdxThreshold;
+        private double activeFlipAdxThreshold;
         private double activeAdxMaxThreshold;
         private double activeAdxMinSlopePoints;
         private double activeAdxPeakDrawdownExitUnits;
@@ -410,14 +411,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaBlockSundayTrades = false;
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
+                AsiaFlipAdxThreshold = 19.7;
+                AsiaEmaMinSlopePointsPerBar = 0.5;
+                AsiaMaxEntryDistanceFromEmaPoints = 21.0;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 19.7;
                 AsiaAdxMaxThreshold = 43.6;
                 AsiaAdxMinSlopePoints = 1.37;
                 AsiaAdxPeakDrawdownExitUnits = 13.0;
                 AsiaAdxAbsoluteExitLevel = 57.7;
-                AsiaEmaMinSlopePointsPerBar = 0.5;
-                AsiaMaxEntryDistanceFromEmaPoints = 21.0;
                 AsiaStopPaddingPoints = 63;
                 AsiaExitCrossPoints = 3.5;
                 AsiaTakeProfitPoints = 93.75;
@@ -429,14 +431,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkSkipEnd = new TimeSpan(12, 25, 0);
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
+                NewYorkFlipAdxThreshold = 16;
+                NewYorkEmaMinSlopePointsPerBar = 0.8;
+                NewYorkMaxEntryDistanceFromEmaPoints = 44.0;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 16;
                 NewYorkAdxMaxThreshold = 58.0;
                 NewYorkAdxMinSlopePoints = 1.58;
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
                 NewYorkAdxAbsoluteExitLevel = 70.0;
-                NewYorkEmaMinSlopePointsPerBar = 0.8;
-                NewYorkMaxEntryDistanceFromEmaPoints = 44.0;
                 NewYorkStopPaddingPoints = 54.5;
                 NewYorkExitCrossPoints = 1.25;
                 NewYorkTakeProfitPoints = 123.75;
@@ -583,7 +586,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int tradesThisSession = GetTradesThisSession(activeSession);
             bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
             bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
-            bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeFlipAdxThreshold <= 0.0 || adxValue >= activeFlipAdxThreshold;
             bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass;
 
             if (!inActiveSessionNow)
@@ -1341,6 +1344,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEmaPeriod = AsiaEmaPeriod;
                     activeAdxPeriod = AsiaAdxPeriod;
                     activeAdxThreshold = AsiaAdxThreshold;
+                    activeFlipAdxThreshold = AsiaFlipAdxThreshold;
                     activeAdxMaxThreshold = AsiaAdxMaxThreshold;
                     activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
@@ -1361,6 +1365,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEmaPeriod = NewYorkEmaPeriod;
                     activeAdxPeriod = NewYorkAdxPeriod;
                     activeAdxThreshold = NewYorkAdxThreshold;
+                    activeFlipAdxThreshold = NewYorkFlipAdxThreshold;
                     activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
                     activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
                     activeAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
@@ -1381,6 +1386,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEmaPeriod = 0;
                     activeAdxPeriod = 0;
                     activeAdxThreshold = 0.0;
+                    activeFlipAdxThreshold = 0.0;
                     activeAdxMaxThreshold = 0.0;
                     activeAdxMinSlopePoints = 0.0;
                     activeAdxPeakDrawdownExitUnits = 0.0;
@@ -2982,6 +2988,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int AsiaContracts { get; set; }
 
         // [NinjaScriptProperty]
+        // [Range(0.0, 100.0)]
+        // [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 6)]
+        internal double AsiaFlipAdxThreshold { get; set; }
+
+        // [NinjaScriptProperty]
         // [Range(1, 200)]
         // [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia trend filter.", GroupName = "Asia", Order = 8)]
         internal int AsiaAdxPeriod { get; set; }
@@ -3009,12 +3020,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // [NinjaScriptProperty]
         // [Range(0.0, double.MaxValue)]
-        // [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for signals. 0 disables.", GroupName = "Asia", Order = 15)]
+        // [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "Asia", Order = 7)]
         internal double AsiaEmaMinSlopePointsPerBar { get; set; }
 
         // [NinjaScriptProperty]
         // [Range(0.0, double.MaxValue)]
-        // [Display(Name = "Max Entry Distance From EMA (FLIP)", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 16)]
+        // [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 8)]
         internal double AsiaMaxEntryDistanceFromEmaPoints { get; set; }
 
         // [NinjaScriptProperty]
@@ -3068,6 +3079,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYorkContracts { get; set; }
 
         // [NinjaScriptProperty]
+        // [Range(0.0, 100.0)]
+        // [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 7)]
+        internal double NewYorkFlipAdxThreshold { get; set; }
+
+        // [NinjaScriptProperty]
         // [Range(1, 200)]
         // [Display(Name = "ADX Period", Description = "ADX lookback period for the New York trend filter.", GroupName = "New York", Order = 8)]
         internal int NewYorkAdxPeriod { get; set; }
@@ -3095,12 +3111,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // [NinjaScriptProperty]
         // [Range(0.0, double.MaxValue)]
-        // [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for signals. 0 disables.", GroupName = "New York", Order = 15)]
+        // [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "New York", Order = 8)]
         internal double NewYorkEmaMinSlopePointsPerBar { get; set; }
 
         // [NinjaScriptProperty]
         // [Range(0.0, double.MaxValue)]
-        // [Display(Name = "Max Entry Distance From EMA (FLIP)", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 16)]
+        // [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 9)]
         internal double NewYorkMaxEntryDistanceFromEmaPoints { get; set; }
 
         // [NinjaScriptProperty]
