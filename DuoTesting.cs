@@ -426,12 +426,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxMaxThreshold = 43.6;
                 AsiaAdxMinSlopePoints = 1.37;
                 AsiaAdxPeakDrawdownExitUnits = 13.0;
+                AsiaAdxAbsoluteExitLevel = 57.7;
                 AsiaEmaMinSlopePointsPerBar = 0.5;
                 AsiaMaxEntryDistanceFromEmaPoints = 21.0;
                 AsiaStopPaddingPoints = 63;
                 AsiaExitCrossPoints = 3.5;
                 AsiaTakeProfitPoints = 93.75;
-                AsiaAdxAbsoluteExitLevel = 57.7;
 
                 UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 40, 0);
@@ -447,12 +447,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxMaxThreshold = 58.0;
                 NewYorkAdxMinSlopePoints = 1.58;
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
+                NewYorkAdxAbsoluteExitLevel = 70.0;
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
                 NewYorkMaxEntryDistanceFromEmaPoints = 44.0;
                 NewYorkStopPaddingPoints = 54.5;
                 NewYorkExitCrossPoints = 1.25;
                 NewYorkTakeProfitPoints = 123.75;
-                NewYorkAdxAbsoluteExitLevel = 70.0;
 
                 CloseAtSessionEnd = false;
                 AsiaSessionBrush = Brushes.DarkCyan;
@@ -3044,38 +3044,38 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 10)]
+        [Display(Name = "ADX Flip Min Threshold (FLIP)", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 10)]
         public double AsiaFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia", Order = 10)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia", Order = 11)]
         public double AsiaAdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [TypeConverter(typeof(AsiaAdxSlopeDropdownConverter))]
-        [Display(Name = "Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 11)]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 12)]
         public double AsiaAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 12)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 13)]
         public double AsiaAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for signals. 0 disables.", GroupName = "Asia", Order = 14)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for signals. 0 disables.", GroupName = "Asia", Order = 15)]
         public double AsiaEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 14)]
+        [Display(Name = "Max Entry Distance From EMA (FLIP)", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 16)]
         public double AsiaMaxEntryDistanceFromEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia", Order = 90)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia", Order = 14)]
         public double AsiaAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
@@ -3139,38 +3139,38 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Flip ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 10)]
+        [Display(Name = "ADX Flip Min Threshold (FLIP)", Description = "0 disables. When Require Min ADX For Flips is enabled, New York flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 10)]
         public double NewYorkFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 10)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 11)]
         public double NewYorkAdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [TypeConverter(typeof(NewYorkAdxSlopeDropdownConverter))]
-        [Display(Name = "Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 11)]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 12)]
         public double NewYorkAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 12)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 13)]
         public double NewYorkAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for signals. 0 disables.", GroupName = "New York", Order = 14)]
+        [Display(Name = "EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for signals. 0 disables.", GroupName = "New York", Order = 15)]
         public double NewYorkEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 14)]
+        [Display(Name = "Max Entry Distance From EMA (FLIP)", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 16)]
         public double NewYorkMaxEntryDistanceFromEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York", Order = 90)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York", Order = 14)]
         public double NewYorkAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
@@ -3221,11 +3221,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool ShowEmaOnChart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Show ADX On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 4)]
+        [Display(Name = "ADX Show On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 4)]
         public bool ShowAdxOnChart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Show ADX Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 5)]
+        [Display(Name = "ADX Show Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 5)]
         public bool ShowAdxThresholdLines { get; set; }
 
         [NinjaScriptProperty]
@@ -3280,7 +3280,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Require Min ADX For Flips", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 6)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 6)]
         public bool RequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
