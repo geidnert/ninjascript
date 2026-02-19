@@ -104,6 +104,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxThreshold;
         private double activeAdxMaxThreshold;
         private double activeAdxMinSlopePoints;
+        private double activeAdxTriggerThreshold;
+        private double activeAdxTriggerMinSlopePoints;
+        private double activeAdxGreenTouchSlopePoints;
         private double activeAdxPeakDrawdownExitUnits;
         private double activeAdxAbsoluteExitLevel;
         private double activeStopPaddingPoints;
@@ -125,11 +128,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool v1DynamicExitsArmed;
         private double v2EntryAdxAtSignal;
         private double v2EmaSlopeAtSignal;
-        private bool v2Prepared;
-        private SessionTradeDirection v2PreparedDirection = SessionTradeDirection.Both;
-        private int v2PreparedBarIndex;
-        private bool v2StepEmaSlopePassed;
-        private bool v2StepAdxMomentumPassed;
+        private bool v2HasLockedNextDirection;
+        private SessionTradeDirection v2LockedNextDirection = SessionTradeDirection.Both;
+        private bool v2OrangeLockLatched;
+        private bool v2GreenTouchSeen;
+        private SessionTradeDirection v2ActiveDirection = SessionTradeDirection.Both;
+        private bool v2OrangeWasBelow = true;
         private double v2EntryAdxAtFill;
         private bool v2DynamicExitsArmed;
         private string v2LastWaitSignature = string.Empty;
@@ -394,6 +398,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxThreshold = 19.7;
                 AsiaAdxMaxThreshold = 43.6;
                 AsiaAdxMinSlopePoints = 1.37;
+                AsiaAdxTriggerThreshold = 0.0;
+                AsiaAdxTriggerMinSlopePoints = 0.0;
+                AsiaAdxGreenTouchSlopePoints = 0.0;
                 AsiaAdxPeakDrawdownExitUnits = 13.0;
                 AsiaAdxAbsoluteExitLevel = 57.7;
                 AsiaEmaMinSlopePointsPerBar = 0.5;
@@ -414,6 +421,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxThreshold = 16;
                 NewYorkAdxMaxThreshold = 58.0;
                 NewYorkAdxMinSlopePoints = 1.58;
+                NewYorkAdxTriggerThreshold = 0.0;
+                NewYorkAdxTriggerMinSlopePoints = 0.0;
+                NewYorkAdxGreenTouchSlopePoints = 0.0;
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
                 NewYorkAdxAbsoluteExitLevel = 70.0;
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
@@ -448,6 +458,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EntryModelV2_SwingCandlesAfter = 0;
 
                 DebugLogging = false;
+                VerboseLogging = false;
             }
             else if (State == State.DataLoaded)
             {
@@ -455,8 +466,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 emaNewYork = EMA(NewYorkEmaPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
                 adxNewYork = DM(NewYorkAdxPeriod);
-                UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
-                UpdateAdxReferenceLines(adxNewYork, NewYorkAdxThreshold, NewYorkAdxMaxThreshold);
+                UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold, AsiaAdxTriggerThreshold);
+                UpdateAdxReferenceLines(adxNewYork, NewYorkAdxThreshold, NewYorkAdxMaxThreshold, NewYorkAdxTriggerThreshold);
 
                 if (ShowEmaOnChart)
                 {
@@ -505,11 +516,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 v1DynamicExitsArmed = false;
                 v2EntryAdxAtSignal = 0.0;
                 v2EmaSlopeAtSignal = 0.0;
-                v2Prepared = false;
-                v2PreparedDirection = SessionTradeDirection.Both;
-                v2PreparedBarIndex = -1;
-                v2StepEmaSlopePassed = false;
-                v2StepAdxMomentumPassed = false;
+                v2HasLockedNextDirection = false;
+                v2LockedNextDirection = SessionTradeDirection.Both;
+                v2OrangeLockLatched = false;
+                v2GreenTouchSeen = false;
+                v2ActiveDirection = SessionTradeDirection.Both;
+                v2OrangeWasBelow = true;
                 v2EntryAdxAtFill = 0.0;
                 v2DynamicExitsArmed = false;
                 v2LastWaitSignature = string.Empty;
@@ -517,7 +529,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 EnsureNewsDatesInitialized();
 
-                LogDebug(
+                LogVerbose(
                     string.Format(
                         "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} MaxTradesPerSession={5} ExitCross={6:0.##} EntryStop={7}",
                         FormatSessionLabel(activeSession),
@@ -570,6 +582,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool isAsiaSundayBlockedNow = activeSession == SessionSlot.Asia && AsiaBlockSundayTrades && Time[0].DayOfWeek == DayOfWeek.Sunday;
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+            // Keep threshold visuals refreshed on every bar so line state never goes stale.
+            UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold, activeAdxTriggerThreshold);
             UpdateAdxPeakTracker(adxValue);
             double adxSlope = GetAdxSlopePoints();
             bool adxMinPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
@@ -605,108 +619,105 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool shortSignalRaw = false;
             if (EntryModel == EntryModelMode.EntryModelV2)
             {
-                // V2 prepare phase: capture first bar that reaches session ADX minimum.
-                if (!v2Prepared)
+                bool prevInSession = CurrentBar > 0 && activeSession != SessionSlot.None && TimeInSession(activeSession, Time[1]);
+                if (inActiveSessionNow && !prevInSession)
+                    v2ActiveDirection = SessionTradeDirection.Both;
+
+                bool orangeConfigured = activeAdxTriggerThreshold > 0.0;
+                bool orangeAboveNow = orangeConfigured && adxValue >= activeAdxTriggerThreshold;
+                bool orangeSlopePass = activeAdxTriggerMinSlopePoints <= 0.0 || adxSlope >= activeAdxTriggerMinSlopePoints;
+                bool canLockOrangeNow = inActiveSessionNow
+                    && orangeConfigured
+                    && !v2OrangeLockLatched
+                    && v2OrangeWasBelow
+                    && orangeAboveNow
+                    && orangeSlopePass;
+                if (canLockOrangeNow)
                 {
-                    // Only start a new V2 setup while flat and without active entry orders.
-                    bool v2CanPrepareNow = Position.MarketPosition == MarketPosition.Flat
-                        && !IsOrderActive(longEntryOrder)
-                        && !IsOrderActive(shortEntryOrder);
-                    bool adxMinConfigured = activeAdxThreshold > 0.0;
-                    bool adxBelowMinNow = adxValue <= activeAdxThreshold;
-                    bool v2PrepareConditionPass = v2CanPrepareNow
-                        && inActiveSessionNow
-                        && adxMinConfigured
-                        && adxBelowMinNow;
-                    if (v2PrepareConditionPass)
+                    v2EntryAdxAtSignal = adxValue;
+                    v2EmaSlopeAtSignal = GetEmaSlopePointsPerBar();
+                    v2LockedNextDirection = v2EmaSlopeAtSignal <= 0.0
+                        ? SessionTradeDirection.LongOnly
+                        : SessionTradeDirection.ShortOnly;
+                    v2HasLockedNextDirection = true;
+                    v2OrangeLockLatched = true;
+
+                    if (DebugLogging)
                     {
-                        v2Prepared = true;
-                        v2EntryAdxAtSignal = adxValue;
-                        v2EmaSlopeAtSignal = GetEmaSlopePoints();
-                        // Per V2 spec: EMA down at signal prepares LONG, EMA up prepares SHORT.
-                        v2PreparedDirection = v2EmaSlopeAtSignal <= 0.0 ? SessionTradeDirection.LongOnly : SessionTradeDirection.ShortOnly;
-                        v2PreparedBarIndex = CurrentBar;
-                        v2StepEmaSlopePassed = false;
-                        v2StepAdxMomentumPassed = false;
-                        v2LastWaitSignature = string.Empty;
-                        v2LastWaitLogBar = -1;
-                        LogDebug(string.Format(
-                            "V2 prepared | bar={0} adx={1:0.00} close={2:0.00} ema={3:0.00} emaSlope={4:0.000} dir={5}",
-                            CurrentBar,
-                            v2EntryAdxAtSignal,
-                            Close[0],
-                            emaValue,
-                            v2EmaSlopeAtSignal,
-                            v2PreparedDirection));
+                        LogVerbose(string.Format(
+                            "V2 orange lock | nextDir={0} adx={1:0.00} adxSlope={2:0.00} trigger={3:0.00} triggerMin={4:0.00} emaSlope={5:0.000}",
+                            v2LockedNextDirection,
+                            adxValue,
+                            adxSlope,
+                            activeAdxTriggerThreshold,
+                            activeAdxTriggerMinSlopePoints,
+                            v2EmaSlopeAtSignal));
                     }
                 }
 
-                // If ADX reaches the configured session max while a V2 chain is active,
-                // invalidate the chain and require a fresh setup from step 1.
-                bool v2AdxMaxHit = inActiveSessionNow
-                    && activeAdxMaxThreshold > 0.0
-                    && adxValue >= activeAdxMaxThreshold;
-                if (v2Prepared && v2AdxMaxHit)
+                bool greenConfigured = activeAdxThreshold > 0.0;
+                bool greenTouchSlopePass = activeAdxGreenTouchSlopePoints == 0.0 || adxSlope <= activeAdxGreenTouchSlopePoints;
+                bool greenTouchNow = inActiveSessionNow && greenConfigured && adxValue <= activeAdxThreshold && greenTouchSlopePass;
+                if (!v2GreenTouchSeen && greenTouchNow)
                 {
-                    v2Prepared = false;
-                    v2PreparedDirection = SessionTradeDirection.Both;
-                    v2PreparedBarIndex = -1;
-                    v2StepEmaSlopePassed = false;
-                    v2StepAdxMomentumPassed = false;
+                    v2GreenTouchSeen = true;
+                    if (DebugLogging)
+                    {
+                        LogVerbose(string.Format(
+                            "V2 green touch | adx={0:0.00} adxSlope={1:0.00} green={2:0.00} touchSlope={3:0.00}",
+                            adxValue,
+                            adxSlope,
+                            activeAdxThreshold,
+                            activeAdxGreenTouchSlopePoints));
+                    }
+                }
+
+                bool v2ActivatedThisBar = false;
+                if (inActiveSessionNow && v2GreenTouchSeen && adxSlopePass)
+                {
+                    if (!v2HasLockedNextDirection && !orangeConfigured)
+                    {
+                        v2LockedNextDirection = GetEmaSlopePointsPerBar() <= 0.0
+                            ? SessionTradeDirection.LongOnly
+                            : SessionTradeDirection.ShortOnly;
+                        v2HasLockedNextDirection = true;
+                    }
+
+                    if (v2HasLockedNextDirection)
+                    {
+                        v2ActiveDirection = v2LockedNextDirection;
+                        v2ActivatedThisBar = true;
+                        if (DebugLogging)
+                        {
+                            LogVerbose(string.Format(
+                                "V2 active direction set | dir={0} adx={1:0.00} adxSlope={2:0.00} momentumMin={3:0.00}",
+                                v2ActiveDirection,
+                                adxValue,
+                                adxSlope,
+                                activeAdxMinSlopePoints));
+                        }
+                    }
+                }
+
+                if (v2ActivatedThisBar)
+                {
+                    v2HasLockedNextDirection = false;
+                    v2LockedNextDirection = SessionTradeDirection.Both;
+                    v2GreenTouchSeen = false;
+                    v2OrangeLockLatched = false;
                     v2LastWaitSignature = string.Empty;
                     v2LastWaitLogBar = -1;
-                    LogDebug(string.Format(
-                        "V2 chain reset | reason=adx-max-hit adx={0:0.00} max={1:0.00}",
-                        adxValue,
-                        activeAdxMaxThreshold));
                 }
 
-                bool readyAfterSlope = v2PreparedDirection == SessionTradeDirection.LongOnly
-                    ? emaSlopeLongPass
-                    : emaSlopeShortPass;
-                bool v2PreEntryAdxGatePass = adxSlopePass;
-                bool v2PreEntryEmaGatePass = readyAfterSlope;
+                bool v2DirectionLong = v2ActiveDirection == SessionTradeDirection.LongOnly;
+                bool v2DirectionShort = v2ActiveDirection == SessionTradeDirection.ShortOnly;
+                bool v2EntryLongPass = v2DirectionLong && adxSlopePass && emaSlopeLongPass && closeAboveEmaByMinPoints;
+                bool v2EntryShortPass = v2DirectionShort && adxSlopePass && emaSlopeShortPass && closeBelowEmaByMinPoints;
 
-                // V2 ordered flow:
-                // 1) ADX dip at/below min (arming)
-                // 2) Direction lock by price-vs-EMA at arming time
-                // 2.1) ADX momentum pass (latched)
-                // 3) EMA min slope pass (latched)
-                // 4) First qualifying close beyond EMA triggers entry
-                if (v2Prepared && !v2StepAdxMomentumPassed && adxSlopePass)
-                {
-                    v2StepAdxMomentumPassed = true;
-                    LogDebug(string.Format(
-                        "V2 step passed | step=AdxMomentum dir={0} adxSlope={1:0.00} min={2:0.00}",
-                        v2PreparedDirection,
-                        adxSlope,
-                        activeAdxMinSlopePoints));
-                }
+                longSignalRaw = v2EntryLongPass;
+                shortSignalRaw = v2EntryShortPass;
 
-                if (v2Prepared && v2StepAdxMomentumPassed && !v2StepEmaSlopePassed && readyAfterSlope)
-                {
-                    v2StepEmaSlopePassed = true;
-                    LogDebug(string.Format(
-                        "V2 step passed | step=EmaSlope dir={0} slope={1:0.000} min={2:0.000}",
-                        v2PreparedDirection,
-                        GetEmaSlopePointsPerBar(),
-                        activeEmaMinSlopePointsPerBar));
-                }
-
-                longSignalRaw = false;
-                shortSignalRaw = false;
-
-                // V2: ADX-at/below-min is only the setup trigger. After arming, entries
-                // are allowed even if ADX rises above min, as long as ADX/EMA live slope gates pass.
-                if (v2Prepared && v2StepEmaSlopePassed && v2StepAdxMomentumPassed && canTradeNowNoAdx && v2PreEntryAdxGatePass && v2PreEntryEmaGatePass)
-                {
-                    if (v2PreparedDirection == SessionTradeDirection.LongOnly)
-                        longSignalRaw = bullish && closeAboveEmaByMinPoints;
-                    else
-                        shortSignalRaw = bearish && closeBelowEmaByMinPoints;
-                }
-
-                if (DebugLogging && v2Prepared && !longSignalRaw && !shortSignalRaw)
+                if (DebugLogging && !longSignalRaw && !shortSignalRaw)
                 {
                     var v2WaitReasons = new List<string>();
                     if (!canTradeNowNoAdx)
@@ -724,36 +735,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (!maxTradesPass)
                             v2WaitReasons.Add(string.Format("max-trades {0}/{1}", tradesThisSession, MaxTradesPerSession));
                     }
-                    if (!v2StepAdxMomentumPassed)
-                        v2WaitReasons.Add(string.Format("adx-slope-below-min slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
-                    else if (!v2StepEmaSlopePassed)
-                    {
-                        if (v2PreparedDirection == SessionTradeDirection.LongOnly)
-                            v2WaitReasons.Add(string.Format("ema-slope-long-fail slope={0:0.000}", GetEmaSlopePointsPerBar()));
-                        else if (v2PreparedDirection == SessionTradeDirection.ShortOnly)
-                            v2WaitReasons.Add(string.Format("ema-slope-short-fail slope={0:0.000}", GetEmaSlopePointsPerBar()));
-                    }
-                    else if (!v2PreEntryAdxGatePass)
-                        v2WaitReasons.Add(string.Format("adx-slope-below-min slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
-                    else if (!v2PreEntryEmaGatePass)
-                    {
-                        if (v2PreparedDirection == SessionTradeDirection.LongOnly)
-                            v2WaitReasons.Add(string.Format("ema-slope-long-live-fail slope={0:0.000}", GetEmaSlopePointsPerBar()));
-                        else if (v2PreparedDirection == SessionTradeDirection.ShortOnly)
-                            v2WaitReasons.Add(string.Format("ema-slope-short-live-fail slope={0:0.000}", GetEmaSlopePointsPerBar()));
-                    }
 
-                    if (v2PreparedDirection == SessionTradeDirection.LongOnly)
+                    if (v2ActiveDirection == SessionTradeDirection.Both)
+                        v2WaitReasons.Add("active-direction-not-set");
+                    if (inActiveSessionNow && v2GreenTouchSeen && !adxSlopePass)
+                        v2WaitReasons.Add(string.Format("awaiting-momentum-reentry slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
+                    if (inActiveSessionNow && !v2HasLockedNextDirection && !v2OrangeLockLatched && orangeConfigured && !orangeAboveNow)
+                        v2WaitReasons.Add(string.Format("orange-not-hit adx={0:0.00} trigger={1:0.00}", adxValue, activeAdxTriggerThreshold));
+                    if (inActiveSessionNow && !v2HasLockedNextDirection && !v2OrangeLockLatched && orangeConfigured && orangeAboveNow && !orangeSlopePass)
+                        v2WaitReasons.Add(string.Format("orange-slope-below-min slope={0:0.00} min={1:0.00}", adxSlope, activeAdxTriggerMinSlopePoints));
+
+                    if ((v2DirectionLong || v2DirectionShort) && !adxSlopePass)
+                        v2WaitReasons.Add(string.Format("adx-slope-below-min slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
+
+                    if (v2DirectionLong)
                     {
-                        if (!bullish)
-                            v2WaitReasons.Add(string.Format("candle-not-bullish o={0:0.00} c={1:0.00}", Open[0], Close[0]));
+                        if (!emaSlopeLongPass)
+                            v2WaitReasons.Add(string.Format("ema-slope-long-fail slope={0:0.000}", GetEmaSlopePointsPerBar()));
                         if (!closeAboveEmaByMinPoints)
                             v2WaitReasons.Add(string.Format("candle-close-not-above-ema-min close={0:0.00} ema={1:0.00} minPts={2:0.00}", Close[0], emaValue, activeMinCloseBeyondEmaPoints));
                     }
-                    else if (v2PreparedDirection == SessionTradeDirection.ShortOnly)
+                    else if (v2DirectionShort)
                     {
-                        if (!bearish)
-                            v2WaitReasons.Add(string.Format("candle-not-bearish o={0:0.00} c={1:0.00}", Open[0], Close[0]));
+                        if (!emaSlopeShortPass)
+                            v2WaitReasons.Add(string.Format("ema-slope-short-fail slope={0:0.000}", GetEmaSlopePointsPerBar()));
                         if (!closeBelowEmaByMinPoints)
                             v2WaitReasons.Add(string.Format("candle-close-not-below-ema-min close={0:0.00} ema={1:0.00} minPts={2:0.00}", Close[0], emaValue, activeMinCloseBeyondEmaPoints));
                     }
@@ -762,15 +767,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         v2WaitReasons.Add("waiting-unknown");
 
                     string reasonsText = string.Join(" | ", v2WaitReasons);
-                    string v2WaitSignature = string.Format("{0}|{1}", v2PreparedDirection, reasonsText);
+                    string v2WaitSignature = string.Format(
+                        "{0}|{1}|{2}|{3}|{4}",
+                        v2ActiveDirection,
+                        v2LockedNextDirection,
+                        v2HasLockedNextDirection,
+                        v2GreenTouchSeen,
+                        reasonsText);
                     bool v2WaitChanged = !string.Equals(v2WaitSignature, v2LastWaitSignature, StringComparison.Ordinal);
                     bool v2WaitHeartbeat = v2LastWaitLogBar < 0 || CurrentBar - v2LastWaitLogBar >= V2WaitLogHeartbeatBars;
 
                     if (v2WaitChanged || v2WaitHeartbeat)
                     {
-                        LogDebug(string.Format(
-                            "V2 wait | dir={0} adx={1:0.00} adxSlope={2:0.00} emaSlope={3:0.000} close={4:0.00} ema={5:0.00} reasons={6}",
-                            v2PreparedDirection,
+                            LogVerbose(string.Format(
+                            "V2 wait | active={0} next={1} nextLocked={2} greenSeen={3} adx={4:0.00} adxSlope={5:0.00} emaSlope={6:0.000} close={7:0.00} ema={8:0.00} reasons={9}",
+                            v2ActiveDirection,
+                            v2LockedNextDirection,
+                            v2HasLockedNextDirection,
+                            v2GreenTouchSeen,
                             adxValue,
                             adxSlope,
                             GetEmaSlopePointsPerBar(),
@@ -782,16 +796,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                 }
 
-                // Defensive timeout to avoid stale prepared state across long inactive periods.
-                if (v2Prepared && (!v2StepEmaSlopePassed || !v2StepAdxMomentumPassed) && CurrentBar - v2PreparedBarIndex > 200)
-                {
-                    v2Prepared = false;
-                    v2PreparedDirection = SessionTradeDirection.Both;
-                    v2PreparedBarIndex = -1;
-                    v2StepEmaSlopePassed = false;
-                    v2StepAdxMomentumPassed = false;
-                    LogDebug(string.Format("V2 prepare cleared by timeout | bar={0}", CurrentBar));
-                }
+                v2OrangeWasBelow = !orangeConfigured || adxValue < activeAdxTriggerThreshold;
             }
             else if (EntryModel == EntryModelMode.EntryModelV1)
             {
@@ -1080,11 +1085,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 (orderState == OrderState.Cancelled || orderState == OrderState.Rejected) &&
                 Position.MarketPosition == MarketPosition.Flat)
             {
-                v2Prepared = false;
-                v2PreparedDirection = SessionTradeDirection.Both;
-                v2PreparedBarIndex = -1;
-                v2StepEmaSlopePassed = false;
-                v2StepAdxMomentumPassed = false;
+                ResetV2EntryState();
                 if (tradeLinesActive)
                     FinalizeTradeLines();
                 EndTradeAttempt("entry-" + orderState);
@@ -1170,11 +1171,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     v2EntryAdxAtSignal = 0.0;
                     v2EmaSlopeAtSignal = 0.0;
-                    v2Prepared = false;
-                    v2PreparedDirection = SessionTradeDirection.Both;
-                    v2PreparedBarIndex = -1;
-                    v2StepEmaSlopePassed = false;
-                    v2StepAdxMomentumPassed = false;
+                    ResetV2EntryState();
                 }
             }
             else if (marketPosition == MarketPosition.Flat)
@@ -1188,11 +1185,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     v2EntryAdxAtSignal = 0.0;
                     v2EmaSlopeAtSignal = 0.0;
-                    v2Prepared = false;
-                    v2PreparedDirection = SessionTradeDirection.Both;
-                    v2PreparedBarIndex = -1;
-                    v2StepEmaSlopePassed = false;
-                    v2StepAdxMomentumPassed = false;
+                    ResetV2EntryState();
                 }
             }
 
@@ -1494,9 +1487,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxThreshold = AsiaAdxThreshold;
                     activeAdxMaxThreshold = AsiaAdxMaxThreshold;
                     activeAdxMinSlopePoints = AsiaAdxMinSlopePoints;
+                    activeAdxTriggerThreshold = AsiaAdxTriggerThreshold;
+                    activeAdxTriggerMinSlopePoints = AsiaAdxTriggerMinSlopePoints;
+                    activeAdxGreenTouchSlopePoints = AsiaAdxGreenTouchSlopePoints;
                     activeAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
                     activeAdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
-                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold, activeAdxTriggerThreshold);
                     activeContracts = AsiaContracts;
                     activeTradeDirection = AsiaTradeDirection;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
@@ -1515,9 +1511,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxThreshold = NewYorkAdxThreshold;
                     activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
                     activeAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
+                    activeAdxTriggerThreshold = NewYorkAdxTriggerThreshold;
+                    activeAdxTriggerMinSlopePoints = NewYorkAdxTriggerMinSlopePoints;
+                    activeAdxGreenTouchSlopePoints = NewYorkAdxGreenTouchSlopePoints;
                     activeAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
                     activeAdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
-                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold, activeAdxTriggerThreshold);
                     activeContracts = NewYorkContracts;
                     activeTradeDirection = NewYorkTradeDirection;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
@@ -1536,6 +1535,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxThreshold = 0.0;
                     activeAdxMaxThreshold = 0.0;
                     activeAdxMinSlopePoints = 0.0;
+                    activeAdxTriggerThreshold = 0.0;
+                    activeAdxTriggerMinSlopePoints = 0.0;
+                    activeAdxGreenTouchSlopePoints = 0.0;
                     activeAdxPeakDrawdownExitUnits = 0.0;
                     activeAdxAbsoluteExitLevel = 0.0;
                     activeContracts = 0;
@@ -1602,7 +1604,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 adx.Plots[2].Brush = Brushes.Transparent;
         }
 
-        private void UpdateAdxReferenceLines(DM adx, double minThreshold, double maxThreshold)
+        private void UpdateAdxReferenceLines(DM adx, double minThreshold, double maxThreshold, double triggerThreshold)
         {
             if (adx == null || adx.Lines == null || adx.Lines.Length == 0)
                 return;
@@ -1614,7 +1616,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             adx.Lines[0].Value = showMin ? minThreshold : double.NaN;
             adx.Lines[0].Brush = showMin ? Brushes.LimeGreen : Brushes.Transparent;
 
-            // If a second line exists, use it for max threshold.
+            // If a second line exists, set it for max threshold.
             if (adx.Lines.Length > 1)
             {
                 bool showMax = showLines && maxThreshold > 0.0;
@@ -1627,6 +1629,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string adxTagSuffix = adx.GetHashCode().ToString(CultureInfo.InvariantCulture);
             bool drawMin = showLines && minThreshold > 0.0;
             bool drawMax = showLines && maxThreshold > 0.0;
+            bool drawTrigger = showLines && triggerThreshold > 0.0;
 
             Draw.HorizontalLine(
                 adx,
@@ -1642,6 +1645,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 drawMax ? maxThreshold : 0.0,
                 drawMax ? Brushes.OrangeRed : Brushes.Transparent,
                 DashStyleHelper.Dash,
+                2);
+
+            Draw.HorizontalLine(
+                adx,
+                "Duo_ADX_Trigger_" + adxTagSuffix,
+                drawTrigger ? triggerThreshold : 0.0,
+                drawTrigger ? Brushes.Orange : Brushes.Transparent,
+                DashStyleHelper.Solid,
                 2);
         }
 
@@ -1709,15 +1720,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private void ResetV2EntryState()
+        {
+            v2EntryAdxAtSignal = 0.0;
+            v2EmaSlopeAtSignal = 0.0;
+            v2HasLockedNextDirection = false;
+            v2LockedNextDirection = SessionTradeDirection.Both;
+            v2OrangeLockLatched = false;
+            v2GreenTouchSeen = false;
+            v2ActiveDirection = SessionTradeDirection.Both;
+            v2OrangeWasBelow = true;
+            v2LastWaitSignature = string.Empty;
+            v2LastWaitLogBar = -1;
+        }
+
         private void CancelWorkingEntryOrders()
         {
             CancelOrderIfActive(longEntryOrder, "CancelWorkingEntries");
             CancelOrderIfActive(shortEntryOrder, "CancelWorkingEntries");
-            v2Prepared = false;
-            v2PreparedDirection = SessionTradeDirection.Both;
-            v2PreparedBarIndex = -1;
-            v2StepEmaSlopePassed = false;
-            v2StepAdxMomentumPassed = false;
+            ResetV2EntryState();
         }
 
         private void CancelOrderIfActive(Order order, string reason)
@@ -2290,8 +2311,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool inNow = TimeInSession(activeSession, Time[0]);
 
-            LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} maxTradesPerSession={14} exitCross={15:0.##} entryStop={16} slPad={17:0.##}",
+            LogVerbose(string.Format(
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxTrigger={10:0.##} adxTriggerSlopeMin={11:0.##} adxGreenTouchSlope={12:0.##} adxPeakDd={13:0.##} adxAbsExit={14:0.##} tpPts={15:0.##} contracts={16} maxTradesPerSession={17} exitCross={18:0.##} entryStop={19} slPad={20:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -2302,6 +2323,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeAdxThreshold,
                 activeAdxMaxThreshold,
                 activeAdxMinSlopePoints,
+                activeAdxTriggerThreshold,
+                activeAdxTriggerMinSlopePoints,
+                activeAdxGreenTouchSlopePoints,
                 activeAdxPeakDrawdownExitUnits,
                 activeAdxAbsoluteExitLevel,
                 activeTakeProfitPoints,
@@ -2313,16 +2337,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             int adxPlotCount = activeAdx != null && activeAdx.Plots != null ? activeAdx.Plots.Length : 0;
             int adxValueCount = activeAdx != null && activeAdx.Values != null ? activeAdx.Values.Length : 0;
+            int adxLineCount = activeAdx != null && activeAdx.Lines != null ? activeAdx.Lines.Length : 0;
             string adxType = activeAdx != null ? activeAdx.GetType().Name : "null";
-            LogDebug(string.Format(
-                "AdxVisuals ({0}) | session={1} type={2} showAdx={3} showThresholds={4} plots={5} values={6}",
+            LogVerbose(string.Format(
+                "AdxVisuals ({0}) | session={1} type={2} showAdx={3} showThresholds={4} plots={5} values={6} lines={7}",
                 reason,
                 FormatSessionLabel(activeSession),
                 adxType,
                 ShowAdxOnChart,
                 ShowAdxThresholdLines,
                 adxPlotCount,
-                adxValueCount));
+                adxValueCount,
+                adxLineCount));
         }
 
         private void BeginTradeAttempt(string side)
@@ -2365,6 +2391,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             Print(string.Format("{0} | Duo | bar={1} | {2}", Time[0], CurrentBar, message));
+        }
+
+        private void LogVerbose(string message)
+        {
+            if (!DebugLogging || !VerboseLogging)
+                return;
+
+            LogDebug(message);
         }
 
         public void UpdateInfo()
@@ -3148,6 +3182,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Trigger Threshold", Description = "Orange trigger level. 0 disables.", GroupName = "Asia", Order = 12)]
+        public double AsiaAdxTriggerThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Trigger Min Slope", Description = "Minimum positive ADX slope required at the orange trigger. 0 disables.", GroupName = "Asia", Order = 12)]
+        public double AsiaAdxTriggerMinSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "ADX Green Touch Slope", Description = "Required ADX slope when touching green line. Use negative values. 0 disables slope check.", GroupName = "Asia", Order = 12)]
+        public double AsiaAdxGreenTouchSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
         [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 13)]
         public double AsiaAdxPeakDrawdownExitUnits { get; set; }
 
@@ -3234,6 +3283,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ADX Momentum Threshold", Description = "Minimum ADX slope required for momentum gate. 0 disables.", GroupName = "New York", Order = 12)]
         public double NewYorkAdxMinSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Trigger Threshold", Description = "Orange trigger level. 0 disables.", GroupName = "New York", Order = 12)]
+        public double NewYorkAdxTriggerThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Trigger Min Slope", Description = "Minimum positive ADX slope required at the orange trigger. 0 disables.", GroupName = "New York", Order = 12)]
+        public double NewYorkAdxTriggerMinSlopePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "ADX Green Touch Slope", Description = "Required ADX slope when touching green line. Use negative values. 0 disables slope check.", GroupName = "New York", Order = 12)]
+        public double NewYorkAdxGreenTouchSlopePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
@@ -3381,7 +3445,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int EntryModelV2_SwingCandlesAfter { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
+        [Display(Name = "Debug Logging", Description = "Enable regular event logs (entries, exits, orders, key lifecycle events).", GroupName = "14. Debug", Order = 0)]
         public bool DebugLogging { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Verbose Logging", Description = "Enable detailed internal state logs (V2 waits, trigger internals, session config visuals). Requires Debug Logging.", GroupName = "14. Debug", Order = 1)]
+        public bool VerboseLogging { get; set; }
     }
 }
