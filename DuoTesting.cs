@@ -2450,7 +2450,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (aboveMin && slopeValid)
             {
-                paState = string.Format(CultureInfo.InvariantCulture, "Trending {0:0.00}", adxSlope);
+                paState = "Trending";
                 paBrush = Brushes.LimeGreen;
             }
             else
