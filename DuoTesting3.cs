@@ -1616,20 +1616,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             adx.Lines[0].Value = showMin ? minThreshold : double.NaN;
             adx.Lines[0].Brush = showMin ? Brushes.LimeGreen : Brushes.Transparent;
 
-            // If a second line exists, set it for max threshold.
+            // If only one extra native line slot is available, prioritize orange trigger visibility.
+            // This helps verify/handle platforms where only two ADX threshold lines render reliably.
+            bool nativeLine1UsedForTrigger = false;
             if (adx.Lines.Length > 1)
             {
-                bool showMax = showLines && maxThreshold > 0.0;
-                adx.Lines[1].Value = showMax ? maxThreshold : double.NaN;
-                adx.Lines[1].Brush = showMax ? Brushes.OrangeRed : Brushes.Transparent;
+                bool showTriggerOnLine1 = showLines && triggerThreshold > 0.0;
+                if (showTriggerOnLine1)
+                {
+                    adx.Lines[1].Value = triggerThreshold;
+                    adx.Lines[1].Brush = Brushes.Orange;
+                    nativeLine1UsedForTrigger = true;
+                }
+                else
+                {
+                    bool showMax = showLines && maxThreshold > 0.0;
+                    adx.Lines[1].Value = showMax ? maxThreshold : double.NaN;
+                    adx.Lines[1].Brush = showMax ? Brushes.OrangeRed : Brushes.Transparent;
+                }
             }
 
             // Draw explicit guide lines on the ADX panel so min/max are visible even when
             // the built-in ADX indicator exposes only one threshold line slot.
             string adxTagSuffix = adx.GetHashCode().ToString(CultureInfo.InvariantCulture);
             bool drawMin = showLines && minThreshold > 0.0;
-            bool drawMax = showLines && maxThreshold > 0.0;
-            bool drawTrigger = showLines && triggerThreshold > 0.0;
+            bool drawMax = showLines && maxThreshold > 0.0 && nativeLine1UsedForTrigger;
+            bool drawTrigger = showLines && triggerThreshold > 0.0 && !nativeLine1UsedForTrigger;
 
             Draw.HorizontalLine(
                 adx,
