@@ -132,6 +132,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private SessionTradeDirection v2LockedNextDirection = SessionTradeDirection.Both;
         private bool v2OrangeLockLatched;
         private bool v2GreenTouchSeen;
+        private bool v2MomentumRearmed;
         private SessionTradeDirection v2ActiveDirection = SessionTradeDirection.Both;
         private bool v2OrangeWasBelow = true;
         private double v2EntryAdxAtFill;
@@ -520,6 +521,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 v2LockedNextDirection = SessionTradeDirection.Both;
                 v2OrangeLockLatched = false;
                 v2GreenTouchSeen = false;
+                v2MomentumRearmed = false;
                 v2ActiveDirection = SessionTradeDirection.Both;
                 v2OrangeWasBelow = true;
                 v2EntryAdxAtFill = 0.0;
@@ -598,7 +600,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CancelWorkingEntryOrders();
 
             if (inNySkipNow)
-                CancelWorkingEntryOrders();
+                CancelWorkingEntryOrders(false);
 
             if (isAsiaSundayBlockedNow)
                 CancelWorkingEntryOrders();
@@ -626,6 +628,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 bool orangeConfigured = activeAdxTriggerThreshold > 0.0;
                 bool orangeAboveNow = orangeConfigured && adxValue >= activeAdxTriggerThreshold;
                 bool orangeSlopePass = activeAdxTriggerMinSlopePoints <= 0.0 || adxSlope >= activeAdxTriggerMinSlopePoints;
+                bool adxSlopeUpNow = adxSlope > 0.0;
                 bool canLockOrangeNow = inActiveSessionNow
                     && orangeConfigured
                     && !v2OrangeLockLatched
@@ -661,6 +664,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (!v2GreenTouchSeen && greenTouchNow)
                 {
                     v2GreenTouchSeen = true;
+                    v2MomentumRearmed = false;
+                    v2ActiveDirection = SessionTradeDirection.Both;
                     if (DebugLogging)
                     {
                         LogVerbose(string.Format(
@@ -673,7 +678,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 bool v2ActivatedThisBar = false;
-                if (inActiveSessionNow && v2GreenTouchSeen && adxSlopePass)
+                bool v2RearmSlopePass = adxSlopeUpNow && adxSlopePass;
+                if (inActiveSessionNow && v2GreenTouchSeen && !v2MomentumRearmed && v2RearmSlopePass)
                 {
                     if (!v2HasLockedNextDirection && !orangeConfigured)
                     {
@@ -686,6 +692,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (v2HasLockedNextDirection)
                     {
                         v2ActiveDirection = v2LockedNextDirection;
+                        v2MomentumRearmed = true;
                         v2ActivatedThisBar = true;
                         if (DebugLogging)
                         {
@@ -704,6 +711,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     v2HasLockedNextDirection = false;
                     v2LockedNextDirection = SessionTradeDirection.Both;
                     v2GreenTouchSeen = false;
+                    v2MomentumRearmed = false;
                     v2OrangeLockLatched = false;
                     v2LastWaitSignature = string.Empty;
                     v2LastWaitLogBar = -1;
@@ -711,8 +719,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 bool v2DirectionLong = v2ActiveDirection == SessionTradeDirection.LongOnly;
                 bool v2DirectionShort = v2ActiveDirection == SessionTradeDirection.ShortOnly;
-                bool v2EntryLongPass = v2DirectionLong && adxSlopePass && emaSlopeLongPass && closeAboveEmaByMinPoints;
-                bool v2EntryShortPass = v2DirectionShort && adxSlopePass && emaSlopeShortPass && closeBelowEmaByMinPoints;
+                bool v2EntryLongPass = v2DirectionLong && emaSlopeLongPass && closeAboveEmaByMinPoints;
+                bool v2EntryShortPass = v2DirectionShort && emaSlopeShortPass && closeBelowEmaByMinPoints;
 
                 longSignalRaw = v2EntryLongPass;
                 shortSignalRaw = v2EntryShortPass;
@@ -738,15 +746,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (v2ActiveDirection == SessionTradeDirection.Both)
                         v2WaitReasons.Add("active-direction-not-set");
-                    if (inActiveSessionNow && v2GreenTouchSeen && !adxSlopePass)
-                        v2WaitReasons.Add(string.Format("awaiting-momentum-reentry slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
+                    if (inActiveSessionNow && v2GreenTouchSeen && !v2MomentumRearmed && !adxSlopeUpNow)
+                        v2WaitReasons.Add(string.Format("awaiting-momentum-reentry slope={0:0.00} min=0.00", adxSlope));
+                    if (inActiveSessionNow && v2GreenTouchSeen && !v2MomentumRearmed && adxSlopeUpNow && !adxSlopePass)
+                        v2WaitReasons.Add(string.Format("awaiting-momentum-threshold slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
                     if (inActiveSessionNow && !v2HasLockedNextDirection && !v2OrangeLockLatched && orangeConfigured && !orangeAboveNow)
                         v2WaitReasons.Add(string.Format("orange-not-hit adx={0:0.00} trigger={1:0.00}", adxValue, activeAdxTriggerThreshold));
                     if (inActiveSessionNow && !v2HasLockedNextDirection && !v2OrangeLockLatched && orangeConfigured && orangeAboveNow && !orangeSlopePass)
                         v2WaitReasons.Add(string.Format("orange-slope-below-min slope={0:0.00} min={1:0.00}", adxSlope, activeAdxTriggerMinSlopePoints));
-
-                    if ((v2DirectionLong || v2DirectionShort) && !adxSlopePass)
-                        v2WaitReasons.Add(string.Format("adx-slope-below-min slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
 
                     if (v2DirectionLong)
                     {
@@ -772,7 +779,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         v2ActiveDirection,
                         v2LockedNextDirection,
                         v2HasLockedNextDirection,
-                        v2GreenTouchSeen,
+                        v2GreenTouchSeen && !v2MomentumRearmed,
                         reasonsText);
                     bool v2WaitChanged = !string.Equals(v2WaitSignature, v2LastWaitSignature, StringComparison.Ordinal);
                     bool v2WaitHeartbeat = v2LastWaitLogBar < 0 || CurrentBar - v2LastWaitLogBar >= V2WaitLogHeartbeatBars;
@@ -784,7 +791,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             v2ActiveDirection,
                             v2LockedNextDirection,
                             v2HasLockedNextDirection,
-                            v2GreenTouchSeen,
+                            v2GreenTouchSeen && !v2MomentumRearmed,
                             adxValue,
                             adxSlope,
                             GetEmaSlopePointsPerBar(),
@@ -1740,17 +1747,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             v2LockedNextDirection = SessionTradeDirection.Both;
             v2OrangeLockLatched = false;
             v2GreenTouchSeen = false;
+            v2MomentumRearmed = false;
             v2ActiveDirection = SessionTradeDirection.Both;
             v2OrangeWasBelow = true;
             v2LastWaitSignature = string.Empty;
             v2LastWaitLogBar = -1;
         }
 
-        private void CancelWorkingEntryOrders()
+        private void CancelWorkingEntryOrders(bool resetV2EntryState = true)
         {
             CancelOrderIfActive(longEntryOrder, "CancelWorkingEntries");
             CancelOrderIfActive(shortEntryOrder, "CancelWorkingEntries");
-            ResetV2EntryState();
+            if (resetV2EntryState)
+                ResetV2EntryState();
         }
 
         private void CancelOrderIfActive(Order order, string reason)
