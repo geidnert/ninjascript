@@ -139,6 +139,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool v2DynamicExitsArmed;
         private string v2LastWaitSignature = string.Empty;
         private int v2LastWaitLogBar = -1;
+        private string v2LastStepEventText = "none";
+        private DateTime v2LastStepEventTime = Core.Globals.MinDate;
+        private DateTime v2Step1LockTime = Core.Globals.MinDate;
+        private DateTime v2Step2LockTime = Core.Globals.MinDate;
+        private DateTime v2Step3LockTime = Core.Globals.MinDate;
+        private DateTime v2Step4TriggerTime = Core.Globals.MinDate;
         private const int V2WaitLogHeartbeatBars = 24;
         private const string LongEntrySignal = "LongEntry";
         private const string ShortEntrySignal = "ShortEntry";
@@ -460,6 +466,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 DebugLogging = false;
                 VerboseLogging = false;
+                ShowV2SetupMarkers = true;
             }
             else if (State == State.DataLoaded)
             {
@@ -528,6 +535,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 v2DynamicExitsArmed = false;
                 v2LastWaitSignature = string.Empty;
                 v2LastWaitLogBar = -1;
+                v2LastStepEventText = "none";
+                v2LastStepEventTime = Core.Globals.MinDate;
+                v2Step1LockTime = Core.Globals.MinDate;
+                v2Step2LockTime = Core.Globals.MinDate;
+                v2Step3LockTime = Core.Globals.MinDate;
+                v2Step4TriggerTime = Core.Globals.MinDate;
 
                 EnsureNewsDatesInitialized();
 
@@ -644,6 +657,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         : SessionTradeDirection.ShortOnly;
                     v2HasLockedNextDirection = true;
                     v2OrangeLockLatched = true;
+                    v2Step1LockTime = Time[0];
+                    DrawV2StepMarker(
+                        "OrangeLock",
+                        string.Format("1 Orange lock -> {0}", FormatV2DirectionLabel(v2LockedNextDirection)),
+                        adxValue,
+                        Brushes.Orange,
+                        true,
+                        -14);
 
                     if (DebugLogging)
                     {
@@ -666,6 +687,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     v2GreenTouchSeen = true;
                     v2MomentumRearmed = false;
                     v2ActiveDirection = SessionTradeDirection.Both;
+                    v2Step2LockTime = Time[0];
+                    DrawV2StepMarker(
+                        "GreenTouch",
+                        "2 Green touch",
+                        adxValue,
+                        Brushes.LimeGreen,
+                        false,
+                        14);
                     if (DebugLogging)
                     {
                         LogVerbose(string.Format(
@@ -694,6 +723,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         v2ActiveDirection = v2LockedNextDirection;
                         v2MomentumRearmed = true;
                         v2ActivatedThisBar = true;
+                        v2Step3LockTime = Time[0];
+                        DrawV2StepMarker(
+                            "Rearm",
+                            string.Format("3 Re-armed -> {0}", FormatV2DirectionLabel(v2ActiveDirection)),
+                            adxValue,
+                            Brushes.DeepSkyBlue,
+                            true,
+                            -14);
                         if (DebugLogging)
                         {
                             LogVerbose(string.Format(
@@ -724,6 +761,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 longSignalRaw = v2EntryLongPass;
                 shortSignalRaw = v2EntryShortPass;
+                if (longSignalRaw || shortSignalRaw)
+                    v2Step4TriggerTime = Time[0];
+                DrawV2StateBoard(inActiveSessionNow, orangeConfigured, longSignalRaw, shortSignalRaw);
 
                 if (DebugLogging && !longSignalRaw && !shortSignalRaw)
                 {
@@ -1752,6 +1792,205 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             v2OrangeWasBelow = true;
             v2LastWaitSignature = string.Empty;
             v2LastWaitLogBar = -1;
+            v2LastStepEventText = "none";
+            v2LastStepEventTime = Core.Globals.MinDate;
+            v2Step1LockTime = Core.Globals.MinDate;
+            v2Step2LockTime = Core.Globals.MinDate;
+            v2Step3LockTime = Core.Globals.MinDate;
+            v2Step4TriggerTime = Core.Globals.MinDate;
+        }
+
+        private string FormatV2DirectionLabel(SessionTradeDirection direction)
+        {
+            if (direction == SessionTradeDirection.LongOnly)
+                return "LONG";
+            if (direction == SessionTradeDirection.ShortOnly)
+                return "SHORT";
+            return "BOTH";
+        }
+
+        private void DrawV2StepMarker(string stepKey, string text, double y, Brush brush, bool upArrow, int textYPixelOffset)
+        {
+            if (!ShowV2SetupMarkers || !ShowAdxOnChart || activeAdx == null)
+                return;
+
+            string sessionCode = activeSession == SessionSlot.Asia
+                ? "ASIA"
+                : activeSession == SessionSlot.NewYork ? "NY" : "NONE";
+            string tagBase = string.Format(
+                CultureInfo.InvariantCulture,
+                "Duo_V2_{0}_{1}_{2}",
+                stepKey,
+                sessionCode,
+                CurrentBar);
+
+            bool originalDrawOnPricePanel = DrawOnPricePanel;
+            DrawOnPricePanel = false;
+            try
+            {
+                // Draw-object independent fallback: color ADX curve on event bars.
+                ApplyAdxCurveEventMarker(brush);
+
+                if (upArrow)
+                    Draw.ArrowUp(this, tagBase + "_Arrow", false, 0, y, brush);
+                else
+                    Draw.ArrowDown(this, tagBase + "_Arrow", false, 0, y, brush);
+
+                // Extra point marker helps visibility when arrows are visually subtle.
+                Draw.Dot(this, tagBase + "_Dot", false, 0, y, brush);
+                // Fallback marker in same panel: a dotted horizontal line at the event ADX value.
+                Draw.HorizontalLine(this, tagBase + "_Line", y, brush, DashStyleHelper.Dot, 1);
+
+                Draw.Text(this, tagBase + "_Text", text, 0, y + 0.5, brush);
+                v2LastStepEventText = text;
+                v2LastStepEventTime = Time[0];
+
+                if (DebugLogging)
+                    LogDebug(string.Format(
+                        "V2 marker draw | step={0} bar={1} adx={2:0.00} text={3} adxPanel={4} drawOnPricePanel={5} showMarkers={6} showAdx={7} tag={8}",
+                        stepKey,
+                        CurrentBar,
+                        y,
+                        text,
+                        activeAdx.Panel,
+                        originalDrawOnPricePanel,
+                        ShowV2SetupMarkers,
+                        ShowAdxOnChart,
+                        tagBase));
+            }
+            catch (Exception ex)
+            {
+                if (DebugLogging)
+                    LogDebug(string.Format("V2 marker draw failed | step={0} bar={1} error={2}", stepKey, CurrentBar, ex.Message));
+            }
+            finally
+            {
+                DrawOnPricePanel = originalDrawOnPricePanel;
+            }
+        }
+
+        private void DrawV2StateBoard(bool inActiveSessionNow, bool orangeConfigured, bool longSignalRaw, bool shortSignalRaw)
+        {
+            if (!ShowV2SetupMarkers || EntryModel != EntryModelMode.EntryModelV2)
+                return;
+
+            string step1;
+            if (!orangeConfigured)
+                step1 = "1 Orange: SKIPPED (trigger disabled)";
+            else if (v2HasLockedNextDirection || v2OrangeLockLatched || v2ActiveDirection != SessionTradeDirection.Both)
+                step1 = string.Format(
+                    "1 Orange: LOCKED -> {0} @ {1}",
+                    FormatV2DirectionLabel(v2HasLockedNextDirection ? v2LockedNextDirection : v2ActiveDirection),
+                    FormatStepTime(v2Step1LockTime));
+            else
+                step1 = "1 Orange: WAITING";
+
+            string step2;
+            if (v2GreenTouchSeen || v2ActiveDirection != SessionTradeDirection.Both)
+                step2 = string.Format("2 Green touch: LOCKED @ {0}", FormatStepTime(v2Step2LockTime));
+            else
+                step2 = "2 Green touch: WAITING";
+
+            string step3;
+            if (v2ActiveDirection != SessionTradeDirection.Both)
+                step3 = string.Format("3 Re-arm: LOCKED -> {0} @ {1}", FormatV2DirectionLabel(v2ActiveDirection), FormatStepTime(v2Step3LockTime));
+            else if (v2GreenTouchSeen)
+                step3 = "3 Re-arm: WAITING (ADX slope up)";
+            else
+                step3 = "3 Re-arm: WAITING (needs Step 2)";
+
+            string step4;
+            if (longSignalRaw || shortSignalRaw)
+                step4 = string.Format("4 Entry: TRIGGERED -> {0} @ {1}", longSignalRaw ? "LONG" : "SHORT", FormatStepTime(v2Step4TriggerTime));
+            else if (v2ActiveDirection != SessionTradeDirection.Both)
+                step4 = string.Format("4 Entry: WAITING (close beyond EMA) | last @ {0}", FormatStepTime(v2Step4TriggerTime));
+            else
+                step4 = "4 Entry: WAITING (needs Step 3)";
+
+            string waitingStepSummary;
+            if (!orangeConfigured || v2HasLockedNextDirection || v2OrangeLockLatched || v2ActiveDirection != SessionTradeDirection.Both)
+            {
+                if (v2GreenTouchSeen || v2ActiveDirection != SessionTradeDirection.Both)
+                {
+                    if (v2ActiveDirection != SessionTradeDirection.Both)
+                        waitingStepSummary = "Waiting: Step 4 (Entry close beyond EMA)";
+                    else
+                        waitingStepSummary = "Waiting: Step 3 (Re-arm slope up)";
+                }
+                else
+                {
+                    waitingStepSummary = "Waiting: Step 2 (Green touch)";
+                }
+            }
+            else
+            {
+                waitingStepSummary = "Waiting: Step 1 (Orange lock)";
+            }
+
+            string lastStep = v2LastStepEventTime > Core.Globals.MinDate
+                ? string.Format(CultureInfo.InvariantCulture, "Last event: {0} @ {1:yyyy-MM-dd HH:mm}", v2LastStepEventText, v2LastStepEventTime)
+                : "Last event: none";
+
+            string board = string.Join(Environment.NewLine, new[]
+            {
+                "V2 STATE",
+                step1,
+                step2,
+                step3,
+                step4,
+                lastStep
+            });
+
+            var boardBrush = new SolidColorBrush(Color.FromArgb(255, 225, 225, 225));
+            if (boardBrush.CanFreeze)
+                boardBrush.Freeze();
+
+            Draw.TextFixed(
+                this,
+                "Duo_V2_StepBoard",
+                board,
+                TextPosition.BottomLeft,
+                boardBrush,
+                new SimpleFont("Segoe UI", 12),
+                Brushes.Transparent,
+                Brushes.Transparent,
+                0);
+
+            Draw.TextFixed(
+                this,
+                "Duo_V2_WaitingStep",
+                waitingStepSummary,
+                TextPosition.BottomRight,
+                Brushes.Gold,
+                new SimpleFont("Segoe UI", 12),
+                Brushes.Transparent,
+                Brushes.Transparent,
+                0);
+        }
+
+        private string FormatStepTime(DateTime time)
+        {
+            if (time <= Core.Globals.MinDate)
+                return "--";
+
+            return time.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        }
+
+        private void ApplyAdxCurveEventMarker(Brush brush)
+        {
+            if (activeAdx == null || activeAdx.PlotBrushes == null || activeAdx.PlotBrushes.Length == 0 || brush == null)
+                return;
+
+            try
+            {
+                activeAdx.PlotBrushes[0][0] = brush;
+                if (CurrentBar > 0)
+                    activeAdx.PlotBrushes[0][1] = brush;
+            }
+            catch
+            {
+                // Ignore plotting fallback failures; draw-object path still executes.
+            }
         }
 
         private void CancelWorkingEntryOrders(bool resetV2EntryState = true)
@@ -3472,5 +3711,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Verbose Logging", Description = "Enable detailed internal state logs (V2 waits, trigger internals, session config visuals). Requires Debug Logging.", GroupName = "14. Debug", Order = 1)]
         public bool VerboseLogging { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show V2 Setup Markers", Description = "Draw arrow/text markers on ADX panel when V2 setup steps lock (orange, green touch, re-arm).", GroupName = "14. Debug", Order = 2)]
+        public bool ShowV2SetupMarkers { get; set; }
     }
 }
