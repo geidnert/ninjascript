@@ -131,6 +131,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool v2HasLockedNextDirection;
         private SessionTradeDirection v2LockedNextDirection = SessionTradeDirection.Both;
         private bool v2OrangeLockLatched;
+        private bool v2InResetMode;
         private bool v2GreenTouchSeen;
         private bool v2MomentumRearmed;
         private SessionTradeDirection v2ActiveDirection = SessionTradeDirection.Both;
@@ -527,6 +528,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 v2HasLockedNextDirection = false;
                 v2LockedNextDirection = SessionTradeDirection.Both;
                 v2OrangeLockLatched = false;
+                v2InResetMode = false;
                 v2GreenTouchSeen = false;
                 v2MomentumRearmed = false;
                 v2ActiveDirection = SessionTradeDirection.Both;
@@ -636,15 +638,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 bool prevInSession = CurrentBar > 0 && activeSession != SessionSlot.None && TimeInSession(activeSession, Time[1]);
                 if (inActiveSessionNow && !prevInSession)
-                    v2ActiveDirection = SessionTradeDirection.Both;
+                    ResetV2EntryState();
 
                 bool orangeConfigured = activeAdxTriggerThreshold > 0.0;
                 bool orangeAboveNow = orangeConfigured && adxValue >= activeAdxTriggerThreshold;
-                bool orangeSlopePass = activeAdxTriggerMinSlopePoints <= 0.0 || adxSlope >= activeAdxTriggerMinSlopePoints;
+                bool orangeBelowNow = !orangeConfigured || adxValue < activeAdxTriggerThreshold;
                 bool adxSlopeUpNow = adxSlope > 0.0;
+                bool orangeSlopePass = adxSlopeUpNow && (activeAdxTriggerMinSlopePoints <= 0.0 || adxSlope >= activeAdxTriggerMinSlopePoints);
                 bool canLockOrangeNow = inActiveSessionNow
                     && orangeConfigured
-                    && !v2OrangeLockLatched
                     && v2OrangeWasBelow
                     && orangeAboveNow
                     && orangeSlopePass;
@@ -657,6 +659,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         : SessionTradeDirection.ShortOnly;
                     v2HasLockedNextDirection = true;
                     v2OrangeLockLatched = true;
+                    v2InResetMode = false;
+                    v2GreenTouchSeen = false;
+                    v2MomentumRearmed = false;
+                    v2ActiveDirection = v2LockedNextDirection;
                     v2Step1LockTime = Time[0];
                     DrawV2StepMarker(
                         "OrangeLock",
@@ -679,14 +685,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                 }
 
+                bool orangeResetTriggered = inActiveSessionNow
+                    && orangeConfigured
+                    && v2OrangeLockLatched
+                    && !v2InResetMode
+                    && !v2OrangeWasBelow
+                    && orangeBelowNow;
+                if (orangeResetTriggered)
+                {
+                    v2InResetMode = true;
+                    v2GreenTouchSeen = false;
+                    v2MomentumRearmed = false;
+                    if (DebugLogging)
+                    {
+                        LogVerbose(string.Format(
+                            "V2 reset mode | adx dropped below orange adx={0:0.00} trigger={1:0.00}",
+                            adxValue,
+                            activeAdxTriggerThreshold));
+                    }
+                }
+
                 bool greenConfigured = activeAdxThreshold > 0.0;
-                bool greenTouchSlopePass = activeAdxGreenTouchSlopePoints == 0.0 || adxSlope <= activeAdxGreenTouchSlopePoints;
-                bool greenTouchNow = inActiveSessionNow && greenConfigured && adxValue <= activeAdxThreshold && greenTouchSlopePass;
-                if (!v2GreenTouchSeen && greenTouchNow)
+                bool greenTouchNow = inActiveSessionNow && v2InResetMode && greenConfigured && adxValue <= activeAdxThreshold;
+                if (greenTouchNow && !v2GreenTouchSeen)
                 {
                     v2GreenTouchSeen = true;
-                    v2MomentumRearmed = false;
-                    v2ActiveDirection = SessionTradeDirection.Both;
                     v2Step2LockTime = Time[0];
                     DrawV2StepMarker(
                         "GreenTouch",
@@ -698,31 +721,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (DebugLogging)
                     {
                         LogVerbose(string.Format(
-                            "V2 green touch | adx={0:0.00} adxSlope={1:0.00} green={2:0.00} touchSlope={3:0.00}",
+                            "V2 green touch | adx={0:0.00} adxSlope={1:0.00} green={2:0.00}",
                             adxValue,
                             adxSlope,
-                            activeAdxThreshold,
-                            activeAdxGreenTouchSlopePoints));
+                            activeAdxThreshold));
                     }
                 }
 
-                bool v2ActivatedThisBar = false;
-                bool v2RearmSlopePass = adxSlopeUpNow && adxSlopePass;
-                if (inActiveSessionNow && v2GreenTouchSeen && !v2MomentumRearmed && v2RearmSlopePass)
+                bool v2RearmSlopePass = adxSlopeUpNow;
+                if (inActiveSessionNow && v2InResetMode && v2GreenTouchSeen && v2RearmSlopePass)
                 {
-                    if (!v2HasLockedNextDirection && !orangeConfigured)
-                    {
-                        v2LockedNextDirection = GetEmaSlopePointsPerBar() <= 0.0
-                            ? SessionTradeDirection.LongOnly
-                            : SessionTradeDirection.ShortOnly;
-                        v2HasLockedNextDirection = true;
-                    }
-
                     if (v2HasLockedNextDirection)
                     {
                         v2ActiveDirection = v2LockedNextDirection;
                         v2MomentumRearmed = true;
-                        v2ActivatedThisBar = true;
+                        v2InResetMode = false;
+                        v2GreenTouchSeen = false;
                         v2Step3LockTime = Time[0];
                         DrawV2StepMarker(
                             "Rearm",
@@ -734,36 +748,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogVerbose(string.Format(
-                                "V2 active direction set | dir={0} adx={1:0.00} adxSlope={2:0.00} momentumMin={3:0.00}",
+                                "V2 re-armed | dir={0} adx={1:0.00} adxSlope={2:0.00}",
                                 v2ActiveDirection,
                                 adxValue,
-                                adxSlope,
-                                activeAdxMinSlopePoints));
+                                adxSlope));
                         }
                     }
                 }
 
-                if (v2ActivatedThisBar)
-                {
-                    v2HasLockedNextDirection = false;
-                    v2LockedNextDirection = SessionTradeDirection.Both;
-                    v2GreenTouchSeen = false;
-                    v2MomentumRearmed = false;
-                    v2OrangeLockLatched = false;
-                    v2LastWaitSignature = string.Empty;
-                    v2LastWaitLogBar = -1;
-                }
-
                 bool v2DirectionLong = v2ActiveDirection == SessionTradeDirection.LongOnly;
                 bool v2DirectionShort = v2ActiveDirection == SessionTradeDirection.ShortOnly;
-                bool v2EntryLongPass = v2DirectionLong && emaSlopeLongPass && closeAboveEmaByMinPoints;
-                bool v2EntryShortPass = v2DirectionShort && emaSlopeShortPass && closeBelowEmaByMinPoints;
+                bool v2TradeWindowOpen = v2OrangeLockLatched && !v2InResetMode && v2MomentumRearmed;
+                bool v2EntryLongPass = v2TradeWindowOpen && v2DirectionLong && emaSlopeLongPass && closeAboveEmaByMinPoints;
+                bool v2EntryShortPass = v2TradeWindowOpen && v2DirectionShort && emaSlopeShortPass && closeBelowEmaByMinPoints;
 
                 longSignalRaw = v2EntryLongPass;
                 shortSignalRaw = v2EntryShortPass;
                 if (longSignalRaw || shortSignalRaw)
                     v2Step4TriggerTime = Time[0];
-                DrawV2StateBoard(inActiveSessionNow, orangeConfigured, longSignalRaw, shortSignalRaw);
+                DrawV2StateBoard(orangeConfigured, longSignalRaw, shortSignalRaw);
 
                 if (DebugLogging && !longSignalRaw && !shortSignalRaw)
                 {
@@ -786,10 +789,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (v2ActiveDirection == SessionTradeDirection.Both)
                         v2WaitReasons.Add("active-direction-not-set");
-                    if (inActiveSessionNow && v2GreenTouchSeen && !v2MomentumRearmed && !adxSlopeUpNow)
-                        v2WaitReasons.Add(string.Format("awaiting-momentum-reentry slope={0:0.00} min=0.00", adxSlope));
-                    if (inActiveSessionNow && v2GreenTouchSeen && !v2MomentumRearmed && adxSlopeUpNow && !adxSlopePass)
-                        v2WaitReasons.Add(string.Format("awaiting-momentum-threshold slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
+                    if (inActiveSessionNow && v2OrangeLockLatched && !v2InResetMode && !v2MomentumRearmed)
+                        v2WaitReasons.Add("await-reset-trigger orange-drop-below");
+                    if (inActiveSessionNow && v2InResetMode && !v2GreenTouchSeen)
+                        v2WaitReasons.Add(string.Format("reset-await-green adx={0:0.00} green={1:0.00}", adxValue, activeAdxThreshold));
+                    if (inActiveSessionNow && v2InResetMode && v2GreenTouchSeen && !adxSlopeUpNow)
+                        v2WaitReasons.Add(string.Format("reset-await-rearm-slope slope={0:0.00}", adxSlope));
                     if (inActiveSessionNow && !v2HasLockedNextDirection && !v2OrangeLockLatched && orangeConfigured && !orangeAboveNow)
                         v2WaitReasons.Add(string.Format("orange-not-hit adx={0:0.00} trigger={1:0.00}", adxValue, activeAdxTriggerThreshold));
                     if (inActiveSessionNow && !v2HasLockedNextDirection && !v2OrangeLockLatched && orangeConfigured && orangeAboveNow && !orangeSlopePass)
@@ -819,7 +824,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         v2ActiveDirection,
                         v2LockedNextDirection,
                         v2HasLockedNextDirection,
-                        v2GreenTouchSeen && !v2MomentumRearmed,
+                        v2InResetMode,
                         reasonsText);
                     bool v2WaitChanged = !string.Equals(v2WaitSignature, v2LastWaitSignature, StringComparison.Ordinal);
                     bool v2WaitHeartbeat = v2LastWaitLogBar < 0 || CurrentBar - v2LastWaitLogBar >= V2WaitLogHeartbeatBars;
@@ -827,11 +832,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (v2WaitChanged || v2WaitHeartbeat)
                     {
                             LogVerbose(string.Format(
-                            "V2 wait | active={0} next={1} nextLocked={2} greenSeen={3} adx={4:0.00} adxSlope={5:0.00} emaSlope={6:0.000} close={7:0.00} ema={8:0.00} reasons={9}",
+                            "V2 wait | active={0} next={1} nextLocked={2} resetMode={3} adx={4:0.00} adxSlope={5:0.00} emaSlope={6:0.000} close={7:0.00} ema={8:0.00} reasons={9}",
                             v2ActiveDirection,
                             v2LockedNextDirection,
                             v2HasLockedNextDirection,
-                            v2GreenTouchSeen && !v2MomentumRearmed,
+                            v2InResetMode,
                             adxValue,
                             adxSlope,
                             GetEmaSlopePointsPerBar(),
@@ -843,7 +848,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                 }
 
-                v2OrangeWasBelow = !orangeConfigured || adxValue < activeAdxTriggerThreshold;
+                v2OrangeWasBelow = orangeBelowNow;
             }
             else if (EntryModel == EntryModelMode.EntryModelV1)
             {
@@ -1786,6 +1791,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             v2HasLockedNextDirection = false;
             v2LockedNextDirection = SessionTradeDirection.Both;
             v2OrangeLockLatched = false;
+            v2InResetMode = false;
             v2GreenTouchSeen = false;
             v2MomentumRearmed = false;
             v2ActiveDirection = SessionTradeDirection.Both;
@@ -1869,7 +1875,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private void DrawV2StateBoard(bool inActiveSessionNow, bool orangeConfigured, bool longSignalRaw, bool shortSignalRaw)
+        private void DrawV2StateBoard(bool orangeConfigured, bool longSignalRaw, bool shortSignalRaw)
         {
             if (!ShowV2SetupMarkers || EntryModel != EntryModelMode.EntryModelV2)
                 return;
@@ -1877,55 +1883,67 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string step1;
             if (!orangeConfigured)
                 step1 = "1 Orange: SKIPPED (trigger disabled)";
-            else if (v2HasLockedNextDirection || v2OrangeLockLatched || v2ActiveDirection != SessionTradeDirection.Both)
+            else if (v2OrangeLockLatched && v2HasLockedNextDirection)
                 step1 = string.Format(
                     "1 Orange: LOCKED -> {0} @ {1}",
-                    FormatV2DirectionLabel(v2HasLockedNextDirection ? v2LockedNextDirection : v2ActiveDirection),
+                    FormatV2DirectionLabel(v2LockedNextDirection),
                     FormatStepTime(v2Step1LockTime));
             else
                 step1 = "1 Orange: WAITING";
 
             string step2;
-            if (v2GreenTouchSeen || v2ActiveDirection != SessionTradeDirection.Both)
+            if (!orangeConfigured)
+                step2 = "2 Reset: SKIPPED (trigger disabled)";
+            else if (!v2OrangeLockLatched)
+                step2 = "2 Reset: WAITING (needs Step 1)";
+            else if (v2InResetMode && v2GreenTouchSeen)
                 step2 = string.Format("2 Green touch: LOCKED @ {0}", FormatStepTime(v2Step2LockTime));
-            else
+            else if (v2InResetMode)
                 step2 = "2 Green touch: WAITING";
+            else
+                step2 = "2 Reset: INACTIVE (waiting orange drop)";
 
             string step3;
-            if (v2ActiveDirection != SessionTradeDirection.Both)
-                step3 = string.Format("3 Re-arm: LOCKED -> {0} @ {1}", FormatV2DirectionLabel(v2ActiveDirection), FormatStepTime(v2Step3LockTime));
-            else if (v2GreenTouchSeen)
-                step3 = "3 Re-arm: WAITING (ADX slope up)";
-            else
+            if (!orangeConfigured)
+                step3 = "3 Re-arm: SKIPPED (trigger disabled)";
+            else if (!v2OrangeLockLatched)
+                step3 = "3 Re-arm: WAITING (needs Step 1)";
+            else if (v2InResetMode && v2GreenTouchSeen)
+                step3 = "3 Re-arm: WAITING (ADX slope > 0)";
+            else if (v2InResetMode)
                 step3 = "3 Re-arm: WAITING (needs Step 2)";
+            else if (v2MomentumRearmed)
+                step3 = string.Format("3 Re-arm: ARMED @ {0}", FormatStepTime(v2Step3LockTime));
+            else
+                step3 = "3 Re-arm: WAITING (needs reset cycle)";
 
             string step4;
             if (longSignalRaw || shortSignalRaw)
                 step4 = string.Format("4 Entry: TRIGGERED -> {0} @ {1}", longSignalRaw ? "LONG" : "SHORT", FormatStepTime(v2Step4TriggerTime));
-            else if (v2ActiveDirection != SessionTradeDirection.Both)
-                step4 = string.Format("4 Entry: WAITING (close beyond EMA) | last @ {0}", FormatStepTime(v2Step4TriggerTime));
+            else if (!orangeConfigured)
+                step4 = "4 Entry: WAITING (trigger disabled)";
+            else if (!v2OrangeLockLatched || v2ActiveDirection == SessionTradeDirection.Both)
+                step4 = "4 Entry: WAITING (needs Step 1)";
+            else if (v2InResetMode)
+                step4 = "4 Entry: WAITING (reset mode)";
+            else if (!v2MomentumRearmed)
+                step4 = "4 Entry: WAITING (needs Step 3 re-arm)";
             else
-                step4 = "4 Entry: WAITING (needs Step 3)";
+                step4 = string.Format("4 Entry: WAITING (close beyond EMA) | last @ {0}", FormatStepTime(v2Step4TriggerTime));
 
             string waitingStepSummary;
-            if (!orangeConfigured || v2HasLockedNextDirection || v2OrangeLockLatched || v2ActiveDirection != SessionTradeDirection.Both)
-            {
-                if (v2GreenTouchSeen || v2ActiveDirection != SessionTradeDirection.Both)
-                {
-                    if (v2ActiveDirection != SessionTradeDirection.Both)
-                        waitingStepSummary = "Waiting: Step 4 (Entry close beyond EMA)";
-                    else
-                        waitingStepSummary = "Waiting: Step 3 (Re-arm slope up)";
-                }
-                else
-                {
-                    waitingStepSummary = "Waiting: Step 2 (Green touch)";
-                }
-            }
-            else
-            {
+            if (!orangeConfigured)
+                waitingStepSummary = "Waiting: Trigger disabled";
+            else if (!v2OrangeLockLatched || v2ActiveDirection == SessionTradeDirection.Both)
                 waitingStepSummary = "Waiting: Step 1 (Orange lock)";
-            }
+            else if (!v2InResetMode && !v2MomentumRearmed)
+                waitingStepSummary = "Waiting: Step 2 (Orange drop below trigger)";
+            else if (v2InResetMode && !v2GreenTouchSeen)
+                waitingStepSummary = "Waiting: Step 2 (Green touch)";
+            else if (v2InResetMode)
+                waitingStepSummary = "Waiting: Step 3 (Re-arm slope > 0)";
+            else
+                waitingStepSummary = "Waiting: Step 4 (Entry close beyond EMA)";
 
             string lastStep = v2LastStepEventTime > Core.Globals.MinDate
                 ? string.Format(CultureInfo.InvariantCulture, "Last event: {0} @ {1:yyyy-MM-dd HH:mm}", v2LastStepEventText, v2LastStepEventTime)
