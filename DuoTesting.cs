@@ -41,51 +41,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ShortOnly
         }
 
-        private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
-        {
-            private static readonly double[] Presets = new double[]
-            {
-                1.33, 1.34, 1.35, 1.36, 1.37, 1.48, 1.49, 1.50, 1.51, 1.52, 1.53, 1.54, 1.55
-            };
-
-            public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
-            {
-                return true;
-            }
-
-            public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
-            {
-                return true;
-            }
-
-            public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
-            {
-                return new TypeConverter.StandardValuesCollection(Presets);
-            }
-        }
-
-        private sealed class NewYorkAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
-        {
-            private static readonly double[] Presets = new double[]
-            {
-                1.55, 1.56, 1.57, 1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65
-            };
-
-            public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
-            {
-                return true;
-            }
-
-            public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
-            {
-                return true;
-            }
-
-            public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
-            {
-                return new TypeConverter.StandardValuesCollection(Presets);
-            }
-        }
+        // Commercial (closed list) option: uncomment these converters and the [TypeConverter(...)] lines
+        // on the momentum properties to switch back from free input to dropdown presets.
+        // private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
+        // {
+        //     private static readonly double[] Presets = new double[]
+        //     {
+        //         1.33, 1.34, 1.35, 1.36, 1.37, 1.48, 1.49, 1.50, 1.51, 1.52, 1.53, 1.54, 1.55
+        //     };
+        //
+        //     public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
+        //     {
+        //         return true;
+        //     }
+        //
+        //     public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
+        //     {
+        //         return true;
+        //     }
+        //
+        //     public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+        //     {
+        //         return new TypeConverter.StandardValuesCollection(Presets);
+        //     }
+        // }
+        //
+        // private sealed class NewYorkAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
+        // {
+        //     private static readonly double[] Presets = new double[]
+        //     {
+        //         1.55, 1.56, 1.57, 1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65
+        //     };
+        //
+        //     public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
+        //     {
+        //         return true;
+        //     }
+        //
+        //     public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
+        //     {
+        //         return true;
+        //     }
+        //
+        //     public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+        //     {
+        //         return new TypeConverter.StandardValuesCollection(Presets);
+        //     }
+        // }
 
         private enum SessionSlot
         {
@@ -104,6 +106,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Order shortEntryOrder;
         private int missingLongEntryOrderBars;
         private int missingShortEntryOrderBars;
+        private double asiaAdxMinSlopePoints;
+        private double newYorkAdxMinSlopePoints;
 
         private bool asiaSessionClosed;
         private bool newYorkSessionClosed;
@@ -3071,9 +3075,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [TypeConverter(typeof(AsiaAdxSlopeDropdownConverter))]
-        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 13)]
-        public double AsiaAdxMinSlopePoints { get; set; }
+        // [TypeConverter(typeof(AsiaAdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "Asia", Order = 13)]
+        public double AsiaAdxMinSlopePoints
+        {
+            get { return asiaAdxMinSlopePoints; }
+            set { asiaAdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
@@ -3166,9 +3174,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [TypeConverter(typeof(NewYorkAdxSlopeDropdownConverter))]
-        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 14)]
-        public double NewYorkAdxMinSlopePoints { get; set; }
+        // [TypeConverter(typeof(NewYorkAdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "New York", Order = 14)]
+        public double NewYorkAdxMinSlopePoints
+        {
+            get { return newYorkAdxMinSlopePoints; }
+            set { newYorkAdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
