@@ -1,2181 +1,2057 @@
+#region Using declarations
 using System;
 using System.Collections.Generic;
-using System.Reflection;
-using System.Windows.Media;
-using System.ComponentModel.DataAnnotations;
-using System.Windows;
 using System.ComponentModel;
-using System.Xml.Serialization;
-using System.IO;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Xml.Serialization;
 using NinjaTrader.Cbi;
-using NinjaTrader.Data;
 using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
+using NinjaTrader.Gui.SuperDom;
 using NinjaTrader.Gui.Tools;
+using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
+using NinjaTrader.Core.FloatingPoint;
+using NinjaTrader.NinjaScript.Indicators;
 using NinjaTrader.NinjaScript.DrawingTools;
-
+#endregion
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
-public class ORBO : Strategy
-{
-    public ORBO()
+    /// <summary>
+    /// ORBO - Opening Range Breakout Strategy v1.01
+    /// 
+    /// NEW IN V3: OR Size Buckets
+    /// - 4 OR size buckets for Longs (L1-L4) and 4 for Shorts (S1-S4)
+    /// - Each bucket defines an OR size range (min-max ticks) and has its own full parameter set
+    /// - When OR is captured, the bot finds the matching bucket for each direction
+    /// - If no bucket matches, that direction is skipped for the day
+    /// </summary>
+    public class ORBO : Strategy
     {
-        VendorLicense(204);
-    }
-
-#region Settings
-    // [NinjaScriptProperty]
-    // [Display(Name = "Instrument", Description = "Select the instrument you want to trade", Order = 0,
-    //          GroupName = "A. Config")]
-    //public StrategyPreset PresetSetting { get; set; }
-
-    [NinjaScriptProperty]
-    [Display(Name = "Contracts", Description = "Number of contracts to take", Order = 1, GroupName = "A. Config")]
-    public int NumberOfContracts {
-        get; set;
-    }
-
-    [NinjaScriptProperty]
-    [Display(Name = "Entry Confirmation", Description = "Show popup confirmation before each entry", Order = 2,
-             GroupName = "A. Config")]
-    public bool RequireEntryConfirmation {
-        get; set;
-    }
-
-    [NinjaScriptProperty]
-    [Display(Name = "Anti Hedge", Description = "Dont take trade in opposite direction to prevent hedging", Order = 3,
-             GroupName = "A. Config")]
-    public bool AntiHedge {
-        get; set;
-    }
-
-    [NinjaScriptProperty]
-    [Display(
-        Name = "Max Account Balance",
-        Description =
-            "When account reach this amount, ongoing orders and positions will close, no more trades will be taken",
-        Order = 4, GroupName = "A. Config")]
-    public double MaxAccountBalance {
-        get; set;
-    }
-
-    [NinjaScriptProperty]
-    [Display(Name = "Webhook URL", Description = "Sends POST JSON to this URL on trade signals", Order = 5, GroupName = "A. Config")]
-    public string WebhookUrl { get; set; }
-
-    [NinjaScriptProperty]
-    [Display(Name = "Max Trades Per Day", Description = "Max number of trades allowed per day (0 = unlimited)", Order = 6, GroupName = "A. Config")]
-    public int MaxTradesPerDay { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Display(Name = "Use Breakout Rearm Delay", Description = "Wait 5 minutes after breakout reset before allowing new entry", Order = 7, GroupName = "A. Config")]
-    internal bool UseBreakoutRearmDelay { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Display(Name = "Range Duration", Order = 1, GroupName = "B. Entry Conditions")]
-    internal int BiasDuration { get; set; }
-
-    [NinjaScriptProperty]
-    [Display(Name = "Max Range (pts)", Description = "If session range exceeds this size, block trading for the day (0 = disabled)", Order = 2, GroupName = "B. Entry Conditions")]
-    public double MaxRangePoints { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Range(1, 100, ErrorMessage = "EntryPercent must be between 1 and 100 ticks")]
-    // [Display(Name = "Entry %", Description = "Entry price for limit order from 15 min OR", Order = 3, GroupName = "B. Entry Conditions")]
-    internal double EntryPercent { get; set; }
-
-    [NinjaScriptProperty]
-    [Display(Name = "TP %", Description = "Take profit distance", Order = 4, GroupName = "B. Entry Conditions")]
-    public double TakeProfitPercent { get; set; }
-
-    [NinjaScriptProperty]
-    [Display(Name = "VIX Threshold", Description = "Block trading for the day if VIX is at or above this value (0 = disabled)", Order = 15, GroupName = "B. Entry Conditions")]
-    internal double VixThreshold { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Display(Name = "Hard SL %", Description = "Hard SL level", Order = 6, GroupName = "B. Entry Conditions")]
-    internal double HardStopLossPercent { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Display(Name = "Require 5m Close Below Return%", Description = "Require 5-minute candle close for return reset", Order = 9, GroupName = "B. Entry Conditions")]
-    internal bool RequireCloseBelowReturn { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Range(0, 100, ErrorMessage = "SLBETrigger must be 0–100 percent of range")]
-    // [Display(
-    //     Name = "SL BE Trigger %",
-    //     Description = "Percent of the session range where BE flatten gets armed (same scale as Entry% / TP%)",
-    //     Order = 10, GroupName = "B. Entry Conditions")]
-    internal double SLBETrigger { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Display(Name = "Max Bars In Trade", Description = "Exit trade after this many bars since entry", 
-    //         Order = 11, GroupName = "B. Entry Conditions")]
-    internal int MaxBarsInTrade { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Range(0, 200, ErrorMessage = "Cancel Order % must be between 0 and 200")]
-    // [Display(Name = "Cancel Order %", Description = "Cancel pending entry if price moves this % of session range away", 
-    //         Order = 12, GroupName = "B. Entry Conditions")]
-    internal double CancelOrderPercent { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Display(Name = "Cancel Order After X Bars", 
-    //         Description = "Cancel unfilled entry if it has not filled after this many bars",
-    //         Order = 13, GroupName = "B. Entry Conditions")]
-    internal int CancelOrderBars { get; set; }
-
-
-    [NinjaScriptProperty]
-    [Display(Name = "Session Start", Description = "When session is starting", Order = 1,
-             GroupName = "C. Session Time")]
-    public TimeSpan SessionStart
-    {
-        get {
-            return sessionStart;
-        }
-        set {
-            sessionStart = new TimeSpan(value.Hours, value.Minutes, 0);
-        }
-    }
-
-    [NinjaScriptProperty]
-    [Display(Name = "Session End",
-             Description = "When session is ending, all positions and orders will be canceled when this time is passed",
-             Order = 2, GroupName = "C. Session Time")]
-    public TimeSpan SessionEnd
-    {
-        get {
-            return sessionEnd;
-        }
-        set {
-            sessionEnd = new TimeSpan(value.Hours, value.Minutes, 0);
-        }
-    }
-
-    [NinjaScriptProperty]
-    [Display(Name = "No Trades After",
-             Description = "No more orders is being placed between this time and session end,", Order = 3,
-             GroupName = "C. Session Time")]
-    public TimeSpan NoTradesAfter
-    {
-        get {
-            return noTradesAfter;
-        }
-        set {
-            noTradesAfter = new TimeSpan(value.Hours, value.Minutes, 0);
-        }
-    }
-
-    [XmlIgnore]
-    [NinjaScriptProperty]
-    [Display(Name = "Range Box Fill", Description = "Color of the background box between the range", Order = 4, GroupName = "C. Session Time")]
-    public Brush RangeBoxBrush { get; set; }
-
-    [Browsable(false)]
-    public string RangeBoxBrushSerializable
-    {
-        get { return Serialize.BrushToString(RangeBoxBrush); }
-        set { RangeBoxBrush = Serialize.StringToBrush(value); }
-    }
-	
-    [NinjaScriptProperty]
-    [Display(Name = "Skip Start", Description = "Start of skip window", Order = 1, GroupName = "C. Skip Times")]
-    public TimeSpan SkipStart { get; set; }
-
-    [NinjaScriptProperty]
-    [Display(Name = "Skip End", Description = "End of skip window", Order = 2, GroupName = "C. Skip Times")]
-    public TimeSpan SkipEnd { get; set; }
-
-    // [NinjaScriptProperty]
-    // [Display(Name = "Info Panel", Order = 1, GroupName = "D. Dev")]
-    internal bool DebugMode {
-        get; set;
-    }
-
-    // [NinjaScriptProperty]
-    // [Display(Name = "Deviation", Order = 2, GroupName = "D. Dev")]
-    internal double VarianceInTicks {
-        get; set;
-    }
-#endregion
-
-#region Variables
-    private bool isRealTime = false;
-    private bool orderPlaced = false;
-    private bool wickLinesDrawn = false;
-    private double entryPrice;
-    private double sessionHigh, sessionLow;
-    private string lastDate = string.Empty;
-    private Order entryOrder;
-    private Order hardStopOrder;
-    private List<Order> profitOrders = new List<Order>();
-    private string displayText = "Waiting...";
-    private bool isStrategyAnalyzer = false;
-    private TimeSpan sessionStart = new TimeSpan(9, 30, 0);
-    private TimeSpan sessionEnd = new TimeSpan(15, 59, 0);
-    private TimeSpan noTradesAfter = new TimeSpan(14, 50, 0);
-    private TimeSpan skipStart = new TimeSpan(11, 30, 0);
-    private TimeSpan skipEnd = new TimeSpan(11, 40, 0);
-    private static readonly Random Random = new Random();
-    private bool maxAccountLimitHit = false;
-    private DateTime positionEntryTime = DateTime.MinValue;
-    private bool lastTradeWasLong = false;
-    private DateTime lastEntryTime = DateTime.MinValue;
-    private readonly TimeSpan minTimeBetweenEntries = TimeSpan.FromSeconds(1);
-    private int lastExitBarAnalyzer = -1;
-    private int tradesToday = 0;
-    private bool tradeLimitLoggedToday = false;
-    private double todayLongLimit = Double.NaN;
-    private double todayShortLimit = Double.NaN;
-    private double todayLongProfit = Double.NaN;
-    private double todayLongStoploss = Double.NaN;
-    private double todayShortProfit = Double.NaN;
-    private double todayShortStoploss = Double.NaN;
-    private string currentSignalName;
-    private DateTime lastProtectionTime = DateTime.MinValue;
-    private DateTime nextEvaluationTime = DateTime.MinValue;
-    private double startingBalance = 0;
-    private bool breakoutActive = false;
-    private double lastFilledEntryPrice = 0;
-    private bool isInBiasWindow = false;
-    private bool hasCapturedRange = false;
-    private bool rangeTooWide = false;
-    private bool rangeTooWideLogged = false;
-    private bool vixFetchedToday = false;
-    private bool vixBlockedToday = false;
-    private bool vixFetchFailedToday = false;
-    private double vixValue = double.NaN;
-    private bool vixPendingLoggedToday = false;
-    private bool vixBlockLoggedToday = false;
-    private DateTime vixFetchDate = DateTime.MinValue;
-    private bool breakoutRearmPending = false;
-    private DateTime breakoutRearmTime = DateTime.MinValue;
-    // --- Heartbeat reporting ---
-    private string heartbeatFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
-    private System.Timers.Timer heartbeatTimer;
-    private DateTime lastHeartbeatWrite = DateTime.MinValue;
-    private int heartbeatIntervalSeconds = 10; // send heartbeat every 10 seconds
-    private static readonly object heartbeatFileLock = new object();
-    private string heartbeatId;
-    // === Shared Anti-Hedge Lock System ===
-    private static readonly object hedgeLockSync = new object();
-    private static readonly string hedgeLockFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "AntiHedgeLock.csv");
-	
-	private bool beTriggerActive = false;
-	private bool beFlattenTriggered = false;
-
-    private double beTriggerLongPrice  = double.NaN;
-    private double beTriggerShortPrice = double.NaN;
-
-    private bool hasReturnedOnce = false;     // becomes true after price has returned inside the zone
-    private bool tpWasHit = false;            // true right after TP hit
-    private int entryBar = -1;
-    private double pendingEntryPrice = double.NaN;
-    private double cancelOrderDistanceAbs = 0;
-    private int entryOrderBar = -1;
-
-    // === Order Placement Vertical Lines ===
-    private string currentOrderLineTag = string.Empty;
-    private int orderPlacementBar = -1;
-    private int orderCancelBar = -1;
-
-#endregion
-
-#region State Management
-    protected override void OnStateChange()
-    {
-        if (State == State.SetDefaults)
-            SetDefaults();
-        else if (State == State.Transition)
-            isRealTime = false;
-        else if (State == State.Realtime)
-            isRealTime = true;
-        else if (State == State.Historical)
-            isStrategyAnalyzer = (Account == null || Account.Name == "Backtest");
-        // no secondary series needed for HTTP-based VIX fetch
-        else if (State == State.DataLoaded) {
-            heartbeatId = BuildHeartbeatId();
-            // --- Heartbeat timer setup ---
-            heartbeatTimer = new System.Timers.Timer(heartbeatIntervalSeconds * 1000);
-            heartbeatTimer.Elapsed += (s, e) => WriteHeartbeat();
-            heartbeatTimer.AutoReset = true;
-            heartbeatTimer.Start();
-
-            //ApplyPreset(PresetSetting);
-        }
-        else if (State == State.Terminated)
+        public ORBO()
         {
-            // --- Clean up heartbeat timer ---
-            if (heartbeatTimer != null)
+            VendorLicense(204);
+        }
+        
+        #region Enums
+        public enum TargetMode
+        {
+            PercentOfOR,
+            FixedTicks
+        }
+        #endregion
+        
+        #region Bucket Parameter Struct
+        private struct BucketParams
+        {
+            public bool Enabled;
+            public int ORMinTicks;
+            public int ORMaxTicks;
+            public bool UseBreakoutRearm;
+            public bool RequireReturnToZone;
+            public int ConfirmationBars;
+            public double EntryOffsetPercent;
+            public int VarianceTicks;
+            public TargetMode TPMode;
+            public double TakeProfitPercent;
+            public int TakeProfitTicks;
+            public TargetMode SLMode;
+            public double StopLossPercent;
+            public int StopLossTicks;
+            public int MaxStopLossTicks;
+            public int BreakevenTriggerPercent;
+            public int BreakevenOffsetTicks;
+            public int MaxBarsInTrade;
+            public int MaxTradesPerDay;
+        }
+        #endregion
+        
+        #region Private Variables
+        
+        // ===== Opening Range Tracking =====
+        private double orHigh = double.MinValue;
+        private double orLow = double.MaxValue;
+        private double orRange = 0;
+        private bool orCaptured = false;
+        private bool wickLinesDrawn = false;
+        
+        // ===== Active Bucket State =====
+        private BucketParams activeLongBucket;
+        private BucketParams activeShortBucket;
+        private bool longBucketFound = false;
+        private bool shortBucketFound = false;
+        private int activeLongBucketIndex = -1;
+        private int activeShortBucketIndex = -1;
+        
+        // ===== Breakout State =====
+        private bool breakoutActive = false;
+        private bool longBreakoutOccurred = false;
+        private bool shortBreakoutOccurred = false;
+        private int breakoutBar = -1;
+        
+        // ===== Confirmation State =====
+        private bool hasReturnedOnce = false;
+        private bool waitingForConfirmation = false;
+        private bool confirmationComplete = false;
+        private int confirmationBarCount = 0;
+        private int returnBar = -1;
+        
+        // ===== Entry State =====
+        private int tradeCount = 0;
+        private int longTradeCount = 0;
+        private int shortTradeCount = 0;
+        private bool orderPlaced = false;
+        private double entryPrice = 0;
+        private double limitEntryPrice = 0;
+        private double lastFilledEntryPrice = 0;
+        private int entryBar = -1;
+        private int entryOrderBar = -1;
+        private Order entryOrder = null;
+        private string currentSignalName = "";
+        private bool lastTradeWasLong = false;
+        
+        // ===== Breakeven State =====
+        private bool beTriggerActive = false;
+        
+        // ===== Session State =====
+        private DateTime lastDate = DateTime.MinValue;
+        private bool maxAccountLimitHit = false;
+        private double startingBalance = 0;
+        
+        // ===== Session P&L Tracking =====
+        private double sessionRealizedPnL = 0;
+        private bool sessionProfitLimitHit = false;
+        private bool sessionLossLimitHit = false;
+        
+        // ===== Time References =====
+        private TimeSpan orStartTime;
+        private TimeSpan orEndTime;
+        private TimeSpan sessionEndTime;
+        private TimeSpan noTradesAfterTime;
+        private TimeSpan skipStartTime;
+        private TimeSpan skipEndTime;
+        
+        // ===== Random for variance =====
+        private Random random = new Random();
+        
+        #endregion
+
+        protected override void OnStateChange()
+        {
+            if (State == State.SetDefaults)
             {
-                heartbeatTimer.Stop();
-                heartbeatTimer.Dispose();
-                heartbeatTimer = null;
+                Description = @"ORBO2 Bot v1.01 - Opening Range Breakout with OR Size Buckets.
+4 Long buckets (L1-L4) and 4 Short buckets (S1-S4), each with independent parameters.
+USE ON 1-MINUTE CHART.";
+                
+                Name = "ORBO2";
+                Calculate = Calculate.OnBarClose;
+                EntriesPerDirection = 1;
+                EntryHandling = EntryHandling.AllEntries;
+                IsExitOnSessionCloseStrategy = true;
+                ExitOnSessionCloseSeconds = 30;
+                IsFillLimitOnTouch = false;
+                MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
+                OrderFillResolution = OrderFillResolution.Standard;
+                Slippage = 0;
+                StartBehavior = StartBehavior.WaitUntilFlat;
+                TimeInForce = TimeInForce.Gtc;
+                TraceOrders = false;
+                RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
+                StopTargetHandling = StopTargetHandling.PerEntryExecution;
+                BarsRequiredToTrade = 20;
+                IsInstantiatedOnEachOptimizationIteration = true;
+                
+                // ===== A. General Settings =====
+                NumberOfContracts = 1;
+                MaxAccountBalance = 0;
+                DebugMode = false;
+
+                // ===== B. Long Bucket 1 =====
+                L1_Enabled = true;
+                L1_ORMinTicks = 155;
+                L1_ORMaxTicks = 300;
+                L1_UseBreakoutRearm = true;
+                L1_RequireReturnToZone = true;
+                L1_ConfirmationBars = 6;
+                L1_EntryOffsetPercent = 15.31;
+                L1_VarianceTicks = 0;
+                L1_TPMode = TargetMode.PercentOfOR;
+                L1_TakeProfitPercent = 49.15;
+                L1_TakeProfitTicks = 331;
+                L1_SLMode = TargetMode.PercentOfOR;
+                L1_StopLossPercent = 110.66;
+                L1_StopLossTicks = 325;
+                L1_MaxStopLossTicks = 255;
+                L1_BreakevenTriggerPercent = 18;
+                L1_BreakevenOffsetTicks = 0;
+                L1_MaxBarsInTrade = 97;
+                L1_MaxTradesPerDay = 4;
+
+                // ===== C. Long Bucket 2 =====
+                L2_Enabled = true;
+                L2_ORMinTicks = 301;
+                L2_ORMaxTicks = 500;
+                L2_UseBreakoutRearm = true;
+                L2_RequireReturnToZone = true;
+                L2_ConfirmationBars = 5;
+                L2_EntryOffsetPercent = 15.18;
+                L2_VarianceTicks = 0;
+                L2_TPMode = TargetMode.PercentOfOR;
+                L2_TakeProfitPercent = 55.22;
+                L2_TakeProfitTicks = 331;
+                L2_SLMode = TargetMode.PercentOfOR;
+                L2_StopLossPercent = 104.01;
+                L2_StopLossTicks = 325;
+                L2_MaxStopLossTicks = 470;
+                L2_BreakevenTriggerPercent = 17;
+                L2_BreakevenOffsetTicks = 2;
+                L2_MaxBarsInTrade = 107;
+                L2_MaxTradesPerDay = 6;
+
+                // ===== D. Long Bucket 3 =====
+                L3_Enabled = true;
+                L3_ORMinTicks = 501;
+                L3_ORMaxTicks = 750;
+                L3_UseBreakoutRearm = true;
+                L3_RequireReturnToZone = true;
+                L3_ConfirmationBars = 6;
+                L3_EntryOffsetPercent = 20.8;
+                L3_VarianceTicks = 0;
+                L3_TPMode = TargetMode.PercentOfOR;
+                L3_TakeProfitPercent = 69.96;
+                L3_TakeProfitTicks = 331;
+                L3_SLMode = TargetMode.PercentOfOR;
+                L3_StopLossPercent = 44.24;
+                L3_StopLossTicks = 325;
+                L3_MaxStopLossTicks = 240;
+                L3_BreakevenTriggerPercent = 27;
+                L3_BreakevenOffsetTicks = 8;
+                L3_MaxBarsInTrade = 173;
+                L3_MaxTradesPerDay = 4;
+
+                // ===== E. Long Bucket 4 =====
+                L4_Enabled = true;
+                L4_ORMinTicks = 751;
+                L4_ORMaxTicks = 1092;
+                L4_UseBreakoutRearm = true;
+                L4_RequireReturnToZone = true;
+                L4_ConfirmationBars = 4;
+                L4_EntryOffsetPercent = 15.27;
+                L4_VarianceTicks = 0;
+                L4_TPMode = TargetMode.PercentOfOR;
+                L4_TakeProfitPercent = 122.98;
+                L4_TakeProfitTicks = 331;
+                L4_SLMode = TargetMode.PercentOfOR;
+                L4_StopLossPercent = 51.38;
+                L4_StopLossTicks = 325;
+                L4_MaxStopLossTicks = 455;
+                L4_BreakevenTriggerPercent = 39;
+                L4_BreakevenOffsetTicks = 40;
+                L4_MaxBarsInTrade = 188;
+                L4_MaxTradesPerDay = 3;
+
+                // ===== F. Short Bucket 1 =====
+                S1_Enabled = true;
+                S1_ORMinTicks = 120;
+                S1_ORMaxTicks = 300;
+                S1_UseBreakoutRearm = true;
+                S1_RequireReturnToZone = true;
+                S1_ConfirmationBars = 5;
+                S1_EntryOffsetPercent = 12.06;
+                S1_VarianceTicks = 0;
+                S1_TPMode = TargetMode.FixedTicks;
+                S1_TakeProfitPercent = 75.0;
+                S1_TakeProfitTicks = 268;
+                S1_SLMode = TargetMode.PercentOfOR;
+                S1_StopLossPercent = 103.67;
+                S1_StopLossTicks = 145;
+                S1_MaxStopLossTicks = 277;
+                S1_BreakevenTriggerPercent = 28;
+                S1_BreakevenOffsetTicks = 1;
+                S1_MaxBarsInTrade = 60;
+                S1_MaxTradesPerDay = 5;
+
+                // ===== G. Short Bucket 2 =====
+                S2_Enabled = true;
+                S2_ORMinTicks = 301;
+                S2_ORMaxTicks = 500;
+                S2_UseBreakoutRearm = true;
+                S2_RequireReturnToZone = true;
+                S2_ConfirmationBars = 8;
+                S2_EntryOffsetPercent = 28.04;
+                S2_VarianceTicks = 0;
+                S2_TPMode = TargetMode.PercentOfOR;
+                S2_TakeProfitPercent = 186.01;
+                S2_TakeProfitTicks = 268;
+                S2_SLMode = TargetMode.PercentOfOR;
+                S2_StopLossPercent = 107.15;
+                S2_StopLossTicks = 145;
+                S2_MaxStopLossTicks = 405;
+                S2_BreakevenTriggerPercent = 24;
+                S2_BreakevenOffsetTicks = 0;
+                S2_MaxBarsInTrade = 116;
+                S2_MaxTradesPerDay = 3;
+
+                // ===== H. Short Bucket 3 =====
+                S3_Enabled = true;
+                S3_ORMinTicks = 501;
+                S3_ORMaxTicks = 750;
+                S3_UseBreakoutRearm = true;
+                S3_RequireReturnToZone = true;
+                S3_ConfirmationBars = 8;
+                S3_EntryOffsetPercent = 13.14;
+                S3_VarianceTicks = 0;
+                S3_TPMode = TargetMode.PercentOfOR;
+                S3_TakeProfitPercent = 56.12;
+                S3_TakeProfitTicks = 268;
+                S3_SLMode = TargetMode.PercentOfOR;
+                S3_StopLossPercent = 108.34;
+                S3_StopLossTicks = 145;
+                S3_MaxStopLossTicks = 756;
+                S3_BreakevenTriggerPercent = 28;
+                S3_BreakevenOffsetTicks = 2;
+                S3_MaxBarsInTrade = 0;
+                S3_MaxTradesPerDay = 3;
+
+                // ===== I. Short Bucket 4 =====
+                S4_Enabled = true;
+                S4_ORMinTicks = 751;
+                S4_ORMaxTicks = 1025;
+                S4_UseBreakoutRearm = true;
+                S4_RequireReturnToZone = true;
+                S4_ConfirmationBars = 3;
+                S4_EntryOffsetPercent = 14.55;
+                S4_VarianceTicks = 0;
+                S4_TPMode = TargetMode.PercentOfOR;
+                S4_TakeProfitPercent = 72.11;
+                S4_TakeProfitTicks = 268;
+                S4_SLMode = TargetMode.PercentOfOR;
+                S4_StopLossPercent = 62.91;
+                S4_StopLossTicks = 145;
+                S4_MaxStopLossTicks = 312;
+                S4_BreakevenTriggerPercent = 29;
+                S4_BreakevenOffsetTicks = 10;
+                S4_MaxBarsInTrade = 0;
+                S4_MaxTradesPerDay = 1;
+
+                // ===== J. Order Management =====
+                CancelOrderPercent = 0;
+                CancelOrderBars = 0;
+                
+                // ===== K. Session Risk Management =====
+                MaxSessionProfitTicks = 1020;
+                MaxSessionLossTicks = 600;
+                MaxTradesPerDay = 7;
+                
+                // ===== L. Session Time =====
+                ORStartTime = DateTime.Parse("09:30").TimeOfDay;
+                OREndTime = DateTime.Parse("09:45").TimeOfDay;
+                SessionEnd = DateTime.Parse("16:05").TimeOfDay;
+                NoTradesAfter = DateTime.Parse("14:55").TimeOfDay;
+                
+                // ===== M. Skip Times =====
+                SkipStart = DateTime.Parse("00:00").TimeOfDay;
+                SkipEnd = DateTime.Parse("00:00").TimeOfDay;
+                
+                // ===== N. Visual =====
+                RangeBoxBrush = Brushes.DodgerBlue;
+                ShowEntryLines = true;
+                ShowTargetLines = true;
+                ShowStopLines = true;
+            }
+            else if (State == State.Configure)
+            {
+                orStartTime = ORStartTime;
+                orEndTime = OREndTime;
+                sessionEndTime = SessionEnd;
+                noTradesAfterTime = NoTradesAfter;
+                skipStartTime = SkipStart;
+                skipEndTime = SkipEnd;
+            }
+            else if (State == State.DataLoaded)
+            {
+                startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
             }
         }
-    }
 
-    private void SetDefaults()
-    {
-        Name = "ORBO";
-        Calculate = Calculate.OnEachTick;
-        IsOverlay = true;
-        IsInstantiatedOnEachOptimizationIteration = false;
-        IsUnmanaged = false;
-
-        // 🟢 Default preset:
-        //PresetSetting = StrategyPreset.NQ_MNQ_1;
-
-        NumberOfContracts = 1;
-        RequireEntryConfirmation = false;
-        BiasDuration = 15;
-        MaxRangePoints = 200;
-        EntryPercent = 13.5;
-        TakeProfitPercent = 40;
-        VixThreshold = 20;
-        HardStopLossPercent = 53;
-        CancelOrderBars = 52;
-        VarianceInTicks = 0;
-        MaxAccountBalance = 0;
-        MaxBarsInTrade = 0;
-        CancelOrderPercent = 0;
-        RangeBoxBrush = Brushes.Gold;
-        RequireCloseBelowReturn = false;
-        SLBETrigger = 0;
-        WebhookUrl = "";
-        UseBreakoutRearmDelay = false;
-        MaxTradesPerDay = 0;
-		
-        SkipStart = skipStart;
-        SkipEnd = skipEnd;
-
-        DebugMode = true;
-        AntiHedge = false;
-    }
-#endregion
-
-#region OnBarUpdate
-    protected override void OnBarUpdate()
-    {
-        if (BarsInProgress != 0)
-            return;
-
-        ResetDailyStateIfNeeded();
-        DrawTimeFilterVisuals();
-	
-        // ======================================================
-        // 🔥 TIME-BASED EXIT: Flatten after X bars in trade
-        // ======================================================
-        if (MaxBarsInTrade > 0 &&
-            Position.MarketPosition != MarketPosition.Flat &&
-            entryBar >= 0)
+        protected override void OnBarUpdate()
         {
-            // Safety for tick-based processing
-            if (CurrentBar <= entryBar)
+            if (CurrentBar < BarsRequiredToTrade)
                 return;
-
-            int barsInTrade = CurrentBar - entryBar;
-
-            if (barsInTrade >= MaxBarsInTrade)
-            {
-                DebugPrint($"⏱ ORBO: Time-based exit triggered after {barsInTrade} bars (limit {MaxBarsInTrade}).");
-
-                if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("TimeSL", currentSignalName);
-                else
-                    ExitShort("TimeSL", currentSignalName);
-
-                SendWebhook("exit");
-
-                return; // Prevent double exits
-            }
-        }
-
-        // ======================================================
-        // 🚫 CANCEL PENDING ENTRY IF PRICE RUNS AWAY
-        // ======================================================
-        if (CancelOrderPercent > 0 &&
-            cancelOrderDistanceAbs > 0 &&
-            entryOrder != null &&
-            entryOrder.OrderState == OrderState.Working &&
-            Position.MarketPosition == MarketPosition.Flat)
-        {
-            double bid = GetCurrentBid();
-            double ask = GetCurrentAsk();
-
-            double mid;
-            if (bid > 0 && ask > 0 && Math.Abs(ask - bid) < 50 * TickSize)
-                mid = (bid + ask) / 2.0;
-            else
-                mid = Close[0];  
-
-            double distance = Math.Abs(mid - pendingEntryPrice);
-
-            if (distance >= cancelOrderDistanceAbs)
-            {
-                DebugPrint($"❌ Pending entry canceled — price moved {distance:F2} (limit {cancelOrderDistanceAbs:F2}, {CancelOrderPercent}%)");
-
-                CancelOrder(entryOrder);
-                entryOrder = null;
-                orderPlaced = false;
-                entryOrderBar = -1;
-                pendingEntryPrice = double.NaN;
-
-                tpWasHit = true;
-                hasReturnedOnce = false;
-
-                breakoutActive = false;
-                breakoutRearmPending = UseBreakoutRearmDelay;
-
-                if (breakoutRearmPending)
-                    breakoutRearmTime = Times[0][0].AddMinutes(5);
-
-                SendWebhook("cancel");
-                return;
-            }
-        }
-
-        //-------------------------------------------------------------
-        // 🕒 CANCEL UNFILLED ENTRY IF TOO MANY BARS HAVE PASSED
-        //-------------------------------------------------------------
-        if (CancelOrderBars > 0 &&
-            entryOrder != null &&
-            entryOrder.OrderState == OrderState.Working &&
-            Position.MarketPosition == MarketPosition.Flat &&
-            entryOrderBar >= 0)
-        {
-            int barsWaiting = CurrentBar - entryOrderBar;
-
-            if (barsWaiting >= CancelOrderBars)
-            {
-                DebugPrint($"❌ Pending entry canceled — waited {barsWaiting} bars (limit {CancelOrderBars})");
-
-                CancelOrder(entryOrder);
-                entryOrder = null;
-                orderPlaced = false;
-                entryOrderBar = -1;
-                pendingEntryPrice = double.NaN;
-
-                // Same reset logic as CancelOrderPercent
-                tpWasHit = true;
-                hasReturnedOnce = false;
-                breakoutActive = false;
-
-                breakoutRearmPending = UseBreakoutRearmDelay;
-                if (breakoutRearmPending)
-                    breakoutRearmTime = Times[0][0].AddMinutes(5);
-
-                SendWebhook("cancel");
-                return;
-            }
-        }
-
-		// === Skip window cross detection === 
-		if (CurrentBar < 2) // need at least 2 bars for Time[1], Close[1], etc.
-        	return;
-		
-		if (IsFirstTickOfBar)
-		{
-		    bool crossedSkipWindow =
-		        (!TimeInSkip(Time[1]) && TimeInSkip(Time[0]))   // just entered a skip window
-		        || (TimeInSkip(Time[1]) && !TimeInSkip(Time[0])); // just exited a skip window
-		
-		    if (crossedSkipWindow)
-		    {
-		        if (TimeInSkip(Time[0]))
-		        {
-		            if (DebugMode)
-		               DebugPrint($"{Time[0]} - ⛔ Entered skip window");
-		
-		            if (Position.MarketPosition != MarketPosition.Flat) {
-						 if (Position.MarketPosition == MarketPosition.Long)
-			                ExitLong("SkipWindow", currentSignalName);
-			            else
-			                ExitShort("SkipWindow", currentSignalName);
-		                //TryExitAll(Close[0], "SkipWindow");
-		            } else
-		            {
-		                CancelAllOrders();
-		                SendWebhook("cancel");
-		            }
-		        }
-		        else
-		        {
-		            if (DebugMode)
-		                DebugPrint($"{Time[0]} - ✅ Exited skip window");
-		        }
-		    }
-		}
-
-		// 🔒 HARD GUARD: absolutely no logic while inside the skip window
-		if (TimeInSkip(Time[0]))
-		    return;
-		
-        // Main series (BarsInProgress == 0)
-        if (ShouldSkipBarUpdate())
-            return;
-
-        if (DebugMode)
-            UpdateInfoText();
-
-        if (ShouldAccountBalanceExit())
-            return;
-
-        TimeSpan now = Times[0][0].TimeOfDay;
-        TimeSpan biasStart = new TimeSpan(SessionStart.Hours, SessionStart.Minutes + 1, 0);
-        TimeSpan biasEnd = biasStart.Add(TimeSpan.FromMinutes(BiasDuration));
-
-        if (now >= biasStart && now < biasStart.Add(TimeSpan.FromMinutes(1)))
-        {
-            // Reset range tracking at 9:31
-            sessionHigh = High[0];
-            sessionLow = Low[0];
-            isInBiasWindow = true;
-            hasCapturedRange = false;
-        }
-        else if (now >= biasStart && now < biasEnd && !hasCapturedRange)
-        {
-            // Keep tracking session high/low during bias
-            sessionHigh = Math.Max(sessionHigh, High[0]);
-            sessionLow = Math.Min(sessionLow, Low[0]);
-        }
-        else if (now >= biasEnd && isInBiasWindow && !hasCapturedRange)
-        {
-            // At 9:46 (bias window just finished), draw the persistent lines
-            DrawSessionWickRangePersistent(biasStart, biasEnd, "WickRange", Brushes.DodgerBlue, DashStyleHelper.Solid,
-                                           2);
-
-            hasCapturedRange = true;
-            isInBiasWindow = false;
-        }
-
-        ExitIfSessionEnded();
-        CancelEntryIfAfterNoTrades();
-        CancelOrphanOrdersIfSessionOver();
-
-        // 🔁 Breakout reset should always be checked per tick or every 5m based on setting
-        bool noOpenOrders = !HasOpenOrders();
-        bool isFlat = Position.MarketPosition == MarketPosition.Flat;
-
-        // Block trading on oversized ranges (resets each day)
-        if (rangeTooWide && isFlat)
-            return;
-
-        // 🚫 Daily VIX filter via HTTP fetch at/after session start
-        if (VixThreshold > 0 && isFlat)
-        {
-            if (!EnsureVixFetched())
-                return;
-
-            if (vixBlockedToday)
-            {
-                if (!vixBlockLoggedToday)
-                {
-                    LogToOutput2($"⛔ VIX filter active. VIX={vixValue:F2} >= threshold {VixThreshold:F2}. No trades today.");
-                    vixBlockLoggedToday = true;
-                }
-                return;
-            }
-        }
-
-		if (SLBETrigger > 0 && Position.MarketPosition != MarketPosition.Flat)
-        {
-            // Choose a stable intrabar price for comparison
-            double bid = GetCurrentBid();
-            double ask = GetCurrentAsk();
-            double mid = (bid > 0 && ask > 0) ? (bid + ask) / 2.0 : Close[0];
-
-            // --- Arm the BE logic once price crosses the BE trigger line ---
-            if (!beTriggerActive)
-            {
-                if (Position.MarketPosition == MarketPosition.Long && !double.IsNaN(beTriggerLongPrice) && mid >= beTriggerLongPrice)
-                {
-                    beTriggerActive = true;
-                    DebugPrint($"🟢 BE trigger ARMED at {beTriggerLongPrice:F2} ({SLBETrigger:0.#}% of range)");
-                }
-                else if (Position.MarketPosition == MarketPosition.Short && !double.IsNaN(beTriggerShortPrice) && mid <= beTriggerShortPrice)
-                {
-                    beTriggerActive = true;
-                    DebugPrint($"🟢 BE trigger ARMED at {beTriggerShortPrice:F2} ({SLBETrigger:0.#}% of range)");
-                }
-            }
-
-            // --- Once armed: flatten if we retrace to BE or worse ---
-            if (beTriggerActive && !beFlattenTriggered)
-            {
-                // Use entry price for pure BE, or keep your PnL<=0 guard — both are fine.
-                double entry = lastFilledEntryPrice > 0 ? lastFilledEntryPrice : entryPrice; // fallback
-                bool retracedToBE =
-                    (Position.MarketPosition == MarketPosition.Long  && mid <= entry) ||
-                    (Position.MarketPosition == MarketPosition.Short && mid >= entry);
-
-                if (retracedToBE)
-                {
-                    beFlattenTriggered = true;
-                    DebugPrint("🔻 Retraced to BE or worse — flattening position.");
-                    TryExitAll(mid, "BEFlatten");
-                }
-            }
-        }
-
-        if (breakoutActive && isFlat && noOpenOrders)
-        {
-            if (HasReturnedToBreakoutResetZone())
-            {
-                DebugPrint("🔁 Price returned to breakout reset zone. Resetting breakout state.");
-                breakoutActive = false;
-
-                if (UseBreakoutRearmDelay)
-                {
-                    breakoutRearmPending = true;
-                    breakoutRearmTime = Times[0][0].AddMinutes(5);
-                    DebugPrint($"🕒 Rearm delay active — new entries paused until {breakoutRearmTime:HH:mm}.");
-                }
-            }
-        }
-
-        // --- Detect the first return after a TP hit ---
-        if (tpWasHit && !hasReturnedOnce)
-        {
-            if (HasReturnedToBreakoutResetZone())
-            {
-                hasReturnedOnce = true;
-                DebugPrint("↩️ Price has returned inside breakout zone — rearm ready after close outside.");
-            }
-        }
-
-        if (IsFirstTickOfBar && Times[0][0] >= nextEvaluationTime)
-        {
-            TryEntrySignal();
-            nextEvaluationTime = nextEvaluationTime.AddMinutes(5);
-        }
-    }
-
-		
-    private bool TimeInSkip(DateTime time)
-    {
-        TimeSpan now = time.TimeOfDay;
-
-        bool inSkip1 = false;
-
-        // ✅ Skip1 only active if both are not 00:00:00
-        if (SkipStart != TimeSpan.Zero && SkipEnd != TimeSpan.Zero)
-        {
-            inSkip1 = (SkipStart < SkipEnd)
-                ? (now >= SkipStart && now <= SkipEnd)
-                : (now >= SkipStart || now <= SkipEnd); // overnight handling
-        }
-		
-        return inSkip1;
-    }
-
-    private bool ShouldSkipBarUpdate()
-    {
-        if (BarsInProgress != 0)
-            return true;
-        if (CurrentBars[0] < 24)
-            return true;
-        if (maxAccountLimitHit)
-            return true;
-        return false;
-    }
-
-    private bool ShouldAccountBalanceExit()
-    {
-        if (MaxAccountBalance <= 0 || maxAccountLimitHit)
-            return false;
-
-        double netEquity;
-
-        if (!isStrategyAnalyzer && Account != null)
-        {
-            // Use live or playback account value (NetLiq includes realized + unrealized)
-            netEquity = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
-        }
-        else
-        {
-            // Backtest fallback
-            double realizedPnL = SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
-            double unrealizedPnL = Position.MarketPosition != MarketPosition.Flat
-                                       ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
-                                       : 0;
-            netEquity = startingBalance + realizedPnL + unrealizedPnL;
-        }
-
-        if (netEquity >= MaxAccountBalance)
-        {
-            maxAccountLimitHit = true;
-            DebugPrint($"🚨 Account limit hit! NetEquity: {netEquity:F2} >= MaxAccountBalance: {MaxAccountBalance:F2}");
-            ExitLivePositionIfNeeded();
-            CancelAllOrders();
-            CleanupPosition();
-            return true;
-        }
-
-        return false;
-    }
-
-    private void ExitLivePositionIfNeeded()
-    {
-        if (Position.MarketPosition != MarketPosition.Flat)
-        {
-            double exitPrice = Position.MarketPosition == MarketPosition.Long ? GetCurrentBid() : GetCurrentAsk();
-
-            TryExitAll(exitPrice, "MaxProfitExit");
-            CleanupPosition();
-        }
-    }
-
-    private void ExitIfSessionEnded()
-    {
-        if ((!IsInSession()) && (Position.MarketPosition != MarketPosition.Flat))
-            ExitAtSessionEnd();
-    }
-
-    private void CancelEntryIfAfterNoTrades()
-    {
-        if (Times[0][0].TimeOfDay >= NoTradesAfter && Times[0][0].TimeOfDay < SessionEnd &&
-            Position.MarketPosition == MarketPosition.Flat)
-        {
-            if (entryOrder != null &&
-                entryOrder.OrderState == OrderState.Working &&
-                (entryOrder.Name == "Long" || entryOrder.Name == "Short"))
-            {
-                DebugPrint($"⏰ Canceling managed entry order: {entryOrder.Name} (Strategy Analyzer compatible)");
-                CancelOrder(entryOrder);
-                entryOrder = null;
-
-                SendWebhook("cancel"); // 🔔 notify cancel of entry
-            }
-        }
-    }
-
-    private void CancelOrphanOrdersIfSessionOver()
-    {
-        if (!IsInSession() && HasOpenOrders())
-            CancelAllOrders();
-    }
-
-    private void TryEntrySignal()
-    {
-        // 💡 Reset breakout state if price is back inside range
-        bool noOpenOrders = !HasOpenOrders();
-        bool isFlat = Position.MarketPosition == MarketPosition.Flat;
-
-        // 🔄 Expire rearm delay first
-        if (UseBreakoutRearmDelay && breakoutRearmPending && Times[0][0] >= breakoutRearmTime)
-        {
-            breakoutRearmPending = false;
-            DebugPrint("✅ Breakout rearm delay expired — new entries allowed.");
-        }
-
-        // 💡 Then handle breakout reset
-        if (breakoutActive && HasReturnedToBreakoutResetZone() && isFlat && noOpenOrders)
-        {
-            DebugPrint("🔁 Price returned to breakout reset zone. Resetting breakout state.");
-            breakoutActive = false;
-
-            if (UseBreakoutRearmDelay)
-            {
-                breakoutRearmPending = true;
-                breakoutRearmTime = Times[0][0].AddMinutes(5);
-                DebugPrint($"🕒 Rearm delay active — new entries paused until {breakoutRearmTime:HH:mm}.");
-            }
-        }
-
-        if (IsFirstTickOfBar && wickLinesDrawn && !orderPlaced && IsInSession() &&
-            Times[0][0].TimeOfDay < NoTradesAfter)
-        {
-            double entryCheckClose = Close[1]; // Use previous bar close for entry logic
-            double minTickDistance = TickSize; // Or make it a setting
-
-            bool isLong = entryCheckClose >= todayLongLimit + minTickDistance;
-            bool isShort = entryCheckClose <= todayShortLimit - minTickDistance;
-
-            // Only try if break out happened last candle
-            // Potential fix for order being placed directly when price returns to return line
-            if (UseBreakoutRearmDelay && breakoutRearmPending && Times[0][0] < breakoutRearmTime)
-            {
-                DebugPrint($"⏸ Waiting for next 5m close before new entry (until {breakoutRearmTime:HH:mm}).");
-                return;
-            }
-
-            if (tpWasHit && !hasReturnedOnce)
-            {
-                DebugPrint("⏸️ TP was hit and price hasn't returned — no new entry allowed yet.");
-                return; // skip any new entries
-            }
-
-            if (isLong || isShort)
-            {
-                if (!breakoutActive) {
-                    PlaceEntryIfTriggered();
-                    breakoutRearmPending = false;
-                }
-            }
-        }
-    }
-
-    private void TryExitAll(double exitPrice, string reason)
-    {
-        if (Position.MarketPosition == MarketPosition.Flat)
-            return;
-
-        double marketPrice = Position.MarketPosition == MarketPosition.Long ? GetCurrentBid() : GetCurrentAsk();
-        bool exitCondition = (Position.MarketPosition == MarketPosition.Long && marketPrice <= exitPrice) ||
-                             (Position.MarketPosition == MarketPosition.Short && marketPrice >= exitPrice);
-
-        if (!exitCondition)
-            return;
-
-        DebugPrint(
-            $"Exit triggered ({reason})! Side={(Position.MarketPosition == MarketPosition.Long ? "Sell" : "BuyToCover")}, " +
-            $"Qty={NumberOfContracts}, MarketPrice={marketPrice}, ExitPrice={exitPrice}, Position={Position.MarketPosition}");
-
-        string name = "";
-
-        if (reason.Equals("LookForClose"))
-            name = "SL Body";
-        else if (reason.Equals("SessionEnd"))
-            name = "SessionExit";
-        else if (reason.Equals("MaxProfitExit"))
-            name = "MaxProfitExit";
-
-        int qtyToExit = NumberOfContracts;
-        if (qtyToExit > 0)
-        {
-            if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong(name, currentSignalName);
-            else
-                ExitShort(name, currentSignalName);
-        }
-
-        // 🔔 Tell TradersPost we’re out
-        SendWebhook("exit");
-    }
-#endregion
-
-#region NinjaTrader Event Routing
-    protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
-                                          double averageFillPrice, OrderState orderState, DateTime time,
-                                          ErrorCode error, string comment)
-    {
-        if (BarsInProgress == 1 && CurrentBars[1] < 1)
-            return;
-        if (BarsInProgress == 0 && CurrentBar < 20)
-            return;
-        if (IsInSession() && !isRealTime && !isStrategyAnalyzer)
-            return;
-
-        DebugPrint(
-            $"OnOrderUpdate: Order={order?.Name}, State={orderState}, AvgFill={averageFillPrice}, Limit={limitPrice}, Stop={stopPrice}, Qty={quantity}, Filled={filled}, Comment={comment}");
-
-        if (order != null && (order.Name == "Long" || order.Name == "Short"))
-        {
-            entryOrder = order;
-
-            // Remove the orange line when order is filled
-            if (orderState == OrderState.Filled)
-            {
-                if (MaxTradesPerDay > 0)
-                {
-                    tradesToday++;
-                    DebugPrint($"📌 Trade count: {tradesToday}/{MaxTradesPerDay} for {Time[0]:yyyy-MM-dd}");
-                }
-                RemoveOrderPlacementLine();
-                DebugPrint("🟢 Order filled - removing orange line");
-            }
-            // Remove the orange line when order is canceled
-            else if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
-            {
-                RemoveOrderPlacementLine();
-                DebugPrint("🔴 Order canceled/rejected - removing orange line");
-            }
-        }
-
-        if (order != null && orderState == OrderState.Filled && order.Name.Contains("Profit target"))
-        {
-            tpWasHit = true;
-            hasReturnedOnce = false;  // must return before new entry allowed
-            DebugPrint("💰 TP hit — waiting for price to return to breakout zone before new entry.");
-
-            if (isStrategyAnalyzer)
-                lastExitBarAnalyzer = CurrentBar;
-        }
-    }
-
-    protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
-                                              MarketPosition marketPosition, string orderId, DateTime time)
-    {
-        if (execution.Quantity <= 0 || execution.Order == null)
-            return;
-
-        // Entry
-        if (execution.Order.Name.Contains("Long") || execution.Order.Name.Contains("Short"))
-        {
-            entryPrice = execution.Price;
-            lastFilledEntryPrice = execution.Price;
-            lastEntryTime = Times[0][0];
-            lastProtectionTime = DateTime.Now;
-            entryBar = CurrentBar;
-			
-			// reset BE state
-    		beTriggerActive = false;
-   			beFlattenTriggered = false;
-        }
-
-        // Reset state
-        if (Position.MarketPosition == MarketPosition.Flat)
-        {
-            if (isStrategyAnalyzer)
-                lastExitBarAnalyzer = CurrentBar;
-
-            DebugPrint(
-                $"Execution update: flat after exit. Qty={execution.Quantity}, Price={price}, OrderId={orderId}");
-            CleanupPosition();
-            ClearHedgeLock(Instrument.MasterInstrument.Name);
-			
-            // 🟢 Safety: clear TP restriction if exit was not caused by a TP
-            if (!tpWasHit)
-            {
-                hasReturnedOnce = true;  // treat as returned (no restriction)
-            }
-
-			beTriggerActive = false;
-    		beFlattenTriggered = false;
-        }
-    }
-#endregion
-
-#region Core Helpers &Drawing
-    private double GetRandomizedPrice(double basePrice, double varianceInTicks)
-    {
-        if (VarianceInTicks <= 0)
-            return basePrice;
-
-        int steps = (int)(varianceInTicks / TickSize);
-        int offsetSteps = Random.Next(-steps, steps + 1);
-        double offset = offsetSteps * TickSize;
-        return basePrice + offset;
-    }
-
-    private bool HasOpenOrders()
-    {
-        return (entryOrder != null && entryOrder.OrderState == OrderState.Working) ||
-               (hardStopOrder != null && hardStopOrder.OrderState == OrderState.Working) ||
-               profitOrders.Exists(o => o != null && o.OrderState == OrderState.Working);
-    }
-
-    private bool ShowEntryConfirmation(string orderType, double price, int quantity)
-    {
-        bool result = false;
-        if (System.Windows.Application.Current == null) // Defensive: avoid crash in some headless NT environments
-            return false;
-
-        System.Windows.Application.Current.Dispatcher.Invoke(
-            () =>
-            {
-                var message = $"Confirm {orderType} entry\nPrice: {price}\nQty: {quantity}";
-                var res =
-                    System.Windows.MessageBox.Show(message, "Entry Confirmation", System.Windows.MessageBoxButton.YesNo,
-                                                   System.Windows.MessageBoxImage.Question);
-
-                result = (res == System.Windows.MessageBoxResult.Yes);
-            });
-
-        return result;
-    }
-
-    private void printTradeDevider()
-    {
-        DebugPrint("");
-        DebugPrint("---- NEW ENTRY ORDER PLACEMENT ----");
-    }
-
-    private void DebugPrint(string message)
-    {
-        if (DebugMode)
-            LogToOutput2(Time[0] + " DEBUG: " + message);
-    }
-
-    private void LogToOutput2(string message)
-    {
-        // Real-time clock
-        string now = DateTime.Now.ToString("HH:mm:ss.fff");
-
-        NinjaTrader.Code.Output.Process($"{now}  {message}", PrintTo.OutputTab2);
-    }
-
-    private void ResetDailyStateIfNeeded()
-    {
-        if (CurrentBars[0] < 1)
-            return; // Prevent out-of-range access to Times[0][0]
-
-        string today = Times[0][0].ToString("yyyyMMdd");
-        if (today == lastDate)
-            return;
-
-        lastDate = today;
-        orderPlaced = false;
-        wickLinesDrawn = false;
-        sessionHigh = sessionLow = 0;
-        positionEntryTime = DateTime.MinValue;
-        lastTradeWasLong = false;
-        todayLongLimit = Double.NaN;
-        todayShortLimit = Double.NaN;
-        //todayLongReturnLimit = Double.NaN;
-        //todayShortReturnLimit = Double.NaN;
-        todayLongProfit = Double.NaN;
-        todayLongStoploss = Double.NaN;
-        todayShortProfit = Double.NaN;
-        todayShortStoploss = Double.NaN;
-        lastProtectionTime = DateTime.MinValue;
-        nextEvaluationTime = DateTime.MinValue;
-        breakoutActive = false;
-        beTriggerLongPrice  = double.NaN;
-        beTriggerShortPrice = double.NaN;
-        beTriggerActive = false;
-        beFlattenTriggered = false;
-        tpWasHit = false;
-        hasReturnedOnce = false;
-        rangeTooWide = false;
-        rangeTooWideLogged = false;
-        vixFetchedToday = false;
-        vixBlockedToday = false;
-        vixFetchFailedToday = false;
-        vixValue = double.NaN;
-        vixPendingLoggedToday = false;
-        vixBlockLoggedToday = false;
-        vixFetchDate = CurrentBars[0] >= 0 ? Times[0][0].Date : DateTime.MinValue;
-        tradesToday = 0;
-        tradeLimitLoggedToday = false;
-
-
-        if (isStrategyAnalyzer)
-            lastExitBarAnalyzer = -1;
-    }
-
-    private void PlaceEntryIfTriggered()
-    {
-        if (MaxTradesPerDay > 0 && tradesToday >= MaxTradesPerDay)
-        {
-            if (!tradeLimitLoggedToday)
-            {
-                DebugPrint($"🧮 Daily trade limit reached ({tradesToday}/{MaxTradesPerDay}). No more entries today.");
-                tradeLimitLoggedToday = true;
-            }
-            return;
-        }
-
-        if (rangeTooWide)
-            return;
-
-        SetProfitTarget(CalculationMode.Ticks, 0);
-        SetStopLoss(CalculationMode.Ticks, 0);
-
-        bool isLong = Close[1] > todayLongLimit;
-        double rawLimitPrice = isLong ? todayLongLimit : todayShortLimit;
-        double limitPrice = rawLimitPrice; // Start with default
-
-        double takeProfit = isLong ? todayLongProfit : todayShortProfit;
-        double stopLoss   = isLong ? todayLongStoploss : todayShortStoploss;
             
-        string signalName = isLong ? "Long" : "Short";
-        currentSignalName = signalName;
-
-        // ⛔️ Skip if price has re-entered the range — unless we're forcing it
-        if (!isStrategyAnalyzer && ((!isLong && Close[0] > todayShortLimit) || (isLong && Close[0] < todayLongLimit)))
-        {
-            return;
-        }
-
-        printTradeDevider();
-
-        if (RequireEntryConfirmation)
-        {
-            string directionText = isLong ? "Long" : "Short";
-            if (!ShowEntryConfirmation(directionText, limitPrice, NumberOfContracts))
+            ResetDailyStateIfNeeded();
+            CheckSessionPnLLimits();
+            
+            if (sessionProfitLimitHit || sessionLossLimitHit)
+                return;
+            
+            if (ShouldAccountBalanceExit())
             {
-                DebugPrint($"User declined {directionText} entry via confirmation dialog.");
+                ExitAllPositions("MaxBalance");
                 return;
             }
-        }
-
-        if (!breakoutActive)
-        {
-            breakoutActive = true;
-            DebugPrint("📣 New breakout phase started.");
-        }
-
-        SetProfitTarget(signalName, CalculationMode.Price, takeProfit);
-        SetStopLoss(signalName, CalculationMode.Price, stopLoss, false);
-        string otherSymbol = GetOtherInstrument();
-
-        if (isLong) {
-            if (AntiHedge && (HasOppositePosition(otherSymbol, MarketPosition.Long) || HasOppositeOrder(otherSymbol, MarketPosition.Long)))
-            {
-                DebugPrint($"SKIP {Instrument.MasterInstrument.Name} LONG, {otherSymbol} is SHORT.");
+            
+            ExitIfSessionEnded();
+            CancelEntryIfAfterNoTrades();
+            
+            if (IsInSkipWindow())
                 return;
-            }
-
-            MarketPosition desiredDirection = MarketPosition.Long;
-            string instrument = Instrument.MasterInstrument.Name;
-            MarketPosition existing = GetHedgeLock(instrument);
-
-            if (AntiHedge)
+            
+            CaptureOpeningRange();
+            
+            if (orCaptured && (longBucketFound || shortBucketFound))
             {
-                bool conflict =
-                    (desiredDirection == MarketPosition.Long && existing == MarketPosition.Short) ||
-                    (desiredDirection == MarketPosition.Short && existing == MarketPosition.Long);
-
-                if (conflict)
-                {
-                    Print($"🛑 AntiHedge active: {instrument} is already {existing}. Skipping {desiredDirection} entry.");
-                    return;
-                }
+                MonitorBreakoutAndConfirmation();
+                TryEntryWithConfirmation();
             }
-
-            EnterLongLimit(0, true, NumberOfContracts, limitPrice, signalName);
-            pendingEntryPrice = limitPrice;
-            entryOrderBar = CurrentBar;
-
-            // Draw orange vertical line at order placement bar
-            DrawOrderPlacementLine();
-
-            SendWebhook("buy", limitPrice, takeProfit, stopLoss);
-            SetHedgeLock(instrument, desiredDirection);
-        } else {
-            if (AntiHedge && (HasOppositePosition(otherSymbol, MarketPosition.Short) || HasOppositeOrder(otherSymbol, MarketPosition.Short)))
-            {
-                DebugPrint($"SKIP {Instrument.MasterInstrument.Name} SHORT, {otherSymbol} is LONG.");
-                return;
-            }
-
-            MarketPosition desiredDirection = MarketPosition.Short;
-            string instrument = Instrument.MasterInstrument.Name;
-            MarketPosition existing = GetHedgeLock(instrument);
-
-            if (AntiHedge)
-            {
-                bool conflict =
-                    (desiredDirection == MarketPosition.Long && existing == MarketPosition.Short) ||
-                    (desiredDirection == MarketPosition.Short && existing == MarketPosition.Long);
-
-                if (conflict)
-                {
-                    Print($"🛑 AntiHedge active: {instrument} is already {existing}. Skipping {desiredDirection} entry.");
-                    return;
-                }
-            }
-
-            EnterShortLimit(0, true, NumberOfContracts, limitPrice, signalName);
-            pendingEntryPrice = limitPrice;
-            entryOrderBar = CurrentBar;
-
-            // Draw orange vertical line at order placement bar
-            DrawOrderPlacementLine();
-
-            SendWebhook("sell", limitPrice, takeProfit, stopLoss);
-            SetHedgeLock(instrument, desiredDirection);
+            
+            ManagePosition();
+            UpdateInfoText();
         }
 
-        tpWasHit = false;
-        hasReturnedOnce = false;
-        breakoutActive = true;
-        orderPlaced = true;
-        lastTradeWasLong = isLong;
-
-        DebugPrint(
-            $"Placed {(isLong ? "LONG" : "SHORT")} order at {limitPrice} with TP={takeProfit} and SL={stopLoss}, Signal={signalName}");
-    }
-
-    private bool IsEntryOrder(Order o) =>
-        o == entryOrder || o.Name == "Long" || o.Name == "Short" || o.Name == "LongMid" || o.Name == "ShortMid";
-    private bool IsProfitOrder(Order o) => o.Name.StartsWith("ProfitLong") || o.Name.StartsWith("ProfitShort");
-
-    private void ExitAtSessionEnd()
-    {
-        DebugPrint(
-            $"Session ended, closing position. MarketPosition={Position.MarketPosition}, Qty={Position.Quantity}");
-        if (isStrategyAnalyzer)
-            lastExitBarAnalyzer = CurrentBar;
-        var act = Position.MarketPosition == MarketPosition.Long ? OrderAction.Sell : OrderAction.BuyToCover;
-        double dummyExitP = Position.MarketPosition == MarketPosition.Long ? GetCurrentBid() : GetCurrentAsk();
-        TryExitAll(dummyExitP, "SessionEnd");
-    }
-
-    private void CancelAllOrders()
-    {
-        DebugPrint("CancelAllOrders called. EntryOrder=" + (entryOrder?.Name ?? "null") +
-                   ", HardStopOrder=" + (hardStopOrder?.Name ?? "null") + ", ProfitOrders=" + profitOrders.Count);
-
-        bool hadAnyWorking = HasOpenOrders();
-
-        if (entryOrder != null)
+        #region Bucket Resolution
+        
+        private BucketParams GetLongBucketParams(int bucketIndex)
         {
-            CancelOrder(entryOrder);
-            entryOrder = null;
-        }
-        if (hardStopOrder != null)
-        {
-            CancelOrder(hardStopOrder);
-            hardStopOrder = null;
-        }
-        foreach (var o in profitOrders)
-            CancelOrder(o);
-        profitOrders.Clear();
-        orderPlaced = false;
-
-        if (hadAnyWorking)
-            SendWebhook("cancel"); // 🔔 one cancel for the batch
-    }
-
-    private void CleanupPosition()
-    {
-        DebugPrint("CleanupPosition called. Resetting all order state and flags.");
-
-        CancelAllOrders();
-        entryOrder = null;
-        hardStopOrder = null;
-        profitOrders.Clear();
-        orderPlaced = false;
-        lastProtectionTime = DateTime.MinValue;
-    }
-
-    private bool IsInSession()
-    {
-        if (CurrentBars[0] < 1)
-            return false;
-
-        TimeSpan now = Times[0][0].TimeOfDay;
-        TimeSpan start = new TimeSpan(SessionStart.Hours, SessionStart.Minutes + 1, 0);
-        TimeSpan end = new TimeSpan(SessionEnd.Hours, SessionEnd.Minutes + 1, 0);
-        return now >= start && now < end;
-    }
-
-    private static readonly Dictionary<string, string> CrossPairs = new Dictionary<string, string> {
-        { "MNQ", "MES" },
-        { "MES", "MNQ" },
-        { "NQ", "ES" },
-        { "ES", "NQ" },
-    };
-
-    private string GetOtherInstrument()
-    {
-        string thisSymbol = Instrument.MasterInstrument.Name.ToUpper();
-
-        if (CrossPairs.ContainsKey(thisSymbol))
-            return CrossPairs[thisSymbol];
-
-        throw new Exception("Strategy not on supported instrument!");
-    }
-
-    private bool HasOppositeOrder(string targetInstrument, MarketPosition desiredDirection)
-    {
-        foreach (var order in Account.Orders)
-        {
-            if (order.Instrument.MasterInstrument.Name.Equals(targetInstrument, StringComparison.OrdinalIgnoreCase) &&
-                (order.OrderState == OrderState.Working || order.OrderState == OrderState.Accepted))
+            BucketParams p = new BucketParams();
+            switch (bucketIndex)
             {
-                if ((desiredDirection == MarketPosition.Long && order.OrderAction == OrderAction.SellShort) ||
-                    (desiredDirection == MarketPosition.Short && order.OrderAction == OrderAction.Buy))
+                case 1:
+                    p.Enabled = L1_Enabled;
+                    p.ORMinTicks = L1_ORMinTicks;
+                    p.ORMaxTicks = L1_ORMaxTicks;
+                    p.UseBreakoutRearm = L1_UseBreakoutRearm;
+                    p.RequireReturnToZone = L1_RequireReturnToZone;
+                    p.ConfirmationBars = L1_ConfirmationBars;
+                    p.EntryOffsetPercent = L1_EntryOffsetPercent;
+                    p.VarianceTicks = L1_VarianceTicks;
+                    p.TPMode = L1_TPMode;
+                    p.TakeProfitPercent = L1_TakeProfitPercent;
+                    p.TakeProfitTicks = L1_TakeProfitTicks;
+                    p.SLMode = L1_SLMode;
+                    p.StopLossPercent = L1_StopLossPercent;
+                    p.StopLossTicks = L1_StopLossTicks;
+                    p.MaxStopLossTicks = L1_MaxStopLossTicks;
+                    p.BreakevenTriggerPercent = L1_BreakevenTriggerPercent;
+                    p.BreakevenOffsetTicks = L1_BreakevenOffsetTicks;
+                    p.MaxBarsInTrade = L1_MaxBarsInTrade;
+                    p.MaxTradesPerDay = L1_MaxTradesPerDay;
+                    break;
+                case 2:
+                    p.Enabled = L2_Enabled;
+                    p.ORMinTicks = L2_ORMinTicks;
+                    p.ORMaxTicks = L2_ORMaxTicks;
+                    p.UseBreakoutRearm = L2_UseBreakoutRearm;
+                    p.RequireReturnToZone = L2_RequireReturnToZone;
+                    p.ConfirmationBars = L2_ConfirmationBars;
+                    p.EntryOffsetPercent = L2_EntryOffsetPercent;
+                    p.VarianceTicks = L2_VarianceTicks;
+                    p.TPMode = L2_TPMode;
+                    p.TakeProfitPercent = L2_TakeProfitPercent;
+                    p.TakeProfitTicks = L2_TakeProfitTicks;
+                    p.SLMode = L2_SLMode;
+                    p.StopLossPercent = L2_StopLossPercent;
+                    p.StopLossTicks = L2_StopLossTicks;
+                    p.MaxStopLossTicks = L2_MaxStopLossTicks;
+                    p.BreakevenTriggerPercent = L2_BreakevenTriggerPercent;
+                    p.BreakevenOffsetTicks = L2_BreakevenOffsetTicks;
+                    p.MaxBarsInTrade = L2_MaxBarsInTrade;
+                    p.MaxTradesPerDay = L2_MaxTradesPerDay;
+                    break;
+                case 3:
+                    p.Enabled = L3_Enabled;
+                    p.ORMinTicks = L3_ORMinTicks;
+                    p.ORMaxTicks = L3_ORMaxTicks;
+                    p.UseBreakoutRearm = L3_UseBreakoutRearm;
+                    p.RequireReturnToZone = L3_RequireReturnToZone;
+                    p.ConfirmationBars = L3_ConfirmationBars;
+                    p.EntryOffsetPercent = L3_EntryOffsetPercent;
+                    p.VarianceTicks = L3_VarianceTicks;
+                    p.TPMode = L3_TPMode;
+                    p.TakeProfitPercent = L3_TakeProfitPercent;
+                    p.TakeProfitTicks = L3_TakeProfitTicks;
+                    p.SLMode = L3_SLMode;
+                    p.StopLossPercent = L3_StopLossPercent;
+                    p.StopLossTicks = L3_StopLossTicks;
+                    p.MaxStopLossTicks = L3_MaxStopLossTicks;
+                    p.BreakevenTriggerPercent = L3_BreakevenTriggerPercent;
+                    p.BreakevenOffsetTicks = L3_BreakevenOffsetTicks;
+                    p.MaxBarsInTrade = L3_MaxBarsInTrade;
+                    p.MaxTradesPerDay = L3_MaxTradesPerDay;
+                    break;
+                case 4:
+                    p.Enabled = L4_Enabled;
+                    p.ORMinTicks = L4_ORMinTicks;
+                    p.ORMaxTicks = L4_ORMaxTicks;
+                    p.UseBreakoutRearm = L4_UseBreakoutRearm;
+                    p.RequireReturnToZone = L4_RequireReturnToZone;
+                    p.ConfirmationBars = L4_ConfirmationBars;
+                    p.EntryOffsetPercent = L4_EntryOffsetPercent;
+                    p.VarianceTicks = L4_VarianceTicks;
+                    p.TPMode = L4_TPMode;
+                    p.TakeProfitPercent = L4_TakeProfitPercent;
+                    p.TakeProfitTicks = L4_TakeProfitTicks;
+                    p.SLMode = L4_SLMode;
+                    p.StopLossPercent = L4_StopLossPercent;
+                    p.StopLossTicks = L4_StopLossTicks;
+                    p.MaxStopLossTicks = L4_MaxStopLossTicks;
+                    p.BreakevenTriggerPercent = L4_BreakevenTriggerPercent;
+                    p.BreakevenOffsetTicks = L4_BreakevenOffsetTicks;
+                    p.MaxBarsInTrade = L4_MaxBarsInTrade;
+                    p.MaxTradesPerDay = L4_MaxTradesPerDay;
+                    break;
+            }
+            return p;
+        }
+        
+        private BucketParams GetShortBucketParams(int bucketIndex)
+        {
+            BucketParams p = new BucketParams();
+            switch (bucketIndex)
+            {
+                case 1:
+                    p.Enabled = S1_Enabled;
+                    p.ORMinTicks = S1_ORMinTicks;
+                    p.ORMaxTicks = S1_ORMaxTicks;
+                    p.UseBreakoutRearm = S1_UseBreakoutRearm;
+                    p.RequireReturnToZone = S1_RequireReturnToZone;
+                    p.ConfirmationBars = S1_ConfirmationBars;
+                    p.EntryOffsetPercent = S1_EntryOffsetPercent;
+                    p.VarianceTicks = S1_VarianceTicks;
+                    p.TPMode = S1_TPMode;
+                    p.TakeProfitPercent = S1_TakeProfitPercent;
+                    p.TakeProfitTicks = S1_TakeProfitTicks;
+                    p.SLMode = S1_SLMode;
+                    p.StopLossPercent = S1_StopLossPercent;
+                    p.StopLossTicks = S1_StopLossTicks;
+                    p.MaxStopLossTicks = S1_MaxStopLossTicks;
+                    p.BreakevenTriggerPercent = S1_BreakevenTriggerPercent;
+                    p.BreakevenOffsetTicks = S1_BreakevenOffsetTicks;
+                    p.MaxBarsInTrade = S1_MaxBarsInTrade;
+                    p.MaxTradesPerDay = S1_MaxTradesPerDay;
+                    break;
+                case 2:
+                    p.Enabled = S2_Enabled;
+                    p.ORMinTicks = S2_ORMinTicks;
+                    p.ORMaxTicks = S2_ORMaxTicks;
+                    p.UseBreakoutRearm = S2_UseBreakoutRearm;
+                    p.RequireReturnToZone = S2_RequireReturnToZone;
+                    p.ConfirmationBars = S2_ConfirmationBars;
+                    p.EntryOffsetPercent = S2_EntryOffsetPercent;
+                    p.VarianceTicks = S2_VarianceTicks;
+                    p.TPMode = S2_TPMode;
+                    p.TakeProfitPercent = S2_TakeProfitPercent;
+                    p.TakeProfitTicks = S2_TakeProfitTicks;
+                    p.SLMode = S2_SLMode;
+                    p.StopLossPercent = S2_StopLossPercent;
+                    p.StopLossTicks = S2_StopLossTicks;
+                    p.MaxStopLossTicks = S2_MaxStopLossTicks;
+                    p.BreakevenTriggerPercent = S2_BreakevenTriggerPercent;
+                    p.BreakevenOffsetTicks = S2_BreakevenOffsetTicks;
+                    p.MaxBarsInTrade = S2_MaxBarsInTrade;
+                    p.MaxTradesPerDay = S2_MaxTradesPerDay;
+                    break;
+                case 3:
+                    p.Enabled = S3_Enabled;
+                    p.ORMinTicks = S3_ORMinTicks;
+                    p.ORMaxTicks = S3_ORMaxTicks;
+                    p.UseBreakoutRearm = S3_UseBreakoutRearm;
+                    p.RequireReturnToZone = S3_RequireReturnToZone;
+                    p.ConfirmationBars = S3_ConfirmationBars;
+                    p.EntryOffsetPercent = S3_EntryOffsetPercent;
+                    p.VarianceTicks = S3_VarianceTicks;
+                    p.TPMode = S3_TPMode;
+                    p.TakeProfitPercent = S3_TakeProfitPercent;
+                    p.TakeProfitTicks = S3_TakeProfitTicks;
+                    p.SLMode = S3_SLMode;
+                    p.StopLossPercent = S3_StopLossPercent;
+                    p.StopLossTicks = S3_StopLossTicks;
+                    p.MaxStopLossTicks = S3_MaxStopLossTicks;
+                    p.BreakevenTriggerPercent = S3_BreakevenTriggerPercent;
+                    p.BreakevenOffsetTicks = S3_BreakevenOffsetTicks;
+                    p.MaxBarsInTrade = S3_MaxBarsInTrade;
+                    p.MaxTradesPerDay = S3_MaxTradesPerDay;
+                    break;
+                case 4:
+                    p.Enabled = S4_Enabled;
+                    p.ORMinTicks = S4_ORMinTicks;
+                    p.ORMaxTicks = S4_ORMaxTicks;
+                    p.UseBreakoutRearm = S4_UseBreakoutRearm;
+                    p.RequireReturnToZone = S4_RequireReturnToZone;
+                    p.ConfirmationBars = S4_ConfirmationBars;
+                    p.EntryOffsetPercent = S4_EntryOffsetPercent;
+                    p.VarianceTicks = S4_VarianceTicks;
+                    p.TPMode = S4_TPMode;
+                    p.TakeProfitPercent = S4_TakeProfitPercent;
+                    p.TakeProfitTicks = S4_TakeProfitTicks;
+                    p.SLMode = S4_SLMode;
+                    p.StopLossPercent = S4_StopLossPercent;
+                    p.StopLossTicks = S4_StopLossTicks;
+                    p.MaxStopLossTicks = S4_MaxStopLossTicks;
+                    p.BreakevenTriggerPercent = S4_BreakevenTriggerPercent;
+                    p.BreakevenOffsetTicks = S4_BreakevenOffsetTicks;
+                    p.MaxBarsInTrade = S4_MaxBarsInTrade;
+                    p.MaxTradesPerDay = S4_MaxTradesPerDay;
+                    break;
+            }
+            return p;
+        }
+        
+        private bool ResolveLongBucket(double orSizeInTicks)
+        {
+            for (int i = 1; i <= 4; i++)
+            {
+                BucketParams bp = GetLongBucketParams(i);
+                if (bp.Enabled && orSizeInTicks >= bp.ORMinTicks && orSizeInTicks <= bp.ORMaxTicks)
                 {
-                    DebugPrint("Has Opposite Order");
+                    activeLongBucket = bp;
+                    activeLongBucketIndex = i;
                     return true;
                 }
             }
+            return false;
         }
-        DebugPrint("Has No Opposite Order");
-        return false;
-    }
-
-    private bool HasOppositePosition(string targetInstrument, MarketPosition desiredDirection)
-    {
-        foreach (var pos in Account.Positions)
+        
+        private bool ResolveShortBucket(double orSizeInTicks)
         {
-            if (pos.Instrument.MasterInstrument.Name.Equals(targetInstrument, StringComparison.OrdinalIgnoreCase))
+            for (int i = 1; i <= 4; i++)
             {
-                if ((desiredDirection == MarketPosition.Long && pos.MarketPosition == MarketPosition.Short &&
-                     pos.Quantity > 0) ||
-                    (desiredDirection == MarketPosition.Short && pos.MarketPosition == MarketPosition.Long &&
-                     pos.Quantity > 0))
+                BucketParams bp = GetShortBucketParams(i);
+                if (bp.Enabled && orSizeInTicks >= bp.ORMinTicks && orSizeInTicks <= bp.ORMaxTicks)
                 {
-                    DebugPrint("Has Opposite Position");
+                    activeShortBucket = bp;
+                    activeShortBucketIndex = i;
                     return true;
                 }
             }
-        }
-        DebugPrint("Has No Opposite Position");
-        return false;
-    }
-
-    private bool HasReturnedToBreakoutResetZone()
-    {
-        bool returned = false;
-
-        // 1️⃣ CLOSE-BASED RETURN
-        if (RequireCloseBelowReturn)
-        {
-            // Using the previous CLOSE only
-            if (lastTradeWasLong)
-                returned = Close[1] <= todayLongLimit;
-            else
-                returned = Close[1] >= todayShortLimit;
-        }
-
-        // 2️⃣ WICK-BASED RETURN — INTRABAR SAFE
-        else
-        {
-            // Intra-bar detection using wick (updates during bar)
-            if (lastTradeWasLong)
-                returned = Low[0] <= todayLongLimit;
-            else
-                returned = High[0] >= todayShortLimit;
-        }
-
-        if (returned)
-        {
-            DebugPrint($"[ReturnCheck] Mode={(RequireCloseBelowReturn ? "CLOSE" : "WICK")}, " +
-                    $"lastTradeWasLong={lastTradeWasLong}, " +
-                    $"PriceChecked={(lastTradeWasLong ? Low[0] : High[0]):F2}, " +
-                    $"ReturnLimit={(lastTradeWasLong ? todayLongLimit : todayShortLimit):F2}, " +
-                    $"Result=TRUE");
-        }
-
-        return returned;
-    }
-
-    // Fetches VIX from Yahoo Finance once per day after session start.
-    private bool EnsureVixFetched()
-    {
-        DateTime tradeDate = Times[0][0].Date;
-
-        if (vixFetchDate != tradeDate)
-        {
-            vixFetchDate = tradeDate;
-            vixFetchedToday = false;
-            vixBlockedToday = false;
-            vixFetchFailedToday = false;
-            vixPendingLoggedToday = false;
-            vixBlockLoggedToday = false;
-            vixValue = double.NaN;
-        }
-
-        if (vixBlockedToday || vixFetchedToday)
-            return true;
-
-        TimeSpan fetchEarliest = SessionStart.Add(TimeSpan.FromMinutes(BiasDuration));
-
-        if (Times[0][0].TimeOfDay < fetchEarliest)
-        {
-            if (!vixPendingLoggedToday)
-            {
-                LogToOutput2($"⏳ VIX waiting for fetch time {fetchEarliest:hh\\:mm}. Trades on hold.");
-                vixPendingLoggedToday = true;
-            }
             return false;
         }
+        
+        #endregion
 
-        // Try once right after session start
-        try
+        #region Opening Range Capture
+        
+        private void CaptureOpeningRange()
         {
-            double fetched = FetchVixFromYahoo();
-            if (!double.IsNaN(fetched) && fetched > 0)
+            TimeSpan currentTime = Time[0].TimeOfDay;
+            
+            if (currentTime >= orStartTime && currentTime < orEndTime)
             {
-                vixValue = fetched;
-                vixFetchedToday = true;
-                vixBlockedToday = fetched >= VixThreshold;
-                vixPendingLoggedToday = false;
-                vixBlockLoggedToday = false;
-
-                if (vixBlockedToday)
-                    LogToOutput2($"⛔ VIX filter active. VIX={vixValue:F2} >= threshold {VixThreshold:F2}. Trades blocked today.");
-                else
-                    LogToOutput2($"✅ VIX filter passed. VIX={vixValue:F2} < threshold {VixThreshold:F2}.");
-                return true;
+                if (orHigh == double.MinValue) orHigh = High[0];
+                if (orLow == double.MaxValue) orLow = Low[0];
+                if (High[0] > orHigh) orHigh = High[0];
+                if (Low[0] < orLow) orLow = Low[0];
+                
+                if (DebugMode)
+                    DebugPrint($"OR Building: High={orHigh:F2}, Low={orLow:F2}");
+            }
+            else if (!orCaptured && currentTime >= orEndTime)
+            {
+                if (orHigh == double.MinValue || orLow == double.MaxValue)
+                    ReconstructORFromHistory();
+                
+                if (orHigh != double.MinValue && orLow != double.MaxValue && orHigh > orLow)
+                {
+                    orCaptured = true;
+                    orRange = orHigh - orLow;
+                    double orSizeInTicks = orRange / TickSize;
+                    
+                    longBucketFound = ResolveLongBucket(orSizeInTicks);
+                    shortBucketFound = ResolveShortBucket(orSizeInTicks);
+                    breakoutActive = longBucketFound || shortBucketFound;
+                    
+                    if (DebugMode)
+                    {
+                        DebugPrint($"=== OR CAPTURED ===");
+                        DebugPrint($"OR: {orHigh:F2} - {orLow:F2} | Range: {orRange:F2} ({orSizeInTicks:F0} ticks)");
+                        if (longBucketFound)
+                        {
+                            double off = orRange * (activeLongBucket.EntryOffsetPercent / 100.0);
+                            DebugPrint($"LONG BUCKET L{activeLongBucketIndex}: {activeLongBucket.ORMinTicks}-{activeLongBucket.ORMaxTicks}t | Entry: {(orHigh + off):F2}");
+                        }
+                        else
+                            DebugPrint($"NO LONG BUCKET matched for {orSizeInTicks:F0} ticks");
+                        if (shortBucketFound)
+                        {
+                            double off = orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
+                            DebugPrint($"SHORT BUCKET S{activeShortBucketIndex}: {activeShortBucket.ORMinTicks}-{activeShortBucket.ORMaxTicks}t | Entry: {(orLow - off):F2}");
+                        }
+                        else
+                            DebugPrint($"NO SHORT BUCKET matched for {orSizeInTicks:F0} ticks");
+                    }
+                    
+                    DrawORRange();
+                }
             }
         }
-        catch (Exception ex)
+        
+        private void ReconstructORFromHistory()
         {
-            LogToOutput2($"⚠️ VIX fetch error: {ex.Message}. Allowing trades today without VIX.");
-            vixFetchFailedToday = true;
-            vixFetchedToday = true;
-            vixBlockedToday = false;
+            if (DebugMode) DebugPrint("Reconstructing OR from history...");
+            for (int i = 0; i < CurrentBar && i < 100; i++)
+            {
+                if (Time[i].Date != Time[0].Date) continue;
+                TimeSpan t = Time[i].TimeOfDay;
+                if (t >= orStartTime && t < orEndTime)
+                {
+                    if (orHigh == double.MinValue) orHigh = High[i];
+                    if (orLow == double.MaxValue) orLow = Low[i];
+                    if (High[i] > orHigh) orHigh = High[i];
+                    if (Low[i] < orLow) orLow = Low[i];
+                }
+            }
+        }
+        
+        private void DrawORRange()
+        {
+            if (!orCaptured || wickLinesDrawn) return;
+            string d = Time[0].Date.ToString("MMdd");
+            DateTime t0 = Time[0];
+            DateTime t1 = Time[0].Date.Add(sessionEndTime);
+            
+            Draw.Line(this, "ORHigh_" + d, false, t0, orHigh, t1, orHigh, Brushes.White, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "ORLow_" + d, false, t0, orLow, t1, orLow, Brushes.White, DashStyleHelper.Solid, 2);
+            
+            if (longBucketFound)
+            {
+                double entryOff = orRange * (activeLongBucket.EntryOffsetPercent / 100.0);
+                double entryLvl = orHigh + entryOff;
+                if (ShowEntryLines)
+                    Draw.Line(this, "LongEntry_" + d, false, t0, entryLvl, t1, entryLvl, Brushes.Orange, DashStyleHelper.Dash, 1);
+                if (ShowTargetLines)
+                {
+                    double tp = activeLongBucket.TPMode == TargetMode.FixedTicks ? activeLongBucket.TakeProfitTicks * TickSize : orRange * (activeLongBucket.TakeProfitPercent / 100.0);
+                    Draw.Line(this, "LongTarget_" + d, false, t0, entryLvl + tp, t1, entryLvl + tp, Brushes.DodgerBlue, DashStyleHelper.Dash, 1);
+                }
+                if (ShowStopLines)
+                {
+                    double sl = activeLongBucket.SLMode == TargetMode.FixedTicks ? activeLongBucket.StopLossTicks * TickSize : orRange * (activeLongBucket.StopLossPercent / 100.0);
+                    Draw.Line(this, "LongStop_" + d, false, t0, entryLvl - sl, t1, entryLvl - sl, Brushes.Red, DashStyleHelper.Dash, 1);
+                }
+            }
+            
+            if (shortBucketFound)
+            {
+                double entryOff = orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
+                double entryLvl = orLow - entryOff;
+                if (ShowEntryLines)
+                    Draw.Line(this, "ShortEntry_" + d, false, t0, entryLvl, t1, entryLvl, Brushes.Orange, DashStyleHelper.Dash, 1);
+                if (ShowTargetLines)
+                {
+                    double tp = activeShortBucket.TPMode == TargetMode.FixedTicks ? activeShortBucket.TakeProfitTicks * TickSize : orRange * (activeShortBucket.TakeProfitPercent / 100.0);
+                    Draw.Line(this, "ShortTarget_" + d, false, t0, entryLvl - tp, t1, entryLvl - tp, Brushes.DodgerBlue, DashStyleHelper.Dash, 1);
+                }
+                if (ShowStopLines)
+                {
+                    double sl = activeShortBucket.SLMode == TargetMode.FixedTicks ? activeShortBucket.StopLossTicks * TickSize : orRange * (activeShortBucket.StopLossPercent / 100.0);
+                    Draw.Line(this, "ShortStop_" + d, false, t0, entryLvl + sl, t1, entryLvl + sl, Brushes.Red, DashStyleHelper.Dash, 1);
+                }
+            }
+            
+            wickLinesDrawn = true;
+        }
+        
+        #endregion
+
+        #region Breakout Detection & Confirmation
+        
+        private void MonitorBreakoutAndConfirmation()
+        {
+            if (!breakoutActive || Position.MarketPosition != MarketPosition.Flat) return;
+            if (entryOrder != null && entryOrder.OrderState == OrderState.Working) return;
+            
+            // === LONG ===
+            if (longBucketFound && (!confirmationComplete || !longBreakoutOccurred))
+            {
+                double longEntryLevel = orHigh + orRange * (activeLongBucket.EntryOffsetPercent / 100.0);
+                if (Close[0] > longEntryLevel)
+                {
+                    if (!longBreakoutOccurred) { longBreakoutOccurred = true; confirmationBarCount = 1; }
+                    else confirmationBarCount++;
+                    
+                    if (confirmationBarCount >= activeLongBucket.ConfirmationBars)
+                        confirmationComplete = true;
+                }
+                else if (longBreakoutOccurred && !confirmationComplete)
+                { confirmationBarCount = 0; longBreakoutOccurred = false; }
+            }
+            
+            // === SHORT ===
+            if (shortBucketFound && (!confirmationComplete || !shortBreakoutOccurred))
+            {
+                double shortEntryLevel = orLow - orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
+                if (Close[0] < shortEntryLevel)
+                {
+                    if (!shortBreakoutOccurred) { shortBreakoutOccurred = true; confirmationBarCount = 1; }
+                    else confirmationBarCount++;
+                    
+                    if (confirmationBarCount >= activeShortBucket.ConfirmationBars)
+                        confirmationComplete = true;
+                }
+                else if (shortBreakoutOccurred && !confirmationComplete)
+                { confirmationBarCount = 0; shortBreakoutOccurred = false; }
+            }
+        }
+        
+        #endregion
+
+        #region Entry Logic
+        
+        private void TryEntryWithConfirmation()
+        {
+            if (!IsReadyForNewOrder()) return;
+            if (Time[0].TimeOfDay >= noTradesAfterTime) return;
+            if (!confirmationComplete) return;
+            
+            // === LONG ENTRY ===
+            if (longBreakoutOccurred && !shortBreakoutOccurred && longBucketFound)
+            {
+                if (activeLongBucket.MaxTradesPerDay > 0 && longTradeCount >= activeLongBucket.MaxTradesPerDay) return;
+                double entryLevel = orHigh + orRange * (activeLongBucket.EntryOffsetPercent / 100.0);
+                { PlaceLongLimitEntry(entryLevel); return; }
+            }
+            
+            // === SHORT ENTRY ===
+            if (shortBreakoutOccurred && !longBreakoutOccurred && shortBucketFound)
+            {
+                if (activeShortBucket.MaxTradesPerDay > 0 && shortTradeCount >= activeShortBucket.MaxTradesPerDay) return;
+                double entryLevel = orLow - orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
+                { PlaceShortLimitEntry(entryLevel); return; }
+            }
+        }
+        
+        private bool IsReadyForNewOrder()
+        {
+            if (Position.MarketPosition != MarketPosition.Flat) return false;
+            if (entryOrder != null && entryOrder.OrderState == OrderState.Working) return false;
+            if (!orCaptured || orRange <= 0) return false;
+            if (maxAccountLimitHit) return false;
+            if (sessionProfitLimitHit || sessionLossLimitHit) return false;
+            if (!longBucketFound && !shortBucketFound) return false;
+            if (MaxTradesPerDay > 0 && tradeCount >= MaxTradesPerDay) return false;
             return true;
         }
-
-        if (!vixPendingLoggedToday)
+        
+        private void PlaceLongLimitEntry(double entryLevel)
         {
-            LogToOutput2("⚠️ VIX fetch failed. Allowing trades today without VIX.");
-            vixPendingLoggedToday = true;
+            if (activeLongBucket.VarianceTicks > 0)
+                entryLevel += random.Next(-activeLongBucket.VarianceTicks, activeLongBucket.VarianceTicks + 1) * TickSize;
+            
+            tradeCount++; longTradeCount++;
+            currentSignalName = "LongOR_" + tradeCount;
+            limitEntryPrice = entryLevel;
+            entryOrderBar = CurrentBar;
+            lastTradeWasLong = true;
+            
+            if (DebugMode)
+                DebugPrint($">>> LONG LIMIT #{tradeCount} (L:{longTradeCount}) [L{activeLongBucketIndex}] @ {entryLevel:F2}");
+            
+            entryOrder = EnterLongLimit(0, true, NumberOfContracts, entryLevel, currentSignalName);
+            waitingForConfirmation = false;
+            confirmationComplete = false;
         }
-        vixFetchFailedToday = true;
-        vixFetchedToday = true;
-        vixBlockedToday = false;
-        return true;
-    }
-
-    // Minimal JSON parsing to extract regularMarketPrice from Yahoo Finance chart endpoint.
-    private double FetchVixFromYahoo()
-    {
-        const string url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range=1m&interval=1m";
-
-        LogToOutput2($"🌐 Fetching VIX from {url}");
-
-        using (var client = new System.Net.WebClient())
+        
+        private void PlaceShortLimitEntry(double entryLevel)
         {
-            client.Headers[System.Net.HttpRequestHeader.UserAgent] = "Mozilla/5.0";
-            string json = client.DownloadString(url);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                LogToOutput2("⚠️ VIX fetch returned empty response.");
-                return double.NaN;
-            }
-
-            // Look for "regularMarketPrice": value
-            string marker = "\"regularMarketPrice\":";
-            int idx = json.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-            if (idx < 0)
-            {
-                LogToOutput2("⚠️ VIX fetch missing regularMarketPrice.");
-                return double.NaN;
-            }
-            idx += marker.Length;
-
-            int end = idx;
-            while (end < json.Length && "0123456789.+-eE".IndexOf(json[end]) >= 0)
-                end++;
-
-            string num = json.Substring(idx, end - idx).Trim();
-            if (double.TryParse(num, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val))
-            {
-                LogToOutput2($"✅ VIX fetch OK. regularMarketPrice={val}");
-                return val;
-            }
-
-            LogToOutput2("⚠️ VIX fetch parse failed.");
-            return double.NaN;
+            if (activeShortBucket.VarianceTicks > 0)
+                entryLevel += random.Next(-activeShortBucket.VarianceTicks, activeShortBucket.VarianceTicks + 1) * TickSize;
+            
+            tradeCount++; shortTradeCount++;
+            currentSignalName = "ShortOR_" + tradeCount;
+            limitEntryPrice = entryLevel;
+            entryOrderBar = CurrentBar;
+            lastTradeWasLong = false;
+            
+            if (DebugMode)
+                DebugPrint($">>> SHORT LIMIT #{tradeCount} (S:{shortTradeCount}) [S{activeShortBucketIndex}] @ {entryLevel:F2}");
+            
+            entryOrder = EnterShortLimit(0, true, NumberOfContracts, entryLevel, currentSignalName);
+            waitingForConfirmation = false;
+            confirmationComplete = false;
         }
-    }
+        
+        #endregion
 
-    public enum StrategyPreset
-    {
-        NQ_MNQ_1,
-        NQ_MNQ_2
-    }
-
-    private void ApplyPreset(StrategyPreset preset)
-    {
-        switch (preset)
+        #region Position Management
+        
+        private void ManagePosition()
         {
-        case StrategyPreset.NQ_MNQ_1:            
-            EntryPercent = 13.5;
-            //TakeProfitPercent = 40;
-            HardStopLossPercent = 53;
-            CancelOrderBars = 52;
-            break;
-
-        case StrategyPreset.NQ_MNQ_2:
-            EntryPercent = 13.5;
-            //TakeProfitPercent = 48.5;            
-            HardStopLossPercent = 53;
-            CancelOrderBars = 52;
-            break;
+            ManagePendingOrders();
+            if (Position.MarketPosition == MarketPosition.Flat) return;
+            
+            int maxBars = lastTradeWasLong ? activeLongBucket.MaxBarsInTrade : activeShortBucket.MaxBarsInTrade;
+            if (maxBars > 0 && entryBar > 0 && (CurrentBar - entryBar) >= maxBars)
+            { ExitAllPositions("MaxBars"); return; }
+            
+            CheckBreakevenTrigger();
         }
-
-        //Debug print of selected settings
-        // DebugPrint("\n== PRESET APPLIED: " + preset.ToString() + " ==");
-        // DebugPrint("Contracts: " + NumberOfContracts);
-        // DebugPrint("Entry %: " + EntryPercent);
-        // DebugPrint("TP %: " + TakeProfitPercent);
-        // DebugPrint("Hard SL %: " + HardStopLossPercent);
-        // DebugPrint("Variance ticks: " + VarianceInTicks);
-        // DebugPrint("Session Start: " + SessionStart);
-        // DebugPrint("Session End: " + SessionEnd);
-        // DebugPrint("No Trades After: " + NoTradesAfter);	
-    }
-
-    private void DrawTimeFilterVisuals()
-    {
-        if (CurrentBar < 1)
-            return;
-
-        DrawNoTradesAfterLine();
-        DrawSkipWindow("Skip1", SkipStart, SkipEnd);
-    }
-
-    private void DrawNoTradesAfterLine()
-    {
-        if (NoTradesAfter == TimeSpan.Zero)
-            return;
-
-        var lineBrush = new SolidColorBrush(Color.FromArgb(70, 255, 0, 0));
-
-        DateTime noTradesAfterTime = Time[0].Date + NoTradesAfter;
-
-        if (SessionStart > SessionEnd && NoTradesAfter < SessionStart)
-            noTradesAfterTime = noTradesAfterTime.AddDays(1);
-
-        Draw.VerticalLine(this, $"ORBO_NoTradesAfter_{Time[0]:yyyyMMdd}", noTradesAfterTime, lineBrush,
-            DashStyleHelper.Solid, 2);
-    }
-
-    private void DrawSkipWindow(string tagPrefix, TimeSpan start, TimeSpan end)
-    {
-        if (start == TimeSpan.Zero || end == TimeSpan.Zero)
-            return;
-
-        DateTime barDate = Time[0].Date;
-
-        DateTime windowStart = barDate + start;
-        DateTime windowEnd = barDate + end;
-
-        if (start > end)
-            windowEnd = windowEnd.AddDays(1);
-
-        int startBarsAgo = Bars.GetBar(windowStart);
-        int endBarsAgo = Bars.GetBar(windowEnd);
-
-        if (startBarsAgo < 0 || endBarsAgo < 0)
-            return;
-
-        var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
-        areaBrush.Freeze();
-        var lineBrush = new SolidColorBrush(Color.FromArgb(90, 255, 0, 0));
-        lineBrush.Freeze();
-
-        string rectTag = $"ORBO_{tagPrefix}_Rect_{windowStart:yyyyMMdd}";
-        Draw.Rectangle(
-            this,
-            rectTag,
-            false,
-            windowStart,
-            0,
-            windowEnd,
-            30000,
-            lineBrush,
-            areaBrush,
-            2
-        ).ZOrder = -1;
-
-        string startTag = $"ORBO_{tagPrefix}_Start_{windowStart:yyyyMMdd}";
-        Draw.VerticalLine(this, startTag, windowStart, lineBrush, DashStyleHelper.DashDot, 2);
-
-        string endTag = $"ORBO_{tagPrefix}_End_{windowEnd:yyyyMMdd}";
-        Draw.VerticalLine(this, endTag, windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
-    }
-
-    private void DrawSessionWickRangePersistent(TimeSpan startTime, TimeSpan endTime, string tagPrefix, Brush lineColor,
-                                                DashStyleHelper style, int width)
-    {
-        if (wickLinesDrawn || Times[0][0].TimeOfDay < endTime || CurrentBar < BiasDuration)
-            return;
-
-        int s = -1, e = -1;
-        for (int i = 0; i <= CurrentBar; i++)
+        
+        private void ManagePendingOrders()
         {
-            var t = Times[0][i];
-            if (t.Date != Times[0][0].Date)
-                break;
-            var tod = t.TimeOfDay;
-            if (tod >= startTime && tod < endTime)
+            if (limitEntryPrice <= 0 || entryOrderBar <= 0) return;
+            if (Position.MarketPosition != MarketPosition.Flat) return;
+            if (entryOrder != null && (entryOrder.OrderState == OrderState.Filled || entryOrder.OrderState == OrderState.Cancelled)) return;
+            
+            if (CancelOrderBars > 0 && (CurrentBar - entryOrderBar) >= CancelOrderBars)
             {
-                if (e < 0)
-                    e = i;
-                s = i;
+                if (DebugMode) DebugPrint($"TIMEOUT: Cancelling limit after {CurrentBar - entryOrderBar} bars");
+                if (entryOrder != null) CancelOrder(entryOrder);
+                ResetForNewSetup();
             }
         }
-        if (s < 0 || e < 0 || s <= e)
-            return;
-        sessionHigh = High[e];
-        sessionLow = Low[e];
-        for (int i = e + 1; i <= s; i++)
+        
+        private void ResetForNewSetup()
         {
-            sessionHigh = Math.Max(sessionHigh, High[i]);
-            sessionLow = Math.Min(sessionLow, Low[i]);
+            entryOrder = null; entryOrderBar = -1; limitEntryPrice = 0;
+            confirmationComplete = false; confirmationBarCount = 0;
+            longBreakoutOccurred = false; shortBreakoutOccurred = false;
         }
-
-        BarsPeriodType barType = BarsPeriod.BarsPeriodType;
-        int barValue = BarsPeriod.Value;
-        int totalMinutes = (int)(SessionEnd - SessionStart).TotalMinutes - barValue;
-        int off = (totalMinutes / barValue);
-        var tgH = $"{tagPrefix}_High_{Times[0][0]:yyyyMMdd}";
-        var tgbH = $"{tagPrefix}_bHigh_{Times[0][0]:yyyyMMdd}";
-        var tgmH = $"{tagPrefix}_mHLoss_{Times[0][0]:yyyyMMdd}";
-        var tgmL = $"{tagPrefix}_mLLoss_{Times[0][0]:yyyyMMdd}";
-        var tgL = $"{tagPrefix}_Low_{Times[0][0]:yyyyMMdd}";
-        var tgbL = $"{tagPrefix}_bLow_{Times[0][0]:yyyyMMdd}";
-        var tgPH1 = $"{tagPrefix}_Profit_High_1{Times[0][0]:yyyyMMdd}";
-        var tgPL1 = $"{tagPrefix}_Profit_Low_1{Times[0][0]:yyyyMMdd}";
-        var tgReturnHigh = $"{tagPrefix}_Return_High_1{Times[0][0]:yyyyMMdd}";
-        var tgReturnLow = $"{tagPrefix}_Return_Low_1{Times[0][0]:yyyyMMdd}";
-        var g = new SolidColorBrush(Color.FromArgb(70, 50, 205, 50));
-        var y = new SolidColorBrush(Color.FromArgb(70, 255, 255, 0));
-        var r = new SolidColorBrush(Color.FromArgb(70, 255, 0, 0));
-        var o = new SolidColorBrush(Color.FromArgb(70, 255, 140, 0));
-        var gr = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
-        var lg = new SolidColorBrush(Color.FromArgb(70, 50, 205, 50));
-
-        var lineBrush = RangeBoxBrush.Clone();
-        lineBrush.Opacity = 0.30;
-
-        // Round session high/low to nearest tick
-        double roundedHigh = Instrument.MasterInstrument.RoundToTickSize(sessionHigh);
-        double roundedLow  = Instrument.MasterInstrument.RoundToTickSize(sessionLow);
-        double rng = roundedHigh - roundedLow;
-
-        if (MaxRangePoints > 0 && rng > MaxRangePoints)
+        
+        private void CheckBreakevenTrigger()
         {
-            rangeTooWide = true;
-            if (!rangeTooWideLogged && DebugMode)
+            int bePct = lastTradeWasLong ? activeLongBucket.BreakevenTriggerPercent : activeShortBucket.BreakevenTriggerPercent;
+            int beOff = lastTradeWasLong ? activeLongBucket.BreakevenOffsetTicks : activeShortBucket.BreakevenOffsetTicks;
+            
+            if (bePct <= 0 || beTriggerActive || orRange <= 0) return;
+            
+            double threshold = orRange * (bePct / 100.0);
+            double profit = Position.MarketPosition == MarketPosition.Long ? Close[0] - entryPrice :
+                            Position.MarketPosition == MarketPosition.Short ? entryPrice - Close[0] : 0;
+            
+            if (profit >= threshold)
             {
-                DebugPrint($"⛔ Range too wide: {rng:F2} pts > MaxRangePoints {MaxRangePoints:F2}. Trades blocked today.");
-                rangeTooWideLogged = true;
+                beTriggerActive = true;
+                double beStop = Position.MarketPosition == MarketPosition.Long ? entryPrice + beOff * TickSize : entryPrice - beOff * TickSize;
+                SetStopLoss(currentSignalName, CalculationMode.Price, beStop, false);
+                if (DebugMode) DebugPrint($"BREAKEVEN @ {profit:F2} pts | Stop: {beStop:F2}");
             }
+        }
+        
+        private void ExitAllPositions(string reason)
+        {
+            if (Position.MarketPosition == MarketPosition.Long) ExitLong("Exit_" + reason, currentSignalName);
+            else if (Position.MarketPosition == MarketPosition.Short) ExitShort("Exit_" + reason, currentSignalName);
             CancelAllOrders();
         }
-
-        double cancelOffset = rng * CancelOrderPercent / 100.0;
-        cancelOrderDistanceAbs = Instrument.MasterInstrument.RoundToTickSize(cancelOffset);
-
-        double entryOffset  = rng * EntryPercent / 100.0;
-        double tpOffset     = rng * TakeProfitPercent / 100.0;
-        double slOffset     = rng * HardStopLossPercent / 100.0;
-
-        todayLongLimit        = Instrument.MasterInstrument.RoundToTickSize(roundedHigh + entryOffset);
-        todayShortLimit       = Instrument.MasterInstrument.RoundToTickSize(roundedLow  - entryOffset);
-
-        todayLongProfit       = Instrument.MasterInstrument.RoundToTickSize(GetRandomizedPrice(roundedHigh + tpOffset, VarianceInTicks));
-        todayLongStoploss     = Instrument.MasterInstrument.RoundToTickSize(GetRandomizedPrice(roundedHigh - slOffset, VarianceInTicks));
-        todayShortProfit      = Instrument.MasterInstrument.RoundToTickSize(GetRandomizedPrice(roundedLow  - tpOffset, VarianceInTicks));
-        todayShortStoploss    = Instrument.MasterInstrument.RoundToTickSize(GetRandomizedPrice(roundedLow  + slOffset, VarianceInTicks));
-
-        DebugPrint("\n-------------- New Day Targets --------------");
-        DebugPrint($"Session High: {sessionHigh}");
-        DebugPrint($"Session Low: {sessionLow}");
-        DebugPrint($"Entry High: {todayLongLimit}");
-        DebugPrint($"Entry Low: {todayShortLimit}");
-        DebugPrint($"Long TP Raw: {sessionHigh + rng * TakeProfitPercent / 100.0} Randomized to {todayLongProfit}");
-        DebugPrint($"Long SL Raw: {sessionHigh - rng * HardStopLossPercent / 100.0} Randomized to {todayLongStoploss}");
-        DebugPrint($"Short TP Raw: {sessionLow - rng * TakeProfitPercent / 100.0} Randomized to {todayShortProfit}");
-        DebugPrint($"Short SL Raw: {sessionLow + rng * HardStopLossPercent / 100.0} Randomized to {todayShortStoploss}");
-
-        Draw.Line(this, tgH + "entry", false, s, todayLongLimit, s - off, todayLongLimit, y, style, width).ZOrder = -1;
-        Draw.Line(this, tgH, false, s, sessionHigh, s - off, sessionHigh, lineBrush, style, width).ZOrder = -1;
-        Draw.Line(this, tgmH + "maxLoss", false, s, todayLongStoploss, s - off, todayLongStoploss, r, DashStyleHelper.Solid, width).ZOrder = -1;
-        Draw.Line(this, tgmL + "maxLoss", false, s, todayShortStoploss, s - off, todayShortStoploss, r, DashStyleHelper.Solid, width).ZOrder = -1;
-        Draw.Line(this, tgL, false, s, sessionLow, s - off, sessionLow, lineBrush, style, width).ZOrder = -1;
-        Draw.Line(this, tgL + "entry", false, s, todayShortLimit, s - off, todayShortLimit, y, style, width).ZOrder = -1;
-
-        // Draw a filled rectangle between the session high and low
-        string rectTag = $"{tagPrefix}_RangeBox_{Times[0][0]:yyyyMMdd}";
-        Draw.Rectangle(this, rectTag,
-            false,                   // AutoScale = false
-            s,                       // Start bar index
-            sessionHigh,             // Upper Y
-            s - off,                 // End bar index
-            sessionLow,              // Lower Y
-            Brushes.Transparent,     // Border brush
-            RangeBoxBrush,   // Fill brush
-            10                       // Opacity (0-255)
-        ).ZOrder = -1;               // ✅ Place behind the price bars
-
-        // Take profit lines (PT1)
-        double ptHigh = todayLongProfit;
-        double ptLow = todayShortProfit;
-        Draw.Line(this, $"{tagPrefix}_Profit_High_1{Times[0][0]:yyyyMMdd}", false, s, ptHigh, s - off, ptHigh, lg,
-                  style, width).ZOrder = -1;
-        Draw.Line(this, $"{tagPrefix}_Profit_Low_1{Times[0][0]:yyyyMMdd}", false, s, ptLow, s - off, ptLow, lg, style,
-                  width).ZOrder = -1;
-
-        // --- BE Trigger as % of full range (same scale as Entry% / TP%) ---
-        double beOffset = rng * SLBETrigger / 100.0;
-
-        beTriggerLongPrice  = Instrument.MasterInstrument.RoundToTickSize(roundedHigh + beOffset);
-        beTriggerShortPrice = Instrument.MasterInstrument.RoundToTickSize(roundedLow  - beOffset);
-
-        // === Break-Even Flatten Trigger Lines ===
-        if (SLBETrigger > 0)
+        
+        private void CancelAllOrders()
         {
-            var tpBrush = new SolidColorBrush(Color.FromArgb(50, 50, 205, 50)); // similar to your TP brush
-            Draw.Line(this, $"{tagPrefix}_BETrigger_Long_{Times[0][0]:yyyyMMdd}",
-                false, s, beTriggerLongPrice, s - off, beTriggerLongPrice, tpBrush, DashStyleHelper.Dot, width).ZOrder = -1;
-
-            Draw.Line(this, $"{tagPrefix}_BETrigger_Short_{Times[0][0]:yyyyMMdd}",
-                false, s, beTriggerShortPrice, s - off, beTriggerShortPrice, tpBrush, DashStyleHelper.Dot, width).ZOrder = -1;
+            if (entryOrder != null && entryOrder.OrderState == OrderState.Working)
+            { CancelOrder(entryOrder); entryOrder = null; }
         }
+        
+        #endregion
 
-        wickLinesDrawn = true;
-
-        // Set first allowed evaluation time at the next 5-minute mark after 9:45
-        int biasEndMinute = SessionStart.Minutes + BiasDuration;
-        int rounded = ((biasEndMinute + 4) / 5) * 5; // round to next 5-min boundary
-        DateTime firstEval = Times[0][0].Date.AddHours(SessionStart.Hours).AddMinutes(rounded + 1);
-        nextEvaluationTime = firstEval;
-    }
-
-   public void UpdateInfoText()
-    {
-        var lines = BuildInfoLines();
-        var font  = new SimpleFont("Consolas", 14); // monospaced
-
-        int maxLabel = lines.Max(l => l.label.Length);
-        int maxValue = Math.Max(1, lines.Max(l => l.value.Length));
-
-        // 1) BACKGROUND BLOCK – uses visible chars but transparent text so
-        //    NinjaTrader allocates full width (labels + values).
-        string valuePlaceholder = new string('0', maxValue); // dummy width
-        var bgLines = lines
-            .Select(l => l.label.PadRight(maxLabel + 1) + valuePlaceholder)
-            .ToArray();
-
-        string bgText = string.Join(Environment.NewLine, bgLines);
-
-        Draw.TextFixed(
-            owner: this,
-            tag: "myStatusLabel_bg",
-            text: bgText,
-            textPosition: TextPosition.BottomLeft,
-            textBrush: Brushes.Transparent,  // text invisible
-            font: font,
-            outlineBrush: null,
-            areaBrush: Brushes.Black,        // 🟦 full background for whole block
-            areaOpacity: 85);
-
-        // 2) LABEL BLOCK – labels only, no background
-        var labelLines = lines
-            .Select(l => l.label)
-            .ToArray();
-
-        string labelText = string.Join(Environment.NewLine, labelLines);
-
-        Draw.TextFixed(
-            owner: this,
-            tag: "myStatusLabel_labels",
-            text: labelText,
-            textPosition: TextPosition.BottomLeft,
-            textBrush: Brushes.LightGray,
-            font: font,
-            outlineBrush: null,
-            areaBrush: null,
-            areaOpacity: 0);
-
-        // 3) VALUE OVERLAYS – one block per line, only that line has a value
-        string spacesBeforeValue = new string(' ', maxLabel + 1);
-
-        for (int i = 0; i < lines.Count; i++)
+        #region Order Events
+        
+        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice,
+            int quantity, int filled, double averageFillPrice,
+            OrderState orderState, DateTime time, ErrorCode error, string nativeError)
         {
-            string tag = $"myStatusLabel_val_{i}";
-
-            var overlayLines = new string[lines.Count];
-            for (int j = 0; j < lines.Count; j++)
+            if (order.Name == currentSignalName)
             {
-                overlayLines[j] = (j == i)
-                    ? spacesBeforeValue + lines[i].value   // value at value column
-                    : string.Empty;                        // blank line
+                entryOrder = order;
+                if (orderState == OrderState.Filled)
+                {
+                    entryPrice = averageFillPrice;
+                    lastFilledEntryPrice = averageFillPrice;
+                    entryBar = CurrentBar;
+                    limitEntryPrice = 0; entryOrderBar = -1;
+                    SetInitialStopAndTarget(lastTradeWasLong);
+                    if (DebugMode) DebugPrint($"FILLED {(lastTradeWasLong ? "LONG" : "SHORT")} @ {averageFillPrice:F2}");
+                }
+                else if (orderState == OrderState.Cancelled)
+                { entryOrder = null; limitEntryPrice = 0; entryOrderBar = -1; }
             }
-
-            string overlayText = string.Join(Environment.NewLine, overlayLines);
-
-            Draw.TextFixed(
-                owner: this,
-                tag: tag,
-                text: overlayText,
-                textPosition: TextPosition.BottomLeft,
-                textBrush: lines[i].brush,
-                font: font,
-                outlineBrush: null,
-                areaBrush: null,
-                areaOpacity: 0);
         }
-    }
-
-
-
-
-    private List<(string label, string value, Brush brush)> BuildInfoLines()
-    {
-        var lines = new List<(string label, string value, Brush brush)>();
-
-        string tpLine, slLine;
-        GetPnLLines(out tpLine, out slLine);
-
-        lines.Add(("TP:        ", $"{tpLine}", Brushes.LimeGreen));
-        lines.Add(("SL:        ", $"{slLine}", Brushes.IndianRed));
-        lines.Add(("Contracts: ", $"{NumberOfContracts}", Brushes.LightGray));
-
-        lines.Add((BoolLabel("Anti Hedge"), BoolIcon(AntiHedge), BoolBrush(AntiHedge)));
-        lines.Add((BoolLabel("Armed"), BoolIcon(IsReadyForNewOrder()), BoolBrush(IsReadyForNewOrder())));
-
-        lines.Add((BoolLabel("VIX"), VixIcon(), VixBrush()));
-
-        var version = $"v{GetAddOnVersion()}";
-
-        // Put version directly in the label, leave value empty
-        lines.Add(($"{version}", string.Empty, Brushes.LightGray));
-
-        return lines;
-    }
-
-    string GetAddOnVersion()
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        Version version = assembly.GetName().Version;
-        return version.ToString();
-    }
-
-    private void GetPnLLines(out string tpLine, out string slLine)
-    {
-        // If contracts not configured, no info
-        if (NumberOfContracts <= 0 ||
-            double.IsNaN(todayLongLimit) || double.IsNaN(todayLongProfit) || double.IsNaN(todayLongStoploss))
+        
+        private void SetInitialStopAndTarget(bool isLong)
         {
-            tpLine = "$0";
-            slLine = "$0";
-            return;
-        }
-
-        // Tick value based on instrument
-        double tickValue;
-        if (Instrument.MasterInstrument.Name == "MNQ")
-            tickValue = 0.50;
-        else if (Instrument.MasterInstrument.Name == "NQ")
-            tickValue = 5.00;
-        else
-            tickValue = Instrument.MasterInstrument.PointValue * TickSize;
-
-        // Use session-wide Long side (always defined)
-        double entryPrice = todayLongLimit;
-        double targetPrice = todayLongProfit;
-        double stopPrice   = todayLongStoploss;
-
-        // Distances in ticks
-        double tpTicks = Math.Abs(targetPrice - entryPrice) / TickSize;
-        double slTicks = Math.Abs(entryPrice - stopPrice) / TickSize;
-
-        // Dollar amounts
-        double tpDollars = tpTicks * tickValue * NumberOfContracts;
-        double slDollars = slTicks * tickValue * NumberOfContracts;
-
-        tpLine = $"${tpDollars:0}";
-        slLine = $"${slDollars:0}";
-    }
-
-    private Brush BoolBrush(bool value) => value ? Brushes.LimeGreen : Brushes.IndianRed;
-
-    private string BoolLabel(string label) => $"{label}:";
-
-    private string BoolIcon(bool value) => value ? "✅" : "⛔";
-
-    private string VixIcon()
-    {
-        if (VixThreshold <= 0)
-            return "✅";
-        if (vixBlockedToday)
-            return "⛔";
-        if (vixFetchFailedToday)
-            return "⚠️";
-        if (!vixFetchedToday)
-            return "⛔";
-        return "✅";
-    }
-
-    private Brush VixBrush()
-    {
-        if (VixThreshold <= 0)
-            return Brushes.LimeGreen;
-        if (vixBlockedToday)
-            return Brushes.IndianRed;
-        if (vixFetchFailedToday)
-            return Brushes.DarkOrange;
-        if (!vixFetchedToday)
-            return Brushes.IndianRed;
-        return Brushes.LimeGreen;
-    }
-    
-    private string BuildHeartbeatId()
-    {
-        string baseName = Name ?? GetType().Name;
-        string instrumentName = Instrument != null ? Instrument.FullName : "UnknownInstrument";
-        string accountName = Account != null ? Account.Name : "UnknownAccount";
-        string barsInfo = BarsPeriod != null
-            ? $"{BarsPeriod.BarsPeriodType}-{BarsPeriod.Value}"
-            : "NoBars";
-
-        // include key risk params so multiple configs don't collide
-        string configKey = $"{EntryPercent}-{TakeProfitPercent}-{HardStopLossPercent}-{NumberOfContracts}";
-
-        string raw = $"{baseName}-{instrumentName}-{barsInfo}-{accountName}-{configKey}";
-        return raw.Replace(",", "_").Replace(Environment.NewLine, " ").Trim();
-    }
-    
-    private void WriteHeartbeat()
-    {
-        try
-        {
-            string name = heartbeatId ?? this.Name ?? GetType().Name;
-            string line = $"{name},{DateTime.Now:O}";
-            List<string> lines = new List<string>();
-
-            bool success = false;
-            lock (heartbeatFileLock)
+            if (orRange <= 0 || entryPrice <= 0) return;
+            
+            // Direction safety
+            if (Position.MarketPosition == MarketPosition.Long && !isLong) isLong = true;
+            else if (Position.MarketPosition == MarketPosition.Short && isLong) isLong = false;
+            
+            BucketParams bp = isLong ? activeLongBucket : activeShortBucket;
+            
+            double profitDist = bp.TPMode == TargetMode.FixedTicks ? bp.TakeProfitTicks * TickSize : orRange * (bp.TakeProfitPercent / 100.0);
+            double stopDist = bp.SLMode == TargetMode.FixedTicks ? bp.StopLossTicks * TickSize : orRange * (bp.StopLossPercent / 100.0);
+            
+            if (bp.MaxStopLossTicks > 0)
             {
-                // --- Load existing lines (if any) ---
-                if (System.IO.File.Exists(heartbeatFile))
+                double maxStop = bp.MaxStopLossTicks * TickSize;
+                if (stopDist > maxStop) stopDist = maxStop;
+            }
+            
+            double stopPx, tpPx;
+            if (isLong)
+            {
+                stopPx = entryPrice - stopDist;
+                tpPx = entryPrice + profitDist;
+                if (stopPx >= entryPrice) stopPx = entryPrice - (orRange * 0.5);
+            }
+            else
+            {
+                stopPx = entryPrice + stopDist;
+                tpPx = entryPrice - profitDist;
+                if (stopPx <= entryPrice) stopPx = entryPrice + (orRange * 0.5);
+            }
+            
+            if (DebugMode)
+            {
+                string bl = isLong ? $"L{activeLongBucketIndex}" : $"S{activeShortBucketIndex}";
+                DebugPrint($"SL/TP [{bl}]: {(isLong?"LONG":"SHORT")} Entry={entryPrice:F2} Stop={stopPx:F2} Target={tpPx:F2}");
+            }
+            
+            SetStopLoss(currentSignalName, CalculationMode.Price, stopPx, false);
+            SetProfitTarget(currentSignalName, CalculationMode.Price, tpPx);
+        }
+        
+        protected override void OnExecutionUpdate(Execution execution, string executionId,
+            double price, int quantity, MarketPosition marketPosition,
+            string orderId, DateTime time)
+        {
+            if (Position.MarketPosition == MarketPosition.Flat && execution.Order.OrderState == OrderState.Filled)
+            {
+                bool isExit = !execution.Order.Name.Contains("LongOR_") && !execution.Order.Name.Contains("ShortOR_");
+                if (isExit && lastFilledEntryPrice > 0)
                 {
-                    for (int i = 0; i < 3; i++) // retry on read conflict
-                    {
-                        try
-                        {
-                            lines.AddRange(System.IO.File.ReadAllLines(heartbeatFile));
-                            break;
-                        }
-                        catch (IOException)
-                        {
-                            System.Threading.Thread.Sleep(100);
-                        }
-                    }
+                    double pnl = lastTradeWasLong ? (price - lastFilledEntryPrice) / TickSize : (lastFilledEntryPrice - price) / TickSize;
+                    sessionRealizedPnL += pnl;
+                    if (DebugMode) DebugPrint($"CLOSED: {pnl:F1}t | Session: {sessionRealizedPnL:F1}t");
                 }
-
-                // --- Update or add this strategy’s line ---
-                bool updated = false;
-                for (int i = 0; i < lines.Count; i++)
+                
+                beTriggerActive = false;
+                bool useRearm = lastTradeWasLong ? activeLongBucket.UseBreakoutRearm : activeShortBucket.UseBreakoutRearm;
+                if (useRearm)
                 {
-                    if (lines[i].StartsWith(name + ",", StringComparison.OrdinalIgnoreCase))
-                    {
-                        lines[i] = line;
-                        updated = true;
-                        break;
-                    }
-                }
-                if (!updated)
-                    lines.Add(line);
-
-                // --- Write back with retry ---
-                for (int i = 0; i < 3; i++)
-                {
-                    try
-                    {
-                        System.IO.File.WriteAllLines(heartbeatFile, lines.ToArray());
-                        success = true;
-                        break;
-                    }
-                    catch (IOException)
-                    {
-                        System.Threading.Thread.Sleep(100);
-                    }
+                    hasReturnedOnce = false; waitingForConfirmation = true;
+                    confirmationComplete = false; returnBar = -1;
                 }
             }
-
-            //if (!success)
-            //    Print($"⚠️ Failed to write heartbeat after 3 attempts — file still in use: {heartbeatFile}");
-            //else
-            //    Print($"💓 Heartbeat written for {name} at {DateTime.UtcNow:HH:mm:ss}");
         }
-        catch (Exception ex)
-        {
-            Print($"⚠️ Heartbeat write error: {ex.Message}");
-        }
-    }
+        
+        #endregion
 
-    private void SetHedgeLock(string instrument, MarketPosition direction)
-    {
-        lock (hedgeLockSync)
+        #region Session Management
+        
+        private void ResetDailyStateIfNeeded()
         {
-            var lines = File.Exists(hedgeLockFile)
-                ? File.ReadAllLines(hedgeLockFile).ToList()
-                : new List<string>();
-
-            bool updated = false;
-            for (int i = 0; i < lines.Count; i++)
+            if (Time[0].Date != lastDate.Date)
             {
-                if (lines[i].StartsWith(instrument + ",", StringComparison.OrdinalIgnoreCase))
+                lastDate = Time[0];
+                orHigh = double.MinValue; orLow = double.MaxValue; orRange = 0;
+                orCaptured = false; wickLinesDrawn = false;
+                longBucketFound = false; shortBucketFound = false;
+                activeLongBucketIndex = -1; activeShortBucketIndex = -1;
+                breakoutActive = false; longBreakoutOccurred = false; shortBreakoutOccurred = false; breakoutBar = -1;
+                hasReturnedOnce = false; waitingForConfirmation = false; confirmationComplete = false;
+                confirmationBarCount = 0; returnBar = -1;
+                orderPlaced = false; entryBar = -1; entryOrderBar = -1; entryOrder = null;
+                beTriggerActive = false; maxAccountLimitHit = false;
+                tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
+                sessionRealizedPnL = 0; sessionProfitLimitHit = false; sessionLossLimitHit = false;
+                if (DebugMode) DebugPrint($"========== NEW DAY: {Time[0].Date:yyyy-MM-dd} ==========");
+            }
+        }
+        
+        private bool IsInSkipWindow()
+        { return Time[0].TimeOfDay >= skipStartTime && Time[0].TimeOfDay < skipEndTime; }
+        
+        private void CheckSessionPnLLimits()
+        {
+            double unrealized = 0;
+            if (Position.MarketPosition == MarketPosition.Long) unrealized = (Close[0] - Position.AveragePrice) / TickSize;
+            else if (Position.MarketPosition == MarketPosition.Short) unrealized = (Position.AveragePrice - Close[0]) / TickSize;
+            double total = sessionRealizedPnL + unrealized;
+            
+            if (MaxSessionProfitTicks > 0 && total >= MaxSessionProfitTicks && !sessionProfitLimitHit)
+            {
+                sessionProfitLimitHit = true;
+                if (Position.MarketPosition != MarketPosition.Flat) ExitAllPositions("MaxProfit");
+                CancelAllPendingOrders();
+            }
+            if (MaxSessionLossTicks > 0 && total <= -MaxSessionLossTicks && !sessionLossLimitHit)
+            {
+                sessionLossLimitHit = true;
+                if (Position.MarketPosition != MarketPosition.Flat) ExitAllPositions("MaxLoss");
+                CancelAllPendingOrders();
+            }
+        }
+        
+        private void CancelAllPendingOrders()
+        {
+            if (entryOrder != null && (entryOrder.OrderState == OrderState.Working || entryOrder.OrderState == OrderState.Accepted || entryOrder.OrderState == OrderState.Submitted))
+                CancelOrder(entryOrder);
+            entryOrder = null; limitEntryPrice = 0; entryOrderBar = -1;
+        }
+        
+        private bool ShouldAccountBalanceExit()
+        {
+            if (MaxAccountBalance <= 0) return false;
+            double bal = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+            if (bal >= MaxAccountBalance && !maxAccountLimitHit) maxAccountLimitHit = true;
+            return maxAccountLimitHit;
+        }
+        
+        private void ExitIfSessionEnded()
+        { if (Time[0].TimeOfDay >= sessionEndTime && Position.MarketPosition != MarketPosition.Flat) ExitAllPositions("SessionEnd"); }
+        
+        private void CancelEntryIfAfterNoTrades()
+        { if (Time[0].TimeOfDay >= noTradesAfterTime) CancelAllOrders(); }
+        
+        #endregion
+
+        #region Display
+        
+        private void UpdateInfoText()
+        {
+            string info = "";
+            if (!orCaptured)
+            {
+                string h = (orHigh == double.MinValue) ? "---" : orHigh.ToString("F2");
+                string l = (orLow == double.MaxValue) ? "---" : orLow.ToString("F2");
+                info = "Capturing OR (" + orStartTime.ToString(@"hh\:mm") + "-" + orEndTime.ToString(@"hh\:mm") + ")\nH=" + h + " L=" + l;
+            }
+            else
+            {
+                double orT = orRange / TickSize;
+                info = "OR: " + orLow.ToString("F2") + " - " + orHigh.ToString("F2") + " (" + orT.ToString("F0") + "t)\n";
+                
+                if (longBucketFound)
                 {
-                    lines[i] = $"{instrument},{direction}";
-                    updated = true;
-                    break;
+                    double e = orHigh + orRange * (activeLongBucket.EntryOffsetPercent / 100.0);
+                    info += "L" + activeLongBucketIndex + " > " + e.ToString("F2");
                 }
-            }
-            if (!updated)
-                lines.Add($"{instrument},{direction}");
-
-            File.WriteAllLines(hedgeLockFile, lines);
-        }
-    }
-
-    private MarketPosition GetHedgeLock(string instrument)
-    {
-        lock (hedgeLockSync)
-        {
-            if (!File.Exists(hedgeLockFile))
-                return MarketPosition.Flat;
-
-            foreach (var line in File.ReadAllLines(hedgeLockFile))
-            {
-                var parts = line.Split(',');
-                if (parts.Length == 2 && parts[0].Equals(instrument, StringComparison.OrdinalIgnoreCase))
+                else
+                    info += "L: none";
+                
+                info += " | ";
+                
+                if (shortBucketFound)
                 {
-                    if (Enum.TryParse(parts[1], out MarketPosition pos))
-                        return pos;
+                    double e = orLow - orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
+                    info += "S" + activeShortBucketIndex + " < " + e.ToString("F2");
                 }
+                else
+                    info += "S: none";
+                
+                info += "\n";
+                
+                if (entryOrder != null && (entryOrder.OrderState == OrderState.Working || entryOrder.OrderState == OrderState.Accepted))
+                {
+                    string ot = lastTradeWasLong ? "LONG [L" + activeLongBucketIndex + "]" : "SHORT [S" + activeShortBucketIndex + "]";
+                    int bp = CurrentBar - entryOrderBar;
+                    if (CancelOrderBars > 0)
+                        info += "LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + "/" + CancelOrderBars + "]\n";
+                    else
+                        info += "LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + " bars]\n";
+                }
+                else if (longBreakoutOccurred || shortBreakoutOccurred)
+                {
+                    if (longBreakoutOccurred)
+                        info += "LONG [L" + activeLongBucketIndex + "] [" + confirmationBarCount + "/" + activeLongBucket.ConfirmationBars + "]";
+                    else
+                        info += "SHORT [S" + activeShortBucketIndex + "] [" + confirmationBarCount + "/" + activeShortBucket.ConfirmationBars + "]";
+                    if (confirmationComplete)
+                        info += " READY";
+                    info += "\n";
+                }
+                
+                if (Position.MarketPosition != MarketPosition.Flat)
+                {
+                    double pft = Position.MarketPosition == MarketPosition.Long ? Close[0] - entryPrice : entryPrice - Close[0];
+                    double pPct = orRange > 0 ? (pft / orRange) * 100 : 0;
+                    info += "IN TRADE: " + pft.ToString("F2") + " (" + pPct.ToString("F1") + "% OR)";
+                    if (beTriggerActive)
+                        info += " [BE]";
+                    info += "\n";
+                }
+                
+                double ur = 0;
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ur = (Close[0] - Position.AveragePrice) / TickSize;
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ur = (Position.AveragePrice - Close[0]) / TickSize;
+                double sess = sessionRealizedPnL + ur;
+                info += "Session: " + sess.ToString("F0") + "t | Trades: " + tradeCount;
+                if (MaxTradesPerDay > 0)
+                    info += "/" + MaxTradesPerDay;
+                if (sessionProfitLimitHit)
+                    info += " [PROFIT LIMIT]";
+                else if (sessionLossLimitHit)
+                    info += " [LOSS LIMIT]";
+                else if (!longBucketFound && !shortBucketFound)
+                    info += " [NO BUCKETS]";
             }
-            return MarketPosition.Flat;
+            Draw.TextFixed(this, "Info", info, TextPosition.TopRight);
         }
-    }
+        
+        private void DebugPrint(string msg)
+        { Print($"[ORBO {Time[0]:HH:mm:ss}] {msg}"); }
+        
+        #endregion
 
-    private void ClearHedgeLock(string instrument)
-    {
-        lock (hedgeLockSync)
+        #region Properties
+        
+        // ==========================================
+        // ===== A. General Settings =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "Contracts", Order = 1, GroupName = "A. General")]
+        public int NumberOfContracts { get; set; }
+        
+        
+        
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "Max Account Balance", Order = 4, GroupName = "A. General")]
+        public double MaxAccountBalance { get; set; }
+        
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Debug Mode", Order = 6, GroupName = "A. General")]
+        public bool DebugMode { get; set; }
+        
+        // ==========================================
+        // ===== B. Long Bucket 1 =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "Enable L1", Order = 1, GroupName = "B. Long Bucket 1")]
+        public bool L1_Enabled { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "B. Long Bucket 1")]
+        public int L1_ORMinTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "B. Long Bucket 1")]
+        public int L1_ORMaxTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "B. Long Bucket 1")]
+        public bool L1_UseBreakoutRearm { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Require Return to Zone", Order = 5, GroupName = "B. Long Bucket 1")]
+        public bool L1_RequireReturnToZone { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 30)]
+        [Display(Name = "Confirmation Bars", Order = 6, GroupName = "B. Long Bucket 1")]
+        public int L1_ConfirmationBars { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "B. Long Bucket 1")]
+        public double L1_EntryOffsetPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "B. Long Bucket 1")]
+        public int L1_VarianceTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "TP Mode", Order = 9, GroupName = "B. Long Bucket 1")]
+        public TargetMode L1_TPMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "B. Long Bucket 1")]
+        public double L1_TakeProfitPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "B. Long Bucket 1")]
+        public int L1_TakeProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "SL Mode", Order = 12, GroupName = "B. Long Bucket 1")]
+        public TargetMode L1_SLMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "B. Long Bucket 1")]
+        public double L1_StopLossPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "B. Long Bucket 1")]
+        public int L1_StopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "B. Long Bucket 1")]
+        public int L1_MaxStopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "B. Long Bucket 1")]
+        public int L1_BreakevenTriggerPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "B. Long Bucket 1")]
+        public int L1_BreakevenOffsetTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "B. Long Bucket 1")]
+        public int L1_MaxBarsInTrade { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Trades/Day", Order = 19, GroupName = "B. Long Bucket 1")]
+        public int L1_MaxTradesPerDay { get; set; }
+        
+        // ==========================================
+        // ===== C. Long Bucket 2 =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "Enable L2", Order = 1, GroupName = "C. Long Bucket 2")]
+        public bool L2_Enabled { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "C. Long Bucket 2")]
+        public int L2_ORMinTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "C. Long Bucket 2")]
+        public int L2_ORMaxTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "C. Long Bucket 2")]
+        public bool L2_UseBreakoutRearm { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Require Return to Zone", Order = 5, GroupName = "C. Long Bucket 2")]
+        public bool L2_RequireReturnToZone { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 30)]
+        [Display(Name = "Confirmation Bars", Order = 6, GroupName = "C. Long Bucket 2")]
+        public int L2_ConfirmationBars { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "C. Long Bucket 2")]
+        public double L2_EntryOffsetPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "C. Long Bucket 2")]
+        public int L2_VarianceTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "TP Mode", Order = 9, GroupName = "C. Long Bucket 2")]
+        public TargetMode L2_TPMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "C. Long Bucket 2")]
+        public double L2_TakeProfitPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "C. Long Bucket 2")]
+        public int L2_TakeProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "SL Mode", Order = 12, GroupName = "C. Long Bucket 2")]
+        public TargetMode L2_SLMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "C. Long Bucket 2")]
+        public double L2_StopLossPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "C. Long Bucket 2")]
+        public int L2_StopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "C. Long Bucket 2")]
+        public int L2_MaxStopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "C. Long Bucket 2")]
+        public int L2_BreakevenTriggerPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "C. Long Bucket 2")]
+        public int L2_BreakevenOffsetTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "C. Long Bucket 2")]
+        public int L2_MaxBarsInTrade { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Trades/Day", Order = 19, GroupName = "C. Long Bucket 2")]
+        public int L2_MaxTradesPerDay { get; set; }
+        
+        // ==========================================
+        // ===== D. Long Bucket 3 =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "Enable L3", Order = 1, GroupName = "D. Long Bucket 3")]
+        public bool L3_Enabled { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "D. Long Bucket 3")]
+        public int L3_ORMinTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "D. Long Bucket 3")]
+        public int L3_ORMaxTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "D. Long Bucket 3")]
+        public bool L3_UseBreakoutRearm { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Require Return to Zone", Order = 5, GroupName = "D. Long Bucket 3")]
+        public bool L3_RequireReturnToZone { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 30)]
+        [Display(Name = "Confirmation Bars", Order = 6, GroupName = "D. Long Bucket 3")]
+        public int L3_ConfirmationBars { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "D. Long Bucket 3")]
+        public double L3_EntryOffsetPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "D. Long Bucket 3")]
+        public int L3_VarianceTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "TP Mode", Order = 9, GroupName = "D. Long Bucket 3")]
+        public TargetMode L3_TPMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "D. Long Bucket 3")]
+        public double L3_TakeProfitPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "D. Long Bucket 3")]
+        public int L3_TakeProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "SL Mode", Order = 12, GroupName = "D. Long Bucket 3")]
+        public TargetMode L3_SLMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "D. Long Bucket 3")]
+        public double L3_StopLossPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "D. Long Bucket 3")]
+        public int L3_StopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "D. Long Bucket 3")]
+        public int L3_MaxStopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "D. Long Bucket 3")]
+        public int L3_BreakevenTriggerPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "D. Long Bucket 3")]
+        public int L3_BreakevenOffsetTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "D. Long Bucket 3")]
+        public int L3_MaxBarsInTrade { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Trades/Day", Order = 19, GroupName = "D. Long Bucket 3")]
+        public int L3_MaxTradesPerDay { get; set; }
+        
+        // ==========================================
+        // ===== E. Long Bucket 4 =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "Enable L4", Order = 1, GroupName = "E. Long Bucket 4")]
+        public bool L4_Enabled { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "E. Long Bucket 4")]
+        public int L4_ORMinTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "E. Long Bucket 4")]
+        public int L4_ORMaxTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "E. Long Bucket 4")]
+        public bool L4_UseBreakoutRearm { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Require Return to Zone", Order = 5, GroupName = "E. Long Bucket 4")]
+        public bool L4_RequireReturnToZone { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 30)]
+        [Display(Name = "Confirmation Bars", Order = 6, GroupName = "E. Long Bucket 4")]
+        public int L4_ConfirmationBars { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "E. Long Bucket 4")]
+        public double L4_EntryOffsetPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "E. Long Bucket 4")]
+        public int L4_VarianceTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "TP Mode", Order = 9, GroupName = "E. Long Bucket 4")]
+        public TargetMode L4_TPMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "E. Long Bucket 4")]
+        public double L4_TakeProfitPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "E. Long Bucket 4")]
+        public int L4_TakeProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "SL Mode", Order = 12, GroupName = "E. Long Bucket 4")]
+        public TargetMode L4_SLMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "E. Long Bucket 4")]
+        public double L4_StopLossPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "E. Long Bucket 4")]
+        public int L4_StopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "E. Long Bucket 4")]
+        public int L4_MaxStopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "E. Long Bucket 4")]
+        public int L4_BreakevenTriggerPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "E. Long Bucket 4")]
+        public int L4_BreakevenOffsetTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "E. Long Bucket 4")]
+        public int L4_MaxBarsInTrade { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Trades/Day", Order = 19, GroupName = "E. Long Bucket 4")]
+        public int L4_MaxTradesPerDay { get; set; }
+        
+        // ==========================================
+        // ===== F. Short Bucket 1 =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "Enable S1", Order = 1, GroupName = "F. Short Bucket 1")]
+        public bool S1_Enabled { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "F. Short Bucket 1")]
+        public int S1_ORMinTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "F. Short Bucket 1")]
+        public int S1_ORMaxTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "F. Short Bucket 1")]
+        public bool S1_UseBreakoutRearm { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Require Return to Zone", Order = 5, GroupName = "F. Short Bucket 1")]
+        public bool S1_RequireReturnToZone { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 30)]
+        [Display(Name = "Confirmation Bars", Order = 6, GroupName = "F. Short Bucket 1")]
+        public int S1_ConfirmationBars { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "F. Short Bucket 1")]
+        public double S1_EntryOffsetPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "F. Short Bucket 1")]
+        public int S1_VarianceTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "TP Mode", Order = 9, GroupName = "F. Short Bucket 1")]
+        public TargetMode S1_TPMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "F. Short Bucket 1")]
+        public double S1_TakeProfitPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "F. Short Bucket 1")]
+        public int S1_TakeProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "SL Mode", Order = 12, GroupName = "F. Short Bucket 1")]
+        public TargetMode S1_SLMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "F. Short Bucket 1")]
+        public double S1_StopLossPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "F. Short Bucket 1")]
+        public int S1_StopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "F. Short Bucket 1")]
+        public int S1_MaxStopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "F. Short Bucket 1")]
+        public int S1_BreakevenTriggerPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "F. Short Bucket 1")]
+        public int S1_BreakevenOffsetTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "F. Short Bucket 1")]
+        public int S1_MaxBarsInTrade { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Trades/Day", Order = 19, GroupName = "F. Short Bucket 1")]
+        public int S1_MaxTradesPerDay { get; set; }
+        
+        // ==========================================
+        // ===== G. Short Bucket 2 =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "Enable S2", Order = 1, GroupName = "G. Short Bucket 2")]
+        public bool S2_Enabled { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "G. Short Bucket 2")]
+        public int S2_ORMinTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "G. Short Bucket 2")]
+        public int S2_ORMaxTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "G. Short Bucket 2")]
+        public bool S2_UseBreakoutRearm { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Require Return to Zone", Order = 5, GroupName = "G. Short Bucket 2")]
+        public bool S2_RequireReturnToZone { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 30)]
+        [Display(Name = "Confirmation Bars", Order = 6, GroupName = "G. Short Bucket 2")]
+        public int S2_ConfirmationBars { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "G. Short Bucket 2")]
+        public double S2_EntryOffsetPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "G. Short Bucket 2")]
+        public int S2_VarianceTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "TP Mode", Order = 9, GroupName = "G. Short Bucket 2")]
+        public TargetMode S2_TPMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "G. Short Bucket 2")]
+        public double S2_TakeProfitPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "G. Short Bucket 2")]
+        public int S2_TakeProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "SL Mode", Order = 12, GroupName = "G. Short Bucket 2")]
+        public TargetMode S2_SLMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "G. Short Bucket 2")]
+        public double S2_StopLossPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "G. Short Bucket 2")]
+        public int S2_StopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "G. Short Bucket 2")]
+        public int S2_MaxStopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "G. Short Bucket 2")]
+        public int S2_BreakevenTriggerPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "G. Short Bucket 2")]
+        public int S2_BreakevenOffsetTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "G. Short Bucket 2")]
+        public int S2_MaxBarsInTrade { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Trades/Day", Order = 19, GroupName = "G. Short Bucket 2")]
+        public int S2_MaxTradesPerDay { get; set; }
+        
+        // ==========================================
+        // ===== H. Short Bucket 3 =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "Enable S3", Order = 1, GroupName = "H. Short Bucket 3")]
+        public bool S3_Enabled { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "H. Short Bucket 3")]
+        public int S3_ORMinTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "H. Short Bucket 3")]
+        public int S3_ORMaxTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "H. Short Bucket 3")]
+        public bool S3_UseBreakoutRearm { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Require Return to Zone", Order = 5, GroupName = "H. Short Bucket 3")]
+        public bool S3_RequireReturnToZone { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 30)]
+        [Display(Name = "Confirmation Bars", Order = 6, GroupName = "H. Short Bucket 3")]
+        public int S3_ConfirmationBars { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "H. Short Bucket 3")]
+        public double S3_EntryOffsetPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "H. Short Bucket 3")]
+        public int S3_VarianceTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "TP Mode", Order = 9, GroupName = "H. Short Bucket 3")]
+        public TargetMode S3_TPMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "H. Short Bucket 3")]
+        public double S3_TakeProfitPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "H. Short Bucket 3")]
+        public int S3_TakeProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "SL Mode", Order = 12, GroupName = "H. Short Bucket 3")]
+        public TargetMode S3_SLMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "H. Short Bucket 3")]
+        public double S3_StopLossPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "H. Short Bucket 3")]
+        public int S3_StopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "H. Short Bucket 3")]
+        public int S3_MaxStopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "H. Short Bucket 3")]
+        public int S3_BreakevenTriggerPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "H. Short Bucket 3")]
+        public int S3_BreakevenOffsetTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "H. Short Bucket 3")]
+        public int S3_MaxBarsInTrade { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Trades/Day", Order = 19, GroupName = "H. Short Bucket 3")]
+        public int S3_MaxTradesPerDay { get; set; }
+        
+        // ==========================================
+        // ===== I. Short Bucket 4 =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "Enable S4", Order = 1, GroupName = "I. Short Bucket 4")]
+        public bool S4_Enabled { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "I. Short Bucket 4")]
+        public int S4_ORMinTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 99999)]
+        [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "I. Short Bucket 4")]
+        public int S4_ORMaxTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "I. Short Bucket 4")]
+        public bool S4_UseBreakoutRearm { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Require Return to Zone", Order = 5, GroupName = "I. Short Bucket 4")]
+        public bool S4_RequireReturnToZone { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 30)]
+        [Display(Name = "Confirmation Bars", Order = 6, GroupName = "I. Short Bucket 4")]
+        public int S4_ConfirmationBars { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "I. Short Bucket 4")]
+        public double S4_EntryOffsetPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "I. Short Bucket 4")]
+        public int S4_VarianceTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "TP Mode", Order = 9, GroupName = "I. Short Bucket 4")]
+        public TargetMode S4_TPMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "I. Short Bucket 4")]
+        public double S4_TakeProfitPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "I. Short Bucket 4")]
+        public int S4_TakeProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "SL Mode", Order = 12, GroupName = "I. Short Bucket 4")]
+        public TargetMode S4_SLMode { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0.01, 500)]
+        [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "I. Short Bucket 4")]
+        public double S4_StopLossPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "I. Short Bucket 4")]
+        public int S4_StopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "I. Short Bucket 4")]
+        public int S4_MaxStopLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "I. Short Bucket 4")]
+        public int S4_BreakevenTriggerPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "I. Short Bucket 4")]
+        public int S4_BreakevenOffsetTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "I. Short Bucket 4")]
+        public int S4_MaxBarsInTrade { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Trades/Day", Order = 19, GroupName = "I. Short Bucket 4")]
+        public int S4_MaxTradesPerDay { get; set; }
+        
+
+        // ==========================================
+        // ===== J. Order Management =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Range(0, 200)]
+        [Display(Name = "Cancel Order % of OR", Order = 1, GroupName = "J. Orders")]
+        public int CancelOrderPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Cancel Order Bars", Order = 2, GroupName = "J. Orders")]
+        public int CancelOrderBars { get; set; }
+        
+        // ==========================================
+        // ===== K. Session Risk Management =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Range(0, 100000)]
+        [Display(Name = "Max Session Profit (Ticks)", Order = 1, GroupName = "K. Session Risk")]
+        public int MaxSessionProfitTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100000)]
+        [Display(Name = "Max Session Loss (Ticks)", Order = 2, GroupName = "K. Session Risk")]
+        public int MaxSessionLossTicks { get; set; }
+        
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Max Total Trades/Day", Order = 3, GroupName = "K. Session Risk")]
+        public int MaxTradesPerDay { get; set; }
+        
+        // ==========================================
+        // ===== L. Time Settings =====
+        // ==========================================
+        [NinjaScriptProperty]
+        [Display(Name = "OR Start Time", Order = 1, GroupName = "L. Time")]
+        public TimeSpan ORStartTime { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "OR End Time", Order = 2, GroupName = "L. Time")]
+        public TimeSpan OREndTime { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Order = 3, GroupName = "L. Time")]
+        public TimeSpan SessionEnd { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "No Trades After", Order = 4, GroupName = "L. Time")]
+        public TimeSpan NoTradesAfter { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Skip Start", Order = 5, GroupName = "L. Time")]
+        public TimeSpan SkipStart { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Skip End", Order = 6, GroupName = "L. Time")]
+        public TimeSpan SkipEnd { get; set; }
+        
+        // ==========================================
+        // ===== M. Visual =====
+        // ==========================================
+        [XmlIgnore]
+        [Display(Name = "Range Box Color", Order = 1, GroupName = "M. Visual")]
+        public Brush RangeBoxBrush { get; set; }
+        
+        [Browsable(false)]
+        public string RangeBoxBrushSerializable
         {
-            if (!File.Exists(hedgeLockFile))
-                return;
-
-            var lines = File.ReadAllLines(hedgeLockFile).ToList();
-            lines.RemoveAll(l => l.StartsWith(instrument + ",", StringComparison.OrdinalIgnoreCase));
-            File.WriteAllLines(hedgeLockFile, lines);
+            get { return Serialize.BrushToString(RangeBoxBrush); }
+            set { RangeBoxBrush = Serialize.StringToBrush(value); }
         }
-    }
-
-    string GetTicker(Instrument instrument)
-    {
-        // Get the month code letter (F=Jan, G=Feb, H=Mar, etc.)
-        string[] monthCodes = { "", "F", "G", "H", "J", "K", "M", "N", "Q", "U", "V", "X", "Z" };
-        string monthCode = monthCodes[instrument.Expiry.Month];
-        string yearCode = instrument.Expiry.Year.ToString().Substring(2, 2); // or full year if you prefer
-
-        return $"{instrument.MasterInstrument.Name}{monthCode}20{yearCode}";
-    }
-
-    private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0)
-    {
-        if (State != State.Realtime)
-        return;
-
-        if (string.IsNullOrEmpty(WebhookUrl))
-            return;
-
-        try
-        {
-            string ticker = GetTicker(Instrument);
-
-            string time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff");
-            string json = "";
-
-            switch (eventType.ToLower())
-            {
-                case "buy":
-                case "sell":
-                    json = $@"
-                    {{
-                        ""ticker"": ""{ticker}"",
-                        ""action"": ""{eventType}"",
-                        ""orderType"": ""limit"",
-                        ""limitPrice"": {entryPrice},
-                        ""quantityType"": ""fixed_quantity"",
-                        ""quantity"": {NumberOfContracts},
-                        ""signalPrice"": {entryPrice},
-                        ""time"": ""{time}"",
-                        ""takeProfit"": {{
-                            ""limitPrice"": {takeProfit}
-                        }},
-                        ""stopLoss"": {{
-                            ""type"": ""stop"",
-                            ""stopPrice"": {stopLoss}
-                        }}
-                    }}";
-                    break;
-
-                case "exit":
-                    json = $@"
-                    {{
-                        ""ticker"": ""{ticker}"",
-                        ""action"": ""exit"",
-                        ""orderType"": ""limit"",
-                        ""limitPrice"": {entryPrice},
-                        ""quantityType"": ""fixed_quantity"",
-                        ""quantity"": {NumberOfContracts},
-                        ""cancel"": true,
-                        ""signalPrice"": {entryPrice},
-                        ""time"": ""{time}""
-                    }}";
-                    break;
-
-                case "cancel":
-                    json = $@"
-                    {{
-                        ""ticker"": ""{ticker}"",
-                        ""action"": ""cancel"",
-                        ""time"": ""{time}""
-                    }}";
-                    break;
-            }
-
-
-            using (var client = new System.Net.WebClient())
-            {
-                client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
-                client.UploadString(WebhookUrl, "POST", json);
-            }
-
-            Print($"✅ Webhook sent to TradersPost: {eventType.ToUpper()} for {ticker}");
-        }
-        catch (Exception ex)
-        {
-            Print($"⚠️ Webhook error: {ex.Message}");
-        }
-    }
-
-    // ✅ Determines if it's allowed to place a new order right now
-    private bool IsReadyForNewOrder()
-    {
-        // Not OK if TP was hit and price hasn't returned yet
-        if (tpWasHit && !hasReturnedOnce)
-            return false;
-
-        // Not OK if breakout rearm delay still active
-        if (UseBreakoutRearmDelay && breakoutRearmPending && Times[0][0] < breakoutRearmTime)
-            return false;
-
-        // Otherwise OK (session checks already handled elsewhere)
-        return true;
-    }
-
-    // Draws an orange vertical line at the future bar where order will be canceled
-    private void DrawOrderPlacementLine()
-    {
-        if (CancelOrderBars <= 0)
-            return; // Only draw if CancelOrderBars is active
-
-        orderPlacementBar = CurrentBar;
-        orderCancelBar = CurrentBar + CancelOrderBars;
-
-        // Create unique tag for this order line
-        currentOrderLineTag = $"OrderPlacement_{Times[0][0]:yyyyMMddHHmmss}_{CurrentBar}";
-
-        // Draw orange vertical line at the FUTURE bar where cancellation will occur
-        // Negative value means bars into the future from current bar
-        var orangeBrush = new SolidColorBrush(Color.FromArgb(64, 255, 140, 0)); // Orange with 75% transparency (25% opacity)
-        Draw.VerticalLine(this, currentOrderLineTag, -CancelOrderBars, orangeBrush, DashStyleHelper.Solid, 2);
-
-        DebugPrint($"🟠 Drew orange line {CancelOrderBars} bars into future - order will cancel at bar {orderCancelBar}");
-    }
-
-    // Removes the orange vertical line when order is filled or canceled
-    private void RemoveOrderPlacementLine()
-    {
-        if (!string.IsNullOrEmpty(currentOrderLineTag))
-        {
-            RemoveDrawObject(currentOrderLineTag);
-            DebugPrint($"🗑️ Removed orange order line: {currentOrderLineTag}");
-            currentOrderLineTag = string.Empty;
-            orderPlacementBar = -1;
-            orderCancelBar = -1;
-        }
-    }
-
-    #endregion
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Show Entry Lines", Order = 2, GroupName = "M. Visual")]
+        public bool ShowEntryLines { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Show Target Lines", Order = 3, GroupName = "M. Visual")]
+        public bool ShowTargetLines { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Show Stop Lines", Order = 4, GroupName = "M. Visual")]
+        public bool ShowStopLines { get; set; }
+        
+        #endregion
     }
 }
