@@ -885,15 +885,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            bool longOrderActive = IsOrderActive(longEntryOrder);
-            bool shortOrderActive = IsOrderActive(shortEntryOrder);
-
             if (longSignal)
             {
                 BeginTradeAttempt("Long");
                 LogDebug(string.Format("Setup ready | side=Long session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
 
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
+                bool longOrderActive = IsOrderActive(longEntryOrder);
 
                 if (!longOrderActive)
                 {
@@ -928,6 +926,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug(string.Format("Setup ready | side=Short session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
 
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
+                bool shortOrderActive = IsOrderActive(shortEntryOrder);
 
                 if (!shortOrderActive)
                 {
