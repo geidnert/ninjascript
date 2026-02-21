@@ -41,6 +41,52 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ShortOnly
         }
 
+        private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
+        {
+            private static readonly double[] Presets = new double[]
+            {
+                1.33, 1.34, 1.35, 1.36, 1.37, 1.48, 1.49, 1.50, 1.51, 1.52, 1.53, 1.54, 1.55
+            };
+
+            public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+            {
+                return new TypeConverter.StandardValuesCollection(Presets);
+            }
+        }
+
+        private sealed class NewYorkAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
+        {
+            private static readonly double[] Presets = new double[]
+            {
+                1.55, 1.56, 1.57, 1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65
+            };
+
+            public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override bool GetStandardValuesExclusive(ITypeDescriptorContext context)
+            {
+                return true;
+            }
+
+            public override TypeConverter.StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+            {
+                return new TypeConverter.StandardValuesCollection(Presets);
+            }
+        }
+
         private enum SessionSlot
         {
             None,
@@ -102,17 +148,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxPeakDrawdownExitUnits;
         private double activeAdxAbsoluteExitLevel;
         private double activeStopPaddingPoints;
-        private double activeShortEmaMinSlopePointsPerBar;
-        private double activeShortMaxEntryDistanceFromEmaPoints;
-        private double activeShortExitCrossPoints;
-        private double activeShortTakeProfitPoints;
-        private double activeShortAdxThreshold;
-        private double activeShortFlipAdxThreshold;
-        private double activeShortAdxMaxThreshold;
-        private double activeShortAdxMinSlopePoints;
-        private double activeShortAdxPeakDrawdownExitUnits;
-        private double activeShortAdxAbsoluteExitLevel;
-        private double activeShortStopPaddingPoints;
 
         private double pendingLongStopForWebhook;
         private double pendingShortStopForWebhook;
@@ -397,17 +432,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaStopPaddingPoints = 63;
                 AsiaExitCrossPoints = 3.5;
                 AsiaTakeProfitPoints = 93.75;
-                AsiaShortFlipAdxThreshold = AsiaFlipAdxThreshold;
-                AsiaShortEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
-                AsiaShortMaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
-                AsiaShortAdxThreshold = AsiaAdxThreshold;
-                AsiaShortAdxMaxThreshold = AsiaAdxMaxThreshold;
-                AsiaShortAdxMinSlopePoints = AsiaAdxMinSlopePoints;
-                AsiaShortAdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
-                AsiaShortAdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
-                AsiaShortStopPaddingPoints = AsiaStopPaddingPoints;
-                AsiaShortExitCrossPoints = AsiaExitCrossPoints;
-                AsiaShortTakeProfitPoints = AsiaTakeProfitPoints;
 
                 UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 40, 0);
@@ -429,17 +453,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkStopPaddingPoints = 54.5;
                 NewYorkExitCrossPoints = 1.25;
                 NewYorkTakeProfitPoints = 123.75;
-                NewYorkShortFlipAdxThreshold = NewYorkFlipAdxThreshold;
-                NewYorkShortEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
-                NewYorkShortMaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
-                NewYorkShortAdxThreshold = NewYorkAdxThreshold;
-                NewYorkShortAdxMaxThreshold = NewYorkAdxMaxThreshold;
-                NewYorkShortAdxMinSlopePoints = NewYorkAdxMinSlopePoints;
-                NewYorkShortAdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
-                NewYorkShortAdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
-                NewYorkShortStopPaddingPoints = NewYorkStopPaddingPoints;
-                NewYorkShortExitCrossPoints = NewYorkExitCrossPoints;
-                NewYorkShortTakeProfitPoints = NewYorkTakeProfitPoints;
 
                 CloseAtSessionEnd = false;
                 AsiaSessionBrush = Brushes.DarkCyan;
@@ -586,7 +599,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int tradesThisSession = GetTradesThisSession(activeSession);
             bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
             bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
-            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked;
+            bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeFlipAdxThreshold <= 0.0 || adxValue >= activeFlipAdxThreshold;
+            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass;
+            bool allowLong = activeTradeDirection != SessionTradeDirection.ShortOnly;
+            bool allowShort = activeTradeDirection != SessionTradeDirection.LongOnly;
 
             if (!inActiveSessionNow)
                 CancelWorkingEntryOrders();
@@ -609,8 +625,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool distancePasses = activeMaxEntryDistanceFromEmaPoints <= 0.0 || emaDistancePoints <= activeMaxEntryDistanceFromEmaPoints;
             bool emaSlopeLongPass = EmaSlopePassesLong();
             bool emaSlopeShortPass = EmaSlopePassesShort();
-            bool longSignal = bullish && bodyAbovePercent > 0.0;
-            bool shortSignal = bearish && bodyBelowPercent > 0.0;
+            bool longSignalRaw = bullish && bodyAbovePercent > 0.0;
+            bool shortSignalRaw = bearish && bodyBelowPercent > 0.0;
+            bool longSignal = longSignalRaw && allowLong;
+            bool shortSignal = shortSignalRaw && allowShort;
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
@@ -623,7 +641,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 double adxDrawdown;
-                if (ShouldExitOnAdxDrawdown(adxValue, activeAdxPeakDrawdownExitUnits, out adxDrawdown))
+                if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
                 {
                     ExitLong("AdxDrawdownExit", GetOpenLongEntrySignal());
                     LogDebug(string.Format("Exit LONG | reason=AdxDrawdown adx={0:0.00} peak={1:0.00} drawdown={2:0.00} threshold={3:0.00}",
@@ -651,10 +669,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     bool flipCanTradePass = canFlipNow;
+                    bool flipDirectionPass = allowShort;
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeShortPass;
                     bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
@@ -694,8 +713,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} below%={4:0.0} minBody%={5:0.0}",
+                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} below%={6:0.0} minBody%={7:0.0}",
                                 flipCanTradePass,
+                                flipAdxMinPass,
+                                flipDirectionPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -721,7 +742,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 double adxDrawdown;
-                if (ShouldExitOnAdxDrawdown(adxValue, activeAdxPeakDrawdownExitUnits, out adxDrawdown))
+                if (ShouldExitOnAdxDrawdown(adxValue, out adxDrawdown))
                 {
                     ExitShort("AdxDrawdownExit", GetOpenShortEntrySignal());
                     LogDebug(string.Format("Exit SHORT | reason=AdxDrawdown adx={0:0.00} peak={1:0.00} drawdown={2:0.00} threshold={3:0.00}",
@@ -749,10 +770,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     bool flipCanTradePass = canFlipNow;
+                    bool flipDirectionPass = allowLong;
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeLongPass;
                     bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
@@ -792,8 +814,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} distancePass={1} emaSlopePass={2} bodyPass={3} above%={4:0.0} minBody%={5:0.0}",
+                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} above%={6:0.0} minBody%={7:0.0}",
                                 flipCanTradePass,
+                                flipAdxMinPass,
+                                flipDirectionPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -808,9 +832,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
+            if (DebugLogging && Position.MarketPosition == MarketPosition.Flat)
+            {
+                if (longSignalRaw && !allowLong)
+                {
+                    LogDebug(string.Format(
+                        "Setup blocked | side=Long close={0:0.00} ema={1:0.00} reasons=DirectionBlocked mode={2}",
+                        Close[0],
+                        emaValue,
+                        activeTradeDirection));
+                }
+                else if (shortSignalRaw && !allowShort)
+                {
+                    LogDebug(string.Format(
+                        "Setup blocked | side=Short close={0:0.00} ema={1:0.00} reasons=DirectionBlocked mode={2}",
+                        Close[0],
+                        emaValue,
+                        activeTradeDirection));
+                }
+            }
+
             if (!canTradeNow)
             {
-                if (DebugLogging && Position.MarketPosition == MarketPosition.Flat)
+                if (DebugLogging && Position.MarketPosition == MarketPosition.Flat && (longSignal || shortSignal))
                 {
                     string setupSide = longSignal ? "Long" : "Short";
                     var reasons = new List<string>();
@@ -1355,17 +1399,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeExitCrossPoints = AsiaExitCrossPoints;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
-                    activeShortAdxThreshold = AsiaShortAdxThreshold;
-                    activeShortFlipAdxThreshold = AsiaShortFlipAdxThreshold;
-                    activeShortAdxMaxThreshold = AsiaShortAdxMaxThreshold;
-                    activeShortAdxMinSlopePoints = AsiaShortAdxMinSlopePoints;
-                    activeShortAdxPeakDrawdownExitUnits = AsiaShortAdxPeakDrawdownExitUnits;
-                    activeShortAdxAbsoluteExitLevel = AsiaShortAdxAbsoluteExitLevel;
-                    activeShortEmaMinSlopePointsPerBar = AsiaShortEmaMinSlopePointsPerBar;
-                    activeShortMaxEntryDistanceFromEmaPoints = AsiaShortMaxEntryDistanceFromEmaPoints;
-                    activeShortStopPaddingPoints = AsiaShortStopPaddingPoints;
-                    activeShortExitCrossPoints = AsiaShortExitCrossPoints;
-                    activeShortTakeProfitPoints = AsiaShortTakeProfitPoints;
                     break;
 
                 case SessionSlot.NewYork:
@@ -1388,17 +1421,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeExitCrossPoints = NewYorkExitCrossPoints;
                     activeTakeProfitPoints = NewYorkTakeProfitPoints;
-                    activeShortAdxThreshold = NewYorkShortAdxThreshold;
-                    activeShortFlipAdxThreshold = NewYorkShortFlipAdxThreshold;
-                    activeShortAdxMaxThreshold = NewYorkShortAdxMaxThreshold;
-                    activeShortAdxMinSlopePoints = NewYorkShortAdxMinSlopePoints;
-                    activeShortAdxPeakDrawdownExitUnits = NewYorkShortAdxPeakDrawdownExitUnits;
-                    activeShortAdxAbsoluteExitLevel = NewYorkShortAdxAbsoluteExitLevel;
-                    activeShortEmaMinSlopePointsPerBar = NewYorkShortEmaMinSlopePointsPerBar;
-                    activeShortMaxEntryDistanceFromEmaPoints = NewYorkShortMaxEntryDistanceFromEmaPoints;
-                    activeShortStopPaddingPoints = NewYorkShortStopPaddingPoints;
-                    activeShortExitCrossPoints = NewYorkShortExitCrossPoints;
-                    activeShortTakeProfitPoints = NewYorkShortTakeProfitPoints;
                     break;
 
                 default:
@@ -1420,17 +1442,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeStopPaddingPoints = 0.0;
                     activeExitCrossPoints = 0.0;
                     activeTakeProfitPoints = 0.0;
-                    activeShortAdxThreshold = 0.0;
-                    activeShortFlipAdxThreshold = 0.0;
-                    activeShortAdxMaxThreshold = 0.0;
-                    activeShortAdxMinSlopePoints = 0.0;
-                    activeShortAdxPeakDrawdownExitUnits = 0.0;
-                    activeShortAdxAbsoluteExitLevel = 0.0;
-                    activeShortEmaMinSlopePointsPerBar = 0.0;
-                    activeShortMaxEntryDistanceFromEmaPoints = 0.0;
-                    activeShortStopPaddingPoints = 0.0;
-                    activeShortExitCrossPoints = 0.0;
-                    activeShortTakeProfitPoints = 0.0;
                     break;
             }
         }
@@ -1743,7 +1754,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private double GetActiveShortStopPaddingPoints(DateTime time)
         {
-            return IsHighVolatilitySlWindow(time) ? HvSlPaddingPoints : activeShortStopPaddingPoints;
+            return IsHighVolatilitySlWindow(time) ? HvSlPaddingPoints : activeStopPaddingPoints;
         }
 
         private bool IsHighVolatilitySlWindow(DateTime time)
@@ -1815,10 +1826,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentTradePeakAdx = adxValue;
         }
 
-        private bool ShouldExitOnAdxDrawdown(double adxValue, double threshold, out double drawdown)
+        private bool ShouldExitOnAdxDrawdown(double adxValue, out double drawdown)
         {
             drawdown = 0.0;
-            if (threshold <= 0.0)
+            if (activeAdxPeakDrawdownExitUnits <= 0.0)
                 return false;
 
             if (Position.MarketPosition == MarketPosition.Flat)
@@ -1828,7 +1839,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
 
             drawdown = currentTradePeakAdx - adxValue;
-            return drawdown >= threshold;
+            return drawdown >= activeAdxPeakDrawdownExitUnits;
         }
 
 
@@ -3031,7 +3042,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by Asia entry and exit logic.", GroupName = "Asia", Order = 6)]
+        [Display(Name = "EMA Period", Description = "EMA period used by Asia entry and exit logic.", GroupName = "Asia", Order = 4)]
         public int AsiaEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
@@ -3040,123 +3051,69 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int AsiaContracts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Direction", Description = "Select whether Asia can take long, short, or both directions.", GroupName = "Asia", Order = 4)]
+        [Display(Name = "Trade Direction", Description = "Select whether Asia can take long, short, or both directions.", GroupName = "Asia", Order = 6)]
         public SessionTradeDirection AsiaTradeDirection { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia trend filter.", GroupName = "Asia", Order = 7)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia trend filter.", GroupName = "Asia", Order = 10)]
         public int AsiaAdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "LONG ADX Min Threshold", Description = "0 disables. Asia long entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 11)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 11)]
         public double AsiaAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "LONG FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia long flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 8)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 7)]
         public double AsiaFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG ADX Max Threshold", Description = "0 disables. Asia long entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia", Order = 12)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia", Order = 12)]
         public double AsiaAdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 13)]
+        [TypeConverter(typeof(AsiaAdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 13)]
         public double AsiaAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG ADX Peak Drawdown Exit", Description = "0 disables. While in a long trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 14)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 14)]
         public double AsiaAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for long flip signals. 0 disables.", GroupName = "Asia", Order = 9)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "Asia", Order = 8)]
         public double AsiaEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG FLIP Max Entry Distance From EMA", Description = "0 disables. Block long flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 10)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 9)]
         public double AsiaMaxEntryDistanceFromEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "LONG ADX Absolute Exit Level", Description = "0 disables. While in a long trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia", Order = 15)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia", Order = 15)]
         public double AsiaAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side of a long.", GroupName = "Asia", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "Asia", Order = 16)]
         public double AsiaStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG Exit Cross Points", Description = "Additional points beyond EMA before evaluating long exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 17)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 17)]
         public double AsiaExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG Take Profit (Points)", Description = "0 disables. Exit long when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 18)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 18)]
         public double AsiaTakeProfitPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "SHORT FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia short flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 19)]
-        public double AsiaShortFlipAdxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for short flip signals. 0 disables.", GroupName = "Asia", Order = 20)]
-        public double AsiaShortEmaMinSlopePointsPerBar { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT FLIP Max Entry Distance From EMA", Description = "0 disables. Block short flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 21)]
-        public double AsiaShortMaxEntryDistanceFromEmaPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "SHORT ADX Min Threshold", Description = "0 disables. Asia short entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 22)]
-        public double AsiaShortAdxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT ADX Max Threshold", Description = "0 disables. Asia short entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia", Order = 23)]
-        public double AsiaShortAdxMaxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "Asia", Order = 24)]
-        public double AsiaShortAdxMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT ADX Peak Drawdown Exit", Description = "0 disables. While in a short trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 25)]
-        public double AsiaShortAdxPeakDrawdownExitUnits { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "SHORT ADX Absolute Exit Level", Description = "0 disables. While in a short trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia", Order = 26)]
-        public double AsiaShortAdxAbsoluteExitLevel { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side of a short.", GroupName = "Asia", Order = 27)]
-        public double AsiaShortStopPaddingPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT Exit Cross Points", Description = "Additional points beyond EMA before evaluating short exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 28)]
-        public double AsiaShortExitCrossPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT Take Profit (Points)", Description = "0 disables. Exit short when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 29)]
-        public double AsiaShortTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "New York Session(9.40-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
@@ -3180,7 +3137,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York entry and exit logic.", GroupName = "New York", Order = 7)]
+        [Display(Name = "EMA Period", Description = "EMA period used by New York entry and exit logic.", GroupName = "New York", Order = 5)]
         public int NewYorkEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
@@ -3189,123 +3146,69 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYorkContracts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Direction", Description = "Select whether New York can take long, short, or both directions.", GroupName = "New York", Order = 5)]
+        [Display(Name = "Trade Direction", Description = "Select whether New York can take long, short, or both directions.", GroupName = "New York", Order = 7)]
         public SessionTradeDirection NewYorkTradeDirection { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York trend filter.", GroupName = "New York", Order = 8)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York trend filter.", GroupName = "New York", Order = 11)]
         public int NewYorkAdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "LONG ADX Min Threshold", Description = "0 disables. New York long entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 12)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 12)]
         public double NewYorkAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "LONG FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York long flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 9)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 8)]
         public double NewYorkFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG ADX Max Threshold", Description = "0 disables. New York long entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 13)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 13)]
         public double NewYorkAdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 14)]
+        [TypeConverter(typeof(NewYorkAdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 14)]
         public double NewYorkAdxMinSlopePoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG ADX Peak Drawdown Exit", Description = "0 disables. While in a long trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 15)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 15)]
         public double NewYorkAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for long flip signals. 0 disables.", GroupName = "New York", Order = 10)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "New York", Order = 9)]
         public double NewYorkEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG FLIP Max Entry Distance From EMA", Description = "0 disables. Block long flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 11)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 10)]
         public double NewYorkMaxEntryDistanceFromEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "LONG ADX Absolute Exit Level", Description = "0 disables. While in a long trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York", Order = 16)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York", Order = 16)]
         public double NewYorkAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side of a long.", GroupName = "New York", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "New York", Order = 17)]
         public double NewYorkStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG Exit Cross Points", Description = "Additional points beyond EMA before evaluating long exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 18)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 18)]
         public double NewYorkExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG Take Profit (Points)", Description = "0 disables. Exit long when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 19)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 19)]
         public double NewYorkTakeProfitPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "SHORT FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York short flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 20)]
-        public double NewYorkShortFlipAdxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for short flip signals. 0 disables.", GroupName = "New York", Order = 21)]
-        public double NewYorkShortEmaMinSlopePointsPerBar { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT FLIP Max Entry Distance From EMA", Description = "0 disables. Block short flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 22)]
-        public double NewYorkShortMaxEntryDistanceFromEmaPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "SHORT ADX Min Threshold", Description = "0 disables. New York short entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 23)]
-        public double NewYorkShortAdxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT ADX Max Threshold", Description = "0 disables. New York short entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 24)]
-        public double NewYorkShortAdxMaxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT ADX Momentum Threshold", Description = "Momentum Threshold", GroupName = "New York", Order = 25)]
-        public double NewYorkShortAdxMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT ADX Peak Drawdown Exit", Description = "0 disables. While in a short trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 26)]
-        public double NewYorkShortAdxPeakDrawdownExitUnits { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "SHORT ADX Absolute Exit Level", Description = "0 disables. While in a short trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York", Order = 27)]
-        public double NewYorkShortAdxAbsoluteExitLevel { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side of a short.", GroupName = "New York", Order = 28)]
-        public double NewYorkShortStopPaddingPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT Exit Cross Points", Description = "Additional points beyond EMA before evaluating short exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 29)]
-        public double NewYorkShortExitCrossPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT Take Profit (Points)", Description = "0 disables. Exit short when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 30)]
-        public double NewYorkShortTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Session End", Description = "If true, flatten positions and cancel entries at each configured session end.", GroupName = "10. Sessions", Order = 0)]
