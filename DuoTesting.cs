@@ -692,13 +692,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         pendingShortStopForWebhook = stopPrice;
                         SetStopLossByDistanceTicks(ShortFlipEntrySignal, entryPrice, stopPrice);
                         SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, activeTakeProfitPoints);
-                        int webhookQty = Math.Max(1, Math.Abs(Position.Quantity) + qty);
-                        LogDebug(string.Format(
-                            "Flip webhook qty | side=sell posQty={0} entryQty={1} webhookQty={2}",
-                            Math.Abs(Position.Quantity),
-                            qty,
-                            webhookQty));
-                        SendWebhook("sell", entryPrice, entryPrice, stopPrice, useMarketEntry, webhookQty);
+                        SendFlipWebhooks("sell", entryPrice, stopPrice, useMarketEntry, qty, MarketPosition.Long);
                         StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                         SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortFlipEntrySignal);
 
@@ -797,13 +791,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         pendingLongStopForWebhook = stopPrice;
                         SetStopLossByDistanceTicks(LongFlipEntrySignal, entryPrice, stopPrice);
                         SetProfitTargetByDistanceTicks(LongFlipEntrySignal, activeTakeProfitPoints);
-                        int webhookQty = Math.Max(1, Math.Abs(Position.Quantity) + qty);
-                        LogDebug(string.Format(
-                            "Flip webhook qty | side=buy posQty={0} entryQty={1} webhookQty={2}",
-                            Math.Abs(Position.Quantity),
-                            qty,
-                            webhookQty));
-                        SendWebhook("buy", entryPrice, entryPrice, stopPrice, useMarketEntry, webhookQty);
+                        SendFlipWebhooks("buy", entryPrice, stopPrice, useMarketEntry, qty, MarketPosition.Short);
                         StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                         SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongFlipEntrySignal);
 
@@ -2712,6 +2700,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 return false;
             }
+        }
+
+        private void SendFlipWebhooks(string entryEventType, double entryPrice, double stopPrice, bool isMarketEntry, int entryQuantity, MarketPosition expectedCurrentPosition)
+        {
+            int positionQty = Math.Abs(Position.Quantity);
+            bool shouldExitFirst = Position.MarketPosition == expectedCurrentPosition && positionQty > 0;
+
+            if (shouldExitFirst)
+            {
+                LogDebug(string.Format(
+                    "Flip webhook sequence | step=exit side={0} qty={1}",
+                    expectedCurrentPosition,
+                    positionQty));
+                SendWebhook("exit", 0, 0, 0, true, positionQty);
+            }
+
+            int webhookEntryQty = Math.Max(1, entryQuantity);
+            LogDebug(string.Format(
+                "Flip webhook sequence | step=entry action={0} entryQty={1} market={2} entry={3:0.00} stop={4:0.00}",
+                entryEventType,
+                webhookEntryQty,
+                isMarketEntry,
+                entryPrice,
+                stopPrice));
+            SendWebhook(entryEventType, entryPrice, entryPrice, stopPrice, isMarketEntry, webhookEntryQty);
         }
 
         private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
