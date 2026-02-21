@@ -4,9 +4,12 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Xml.Serialization;
@@ -140,6 +143,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         // ===== Random for variance =====
         private Random random = new Random();
+
+        // ===== Info Box Overlay =====
+        private Border infoBoxContainer;
+        private StackPanel infoBoxRowsPanel;
+        private bool legacyInfoDrawingsCleared;
+        private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
+            Color.FromArgb(240, 0x2A, 0x2F, 0x45),
+            Color.FromArgb(240, 0x1E, 0x23, 0x36),
+            Color.FromArgb(240, 0x14, 0x18, 0x28));
+        private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
+        private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
+        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(210, 0xD3, 0xD3, 0xD3);
+        private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
+        private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
         
         #endregion
 
@@ -167,7 +184,7 @@ USE ON 1-MINUTE CHART.";
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
-                IsInstantiatedOnEachOptimizationIteration = true;
+                IsInstantiatedOnEachOptimizationIteration = false;
                 
                 // ===== A. General Settings =====
                 NumberOfContracts = 1;
@@ -379,6 +396,10 @@ USE ON 1-MINUTE CHART.";
             else if (State == State.DataLoaded)
             {
                 startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+            }
+            else if (State == State.Terminated)
+            {
+                DisposeInfoBoxOverlay();
             }
         }
 
@@ -1115,66 +1136,218 @@ USE ON 1-MINUTE CHART.";
         
         private void UpdateInfoText()
         {
-            string info = "";
+            if (State != State.Realtime && State != State.Historical)
+                return;
+
+            if (ChartControl == null || ChartControl.Dispatcher == null)
+                return;
+
+            var lines = BuildInfoLines();
+            if (!legacyInfoDrawingsCleared)
+            {
+                RemoveLegacyInfoBoxDrawings();
+                legacyInfoDrawingsCleared = true;
+            }
+
+            ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines));
+        }
+
+        private void RenderInfoBoxOverlay(List<(string label, string value, Brush labelBrush, Brush valueBrush)> lines)
+        {
+            if (!EnsureInfoBoxOverlay())
+                return;
+
+            if (infoBoxRowsPanel == null)
+                return;
+
+            infoBoxRowsPanel.Children.Clear();
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                bool isHeader = i == 0;
+                bool isFooter = i == lines.Count - 1;
+                var rowBorder = new Border
+                {
+                    Background = (isHeader || isFooter)
+                        ? InfoHeaderFooterGradientBrush
+                        : (i % 2 == 0 ? InfoBodyEvenBrush : InfoBodyOddBrush),
+                    Padding = new Thickness(6, 2, 6, 2)
+                };
+
+                var text = new TextBlock
+                {
+                    FontFamily = new FontFamily("Segoe UI"),
+                    FontSize = isHeader ? 15 : 14,
+                    FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal
+                };
+                TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
+                TextOptions.SetTextRenderingMode(text, TextRenderingMode.ClearType);
+
+                string label = lines[i].label ?? string.Empty;
+                string value = lines[i].value ?? string.Empty;
+
+                text.Inlines.Add(new Run(label) { Foreground = isHeader ? InfoHeaderTextBrush : InfoLabelBrush });
+                if (!string.IsNullOrEmpty(value))
+                {
+                    text.Inlines.Add(new Run(" ") { Foreground = isHeader ? InfoHeaderTextBrush : InfoLabelBrush });
+
+                    Brush stateValueBrush = lines[i].valueBrush;
+                    if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
+                        stateValueBrush = lines[i].labelBrush;
+                    if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
+                        stateValueBrush = InfoValueBrush;
+
+                    text.Inlines.Add(new Run(value) { Foreground = stateValueBrush });
+                }
+
+                rowBorder.Child = text;
+                infoBoxRowsPanel.Children.Add(rowBorder);
+            }
+        }
+
+        private bool EnsureInfoBoxOverlay()
+        {
+            if (ChartControl == null)
+                return false;
+
+            if (infoBoxContainer != null && infoBoxRowsPanel != null)
+                return true;
+
+            var host = ChartControl.Parent as System.Windows.Controls.Panel;
+            if (host == null)
+                return false;
+
+            infoBoxRowsPanel = new StackPanel
+            {
+                Orientation = Orientation.Vertical
+            };
+
+            infoBoxContainer = new Border
+            {
+                Child = infoBoxRowsPanel,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(5, 8, 8, 37),
+                Background = Brushes.Transparent
+            };
+
+            host.Children.Add(infoBoxContainer);
+            System.Windows.Controls.Panel.SetZIndex(infoBoxContainer, int.MaxValue);
+            return true;
+        }
+
+        private void DisposeInfoBoxOverlay()
+        {
+            try
+            {
+                if (ChartControl == null || ChartControl.Dispatcher == null)
+                {
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                    return;
+                }
+
+                ChartControl.Dispatcher.InvokeAsync(() =>
+                {
+                    if (infoBoxContainer != null)
+                    {
+                        var parent = infoBoxContainer.Parent as System.Windows.Controls.Panel;
+                        if (parent != null)
+                            parent.Children.Remove(infoBoxContainer);
+                    }
+
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                });
+            }
+            catch
+            {
+                infoBoxRowsPanel = null;
+                infoBoxContainer = null;
+            }
+        }
+
+        private void RemoveLegacyInfoBoxDrawings()
+        {
+            RemoveDrawObject("Info");
+            RemoveDrawObject("myStatusLabel_bg");
+            RemoveDrawObject("myStatusLabel_bg_top");
+            RemoveDrawObject("myStatusLabel_bg_bottom");
+            for (int i = 0; i < 64; i++)
+            {
+                RemoveDrawObject(string.Format("myStatusLabel_bg_{0}", i));
+                RemoveDrawObject(string.Format("myStatusLabel_label_{0}", i));
+                RemoveDrawObject(string.Format("myStatusLabel_val_{0}", i));
+            }
+        }
+
+        private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
+        {
+            var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
+
+            lines.Add((string.Format("ORBO v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+
             if (!orCaptured)
             {
                 string h = (orHigh == double.MinValue) ? "---" : orHigh.ToString("F2");
                 string l = (orLow == double.MaxValue) ? "---" : orLow.ToString("F2");
-                info = "Capturing OR (" + orStartTime.ToString(@"hh\:mm") + "-" + orEndTime.ToString(@"hh\:mm") + ")\nH=" + h + " L=" + l;
+                lines.Add(("Capturing OR (" + orStartTime.ToString(@"hh\:mm") + "-" + orEndTime.ToString(@"hh\:mm") + ")", string.Empty, Brushes.LightGray, Brushes.Transparent));
+                lines.Add(("H=" + h + " L=" + l, string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
             else
             {
                 double orT = orRange / TickSize;
-                info = "OR: " + orLow.ToString("F2") + " - " + orHigh.ToString("F2") + " (" + orT.ToString("F0") + "t)\n";
+                lines.Add(("OR: " + orLow.ToString("F2") + " - " + orHigh.ToString("F2") + " (" + orT.ToString("F0") + "t)", string.Empty, Brushes.LightGray, Brushes.Transparent));
                 
+                string entryLine = string.Empty;
                 if (longBucketFound)
                 {
                     double e = orHigh + orRange * (activeLongBucket.EntryOffsetPercent / 100.0);
-                    info += "L" + activeLongBucketIndex + " > " + e.ToString("F2");
+                    entryLine += "L" + activeLongBucketIndex + " > " + e.ToString("F2");
                 }
                 else
-                    info += "L: none";
+                    entryLine += "L: none";
                 
-                info += " | ";
+                entryLine += " | ";
                 
                 if (shortBucketFound)
                 {
                     double e = orLow - orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
-                    info += "S" + activeShortBucketIndex + " < " + e.ToString("F2");
+                    entryLine += "S" + activeShortBucketIndex + " < " + e.ToString("F2");
                 }
                 else
-                    info += "S: none";
-                
-                info += "\n";
+                    entryLine += "S: none";
+                lines.Add((entryLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
                 
                 if (entryOrder != null && (entryOrder.OrderState == OrderState.Working || entryOrder.OrderState == OrderState.Accepted))
                 {
                     string ot = lastTradeWasLong ? "LONG [L" + activeLongBucketIndex + "]" : "SHORT [S" + activeShortBucketIndex + "]";
                     int bp = CurrentBar - entryOrderBar;
                     if (CancelOrderBars > 0)
-                        info += "LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + "/" + CancelOrderBars + "]\n";
+                        lines.Add(("LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + "/" + CancelOrderBars + "]", string.Empty, Brushes.LightGray, Brushes.Transparent));
                     else
-                        info += "LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + " bars]\n";
+                        lines.Add(("LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + " bars]", string.Empty, Brushes.LightGray, Brushes.Transparent));
                 }
                 else if (longBreakoutOccurred || shortBreakoutOccurred)
                 {
+                    string breakoutLine;
                     if (longBreakoutOccurred)
-                        info += "LONG [L" + activeLongBucketIndex + "] [" + confirmationBarCount + "/" + activeLongBucket.ConfirmationBars + "]";
+                        breakoutLine = "LONG [L" + activeLongBucketIndex + "] [" + confirmationBarCount + "/" + activeLongBucket.ConfirmationBars + "]";
                     else
-                        info += "SHORT [S" + activeShortBucketIndex + "] [" + confirmationBarCount + "/" + activeShortBucket.ConfirmationBars + "]";
+                        breakoutLine = "SHORT [S" + activeShortBucketIndex + "] [" + confirmationBarCount + "/" + activeShortBucket.ConfirmationBars + "]";
                     if (confirmationComplete)
-                        info += " READY";
-                    info += "\n";
+                        breakoutLine += " READY";
+                    lines.Add((breakoutLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
                 }
                 
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
                     double pft = Position.MarketPosition == MarketPosition.Long ? Close[0] - entryPrice : entryPrice - Close[0];
                     double pPct = orRange > 0 ? (pft / orRange) * 100 : 0;
-                    info += "IN TRADE: " + pft.ToString("F2") + " (" + pPct.ToString("F1") + "% OR)";
+                    string inTradeLine = "IN TRADE: " + pft.ToString("F2") + " (" + pPct.ToString("F1") + "% OR)";
                     if (beTriggerActive)
-                        info += " [BE]";
-                    info += "\n";
+                        inTradeLine += " [BE]";
+                    lines.Add((inTradeLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
                 }
                 
                 double ur = 0;
@@ -1183,17 +1356,59 @@ USE ON 1-MINUTE CHART.";
                 else if (Position.MarketPosition == MarketPosition.Short)
                     ur = (Position.AveragePrice - Close[0]) / TickSize;
                 double sess = sessionRealizedPnL + ur;
-                info += "Session: " + sess.ToString("F0") + "t | Trades: " + tradeCount;
+                string sessionLine = "Session: " + sess.ToString("F0") + "t | Trades: " + tradeCount;
                 if (MaxTradesPerDay > 0)
-                    info += "/" + MaxTradesPerDay;
+                    sessionLine += "/" + MaxTradesPerDay;
                 if (sessionProfitLimitHit)
-                    info += " [PROFIT LIMIT]";
+                    sessionLine += " [PROFIT LIMIT]";
                 else if (sessionLossLimitHit)
-                    info += " [LOSS LIMIT]";
+                    sessionLine += " [LOSS LIMIT]";
                 else if (!longBucketFound && !shortBucketFound)
-                    info += " [NO BUCKETS]";
+                    sessionLine += " [NO BUCKETS]";
+                lines.Add((sessionLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
-            Draw.TextFixed(this, "Info", info, TextPosition.TopRight);
+
+            lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
+
+            return lines;
+        }
+
+        private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            try
+            {
+                if (brush.CanFreeze)
+                    brush.Freeze();
+            }
+            catch { }
+            return brush;
+        }
+
+        private static Brush CreateFrozenVerticalGradientBrush(Color top, Color mid, Color bottom)
+        {
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new Point(0.5, 0.0),
+                EndPoint = new Point(0.5, 1.0)
+            };
+            brush.GradientStops.Add(new GradientStop(top, 0.0));
+            brush.GradientStops.Add(new GradientStop(mid, 0.5));
+            brush.GradientStops.Add(new GradientStop(bottom, 1.0));
+            try
+            {
+                if (brush.CanFreeze)
+                    brush.Freeze();
+            }
+            catch { }
+            return brush;
+        }
+
+        private string GetAddOnVersion()
+        {
+            Assembly assembly = GetType().Assembly;
+            Version version = assembly.GetName().Version;
+            return version != null ? version.ToString() : "0.0.0.0";
         }
         
         private void DebugPrint(string msg)
