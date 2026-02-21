@@ -47,7 +47,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // {
         //     private static readonly double[] Presets = new double[]
         //     {
-        //         1.33, 1.34, 1.35, 1.36, 1.37, 1.48, 1.49, 1.50, 1.51, 1.52, 1.53, 1.54, 1.55
+        //         1.15, 1.16, 1.17, 1.18, 1.19, 1.20, 1.21, 1.22, 1.23, 1.24, 1.25
         //     };
         //
         //     public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
@@ -70,7 +70,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // {
         //     private static readonly double[] Presets = new double[]
         //     {
-        //         1.55, 1.56, 1.57, 1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65
+        //         1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65, 1.66, 1.67, 1.68
         //     };
         //
         //     public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
@@ -438,10 +438,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaTakeProfitPoints = 93.75;
 
                 UseNewYorkSession = true;
-                NewYorkSessionStart = new TimeSpan(9, 40, 0);
+                NewYorkSessionStart = new TimeSpan(9, 35, 0);
                 NewYorkSessionEnd = new TimeSpan(13, 30, 0);
                 NewYorkSkipStart = new TimeSpan(12, 00, 0);
-                NewYorkSkipEnd = new TimeSpan(12, 25, 0);
+                NewYorkSkipEnd = new TimeSpan(12, 20, 0);
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
                 NewYorkTradeDirection = SessionTradeDirection.Both;
