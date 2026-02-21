@@ -3169,7 +3169,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double AsiaTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "New York Session(9.40-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
+        [Display(Name = "New York Session(9:35-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
         public bool UseNewYorkSession { get; set; }
 
         [NinjaScriptProperty]
