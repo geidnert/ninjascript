@@ -2485,6 +2485,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
+            string momentumThresholdText = activeAdxMinSlopePoints > 0.0
+                ? activeAdxMinSlopePoints.ToString("0.00", CultureInfo.InvariantCulture)
+                : "Off";
+            lines.Add(("Mom:", momentumThresholdText, Brushes.LightGray, Brushes.LightGray));
             List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
             if (weekNews.Count == 0)
             {
