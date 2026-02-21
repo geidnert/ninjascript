@@ -2364,7 +2364,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     FontFamily = new FontFamily("Segoe UI"),
                     FontSize = isHeader ? 15 : 14,
-                    FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal
+                    FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal,
+                    TextAlignment = (isHeader || isFooter) ? TextAlignment.Center : TextAlignment.Left,
+                    HorizontalAlignment = HorizontalAlignment.Stretch
                 };
                 TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
                 TextOptions.SetTextRenderingMode(text, TextRenderingMode.ClearType);
