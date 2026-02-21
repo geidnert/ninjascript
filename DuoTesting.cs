@@ -1758,7 +1758,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (isMarketEntry)
                 EnterLong(quantity, signalName);
             else
-                EnterLongLimit(quantity, entryPrice, signalName);
+                EnterLongLimit(0, true, quantity, entryPrice, signalName);
         }
 
         private void SubmitShortEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
@@ -1766,7 +1766,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (isMarketEntry)
                 EnterShort(quantity, signalName);
             else
-                EnterShortLimit(quantity, entryPrice, signalName);
+                EnterShortLimit(0, true, quantity, entryPrice, signalName);
         }
 
         private double GetActiveLongStopPaddingPoints(DateTime time)
