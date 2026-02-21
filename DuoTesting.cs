@@ -680,8 +680,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
                         CancelOrderIfActive(shortEntryOrder, "FlipToShort");
 
-                        bool useMarketEntry = EntryOffsetPoints <= 0.0;
-                        double entryPrice = GetEntryPriceForDirection(Close[0], false, EntryOffsetPoints);
+                        bool useMarketEntry = true;
+                        double entryPrice = GetEntryPriceForDirection(Close[0], false, 0.0);
                         double stopPrice = BuildFlipShortStopPrice(entryPrice, emaValue, Time[0]);
                         int qty = GetEntryQuantity();
                         if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
@@ -779,8 +779,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
                         CancelOrderIfActive(shortEntryOrder, "FlipToLong");
 
-                        bool useMarketEntry = EntryOffsetPoints <= 0.0;
-                        double entryPrice = GetEntryPriceForDirection(Close[0], true, EntryOffsetPoints);
+                        bool useMarketEntry = true;
+                        double entryPrice = GetEntryPriceForDirection(Close[0], true, 0.0);
                         double stopPrice = BuildFlipLongStopPrice(entryPrice, emaValue, Time[0]);
                         int qty = GetEntryQuantity();
                         if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
