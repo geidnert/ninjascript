@@ -475,7 +475,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 HvSlPaddingPoints = 0.0;
                 HvSlStartTime = new TimeSpan(9, 30, 0);
                 HvSlEndTime = new TimeSpan(10, 0, 0);
-                MaxTradesPerSession = 4;
                 RequireEntryConfirmation = false;
                 RequireMinAdxForFlips = true;
 
@@ -538,13 +537,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 LogDebug(
                     string.Format(
-                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} MaxTradesPerSession={5} ExitCross={6:0.##} EntryStop={7}",
+                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} ExitCross={5:0.##} EntryStop={6}",
                         FormatSessionLabel(activeSession),
                         activeEmaPeriod,
                         activeAdxPeriod,
                         activeAdxThreshold,
                         activeContracts,
-                        MaxTradesPerSession,
                         activeExitCrossPoints,
                         activeEntryStopMode));
             }
@@ -596,9 +594,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool adxThresholdPass = adxMinPass && adxMaxPass;
             bool adxSlopePass = !inActiveSessionNow || activeAdxMinSlopePoints <= 0.0 || adxSlope >= activeAdxMinSlopePoints;
             bool adxPass = adxThresholdPass && adxSlopePass;
-            int tradesThisSession = GetTradesThisSession(activeSession);
-            bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass;
             bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeFlipAdxThreshold <= 0.0 || adxValue >= activeFlipAdxThreshold;
             bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass;
             bool allowLong = activeTradeDirection != SessionTradeDirection.ShortOnly;
@@ -875,9 +871,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         reasons.Add(string.Format("AdxAboveMax adx={0:0.00} max={1:0.00}", adxValue, activeAdxMaxThreshold));
                     if (!adxSlopePass)
                         reasons.Add(string.Format("AdxSlopeBelowMin slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
-                    if (!maxTradesPass)
-                        reasons.Add(string.Format("MaxTradesPerSession session={0} max={1} taken={2}", FormatSessionLabel(activeSession), MaxTradesPerSession, tradesThisSession));
-
                     if (reasons.Count == 0)
                         reasons.Add("UnknownGate");
 
@@ -1070,10 +1063,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     SetTradesThisSession(entrySession, GetTradesThisSession(entrySession) + 1);
                     LogDebug(string.Format("Session lock set to {0} on {1} fill.", FormatSessionLabel(lockedTradeSession), orderName));
                     LogDebug(string.Format(
-                        "Trade count | session={0} taken={1} max={2}",
+                        "Trade count | session={0} taken={1}",
                         FormatSessionLabel(entrySession),
-                        GetTradesThisSession(entrySession),
-                        MaxTradesPerSession));
+                        GetTradesThisSession(entrySession)));
                 }
             }
             else if (marketPosition == MarketPosition.Flat && lockedTradeSession != SessionSlot.None)
@@ -2219,7 +2211,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} maxTradesPerSession={14} exitCross={15:0.##} entryStop={16} slPad={17:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} exitCross={14:0.##} entryStop={15} slPad={16:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -2234,7 +2226,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeAdxAbsoluteExitLevel,
                 activeTakeProfitPoints,
                 activeContracts,
-                MaxTradesPerSession,
                 activeExitCrossPoints,
                 activeEntryStopMode,
                 activeStopPaddingPoints));
@@ -3306,16 +3297,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TimeSpan HvSlEndTime { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Max Trades Per Session", Description = "0 disables. When this many trades have been opened in the active session, block new entries until that session starts again.", GroupName = "13. Risk", Order = 4)]
-        public int MaxTradesPerSession { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 5)]
+        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 4)]
         public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 6)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 5)]
         public bool RequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
