@@ -479,6 +479,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 HvSlPaddingPoints = 0.0;
                 HvSlStartTime = new TimeSpan(9, 30, 0);
                 HvSlEndTime = new TimeSpan(10, 0, 0);
+                EntryOffsetPoints = 0.0;
                 RequireEntryConfirmation = false;
                 RequireMinAdxForFlips = true;
 
@@ -679,15 +680,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
                         CancelOrderIfActive(shortEntryOrder, "FlipToShort");
 
-                        double stopPrice = BuildFlipShortStopPrice(Close[0], emaValue, Time[0]);
+                        bool useMarketEntry = EntryOffsetPoints <= 0.0;
+                        double entryPrice = GetEntryPriceForDirection(Close[0], false, EntryOffsetPoints);
+                        double stopPrice = BuildFlipShortStopPrice(entryPrice, emaValue, Time[0]);
                         int qty = GetEntryQuantity();
-                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], qty))
+                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                         {
                             LogDebug("Entry confirmation declined | Flip LONG->SHORT.");
                             return;
                         }
                         pendingShortStopForWebhook = stopPrice;
-                        SetStopLossByDistanceTicks(ShortFlipEntrySignal, Close[0], stopPrice);
+                        SetStopLossByDistanceTicks(ShortFlipEntrySignal, entryPrice, stopPrice);
                         SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, activeTakeProfitPoints);
                         int webhookQty = Math.Max(1, Math.Abs(Position.Quantity) + qty);
                         LogDebug(string.Format(
@@ -695,17 +698,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             Math.Abs(Position.Quantity),
                             qty,
                             webhookQty));
-                        SendWebhook("sell", Close[0], Close[0], stopPrice, true, webhookQty);
-                        StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                        EnterShort(qty, ShortFlipEntrySignal);
+                        SendWebhook("sell", entryPrice, entryPrice, stopPrice, useMarketEntry, webhookQty);
+                        StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                        SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortFlipEntrySignal);
 
                         LogDebug(string.Format(
-                            "Flip LONG->SHORT | close={0:0.00} ema={1:0.00} below%={2:0.0} stop={3:0.00} stopTicks={4} qty={5}",
+                            "Flip LONG->SHORT | close={0:0.00} entry={1:0.00} type={2} ema={3:0.00} below%={4:0.0} stop={5:0.00} stopTicks={6} qty={7}",
                             Close[0],
+                            entryPrice,
+                            useMarketEntry ? "market" : "limit",
                             emaValue,
                             bodyBelowPercent,
                             stopPrice,
-                            PriceToTicks(Math.Abs(Close[0] - stopPrice)),
+                            PriceToTicks(Math.Abs(entryPrice - stopPrice)),
                             qty));
                     }
                     else
@@ -780,15 +785,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
                         CancelOrderIfActive(shortEntryOrder, "FlipToLong");
 
-                        double stopPrice = BuildFlipLongStopPrice(Close[0], emaValue, Time[0]);
+                        bool useMarketEntry = EntryOffsetPoints <= 0.0;
+                        double entryPrice = GetEntryPriceForDirection(Close[0], true, EntryOffsetPoints);
+                        double stopPrice = BuildFlipLongStopPrice(entryPrice, emaValue, Time[0]);
                         int qty = GetEntryQuantity();
-                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], qty))
+                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                         {
                             LogDebug("Entry confirmation declined | Flip SHORT->LONG.");
                             return;
                         }
                         pendingLongStopForWebhook = stopPrice;
-                        SetStopLossByDistanceTicks(LongFlipEntrySignal, Close[0], stopPrice);
+                        SetStopLossByDistanceTicks(LongFlipEntrySignal, entryPrice, stopPrice);
                         SetProfitTargetByDistanceTicks(LongFlipEntrySignal, activeTakeProfitPoints);
                         int webhookQty = Math.Max(1, Math.Abs(Position.Quantity) + qty);
                         LogDebug(string.Format(
@@ -796,17 +803,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             Math.Abs(Position.Quantity),
                             qty,
                             webhookQty));
-                        SendWebhook("buy", Close[0], Close[0], stopPrice, true, webhookQty);
-                        StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                        EnterLong(qty, LongFlipEntrySignal);
+                        SendWebhook("buy", entryPrice, entryPrice, stopPrice, useMarketEntry, webhookQty);
+                        StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                        SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongFlipEntrySignal);
 
                         LogDebug(string.Format(
-                            "Flip SHORT->LONG | close={0:0.00} ema={1:0.00} above%={2:0.0} stop={3:0.00} stopTicks={4} qty={5}",
+                            "Flip SHORT->LONG | close={0:0.00} entry={1:0.00} type={2} ema={3:0.00} above%={4:0.0} stop={5:0.00} stopTicks={6} qty={7}",
                             Close[0],
+                            entryPrice,
+                            useMarketEntry ? "market" : "limit",
                             emaValue,
                             bodyAbovePercent,
                             stopPrice,
-                            PriceToTicks(Math.Abs(Close[0] - stopPrice)),
+                            PriceToTicks(Math.Abs(entryPrice - stopPrice)),
                             qty));
                     }
                     else
@@ -900,7 +909,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!longOrderActive)
                 {
-                    double entryPrice = Close[0];
+                    bool useMarketEntry = EntryOffsetPoints <= 0.0;
+                    double entryPrice = GetEntryPriceForDirection(Close[0], true, EntryOffsetPoints);
                     double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue, Time[0]);
                     int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
@@ -913,10 +923,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     pendingLongStopForWebhook = stopPrice;
                     SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
                     SetProfitTargetByDistanceTicks(LongEntrySignal, activeTakeProfitPoints);
-                    SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
+                    SendWebhook("buy", entryPrice, entryPrice, stopPrice, useMarketEntry, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                    EnterLong(qty, LongEntrySignal);
-                    LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
+                    SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongEntrySignal);
+                    LogDebug(string.Format("Place LONG {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useMarketEntry ? "market" : "limit", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -933,7 +943,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!shortOrderActive)
                 {
-                    double entryPrice = Close[0];
+                    bool useMarketEntry = EntryOffsetPoints <= 0.0;
+                    double entryPrice = GetEntryPriceForDirection(Close[0], false, EntryOffsetPoints);
                     double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue, Time[0]);
                     int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
@@ -946,10 +957,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     pendingShortStopForWebhook = stopPrice;
                     SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
                     SetProfitTargetByDistanceTicks(ShortEntrySignal, activeTakeProfitPoints);
-                    SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
+                    SendWebhook("sell", entryPrice, entryPrice, stopPrice, useMarketEntry, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                    EnterShort(qty, ShortEntrySignal);
-                    LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
+                    SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortEntrySignal);
+                    LogDebug(string.Format("Place SHORT {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useMarketEntry ? "market" : "limit", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1741,6 +1752,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (rounded >= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
             return rounded;
+        }
+
+        private double GetEntryPriceForDirection(double signalClose, bool isLong, double offsetPoints)
+        {
+            if (offsetPoints <= 0.0)
+                return Instrument.MasterInstrument.RoundToTickSize(signalClose);
+
+            double raw = isLong
+                ? signalClose - offsetPoints
+                : signalClose + offsetPoints;
+            return Instrument.MasterInstrument.RoundToTickSize(raw);
+        }
+
+        private void SubmitLongEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
+        {
+            if (isMarketEntry)
+                EnterLong(quantity, signalName);
+            else
+                EnterLongLimit(quantity, entryPrice, signalName);
+        }
+
+        private void SubmitShortEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
+        {
+            if (isMarketEntry)
+                EnterShort(quantity, signalName);
+            else
+                EnterShortLimit(quantity, entryPrice, signalName);
         }
 
         private double GetActiveLongStopPaddingPoints(DateTime time)
@@ -3305,19 +3343,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double HvSlPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "13. Risk", Order = 2)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "13. Risk", Order = 2)]
+        public double EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "13. Risk", Order = 3)]
         public TimeSpan HvSlStartTime { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "13. Risk", Order = 3)]
+        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "13. Risk", Order = 4)]
         public TimeSpan HvSlEndTime { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 4)]
+        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 5)]
         public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 5)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 6)]
         public bool RequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
