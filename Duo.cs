@@ -34,11 +34,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             WickExtreme
         }
 
+        public enum SessionTradeDirection
+        {
+            Both,
+            LongOnly,
+            ShortOnly
+        }
+
         private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
         {
             private static readonly double[] Presets = new double[]
             {
-                1.33, 1.34, 1.35, 1.36, 1.37, 1.48, 1.49, 1.50, 1.51, 1.52, 1.53, 1.54, 1.55
+                1.15, 1.16, 1.17, 1.18, 1.19, 1.20, 1.21, 1.22, 1.23, 1.24, 1.25
             };
 
             public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
@@ -61,7 +68,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             private static readonly double[] Presets = new double[]
             {
-                1.55, 1.56, 1.57, 1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65
+                1.58, 1.59, 1.60, 1.61, 1.62, 1.63, 1.64, 1.65, 1.66, 1.67, 1.68
             };
 
             public override bool GetStandardValuesSupported(ITypeDescriptorContext context)
@@ -97,6 +104,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Order shortEntryOrder;
         private int missingLongEntryOrderBars;
         private int missingShortEntryOrderBars;
+        private double asiaAdxMinSlopePoints;
+        private double newYorkAdxMinSlopePoints;
 
         private bool asiaSessionClosed;
         private bool newYorkSessionClosed;
@@ -127,6 +136,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private int activeEmaPeriod;
         private int activeContracts;
+        private SessionTradeDirection activeTradeDirection = SessionTradeDirection.Both;
         private InitialStopMode activeEntryStopMode;
         private double activeEmaMinSlopePointsPerBar;
         private double activeMaxEntryDistanceFromEmaPoints;
@@ -397,7 +407,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Name = "Duo2";
+                Name = "Duo";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
@@ -411,45 +421,47 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaBlockSundayTrades = false;
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
-                AsiaFlipAdxThreshold = 19.7;
+                AsiaTradeDirection = SessionTradeDirection.Both;
+                AsiaFlipAdxThreshold = 21.8;
                 AsiaEmaMinSlopePointsPerBar = 0.5;
-                AsiaMaxEntryDistanceFromEmaPoints = 21.0;
+                AsiaMaxEntryDistanceFromEmaPoints = 0.0;
                 AsiaAdxPeriod = 14;
-                AsiaAdxThreshold = 19.7;
-                AsiaAdxMaxThreshold = 43.6;
-                AsiaAdxMinSlopePoints = 1.37;
-                AsiaAdxPeakDrawdownExitUnits = 13.0;
-                AsiaAdxAbsoluteExitLevel = 57.7;
-                AsiaStopPaddingPoints = 63;
+                AsiaAdxThreshold = 20.2;
+                AsiaAdxMaxThreshold = 45.3;
+                AsiaAdxMinSlopePoints = 1.17;
+                AsiaAdxPeakDrawdownExitUnits = 13.1;
+                AsiaAdxAbsoluteExitLevel = 63.2;
+                AsiaStopPaddingPoints = 47;
                 AsiaExitCrossPoints = 3.5;
                 AsiaTakeProfitPoints = 93.75;
 
                 UseNewYorkSession = true;
-                NewYorkSessionStart = new TimeSpan(9, 40, 0);
+                NewYorkSessionStart = new TimeSpan(9, 35, 0);
                 NewYorkSessionEnd = new TimeSpan(13, 30, 0);
                 NewYorkSkipStart = new TimeSpan(12, 00, 0);
-                NewYorkSkipEnd = new TimeSpan(12, 25, 0);
+                NewYorkSkipEnd = new TimeSpan(12, 20, 0);
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
+                NewYorkTradeDirection = SessionTradeDirection.Both;
                 NewYorkFlipAdxThreshold = 16;
-                NewYorkEmaMinSlopePointsPerBar = 0.8;
-                NewYorkMaxEntryDistanceFromEmaPoints = 44.0;
+                NewYorkEmaMinSlopePointsPerBar = 0.81;
+                NewYorkMaxEntryDistanceFromEmaPoints = 39.0;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 16;
-                NewYorkAdxMaxThreshold = 58.0;
-                NewYorkAdxMinSlopePoints = 1.58;
+                NewYorkAdxMaxThreshold = 62.8;
+                NewYorkAdxMinSlopePoints = 1.63;
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
-                NewYorkAdxAbsoluteExitLevel = 70.0;
-                NewYorkStopPaddingPoints = 54.5;
-                NewYorkExitCrossPoints = 1.25;
+                NewYorkAdxAbsoluteExitLevel = 69.1;
+                NewYorkStopPaddingPoints = 44.25;
+                NewYorkExitCrossPoints = 3.0;
                 NewYorkTakeProfitPoints = 123.75;
 
                 CloseAtSessionEnd = false;
                 AsiaSessionBrush = Brushes.DarkCyan;
                 NewYorkSessionBrush = Brushes.Gold;
-                ShowEmaOnChart = false;
-                ShowAdxOnChart = false;
-                ShowAdxThresholdLines = false;
+                ShowEmaOnChart = true;
+                ShowAdxOnChart = true;
+                ShowAdxThresholdLines = true;
 
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
@@ -462,7 +474,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXAccountId = string.Empty;
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0.0;
-                MaxTradesPerSession = 0;
+                HvSlPaddingPoints = 26.0;
+                HvSlStartTime = new TimeSpan(9, 30, 0);
+                HvSlEndTime = new TimeSpan(10, 05, 0);
+                EntryOffsetPoints = 0.0;
                 RequireEntryConfirmation = false;
                 RequireMinAdxForFlips = true;
 
@@ -525,13 +540,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 LogDebug(
                     string.Format(
-                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} MaxTradesPerSession={5} ExitCross={6:0.##} EntryStop={7}",
+                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} ExitCross={5:0.##} EntryStop={6}",
                         FormatSessionLabel(activeSession),
                         activeEmaPeriod,
                         activeAdxPeriod,
                         activeAdxThreshold,
                         activeContracts,
-                        MaxTradesPerSession,
                         activeExitCrossPoints,
                         activeEntryStopMode));
             }
@@ -583,11 +597,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool adxThresholdPass = adxMinPass && adxMaxPass;
             bool adxSlopePass = !inActiveSessionNow || activeAdxMinSlopePoints <= 0.0 || adxSlope >= activeAdxMinSlopePoints;
             bool adxPass = adxThresholdPass && adxSlopePass;
-            int tradesThisSession = GetTradesThisSession(activeSession);
-            bool maxTradesPass = MaxTradesPerSession <= 0 || tradesThisSession < MaxTradesPerSession;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && maxTradesPass;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass;
             bool flipAdxMinPass = !RequireMinAdxForFlips || !inActiveSessionNow || activeFlipAdxThreshold <= 0.0 || adxValue >= activeFlipAdxThreshold;
             bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass;
+            bool allowLong = activeTradeDirection != SessionTradeDirection.ShortOnly;
+            bool allowShort = activeTradeDirection != SessionTradeDirection.LongOnly;
 
             if (!inActiveSessionNow)
                 CancelWorkingEntryOrders();
@@ -610,8 +624,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool distancePasses = activeMaxEntryDistanceFromEmaPoints <= 0.0 || emaDistancePoints <= activeMaxEntryDistanceFromEmaPoints;
             bool emaSlopeLongPass = EmaSlopePassesLong();
             bool emaSlopeShortPass = EmaSlopePassesShort();
-            bool longSignal = bullish && bodyAbovePercent > 0.0;
-            bool shortSignal = bearish && bodyBelowPercent > 0.0;
+            bool longSignalRaw = bullish && bodyAbovePercent > 0.0;
+            bool shortSignalRaw = bearish && bodyBelowPercent > 0.0;
+            bool longSignal = longSignalRaw && allowLong;
+            bool shortSignal = shortSignalRaw && allowShort;
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
@@ -652,42 +668,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     bool flipCanTradePass = canFlipNow;
+                    bool flipDirectionPass = allowShort;
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeShortPass;
                     bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
                         CancelOrderIfActive(shortEntryOrder, "FlipToShort");
 
-                        double stopPrice = BuildFlipShortStopPrice(Close[0], Open[0], High[0]);
+                        bool useMarketEntry = true;
+                        double entryPrice = GetEntryPriceForDirection(Close[0], false, 0.0);
+                        double stopPrice = BuildFlipShortStopPrice(entryPrice, emaValue, Time[0]);
                         int qty = GetEntryQuantity();
-                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], qty))
+                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                         {
                             LogDebug("Entry confirmation declined | Flip LONG->SHORT.");
                             return;
                         }
                         pendingShortStopForWebhook = stopPrice;
-                        SetStopLossByDistanceTicks(ShortFlipEntrySignal, Close[0], stopPrice);
+                        SetStopLossByDistanceTicks(ShortFlipEntrySignal, entryPrice, stopPrice);
                         SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, activeTakeProfitPoints);
-                        int webhookQty = Math.Max(1, Math.Abs(Position.Quantity) + qty);
-                        LogDebug(string.Format(
-                            "Flip webhook qty | side=sell posQty={0} entryQty={1} webhookQty={2}",
-                            Math.Abs(Position.Quantity),
-                            qty,
-                            webhookQty));
-                        SendWebhook("sell", Close[0], Close[0], stopPrice, true, webhookQty);
-                        StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                        EnterShort(qty, ShortFlipEntrySignal);
+                        SendFlipWebhooks("sell", entryPrice, stopPrice, useMarketEntry, qty, MarketPosition.Long);
+                        StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                        SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortFlipEntrySignal);
 
                         LogDebug(string.Format(
-                            "Flip LONG->SHORT | close={0:0.00} ema={1:0.00} below%={2:0.0} stop={3:0.00} stopTicks={4} qty={5}",
+                            "Flip LONG->SHORT | close={0:0.00} entry={1:0.00} type={2} ema={3:0.00} below%={4:0.0} stop={5:0.00} stopTicks={6} qty={7}",
                             Close[0],
+                            entryPrice,
+                            useMarketEntry ? "market" : "limit",
                             emaValue,
                             bodyBelowPercent,
                             stopPrice,
-                            PriceToTicks(Math.Abs(Close[0] - stopPrice)),
+                            PriceToTicks(Math.Abs(entryPrice - stopPrice)),
                             qty));
                     }
                     else
@@ -695,9 +710,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} distancePass={2} emaSlopePass={3} bodyPass={4} below%={5:0.0} minBody%={6:0.0}",
+                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} below%={6:0.0} minBody%={7:0.0}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
+                                flipDirectionPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -751,42 +767,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
 
                     bool flipCanTradePass = canFlipNow;
+                    bool flipDirectionPass = allowLong;
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeLongPass;
                     bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
                         CancelOrderIfActive(shortEntryOrder, "FlipToLong");
 
-                        double stopPrice = BuildFlipLongStopPrice(Close[0], Open[0], Low[0]);
+                        bool useMarketEntry = true;
+                        double entryPrice = GetEntryPriceForDirection(Close[0], true, 0.0);
+                        double stopPrice = BuildFlipLongStopPrice(entryPrice, emaValue, Time[0]);
                         int qty = GetEntryQuantity();
-                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], qty))
+                        if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                         {
                             LogDebug("Entry confirmation declined | Flip SHORT->LONG.");
                             return;
                         }
                         pendingLongStopForWebhook = stopPrice;
-                        SetStopLossByDistanceTicks(LongFlipEntrySignal, Close[0], stopPrice);
+                        SetStopLossByDistanceTicks(LongFlipEntrySignal, entryPrice, stopPrice);
                         SetProfitTargetByDistanceTicks(LongFlipEntrySignal, activeTakeProfitPoints);
-                        int webhookQty = Math.Max(1, Math.Abs(Position.Quantity) + qty);
-                        LogDebug(string.Format(
-                            "Flip webhook qty | side=buy posQty={0} entryQty={1} webhookQty={2}",
-                            Math.Abs(Position.Quantity),
-                            qty,
-                            webhookQty));
-                        SendWebhook("buy", Close[0], Close[0], stopPrice, true, webhookQty);
-                        StartTradeLines(Close[0], stopPrice, activeTakeProfitPoints > 0.0 ? Close[0] + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                        EnterLong(qty, LongFlipEntrySignal);
+                        SendFlipWebhooks("buy", entryPrice, stopPrice, useMarketEntry, qty, MarketPosition.Short);
+                        StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                        SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongFlipEntrySignal);
 
                         LogDebug(string.Format(
-                            "Flip SHORT->LONG | close={0:0.00} ema={1:0.00} above%={2:0.0} stop={3:0.00} stopTicks={4} qty={5}",
+                            "Flip SHORT->LONG | close={0:0.00} entry={1:0.00} type={2} ema={3:0.00} above%={4:0.0} stop={5:0.00} stopTicks={6} qty={7}",
                             Close[0],
+                            entryPrice,
+                            useMarketEntry ? "market" : "limit",
                             emaValue,
                             bodyAbovePercent,
                             stopPrice,
-                            PriceToTicks(Math.Abs(Close[0] - stopPrice)),
+                            PriceToTicks(Math.Abs(entryPrice - stopPrice)),
                             qty));
                     }
                     else
@@ -794,9 +809,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} distancePass={2} emaSlopePass={3} bodyPass={4} above%={5:0.0} minBody%={6:0.0}",
+                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} above%={6:0.0} minBody%={7:0.0}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
+                                flipDirectionPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
@@ -809,6 +825,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 return;
+            }
+
+            if (DebugLogging && Position.MarketPosition == MarketPosition.Flat)
+            {
+                if (longSignalRaw && !allowLong)
+                {
+                    LogDebug(string.Format(
+                        "Setup blocked | side=Long close={0:0.00} ema={1:0.00} reasons=DirectionBlocked mode={2}",
+                        Close[0],
+                        emaValue,
+                        activeTradeDirection));
+                }
+                else if (shortSignalRaw && !allowShort)
+                {
+                    LogDebug(string.Format(
+                        "Setup blocked | side=Short close={0:0.00} ema={1:0.00} reasons=DirectionBlocked mode={2}",
+                        Close[0],
+                        emaValue,
+                        activeTradeDirection));
+                }
             }
 
             if (!canTradeNow)
@@ -834,9 +870,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         reasons.Add(string.Format("AdxAboveMax adx={0:0.00} max={1:0.00}", adxValue, activeAdxMaxThreshold));
                     if (!adxSlopePass)
                         reasons.Add(string.Format("AdxSlopeBelowMin slope={0:0.00} min={1:0.00}", adxSlope, activeAdxMinSlopePoints));
-                    if (!maxTradesPass)
-                        reasons.Add(string.Format("MaxTradesPerSession session={0} max={1} taken={2}", FormatSessionLabel(activeSession), MaxTradesPerSession, tradesThisSession));
-
                     if (reasons.Count == 0)
                         reasons.Add("UnknownGate");
 
@@ -850,20 +883,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            bool longOrderActive = IsOrderActive(longEntryOrder);
-            bool shortOrderActive = IsOrderActive(shortEntryOrder);
-
             if (longSignal)
             {
                 BeginTradeAttempt("Long");
                 LogDebug(string.Format("Setup ready | side=Long session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
 
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
+                bool longOrderActive = IsOrderActive(longEntryOrder);
 
                 if (!longOrderActive)
                 {
-                    double entryPrice = Close[0];
-                    double stopPrice = BuildLongEntryStopPrice(entryPrice, Open[0], Close[0], Low[0]);
+                    bool useMarketEntry = EntryOffsetPoints <= 0.0;
+                    double entryPrice = GetEntryPriceForDirection(Close[0], true, EntryOffsetPoints);
+                    double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue, Time[0]);
                     int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                     {
@@ -875,10 +907,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     pendingLongStopForWebhook = stopPrice;
                     SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
                     SetProfitTargetByDistanceTicks(LongEntrySignal, activeTakeProfitPoints);
-                    SendWebhook("buy", entryPrice, entryPrice, stopPrice, true, qty);
+                    SendWebhook("buy", entryPrice, entryPrice, stopPrice, useMarketEntry, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                    EnterLong(qty, LongEntrySignal);
-                    LogDebug(string.Format("Place LONG market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
+                    SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongEntrySignal);
+                    LogDebug(string.Format("Place LONG {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useMarketEntry ? "market" : "limit", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -892,11 +924,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug(string.Format("Setup ready | side=Short session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
 
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
+                bool shortOrderActive = IsOrderActive(shortEntryOrder);
 
                 if (!shortOrderActive)
                 {
-                    double entryPrice = Close[0];
-                    double stopPrice = BuildShortEntryStopPrice(entryPrice, Open[0], Close[0], High[0]);
+                    bool useMarketEntry = EntryOffsetPoints <= 0.0;
+                    double entryPrice = GetEntryPriceForDirection(Close[0], false, EntryOffsetPoints);
+                    double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue, Time[0]);
                     int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                     {
@@ -908,10 +942,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     pendingShortStopForWebhook = stopPrice;
                     SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
                     SetProfitTargetByDistanceTicks(ShortEntrySignal, activeTakeProfitPoints);
-                    SendWebhook("sell", entryPrice, entryPrice, stopPrice, true, qty);
+                    SendWebhook("sell", entryPrice, entryPrice, stopPrice, useMarketEntry, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
-                    EnterShort(qty, ShortEntrySignal);
-                    LogDebug(string.Format("Place SHORT market | session={0} stop={1:0.00} qty={2}", FormatSessionLabel(activeSession), stopPrice, qty));
+                    SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortEntrySignal);
+                    LogDebug(string.Format("Place SHORT {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useMarketEntry ? "market" : "limit", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1029,10 +1063,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     SetTradesThisSession(entrySession, GetTradesThisSession(entrySession) + 1);
                     LogDebug(string.Format("Session lock set to {0} on {1} fill.", FormatSessionLabel(lockedTradeSession), orderName));
                     LogDebug(string.Format(
-                        "Trade count | session={0} taken={1} max={2}",
+                        "Trade count | session={0} taken={1}",
                         FormatSessionLabel(entrySession),
-                        GetTradesThisSession(entrySession),
-                        MaxTradesPerSession));
+                        GetTradesThisSession(entrySession)));
                 }
             }
             else if (marketPosition == MarketPosition.Flat && lockedTradeSession != SessionSlot.None)
@@ -1351,6 +1384,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = AsiaContracts;
+                    activeTradeDirection = AsiaTradeDirection;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
@@ -1372,6 +1406,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYorkContracts;
+                    activeTradeDirection = NewYorkTradeDirection;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
@@ -1392,6 +1427,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxPeakDrawdownExitUnits = 0.0;
                     activeAdxAbsoluteExitLevel = 0.0;
                     activeContracts = 0;
+                    activeTradeDirection = SessionTradeDirection.Both;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = 0.0;
                     activeMaxEntryDistanceFromEmaPoints = 0.0;
@@ -1665,10 +1701,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return string.Format("{0}:{1}:{2}", name, id, order.OrderState);
         }
 
-        private double BuildLongEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleLow)
+        private double BuildLongEntryStopPrice(double entryPrice, double emaValue, DateTime time)
         {
-            double raw = candleLow;
-            raw -= activeStopPaddingPoints;
+            double raw = emaValue - GetActiveLongStopPaddingPoints(time);
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
@@ -1676,10 +1711,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return rounded;
         }
 
-        private double BuildShortEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleHigh)
+        private double BuildShortEntryStopPrice(double entryPrice, double emaValue, DateTime time)
         {
-            double raw = candleHigh;
-            raw += activeStopPaddingPoints;
+            double raw = emaValue + GetActiveShortStopPaddingPoints(time);
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
@@ -1687,22 +1721,70 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return rounded;
         }
 
-        private double BuildFlipShortStopPrice(double entryPrice, double candleOpen, double candleHigh)
+        private double BuildFlipShortStopPrice(double entryPrice, double emaValue, DateTime time)
         {
-            double raw = candleHigh + activeStopPaddingPoints;
+            double raw = emaValue + GetActiveShortStopPaddingPoints(time);
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
             return rounded;
         }
 
-        private double BuildFlipLongStopPrice(double entryPrice, double candleOpen, double candleLow)
+        private double BuildFlipLongStopPrice(double entryPrice, double emaValue, DateTime time)
         {
-            double raw = candleLow - activeStopPaddingPoints;
+            double raw = emaValue - GetActiveLongStopPaddingPoints(time);
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
             return rounded;
+        }
+
+        private double GetEntryPriceForDirection(double signalClose, bool isLong, double offsetPoints)
+        {
+            if (offsetPoints <= 0.0)
+                return Instrument.MasterInstrument.RoundToTickSize(signalClose);
+
+            double raw = isLong
+                ? signalClose - offsetPoints
+                : signalClose + offsetPoints;
+            return Instrument.MasterInstrument.RoundToTickSize(raw);
+        }
+
+        private void SubmitLongEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
+        {
+            if (isMarketEntry)
+                EnterLong(quantity, signalName);
+            else
+                EnterLongLimit(0, true, quantity, entryPrice, signalName);
+        }
+
+        private void SubmitShortEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
+        {
+            if (isMarketEntry)
+                EnterShort(quantity, signalName);
+            else
+                EnterShortLimit(0, true, quantity, entryPrice, signalName);
+        }
+
+        private double GetActiveLongStopPaddingPoints(DateTime time)
+        {
+            return IsHighVolatilitySlWindow(time) ? HvSlPaddingPoints : activeStopPaddingPoints;
+        }
+
+        private double GetActiveShortStopPaddingPoints(DateTime time)
+        {
+            return IsHighVolatilitySlWindow(time) ? HvSlPaddingPoints : activeStopPaddingPoints;
+        }
+
+        private bool IsHighVolatilitySlWindow(DateTime time)
+        {
+            if (HvSlPaddingPoints <= 0.0)
+                return false;
+
+            if (HvSlStartTime == HvSlEndTime)
+                return false;
+
+            return IsTimeInRange(time.TimeOfDay, HvSlStartTime, HvSlEndTime);
         }
 
         private double GetAdxSlopePoints()
@@ -2156,7 +2238,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} maxTradesPerSession={14} exitCross={15:0.##} entryStop={16} slPad={17:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} exitCross={14:0.##} entryStop={15} slPad={16:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -2171,7 +2253,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeAdxAbsoluteExitLevel,
                 activeTakeProfitPoints,
                 activeContracts,
-                MaxTradesPerSession,
                 activeExitCrossPoints,
                 activeEntryStopMode,
                 activeStopPaddingPoints));
@@ -2420,7 +2501,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (aboveMin && slopeValid)
             {
-                paState = string.Format(CultureInfo.InvariantCulture, "Trending {0:0.00}", adxSlope);
+                paState = "Trending";
                 paBrush = Brushes.LimeGreen;
             }
             else
@@ -2431,6 +2512,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
+            string momentumThresholdText = activeAdxMinSlopePoints > 0.0
+                ? activeAdxMinSlopePoints.ToString("0.00", CultureInfo.InvariantCulture)
+                : "Off";
+            lines.Add(("Mom:", momentumThresholdText, Brushes.LightGray, Brushes.LightGray));
             List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
             if (weekNews.Count == 0)
             {
@@ -2612,6 +2697,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 return false;
             }
+        }
+
+        private void SendFlipWebhooks(string entryEventType, double entryPrice, double stopPrice, bool isMarketEntry, int entryQuantity, MarketPosition expectedCurrentPosition)
+        {
+            int positionQty = Math.Abs(Position.Quantity);
+            bool shouldExitFirst = Position.MarketPosition == expectedCurrentPosition && positionQty > 0;
+
+            if (shouldExitFirst)
+            {
+                LogDebug(string.Format(
+                    "Flip webhook sequence | step=exit side={0} qty={1}",
+                    expectedCurrentPosition,
+                    positionQty));
+                SendWebhook("exit", 0, 0, 0, true, positionQty);
+            }
+
+            int webhookEntryQty = Math.Max(1, entryQuantity);
+            LogDebug(string.Format(
+                "Flip webhook sequence | step=entry action={0} entryQty={1} market={2} entry={3:0.00} stop={4:0.00}",
+                entryEventType,
+                webhookEntryQty,
+                isMarketEntry,
+                entryPrice,
+                stopPrice));
+            SendWebhook(entryEventType, entryPrice, entryPrice, stopPrice, isMarketEntry, webhookEntryQty);
         }
 
         private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
@@ -2988,6 +3098,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int AsiaContracts { get; set; }
 
         // [NinjaScriptProperty]
+        // [Display(Name = "Trade Direction", Description = "Select whether Asia can take long, short, or both directions.", GroupName = "Asia", Order = 6)]
+        internal SessionTradeDirection AsiaTradeDirection { get; set; }
+
+        // [NinjaScriptProperty]
         // [Range(0.0, 100.0)]
         // [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 6)]
         internal double AsiaFlipAdxThreshold { get; set; }
@@ -3049,7 +3163,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal double AsiaTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "New York Session(9:40-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
+        [Display(Name = "New York Session(9:35-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
         public bool UseNewYorkSession { get; set; }
 
         // [NinjaScriptProperty]
@@ -3077,6 +3191,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(1, int.MaxValue)]
         [Display(Name = "Contracts", Description = "Base contracts for New York entries.", GroupName = "New York", Order = 6)]
         public int NewYorkContracts { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "Trade Direction", Description = "Select whether New York can take long, short, or both directions.", GroupName = "New York", Order = 7)]
+        internal SessionTradeDirection NewYorkTradeDirection { get; set; }
 
         // [NinjaScriptProperty]
         // [Range(0.0, 100.0)]
@@ -3220,6 +3338,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [Range(0.0, double.MaxValue)]
         // [Display(Name = "Max Account Balance", Description = "When cash value reaches or exceeds this value, entries are blocked and position is flattened. 0 disables.", GroupName = "13. Risk", Order = 0)]
         internal double MaxAccountBalance { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Range(0.0, double.MaxValue)]
+        // [Display(Name = "HV SL Padding Points", Description = "High-volatility stop distance in points from EMA on the opposite side. 0 disables HV stop logic.", GroupName = "13. Risk", Order = 1)]
+        internal double HvSlPaddingPoints { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Range(0.0, double.MaxValue)]
+        // [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "13. Risk", Order = 2)]
+        internal double EntryOffsetPoints { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "13. Risk", Order = 3)]
+        internal TimeSpan HvSlStartTime { get; set; }
+
+        // [NinjaScriptProperty]
+        // [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "13. Risk", Order = 4)]
+        internal TimeSpan HvSlEndTime { get; set; }
 
         // [NinjaScriptProperty]
         // [Range(0, int.MaxValue)]
