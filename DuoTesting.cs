@@ -459,6 +459,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXAccountId = string.Empty;
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0.0;
+                HvSlPaddingPoints = 0.0;
+                HvSlStartTime = new TimeSpan(9, 30, 0);
+                HvSlEndTime = new TimeSpan(10, 0, 0);
                 MaxTradesPerSession = 4;
                 RequireEntryConfirmation = false;
                 RequireMinAdxForFlips = true;
@@ -657,7 +660,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
                         CancelOrderIfActive(shortEntryOrder, "FlipToShort");
 
-                        double stopPrice = BuildFlipShortStopPrice(Close[0], Open[0], High[0]);
+                        double stopPrice = BuildFlipShortStopPrice(Close[0], emaValue, Time[0]);
                         int qty = GetEntryQuantity();
                         if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], qty))
                         {
@@ -755,7 +758,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
                         CancelOrderIfActive(shortEntryOrder, "FlipToLong");
 
-                        double stopPrice = BuildFlipLongStopPrice(Close[0], Open[0], Low[0]);
+                        double stopPrice = BuildFlipLongStopPrice(Close[0], emaValue, Time[0]);
                         int qty = GetEntryQuantity();
                         if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], qty))
                         {
@@ -857,7 +860,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (!longOrderActive)
                 {
                     double entryPrice = Close[0];
-                    double stopPrice = BuildLongEntryStopPrice(entryPrice, Open[0], Close[0], Low[0]);
+                    double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue, Time[0]);
                     int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                     {
@@ -890,7 +893,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (!shortOrderActive)
                 {
                     double entryPrice = Close[0];
-                    double stopPrice = BuildShortEntryStopPrice(entryPrice, Open[0], Close[0], High[0]);
+                    double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue, Time[0]);
                     int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                     {
@@ -1695,10 +1698,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return string.Format("{0}:{1}:{2}", name, id, order.OrderState);
         }
 
-        private double BuildLongEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleLow)
+        private double BuildLongEntryStopPrice(double entryPrice, double emaValue, DateTime time)
         {
-            double raw = candleLow;
-            raw -= activeStopPaddingPoints;
+            double raw = emaValue - GetActiveLongStopPaddingPoints(time);
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
@@ -1706,10 +1708,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return rounded;
         }
 
-        private double BuildShortEntryStopPrice(double entryPrice, double candleOpen, double candleClose, double candleHigh)
+        private double BuildShortEntryStopPrice(double entryPrice, double emaValue, DateTime time)
         {
-            double raw = candleHigh;
-            raw += activeStopPaddingPoints;
+            double raw = emaValue + GetActiveShortStopPaddingPoints(time);
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
@@ -1717,22 +1718,43 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return rounded;
         }
 
-        private double BuildFlipShortStopPrice(double entryPrice, double candleOpen, double candleHigh)
+        private double BuildFlipShortStopPrice(double entryPrice, double emaValue, DateTime time)
         {
-            double raw = candleHigh + activeStopPaddingPoints;
+            double raw = emaValue + GetActiveShortStopPaddingPoints(time);
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
             return rounded;
         }
 
-        private double BuildFlipLongStopPrice(double entryPrice, double candleOpen, double candleLow)
+        private double BuildFlipLongStopPrice(double entryPrice, double emaValue, DateTime time)
         {
-            double raw = candleLow - activeStopPaddingPoints;
+            double raw = emaValue - GetActiveLongStopPaddingPoints(time);
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
             return rounded;
+        }
+
+        private double GetActiveLongStopPaddingPoints(DateTime time)
+        {
+            return IsHighVolatilitySlWindow(time) ? HvSlPaddingPoints : activeStopPaddingPoints;
+        }
+
+        private double GetActiveShortStopPaddingPoints(DateTime time)
+        {
+            return IsHighVolatilitySlWindow(time) ? HvSlPaddingPoints : activeShortStopPaddingPoints;
+        }
+
+        private bool IsHighVolatilitySlWindow(DateTime time)
+        {
+            if (HvSlPaddingPoints <= 0.0)
+                return false;
+
+            if (HvSlStartTime == HvSlEndTime)
+                return false;
+
+            return IsTimeInRange(time.TimeOfDay, HvSlStartTime, HvSlEndTime);
         }
 
         private double GetAdxSlopePoints()
@@ -3068,7 +3090,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG SL Padding Points", Description = "Additional stop padding in points beyond the long entry candle wick extreme.", GroupName = "Asia", Order = 16)]
+        [Display(Name = "LONG SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side of a long.", GroupName = "Asia", Order = 16)]
         public double AsiaStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -3123,7 +3145,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT SL Padding Points", Description = "Additional stop padding in points beyond the short entry candle wick extreme.", GroupName = "Asia", Order = 27)]
+        [Display(Name = "SHORT SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side of a short.", GroupName = "Asia", Order = 27)]
         public double AsiaShortStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -3217,7 +3239,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "LONG SL Padding Points", Description = "Additional stop padding in points beyond the long entry candle wick extreme.", GroupName = "New York", Order = 17)]
+        [Display(Name = "LONG SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side of a long.", GroupName = "New York", Order = 17)]
         public double NewYorkStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -3272,7 +3294,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SHORT SL Padding Points", Description = "Additional stop padding in points beyond the short entry candle wick extreme.", GroupName = "New York", Order = 28)]
+        [Display(Name = "SHORT SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side of a short.", GroupName = "New York", Order = 28)]
         public double NewYorkShortStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
@@ -3366,6 +3388,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Max Account Balance", Description = "When cash value reaches or exceeds this value, entries are blocked and position is flattened. 0 disables.", GroupName = "13. Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "HV SL Padding Points", Description = "High-volatility stop distance in points from EMA on the opposite side. 0 disables HV stop logic.", GroupName = "13. Risk", Order = 1)]
+        public double HvSlPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "13. Risk", Order = 2)]
+        public TimeSpan HvSlStartTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "13. Risk", Order = 3)]
+        public TimeSpan HvSlEndTime { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
