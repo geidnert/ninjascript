@@ -1041,8 +1041,7 @@ USE ON 1-MINUTE CHART.";
         
         private void CancelAllOrders()
         {
-            if (entryOrder != null && entryOrder.OrderState == OrderState.Working)
-            { CancelOrder(entryOrder); entryOrder = null; }
+            CancelAllPendingOrders();
         }
         
         #endregion
@@ -1053,10 +1052,22 @@ USE ON 1-MINUTE CHART.";
             int quantity, int filled, double averageFillPrice,
             OrderState orderState, DateTime time, ErrorCode error, string nativeError)
         {
-            if (order.Name == currentSignalName)
+            if (order == null)
+                return;
+
+            string orderName = order.Name ?? string.Empty;
+            bool isEntryOrder = IsEntryOrderName(orderName);
+            if (isEntryOrder)
             {
                 entryOrder = order;
-                if (orderState == OrderState.Filled)
+
+                if (orderState == OrderState.Rejected)
+                {
+                    HandleOrderRejected(order, error, nativeError);
+                    return;
+                }
+
+                if (orderName == currentSignalName && orderState == OrderState.Filled)
                 {
                     entryPrice = averageFillPrice;
                     lastFilledEntryPrice = averageFillPrice;
@@ -1065,8 +1076,31 @@ USE ON 1-MINUTE CHART.";
                     SetInitialStopAndTarget(lastTradeWasLong);
                     if (DebugMode) DebugPrint($"FILLED {(lastTradeWasLong ? "LONG" : "SHORT")} @ {averageFillPrice:F2}");
                 }
-                else if (orderState == OrderState.Cancelled)
+                else if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
                 { entryOrder = null; limitEntryPrice = 0; entryOrderBar = -1; }
+            }
+        }
+
+        private bool IsEntryOrderName(string orderName)
+        {
+            if (string.IsNullOrEmpty(orderName))
+                return false;
+
+            return orderName.StartsWith("LongOR_", StringComparison.OrdinalIgnoreCase)
+                || orderName.StartsWith("ShortOR_", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void HandleOrderRejected(Order order, ErrorCode error, string nativeError)
+        {
+            string name = order != null ? (order.Name ?? string.Empty) : string.Empty;
+            string state = order != null ? order.OrderState.ToString() : "Unknown";
+            Print(string.Format("{0} | ORBOTesting | bar={1} | Order rejected guard | name={2} state={3} error={4} comment={5}",
+                Time[0], CurrentBar, name, state, error, nativeError ?? string.Empty));
+
+            if (IsEntryOrderName(name))
+            {
+                CancelAllPendingOrders();
+                ResetForNewSetup();
             }
         }
         
@@ -1094,13 +1128,23 @@ USE ON 1-MINUTE CHART.";
             {
                 stopPx = entryPrice - stopDist;
                 tpPx = entryPrice + profitDist;
-                if (stopPx >= entryPrice) stopPx = entryPrice - (orRange * 0.5);
+                stopPx = Instrument.MasterInstrument.RoundToTickSize(stopPx);
+                tpPx = Instrument.MasterInstrument.RoundToTickSize(tpPx);
+                if (stopPx >= entryPrice)
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
+                if (tpPx <= entryPrice)
+                    tpPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
             }
             else
             {
                 stopPx = entryPrice + stopDist;
                 tpPx = entryPrice - profitDist;
-                if (stopPx <= entryPrice) stopPx = entryPrice + (orRange * 0.5);
+                stopPx = Instrument.MasterInstrument.RoundToTickSize(stopPx);
+                tpPx = Instrument.MasterInstrument.RoundToTickSize(tpPx);
+                if (stopPx <= entryPrice)
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
+                if (tpPx >= entryPrice)
+                    tpPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
             }
             
             if (DebugMode)
