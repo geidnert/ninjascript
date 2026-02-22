@@ -1624,49 +1624,7 @@ USE ON 1-MINUTE CHART.";
             }
             else
             {
-                double orT = orRange / TickSize;
-                lines.Add(("OR: " + orLow.ToString("F2") + " - " + orHigh.ToString("F2") + " (" + orT.ToString("F0") + "t)", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                
-                string entryLine = string.Empty;
-                if (longBucketFound)
-                {
-                    double e = orHigh + orRange * (activeLongBucket.EntryOffsetPercent / 100.0);
-                    entryLine += "L" + activeLongBucketIndex + " > " + e.ToString("F2");
-                }
-                else
-                    entryLine += "L: none";
-                
-                entryLine += " | ";
-                
-                if (shortBucketFound)
-                {
-                    double e = orLow - orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
-                    entryLine += "S" + activeShortBucketIndex + " < " + e.ToString("F2");
-                }
-                else
-                    entryLine += "S: none";
-                lines.Add((entryLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
-                
-                if (entryOrder != null && (entryOrder.OrderState == OrderState.Working || entryOrder.OrderState == OrderState.Accepted))
-                {
-                    string ot = lastTradeWasLong ? "LONG [L" + activeLongBucketIndex + "]" : "SHORT [S" + activeShortBucketIndex + "]";
-                    int bp = CurrentBar - entryOrderBar;
-                    if (CancelOrderBars > 0)
-                        lines.Add(("LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + "/" + CancelOrderBars + "]", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                    else
-                        lines.Add(("LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + " bars]", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                }
-                else if (longBreakoutOccurred || shortBreakoutOccurred)
-                {
-                    string breakoutLine;
-                    if (longBreakoutOccurred)
-                        breakoutLine = "LONG [L" + activeLongBucketIndex + "] [" + confirmationBarCount + "/" + activeLongBucket.ConfirmationBars + "]";
-                    else
-                        breakoutLine = "SHORT [S" + activeShortBucketIndex + "] [" + confirmationBarCount + "/" + activeShortBucket.ConfirmationBars + "]";
-                    if (confirmationComplete)
-                        breakoutLine += " READY";
-                    lines.Add((breakoutLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
-                }
+                lines.Add(("OR Size: " + orRange.ToString("F2") + " pts", string.Empty, Brushes.LightGray, Brushes.Transparent));
                 
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
@@ -1678,22 +1636,7 @@ USE ON 1-MINUTE CHART.";
                     lines.Add((inTradeLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
                 }
                 
-                double ur = 0;
-                if (Position.MarketPosition == MarketPosition.Long)
-                    ur = (Close[0] - Position.AveragePrice) / TickSize;
-                else if (Position.MarketPosition == MarketPosition.Short)
-                    ur = (Position.AveragePrice - Close[0]) / TickSize;
-                double sess = sessionRealizedPnL + ur;
-                string sessionLine = "Session: " + sess.ToString("F0") + "t | Trades: " + tradeCount;
-                if (MaxTradesPerDay > 0)
-                    sessionLine += "/" + MaxTradesPerDay;
-                if (sessionProfitLimitHit)
-                    sessionLine += " [PROFIT LIMIT]";
-                else if (sessionLossLimitHit)
-                    sessionLine += " [LOSS LIMIT]";
-                else if (!longBucketFound && !shortBucketFound)
-                    sessionLine += " [NO BUCKETS]";
-                lines.Add((sessionLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
+                lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
 
             lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
