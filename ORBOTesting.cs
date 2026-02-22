@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -142,6 +143,43 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan skipEndTime;
         private bool wasInNoTradesAfterWindow;
         private bool wasInSkipWindow;
+        private bool wasInNewsSkipWindow;
+        private static readonly string NewsDatesRaw =
+@"2025-01-08,14:00
+2025-01-29,14:00
+2025-02-19,14:00
+2025-03-19,14:00
+2025-04-09,14:00
+2025-05-07,14:00
+2025-05-28,14:00
+2025-06-18,14:00
+2025-07-09,14:00
+2025-07-30,14:00
+2025-08-20,14:00
+2025-09-17,14:00
+2025-10-08,14:00
+2025-10-29,14:00
+2025-11-19,14:00
+2025-12-10,14:00
+2025-12-30,14:00
+2026-01-28,14:00
+2026-02-18,14:00
+2026-03-18,14:00
+2026-04-08,14:00
+2026-04-29,14:00
+2026-05-20,14:00
+2026-06-17,14:00
+2026-07-08,14:00
+2026-07-29,14:00
+2026-08-19,14:00
+2026-09-16,14:00
+2026-10-07,14:00
+2026-10-28,14:00
+2026-11-18,14:00
+2026-12-09,14:00
+2026-12-30,14:00";
+        private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static bool newsDatesInitialized;
         
         // ===== Random for variance =====
         private Random random = new Random();
@@ -379,6 +417,8 @@ USE ON 1-MINUTE CHART.";
                 // ===== M. Skip Times =====
                 SkipStart = DateTime.Parse("00:00").TimeOfDay;
                 SkipEnd = DateTime.Parse("00:00").TimeOfDay;
+                UseNewsSkip = true;
+                NewsBlockMinutes = 1;
                 
                 // ===== N. Visual =====
                 RangeBoxBrush = Brushes.DodgerBlue;
@@ -398,6 +438,7 @@ USE ON 1-MINUTE CHART.";
             else if (State == State.DataLoaded)
             {
                 startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                EnsureNewsDatesInitialized();
             }
             else if (State == State.Terminated)
             {
@@ -433,7 +474,8 @@ USE ON 1-MINUTE CHART.";
 
             bool inNoTradesAfter = IsInNoTradesAfterWindow(Time[0]);
             bool inSkipWindow = IsInSkipWindow(Time[0]);
-            if (inNoTradesAfter || inSkipWindow)
+            bool inNewsSkipWindow = IsInNewsSkipWindow(Time[0]);
+            if (inNoTradesAfter || inSkipWindow || inNewsSkipWindow)
                 return;
             
             CaptureOpeningRange();
@@ -841,6 +883,7 @@ USE ON 1-MINUTE CHART.";
             if (!IsReadyForNewOrder()) return;
             if (IsInNoTradesAfterWindow(Time[0])) return;
             if (IsInSkipWindow(Time[0])) return;
+            if (IsInNewsSkipWindow(Time[0])) return;
             if (!confirmationComplete) return;
             
             // === LONG ENTRY ===
@@ -1090,7 +1133,7 @@ USE ON 1-MINUTE CHART.";
                 confirmationBarCount = 0; returnBar = -1;
                 orderPlaced = false; entryBar = -1; entryOrderBar = -1; entryOrder = null;
                 beTriggerActive = false; maxAccountLimitHit = false;
-                wasInNoTradesAfterWindow = false; wasInSkipWindow = false;
+                wasInNoTradesAfterWindow = false; wasInSkipWindow = false; wasInNewsSkipWindow = false;
                 tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
                 sessionRealizedPnL = 0; sessionProfitLimitHit = false; sessionLossLimitHit = false;
                 if (DebugMode) DebugPrint($"========== NEW DAY: {Time[0].Date:yyyy-MM-dd} ==========");
@@ -1116,6 +1159,26 @@ USE ON 1-MINUTE CHART.";
             return now >= skipStartTime || now < skipEndTime;
         }
 
+        private bool IsInNewsSkipWindow(DateTime time)
+        {
+            if (!UseNewsSkip)
+                return false;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != time.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+                if (time >= windowStart && time <= windowEnd)
+                    return true;
+            }
+
+            return false;
+        }
+
         private bool IsNoTradesAfterConfigured()
         {
             return noTradesAfterTime != TimeSpan.Zero;
@@ -1126,6 +1189,46 @@ USE ON 1-MINUTE CHART.";
             return skipStartTime != TimeSpan.Zero
                 && skipEndTime != TimeSpan.Zero
                 && skipStartTime != skipEndTime;
+        }
+
+        private void EnsureNewsDatesInitialized()
+        {
+            if (newsDatesInitialized)
+                return;
+
+            NewsDates.Clear();
+            LoadHardcodedNewsDates();
+            NewsDates.Sort();
+            newsDatesInitialized = true;
+
+            if (DebugMode)
+                DebugPrint($"News dates loaded: {NewsDates.Count}");
+        }
+
+        private void LoadHardcodedNewsDates()
+        {
+            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+                return;
+
+            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < entries.Length; i++)
+            {
+                string trimmed = entries[i].Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+
+                DateTime parsed;
+                if (!DateTime.TryParseExact(trimmed, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out parsed))
+                {
+                    if (DebugMode)
+                        DebugPrint("Invalid news date entry: " + trimmed);
+                    continue;
+                }
+
+                if (parsed.TimeOfDay == new TimeSpan(14, 0, 0) && !NewsDates.Contains(parsed))
+                    NewsDates.Add(parsed);
+            }
         }
         
         private void CheckSessionPnLLimits()
@@ -1176,6 +1279,7 @@ USE ON 1-MINUTE CHART.";
         {
             bool inNoTradesAfterNow = IsInNoTradesAfterWindow(Time[0]);
             bool inSkipNow = IsInSkipWindow(Time[0]);
+            bool inNewsSkipNow = IsInNewsSkipWindow(Time[0]);
 
             if (!wasInNoTradesAfterWindow && inNoTradesAfterNow)
             {
@@ -1193,8 +1297,17 @@ USE ON 1-MINUTE CHART.";
                 if (DebugMode) DebugPrint("Entered Skip window: canceling working entries and flattening open position.");
             }
 
+            if (!wasInNewsSkipWindow && inNewsSkipNow)
+            {
+                CancelAllOrders();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    ExitAllPositions("NewsSkip");
+                if (DebugMode) DebugPrint("Entered News skip window: canceling working entries and flattening open position.");
+            }
+
             wasInNoTradesAfterWindow = inNoTradesAfterNow;
             wasInSkipWindow = inSkipNow;
+            wasInNewsSkipWindow = inNewsSkipNow;
         }
 
         private void DrawSessionTimeWindows()
@@ -1205,6 +1318,7 @@ USE ON 1-MINUTE CHART.";
             DrawSessionBackground();
             DrawNoTradesAfterLine(Time[0]);
             DrawSkipWindow(Time[0]);
+            DrawNewsWindows(Time[0]);
         }
 
         private DateTime GetSessionStartTime(DateTime barTime)
@@ -1295,6 +1409,51 @@ USE ON 1-MINUTE CHART.";
 
             Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
             Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+        }
+
+        private void DrawNewsWindows(DateTime barTime)
+        {
+            if (!UseNewsSkip)
+                return;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barTime.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+
+                var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
+                try
+                {
+                    if (areaBrush.CanFreeze)
+                        areaBrush.Freeze();
+                    if (lineBrush.CanFreeze)
+                        lineBrush.Freeze();
+                }
+                catch
+                {
+                }
+
+                string tagBase = string.Format("ORBO_News_{0:yyyyMMdd_HHmm}", newsTime);
+                Draw.Rectangle(
+                    this,
+                    tagBase + "_Rect",
+                    false,
+                    windowStart,
+                    0,
+                    windowEnd,
+                    30000,
+                    lineBrush,
+                    areaBrush,
+                    2).ZOrder = -1;
+
+                Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+                Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+            }
         }
         
         #endregion
@@ -2409,6 +2568,15 @@ USE ON 1-MINUTE CHART.";
         [NinjaScriptProperty]
         [Display(Name = "Skip End", Order = 6, GroupName = "L. Time")]
         public TimeSpan SkipEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use News Skip", Description = "Block entries inside the configured minutes before and after listed 14:00 news events.", GroupName = "N. News", Order = 0)]
+        public bool UseNewsSkip { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 240)]
+        [Display(Name = "News Block Minutes", Description = "Minutes blocked before and after each 14:00 news timestamp.", GroupName = "N. News", Order = 1)]
+        public int NewsBlockMinutes { get; set; }
         
         // ==========================================
         // ===== M. Visual =====
