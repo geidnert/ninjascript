@@ -140,6 +140,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan noTradesAfterTime;
         private TimeSpan skipStartTime;
         private TimeSpan skipEndTime;
+        private bool wasInNoTradesAfterWindow;
+        private bool wasInSkipWindow;
         
         // ===== Random for variance =====
         private Random random = new Random();
@@ -405,9 +407,10 @@ USE ON 1-MINUTE CHART.";
 
         protected override void OnBarUpdate()
         {
+            DrawSessionTimeWindows();
+
             if (CurrentBar < BarsRequiredToTrade)
                 return;
-            
             ResetDailyStateIfNeeded();
             CheckSessionPnLLimits();
             
@@ -421,9 +424,16 @@ USE ON 1-MINUTE CHART.";
             }
             
             ExitIfSessionEnded();
-            CancelEntryIfAfterNoTrades();
-            
-            if (IsInSkipWindow())
+            if (IsAfterSessionEnd(Time[0]))
+            {
+                CancelAllOrders();
+                return;
+            }
+            HandleNoTradeAndSkipTransitions();
+
+            bool inNoTradesAfter = IsInNoTradesAfterWindow(Time[0]);
+            bool inSkipWindow = IsInSkipWindow(Time[0]);
+            if (inNoTradesAfter || inSkipWindow)
                 return;
             
             CaptureOpeningRange();
@@ -829,7 +839,8 @@ USE ON 1-MINUTE CHART.";
         private void TryEntryWithConfirmation()
         {
             if (!IsReadyForNewOrder()) return;
-            if (Time[0].TimeOfDay >= noTradesAfterTime) return;
+            if (IsInNoTradesAfterWindow(Time[0])) return;
+            if (IsInSkipWindow(Time[0])) return;
             if (!confirmationComplete) return;
             
             // === LONG ENTRY ===
@@ -1079,14 +1090,43 @@ USE ON 1-MINUTE CHART.";
                 confirmationBarCount = 0; returnBar = -1;
                 orderPlaced = false; entryBar = -1; entryOrderBar = -1; entryOrder = null;
                 beTriggerActive = false; maxAccountLimitHit = false;
+                wasInNoTradesAfterWindow = false; wasInSkipWindow = false;
                 tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
                 sessionRealizedPnL = 0; sessionProfitLimitHit = false; sessionLossLimitHit = false;
                 if (DebugMode) DebugPrint($"========== NEW DAY: {Time[0].Date:yyyy-MM-dd} ==========");
             }
         }
         
-        private bool IsInSkipWindow()
-        { return Time[0].TimeOfDay >= skipStartTime && Time[0].TimeOfDay < skipEndTime; }
+        private bool IsInNoTradesAfterWindow(DateTime time)
+        {
+            if (!IsNoTradesAfterConfigured())
+                return false;
+            return time.TimeOfDay >= noTradesAfterTime;
+        }
+
+        private bool IsInSkipWindow(DateTime time)
+        {
+            if (!IsSkipWindowConfigured())
+                return false;
+
+            TimeSpan now = time.TimeOfDay;
+            if (skipStartTime < skipEndTime)
+                return now >= skipStartTime && now < skipEndTime;
+
+            return now >= skipStartTime || now < skipEndTime;
+        }
+
+        private bool IsNoTradesAfterConfigured()
+        {
+            return noTradesAfterTime != TimeSpan.Zero;
+        }
+
+        private bool IsSkipWindowConfigured()
+        {
+            return skipStartTime != TimeSpan.Zero
+                && skipEndTime != TimeSpan.Zero
+                && skipStartTime != skipEndTime;
+        }
         
         private void CheckSessionPnLLimits()
         {
@@ -1126,9 +1166,136 @@ USE ON 1-MINUTE CHART.";
         
         private void ExitIfSessionEnded()
         { if (Time[0].TimeOfDay >= sessionEndTime && Position.MarketPosition != MarketPosition.Flat) ExitAllPositions("SessionEnd"); }
+
+        private bool IsAfterSessionEnd(DateTime time)
+        {
+            return time.TimeOfDay >= sessionEndTime;
+        }
         
-        private void CancelEntryIfAfterNoTrades()
-        { if (Time[0].TimeOfDay >= noTradesAfterTime) CancelAllOrders(); }
+        private void HandleNoTradeAndSkipTransitions()
+        {
+            bool inNoTradesAfterNow = IsInNoTradesAfterWindow(Time[0]);
+            bool inSkipNow = IsInSkipWindow(Time[0]);
+
+            if (!wasInNoTradesAfterWindow && inNoTradesAfterNow)
+            {
+                CancelAllOrders();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    ExitAllPositions("NoTradesAfter");
+                if (DebugMode) DebugPrint("Entered NoTradesAfter window: canceling working entries and flattening open position.");
+            }
+
+            if (!wasInSkipWindow && inSkipNow)
+            {
+                CancelAllOrders();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    ExitAllPositions("SkipWindow");
+                if (DebugMode) DebugPrint("Entered Skip window: canceling working entries and flattening open position.");
+            }
+
+            wasInNoTradesAfterWindow = inNoTradesAfterNow;
+            wasInSkipWindow = inSkipNow;
+        }
+
+        private void DrawSessionTimeWindows()
+        {
+            if (CurrentBar < 1)
+                return;
+
+            DrawSessionBackground();
+            DrawNoTradesAfterLine(Time[0]);
+            DrawSkipWindow(Time[0]);
+        }
+
+        private DateTime GetSessionStartTime(DateTime barTime)
+        {
+            if (orStartTime <= sessionEndTime)
+                return barTime.Date + orStartTime;
+
+            if (barTime.TimeOfDay < sessionEndTime)
+                return barTime.Date.AddDays(-1) + orStartTime;
+
+            return barTime.Date + orStartTime;
+        }
+
+        private void DrawSessionBackground()
+        {
+            DateTime sessionStart = GetSessionStartTime(Time[0]);
+            DateTime sessionEnd = orStartTime > sessionEndTime
+                ? sessionStart.AddDays(1).Date + sessionEndTime
+                : sessionStart.Date + sessionEndTime;
+
+            string rectTag = string.Format("ORBO_SessionFill_{0:yyyyMMdd_HHmm}", sessionStart);
+            if (DrawObjects[rectTag] == null)
+            {
+                Draw.Rectangle(
+                    this,
+                    rectTag,
+                    false,
+                    sessionStart,
+                    0,
+                    sessionEnd,
+                    30000,
+                    Brushes.Transparent,
+                    Brushes.Gold,
+                    10).ZOrder = -1;
+            }
+        }
+
+        private void DrawNoTradesAfterLine(DateTime barTime)
+        {
+            if (!IsNoTradesAfterConfigured())
+                return;
+
+            DateTime lineTime = barTime.Date + noTradesAfterTime;
+            string tag = string.Format("ORBO_NoTradesAfter_{0:yyyyMMdd_HHmm}", lineTime);
+            Draw.VerticalLine(this, tag, lineTime, Brushes.Red, DashStyleHelper.DashDot, 2);
+        }
+
+        private void DrawSkipWindow(DateTime barTime)
+        {
+            if (!IsSkipWindowConfigured())
+                return;
+
+            DateTime windowStart = barTime.Date + skipStartTime;
+            DateTime windowEnd = barTime.Date + skipEndTime;
+            if (skipStartTime > skipEndTime)
+                windowEnd = windowEnd.AddDays(1);
+
+            int startBarsAgo = Bars.GetBar(windowStart);
+            int endBarsAgo = Bars.GetBar(windowEnd);
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+            try
+            {
+                if (areaBrush.CanFreeze)
+                    areaBrush.Freeze();
+                if (lineBrush.CanFreeze)
+                    lineBrush.Freeze();
+            }
+            catch
+            {
+            }
+
+            string tagBase = string.Format("ORBO_Skip_{0:yyyyMMdd_HHmm}", windowStart);
+            Draw.Rectangle(
+                this,
+                tagBase + "_Rect",
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,
+                areaBrush,
+                2).ZOrder = -1;
+
+            Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+        }
         
         #endregion
 
