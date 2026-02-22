@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -140,6 +141,45 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan noTradesAfterTime;
         private TimeSpan skipStartTime;
         private TimeSpan skipEndTime;
+        private bool wasInNoTradesAfterWindow;
+        private bool wasInSkipWindow;
+        private bool wasInNewsSkipWindow;
+        private static readonly string NewsDatesRaw =
+@"2025-01-08,14:00
+2025-01-29,14:00
+2025-02-19,14:00
+2025-03-19,14:00
+2025-04-09,14:00
+2025-05-07,14:00
+2025-05-28,14:00
+2025-06-18,14:00
+2025-07-09,14:00
+2025-07-30,14:00
+2025-08-20,14:00
+2025-09-17,14:00
+2025-10-08,14:00
+2025-10-29,14:00
+2025-11-19,14:00
+2025-12-10,14:00
+2025-12-30,14:00
+2026-01-28,14:00
+2026-02-18,14:00
+2026-03-18,14:00
+2026-04-08,14:00
+2026-04-29,14:00
+2026-05-20,14:00
+2026-06-17,14:00
+2026-07-08,14:00
+2026-07-29,14:00
+2026-08-19,14:00
+2026-09-16,14:00
+2026-10-07,14:00
+2026-10-28,14:00
+2026-11-18,14:00
+2026-12-09,14:00
+2026-12-30,14:00";
+        private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static bool newsDatesInitialized;
         
         // ===== Random for variance =====
         private Random random = new Random();
@@ -377,6 +417,8 @@ USE ON 1-MINUTE CHART.";
                 // ===== M. Skip Times =====
                 SkipStart = DateTime.Parse("00:00").TimeOfDay;
                 SkipEnd = DateTime.Parse("00:00").TimeOfDay;
+                UseNewsSkip = true;
+                NewsBlockMinutes = 1;
                 
                 // ===== N. Visual =====
                 RangeBoxBrush = Brushes.DodgerBlue;
@@ -396,6 +438,7 @@ USE ON 1-MINUTE CHART.";
             else if (State == State.DataLoaded)
             {
                 startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                EnsureNewsDatesInitialized();
             }
             else if (State == State.Terminated)
             {
@@ -405,9 +448,10 @@ USE ON 1-MINUTE CHART.";
 
         protected override void OnBarUpdate()
         {
+            DrawSessionTimeWindows();
+
             if (CurrentBar < BarsRequiredToTrade)
                 return;
-            
             ResetDailyStateIfNeeded();
             CheckSessionPnLLimits();
             
@@ -421,9 +465,17 @@ USE ON 1-MINUTE CHART.";
             }
             
             ExitIfSessionEnded();
-            CancelEntryIfAfterNoTrades();
-            
-            if (IsInSkipWindow())
+            if (IsAfterSessionEnd(Time[0]))
+            {
+                CancelAllOrders();
+                return;
+            }
+            HandleNoTradeAndSkipTransitions();
+
+            bool inNoTradesAfter = IsInNoTradesAfterWindow(Time[0]);
+            bool inSkipWindow = IsInSkipWindow(Time[0]);
+            bool inNewsSkipWindow = IsInNewsSkipWindow(Time[0]);
+            if (inNoTradesAfter || inSkipWindow || inNewsSkipWindow)
                 return;
             
             CaptureOpeningRange();
@@ -829,7 +881,9 @@ USE ON 1-MINUTE CHART.";
         private void TryEntryWithConfirmation()
         {
             if (!IsReadyForNewOrder()) return;
-            if (Time[0].TimeOfDay >= noTradesAfterTime) return;
+            if (IsInNoTradesAfterWindow(Time[0])) return;
+            if (IsInSkipWindow(Time[0])) return;
+            if (IsInNewsSkipWindow(Time[0])) return;
             if (!confirmationComplete) return;
             
             // === LONG ENTRY ===
@@ -847,6 +901,28 @@ USE ON 1-MINUTE CHART.";
                 double entryLevel = orLow - orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
                 { PlaceShortLimitEntry(entryLevel); return; }
             }
+        }
+
+        private bool IsTradeArmed()
+        {
+            if (!IsReadyForNewOrder()) return false;
+            if (IsInNoTradesAfterWindow(Time[0])) return false;
+            if (IsInSkipWindow(Time[0])) return false;
+            if (IsInNewsSkipWindow(Time[0])) return false;
+
+            bool longArmed = !confirmationComplete
+                && longBreakoutOccurred
+                && !shortBreakoutOccurred
+                && longBucketFound
+                && (activeLongBucket.MaxTradesPerDay <= 0 || longTradeCount < activeLongBucket.MaxTradesPerDay);
+
+            bool shortArmed = !confirmationComplete
+                && shortBreakoutOccurred
+                && !longBreakoutOccurred
+                && shortBucketFound
+                && (activeShortBucket.MaxTradesPerDay <= 0 || shortTradeCount < activeShortBucket.MaxTradesPerDay);
+
+            return longArmed || shortArmed;
         }
         
         private bool IsReadyForNewOrder()
@@ -965,8 +1041,7 @@ USE ON 1-MINUTE CHART.";
         
         private void CancelAllOrders()
         {
-            if (entryOrder != null && entryOrder.OrderState == OrderState.Working)
-            { CancelOrder(entryOrder); entryOrder = null; }
+            CancelAllPendingOrders();
         }
         
         #endregion
@@ -977,10 +1052,22 @@ USE ON 1-MINUTE CHART.";
             int quantity, int filled, double averageFillPrice,
             OrderState orderState, DateTime time, ErrorCode error, string nativeError)
         {
-            if (order.Name == currentSignalName)
+            if (order == null)
+                return;
+
+            string orderName = order.Name ?? string.Empty;
+            bool isEntryOrder = IsEntryOrderName(orderName);
+            if (isEntryOrder)
             {
                 entryOrder = order;
-                if (orderState == OrderState.Filled)
+
+                if (orderState == OrderState.Rejected)
+                {
+                    HandleOrderRejected(order, error, nativeError);
+                    return;
+                }
+
+                if (orderName == currentSignalName && orderState == OrderState.Filled)
                 {
                     entryPrice = averageFillPrice;
                     lastFilledEntryPrice = averageFillPrice;
@@ -989,8 +1076,31 @@ USE ON 1-MINUTE CHART.";
                     SetInitialStopAndTarget(lastTradeWasLong);
                     if (DebugMode) DebugPrint($"FILLED {(lastTradeWasLong ? "LONG" : "SHORT")} @ {averageFillPrice:F2}");
                 }
-                else if (orderState == OrderState.Cancelled)
+                else if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
                 { entryOrder = null; limitEntryPrice = 0; entryOrderBar = -1; }
+            }
+        }
+
+        private bool IsEntryOrderName(string orderName)
+        {
+            if (string.IsNullOrEmpty(orderName))
+                return false;
+
+            return orderName.StartsWith("LongOR_", StringComparison.OrdinalIgnoreCase)
+                || orderName.StartsWith("ShortOR_", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void HandleOrderRejected(Order order, ErrorCode error, string nativeError)
+        {
+            string name = order != null ? (order.Name ?? string.Empty) : string.Empty;
+            string state = order != null ? order.OrderState.ToString() : "Unknown";
+            Print(string.Format("{0} | ORBO | bar={1} | Order rejected guard | name={2} state={3} error={4} comment={5}",
+                Time[0], CurrentBar, name, state, error, nativeError ?? string.Empty));
+
+            if (IsEntryOrderName(name))
+            {
+                CancelAllPendingOrders();
+                ResetForNewSetup();
             }
         }
         
@@ -1018,13 +1128,23 @@ USE ON 1-MINUTE CHART.";
             {
                 stopPx = entryPrice - stopDist;
                 tpPx = entryPrice + profitDist;
-                if (stopPx >= entryPrice) stopPx = entryPrice - (orRange * 0.5);
+                stopPx = Instrument.MasterInstrument.RoundToTickSize(stopPx);
+                tpPx = Instrument.MasterInstrument.RoundToTickSize(tpPx);
+                if (stopPx >= entryPrice)
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
+                if (tpPx <= entryPrice)
+                    tpPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
             }
             else
             {
                 stopPx = entryPrice + stopDist;
                 tpPx = entryPrice - profitDist;
-                if (stopPx <= entryPrice) stopPx = entryPrice + (orRange * 0.5);
+                stopPx = Instrument.MasterInstrument.RoundToTickSize(stopPx);
+                tpPx = Instrument.MasterInstrument.RoundToTickSize(tpPx);
+                if (stopPx <= entryPrice)
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
+                if (tpPx >= entryPrice)
+                    tpPx = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
             }
             
             if (DebugMode)
@@ -1079,14 +1199,103 @@ USE ON 1-MINUTE CHART.";
                 confirmationBarCount = 0; returnBar = -1;
                 orderPlaced = false; entryBar = -1; entryOrderBar = -1; entryOrder = null;
                 beTriggerActive = false; maxAccountLimitHit = false;
+                wasInNoTradesAfterWindow = false; wasInSkipWindow = false; wasInNewsSkipWindow = false;
                 tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
                 sessionRealizedPnL = 0; sessionProfitLimitHit = false; sessionLossLimitHit = false;
                 if (DebugMode) DebugPrint($"========== NEW DAY: {Time[0].Date:yyyy-MM-dd} ==========");
             }
         }
         
-        private bool IsInSkipWindow()
-        { return Time[0].TimeOfDay >= skipStartTime && Time[0].TimeOfDay < skipEndTime; }
+        private bool IsInNoTradesAfterWindow(DateTime time)
+        {
+            if (!IsNoTradesAfterConfigured())
+                return false;
+            return time.TimeOfDay >= noTradesAfterTime;
+        }
+
+        private bool IsInSkipWindow(DateTime time)
+        {
+            if (!IsSkipWindowConfigured())
+                return false;
+
+            TimeSpan now = time.TimeOfDay;
+            if (skipStartTime < skipEndTime)
+                return now >= skipStartTime && now < skipEndTime;
+
+            return now >= skipStartTime || now < skipEndTime;
+        }
+
+        private bool IsInNewsSkipWindow(DateTime time)
+        {
+            if (!UseNewsSkip)
+                return false;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != time.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+                if (time >= windowStart && time <= windowEnd)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool IsNoTradesAfterConfigured()
+        {
+            return noTradesAfterTime != TimeSpan.Zero;
+        }
+
+        private bool IsSkipWindowConfigured()
+        {
+            return skipStartTime != TimeSpan.Zero
+                && skipEndTime != TimeSpan.Zero
+                && skipStartTime != skipEndTime;
+        }
+
+        private void EnsureNewsDatesInitialized()
+        {
+            if (newsDatesInitialized)
+                return;
+
+            NewsDates.Clear();
+            LoadHardcodedNewsDates();
+            NewsDates.Sort();
+            newsDatesInitialized = true;
+
+            if (DebugMode)
+                DebugPrint($"News dates loaded: {NewsDates.Count}");
+        }
+
+        private void LoadHardcodedNewsDates()
+        {
+            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+                return;
+
+            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < entries.Length; i++)
+            {
+                string trimmed = entries[i].Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+
+                DateTime parsed;
+                if (!DateTime.TryParseExact(trimmed, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out parsed))
+                {
+                    if (DebugMode)
+                        DebugPrint("Invalid news date entry: " + trimmed);
+                    continue;
+                }
+
+                if (parsed.TimeOfDay == new TimeSpan(14, 0, 0) && !NewsDates.Contains(parsed))
+                    NewsDates.Add(parsed);
+            }
+        }
         
         private void CheckSessionPnLLimits()
         {
@@ -1126,9 +1335,192 @@ USE ON 1-MINUTE CHART.";
         
         private void ExitIfSessionEnded()
         { if (Time[0].TimeOfDay >= sessionEndTime && Position.MarketPosition != MarketPosition.Flat) ExitAllPositions("SessionEnd"); }
+
+        private bool IsAfterSessionEnd(DateTime time)
+        {
+            return time.TimeOfDay >= sessionEndTime;
+        }
         
-        private void CancelEntryIfAfterNoTrades()
-        { if (Time[0].TimeOfDay >= noTradesAfterTime) CancelAllOrders(); }
+        private void HandleNoTradeAndSkipTransitions()
+        {
+            bool inNoTradesAfterNow = IsInNoTradesAfterWindow(Time[0]);
+            bool inSkipNow = IsInSkipWindow(Time[0]);
+            bool inNewsSkipNow = IsInNewsSkipWindow(Time[0]);
+
+            if (!wasInNoTradesAfterWindow && inNoTradesAfterNow)
+            {
+                CancelAllOrders();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    ExitAllPositions("NoTradesAfter");
+                if (DebugMode) DebugPrint("Entered NoTradesAfter window: canceling working entries and flattening open position.");
+            }
+
+            if (!wasInSkipWindow && inSkipNow)
+            {
+                CancelAllOrders();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    ExitAllPositions("SkipWindow");
+                if (DebugMode) DebugPrint("Entered Skip window: canceling working entries and flattening open position.");
+            }
+
+            if (!wasInNewsSkipWindow && inNewsSkipNow)
+            {
+                CancelAllOrders();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    ExitAllPositions("NewsSkip");
+                if (DebugMode) DebugPrint("Entered News skip window: canceling working entries and flattening open position.");
+            }
+
+            wasInNoTradesAfterWindow = inNoTradesAfterNow;
+            wasInSkipWindow = inSkipNow;
+            wasInNewsSkipWindow = inNewsSkipNow;
+        }
+
+        private void DrawSessionTimeWindows()
+        {
+            if (CurrentBar < 1)
+                return;
+
+            DrawSessionBackground();
+            DrawNoTradesAfterLine(Time[0]);
+            DrawSkipWindow(Time[0]);
+            DrawNewsWindows(Time[0]);
+        }
+
+        private DateTime GetSessionStartTime(DateTime barTime)
+        {
+            if (orStartTime <= sessionEndTime)
+                return barTime.Date + orStartTime;
+
+            if (barTime.TimeOfDay < sessionEndTime)
+                return barTime.Date.AddDays(-1) + orStartTime;
+
+            return barTime.Date + orStartTime;
+        }
+
+        private void DrawSessionBackground()
+        {
+            DateTime sessionStart = GetSessionStartTime(Time[0]);
+            DateTime sessionEnd = orStartTime > sessionEndTime
+                ? sessionStart.AddDays(1).Date + sessionEndTime
+                : sessionStart.Date + sessionEndTime;
+
+            string rectTag = string.Format("ORBO_SessionFill_{0:yyyyMMdd_HHmm}", sessionStart);
+            if (DrawObjects[rectTag] == null)
+            {
+                Draw.Rectangle(
+                    this,
+                    rectTag,
+                    false,
+                    sessionStart,
+                    0,
+                    sessionEnd,
+                    30000,
+                    Brushes.Transparent,
+                    Brushes.Gold,
+                    10).ZOrder = -1;
+            }
+        }
+
+        private void DrawNoTradesAfterLine(DateTime barTime)
+        {
+            if (!IsNoTradesAfterConfigured())
+                return;
+
+            DateTime lineTime = barTime.Date + noTradesAfterTime;
+            string tag = string.Format("ORBO_NoTradesAfter_{0:yyyyMMdd_HHmm}", lineTime);
+            Draw.VerticalLine(this, tag, lineTime, Brushes.Red, DashStyleHelper.DashDot, 2);
+        }
+
+        private void DrawSkipWindow(DateTime barTime)
+        {
+            if (!IsSkipWindowConfigured())
+                return;
+
+            DateTime windowStart = barTime.Date + skipStartTime;
+            DateTime windowEnd = barTime.Date + skipEndTime;
+            if (skipStartTime > skipEndTime)
+                windowEnd = windowEnd.AddDays(1);
+
+            int startBarsAgo = Bars.GetBar(windowStart);
+            int endBarsAgo = Bars.GetBar(windowEnd);
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+            try
+            {
+                if (areaBrush.CanFreeze)
+                    areaBrush.Freeze();
+                if (lineBrush.CanFreeze)
+                    lineBrush.Freeze();
+            }
+            catch
+            {
+            }
+
+            string tagBase = string.Format("ORBO_Skip_{0:yyyyMMdd_HHmm}", windowStart);
+            Draw.Rectangle(
+                this,
+                tagBase + "_Rect",
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,
+                areaBrush,
+                2).ZOrder = -1;
+
+            Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+        }
+
+        private void DrawNewsWindows(DateTime barTime)
+        {
+            if (!UseNewsSkip)
+                return;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barTime.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+
+                var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
+                try
+                {
+                    if (areaBrush.CanFreeze)
+                        areaBrush.Freeze();
+                    if (lineBrush.CanFreeze)
+                        lineBrush.Freeze();
+                }
+                catch
+                {
+                }
+
+                string tagBase = string.Format("ORBO_News_{0:yyyyMMdd_HHmm}", newsTime);
+                Draw.Rectangle(
+                    this,
+                    tagBase + "_Rect",
+                    false,
+                    windowStart,
+                    0,
+                    windowEnd,
+                    30000,
+                    lineBrush,
+                    areaBrush,
+                    2).ZOrder = -1;
+
+                Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+                Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+            }
+        }
         
         #endregion
 
@@ -1291,56 +1683,14 @@ USE ON 1-MINUTE CHART.";
 
             if (!orCaptured)
             {
-                string h = (orHigh == double.MinValue) ? "---" : orHigh.ToString("F2");
-                string l = (orLow == double.MaxValue) ? "---" : orLow.ToString("F2");
-                lines.Add(("Capturing OR (" + orStartTime.ToString(@"hh\:mm") + "-" + orEndTime.ToString(@"hh\:mm") + ")", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                lines.Add(("H=" + h + " L=" + l, string.Empty, Brushes.LightGray, Brushes.Transparent));
+                lines.Add(("OR Size: 0 pts", string.Empty, Brushes.LightGray, Brushes.Transparent));
+                bool armed = IsTradeArmed();
+                lines.Add(("Armed:", armed ? "✔" : "⛔", Brushes.LightGray, armed ? Brushes.LimeGreen : Brushes.IndianRed));
+                lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
             else
             {
-                double orT = orRange / TickSize;
-                lines.Add(("OR: " + orLow.ToString("F2") + " - " + orHigh.ToString("F2") + " (" + orT.ToString("F0") + "t)", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                
-                string entryLine = string.Empty;
-                if (longBucketFound)
-                {
-                    double e = orHigh + orRange * (activeLongBucket.EntryOffsetPercent / 100.0);
-                    entryLine += "L" + activeLongBucketIndex + " > " + e.ToString("F2");
-                }
-                else
-                    entryLine += "L: none";
-                
-                entryLine += " | ";
-                
-                if (shortBucketFound)
-                {
-                    double e = orLow - orRange * (activeShortBucket.EntryOffsetPercent / 100.0);
-                    entryLine += "S" + activeShortBucketIndex + " < " + e.ToString("F2");
-                }
-                else
-                    entryLine += "S: none";
-                lines.Add((entryLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
-                
-                if (entryOrder != null && (entryOrder.OrderState == OrderState.Working || entryOrder.OrderState == OrderState.Accepted))
-                {
-                    string ot = lastTradeWasLong ? "LONG [L" + activeLongBucketIndex + "]" : "SHORT [S" + activeShortBucketIndex + "]";
-                    int bp = CurrentBar - entryOrderBar;
-                    if (CancelOrderBars > 0)
-                        lines.Add(("LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + "/" + CancelOrderBars + "]", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                    else
-                        lines.Add(("LIMIT " + ot + " @ " + limitEntryPrice.ToString("F2") + " [" + bp + " bars]", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                }
-                else if (longBreakoutOccurred || shortBreakoutOccurred)
-                {
-                    string breakoutLine;
-                    if (longBreakoutOccurred)
-                        breakoutLine = "LONG [L" + activeLongBucketIndex + "] [" + confirmationBarCount + "/" + activeLongBucket.ConfirmationBars + "]";
-                    else
-                        breakoutLine = "SHORT [S" + activeShortBucketIndex + "] [" + confirmationBarCount + "/" + activeShortBucket.ConfirmationBars + "]";
-                    if (confirmationComplete)
-                        breakoutLine += " READY";
-                    lines.Add((breakoutLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
-                }
+                lines.Add(("OR Size: " + orRange.ToString("F2") + " pts", string.Empty, Brushes.LightGray, Brushes.Transparent));
                 
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
@@ -1351,23 +1701,10 @@ USE ON 1-MINUTE CHART.";
                         inTradeLine += " [BE]";
                     lines.Add((inTradeLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
                 }
-                
-                double ur = 0;
-                if (Position.MarketPosition == MarketPosition.Long)
-                    ur = (Close[0] - Position.AveragePrice) / TickSize;
-                else if (Position.MarketPosition == MarketPosition.Short)
-                    ur = (Position.AveragePrice - Close[0]) / TickSize;
-                double sess = sessionRealizedPnL + ur;
-                string sessionLine = "Session: " + sess.ToString("F0") + "t | Trades: " + tradeCount;
-                if (MaxTradesPerDay > 0)
-                    sessionLine += "/" + MaxTradesPerDay;
-                if (sessionProfitLimitHit)
-                    sessionLine += " [PROFIT LIMIT]";
-                else if (sessionLossLimitHit)
-                    sessionLine += " [LOSS LIMIT]";
-                else if (!longBucketFound && !shortBucketFound)
-                    sessionLine += " [NO BUCKETS]";
-                lines.Add((sessionLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
+
+                bool armed = IsTradeArmed();
+                lines.Add(("Armed:", armed ? "✔" : "⛔", Brushes.LightGray, armed ? Brushes.LimeGreen : Brushes.IndianRed));
+                lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
 
             lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
@@ -1436,6 +1773,7 @@ USE ON 1-MINUTE CHART.";
         public double MaxAccountBalance { get; set; }
         
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Debug Mode", Order = 6, GroupName = "A. General")]
         public bool DebugMode { get; set; }
@@ -1443,91 +1781,110 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== B. Long Bucket 1 =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Enable L1", Order = 1, GroupName = "B. Long Bucket 1")]
         public bool L1_Enabled { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "B. Long Bucket 1")]
         public int L1_ORMinTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "B. Long Bucket 1")]
         public int L1_ORMaxTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "B. Long Bucket 1")]
         public bool L1_UseBreakoutRearm { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Require Return to Zone", Order = 5, GroupName = "B. Long Bucket 1")]
         public bool L1_RequireReturnToZone { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 6, GroupName = "B. Long Bucket 1")]
         public int L1_ConfirmationBars { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "B. Long Bucket 1")]
         public double L1_EntryOffsetPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "B. Long Bucket 1")]
         public int L1_VarianceTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "TP Mode", Order = 9, GroupName = "B. Long Bucket 1")]
         public TargetMode L1_TPMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "B. Long Bucket 1")]
         public double L1_TakeProfitPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "B. Long Bucket 1")]
         public int L1_TakeProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "SL Mode", Order = 12, GroupName = "B. Long Bucket 1")]
         public TargetMode L1_SLMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "B. Long Bucket 1")]
         public double L1_StopLossPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "B. Long Bucket 1")]
         public int L1_StopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 10000)]
         [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "B. Long Bucket 1")]
         public int L1_MaxStopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "B. Long Bucket 1")]
         public int L1_BreakevenTriggerPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "B. Long Bucket 1")]
         public int L1_BreakevenOffsetTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "B. Long Bucket 1")]
         public int L1_MaxBarsInTrade { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Trades/Day", Order = 19, GroupName = "B. Long Bucket 1")]
@@ -1536,91 +1893,110 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== C. Long Bucket 2 =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Enable L2", Order = 1, GroupName = "C. Long Bucket 2")]
         public bool L2_Enabled { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "C. Long Bucket 2")]
         public int L2_ORMinTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "C. Long Bucket 2")]
         public int L2_ORMaxTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "C. Long Bucket 2")]
         public bool L2_UseBreakoutRearm { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Require Return to Zone", Order = 5, GroupName = "C. Long Bucket 2")]
         public bool L2_RequireReturnToZone { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 6, GroupName = "C. Long Bucket 2")]
         public int L2_ConfirmationBars { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "C. Long Bucket 2")]
         public double L2_EntryOffsetPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "C. Long Bucket 2")]
         public int L2_VarianceTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "TP Mode", Order = 9, GroupName = "C. Long Bucket 2")]
         public TargetMode L2_TPMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "C. Long Bucket 2")]
         public double L2_TakeProfitPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "C. Long Bucket 2")]
         public int L2_TakeProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "SL Mode", Order = 12, GroupName = "C. Long Bucket 2")]
         public TargetMode L2_SLMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "C. Long Bucket 2")]
         public double L2_StopLossPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "C. Long Bucket 2")]
         public int L2_StopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 10000)]
         [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "C. Long Bucket 2")]
         public int L2_MaxStopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "C. Long Bucket 2")]
         public int L2_BreakevenTriggerPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "C. Long Bucket 2")]
         public int L2_BreakevenOffsetTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "C. Long Bucket 2")]
         public int L2_MaxBarsInTrade { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Trades/Day", Order = 19, GroupName = "C. Long Bucket 2")]
@@ -1629,91 +2005,110 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== D. Long Bucket 3 =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Enable L3", Order = 1, GroupName = "D. Long Bucket 3")]
         public bool L3_Enabled { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "D. Long Bucket 3")]
         public int L3_ORMinTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "D. Long Bucket 3")]
         public int L3_ORMaxTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "D. Long Bucket 3")]
         public bool L3_UseBreakoutRearm { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Require Return to Zone", Order = 5, GroupName = "D. Long Bucket 3")]
         public bool L3_RequireReturnToZone { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 6, GroupName = "D. Long Bucket 3")]
         public int L3_ConfirmationBars { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "D. Long Bucket 3")]
         public double L3_EntryOffsetPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "D. Long Bucket 3")]
         public int L3_VarianceTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "TP Mode", Order = 9, GroupName = "D. Long Bucket 3")]
         public TargetMode L3_TPMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "D. Long Bucket 3")]
         public double L3_TakeProfitPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "D. Long Bucket 3")]
         public int L3_TakeProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "SL Mode", Order = 12, GroupName = "D. Long Bucket 3")]
         public TargetMode L3_SLMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "D. Long Bucket 3")]
         public double L3_StopLossPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "D. Long Bucket 3")]
         public int L3_StopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 10000)]
         [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "D. Long Bucket 3")]
         public int L3_MaxStopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "D. Long Bucket 3")]
         public int L3_BreakevenTriggerPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "D. Long Bucket 3")]
         public int L3_BreakevenOffsetTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "D. Long Bucket 3")]
         public int L3_MaxBarsInTrade { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Trades/Day", Order = 19, GroupName = "D. Long Bucket 3")]
@@ -1722,91 +2117,110 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== E. Long Bucket 4 =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Enable L4", Order = 1, GroupName = "E. Long Bucket 4")]
         public bool L4_Enabled { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "E. Long Bucket 4")]
         public int L4_ORMinTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "E. Long Bucket 4")]
         public int L4_ORMaxTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "E. Long Bucket 4")]
         public bool L4_UseBreakoutRearm { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Require Return to Zone", Order = 5, GroupName = "E. Long Bucket 4")]
         public bool L4_RequireReturnToZone { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 6, GroupName = "E. Long Bucket 4")]
         public int L4_ConfirmationBars { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "E. Long Bucket 4")]
         public double L4_EntryOffsetPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "E. Long Bucket 4")]
         public int L4_VarianceTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "TP Mode", Order = 9, GroupName = "E. Long Bucket 4")]
         public TargetMode L4_TPMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "E. Long Bucket 4")]
         public double L4_TakeProfitPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "E. Long Bucket 4")]
         public int L4_TakeProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "SL Mode", Order = 12, GroupName = "E. Long Bucket 4")]
         public TargetMode L4_SLMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "E. Long Bucket 4")]
         public double L4_StopLossPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "E. Long Bucket 4")]
         public int L4_StopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 10000)]
         [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "E. Long Bucket 4")]
         public int L4_MaxStopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "E. Long Bucket 4")]
         public int L4_BreakevenTriggerPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "E. Long Bucket 4")]
         public int L4_BreakevenOffsetTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "E. Long Bucket 4")]
         public int L4_MaxBarsInTrade { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Trades/Day", Order = 19, GroupName = "E. Long Bucket 4")]
@@ -1815,91 +2229,110 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== F. Short Bucket 1 =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Enable S1", Order = 1, GroupName = "F. Short Bucket 1")]
         public bool S1_Enabled { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "F. Short Bucket 1")]
         public int S1_ORMinTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "F. Short Bucket 1")]
         public int S1_ORMaxTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "F. Short Bucket 1")]
         public bool S1_UseBreakoutRearm { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Require Return to Zone", Order = 5, GroupName = "F. Short Bucket 1")]
         public bool S1_RequireReturnToZone { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 6, GroupName = "F. Short Bucket 1")]
         public int S1_ConfirmationBars { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "F. Short Bucket 1")]
         public double S1_EntryOffsetPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "F. Short Bucket 1")]
         public int S1_VarianceTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "TP Mode", Order = 9, GroupName = "F. Short Bucket 1")]
         public TargetMode S1_TPMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "F. Short Bucket 1")]
         public double S1_TakeProfitPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "F. Short Bucket 1")]
         public int S1_TakeProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "SL Mode", Order = 12, GroupName = "F. Short Bucket 1")]
         public TargetMode S1_SLMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "F. Short Bucket 1")]
         public double S1_StopLossPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "F. Short Bucket 1")]
         public int S1_StopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 10000)]
         [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "F. Short Bucket 1")]
         public int S1_MaxStopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "F. Short Bucket 1")]
         public int S1_BreakevenTriggerPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "F. Short Bucket 1")]
         public int S1_BreakevenOffsetTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "F. Short Bucket 1")]
         public int S1_MaxBarsInTrade { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Trades/Day", Order = 19, GroupName = "F. Short Bucket 1")]
@@ -1908,91 +2341,110 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== G. Short Bucket 2 =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Enable S2", Order = 1, GroupName = "G. Short Bucket 2")]
         public bool S2_Enabled { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "G. Short Bucket 2")]
         public int S2_ORMinTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "G. Short Bucket 2")]
         public int S2_ORMaxTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "G. Short Bucket 2")]
         public bool S2_UseBreakoutRearm { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Require Return to Zone", Order = 5, GroupName = "G. Short Bucket 2")]
         public bool S2_RequireReturnToZone { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 6, GroupName = "G. Short Bucket 2")]
         public int S2_ConfirmationBars { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "G. Short Bucket 2")]
         public double S2_EntryOffsetPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "G. Short Bucket 2")]
         public int S2_VarianceTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "TP Mode", Order = 9, GroupName = "G. Short Bucket 2")]
         public TargetMode S2_TPMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "G. Short Bucket 2")]
         public double S2_TakeProfitPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "G. Short Bucket 2")]
         public int S2_TakeProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "SL Mode", Order = 12, GroupName = "G. Short Bucket 2")]
         public TargetMode S2_SLMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "G. Short Bucket 2")]
         public double S2_StopLossPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "G. Short Bucket 2")]
         public int S2_StopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 10000)]
         [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "G. Short Bucket 2")]
         public int S2_MaxStopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "G. Short Bucket 2")]
         public int S2_BreakevenTriggerPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "G. Short Bucket 2")]
         public int S2_BreakevenOffsetTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "G. Short Bucket 2")]
         public int S2_MaxBarsInTrade { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Trades/Day", Order = 19, GroupName = "G. Short Bucket 2")]
@@ -2001,91 +2453,110 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== H. Short Bucket 3 =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Enable S3", Order = 1, GroupName = "H. Short Bucket 3")]
         public bool S3_Enabled { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "H. Short Bucket 3")]
         public int S3_ORMinTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "H. Short Bucket 3")]
         public int S3_ORMaxTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "H. Short Bucket 3")]
         public bool S3_UseBreakoutRearm { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Require Return to Zone", Order = 5, GroupName = "H. Short Bucket 3")]
         public bool S3_RequireReturnToZone { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 6, GroupName = "H. Short Bucket 3")]
         public int S3_ConfirmationBars { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "H. Short Bucket 3")]
         public double S3_EntryOffsetPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "H. Short Bucket 3")]
         public int S3_VarianceTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "TP Mode", Order = 9, GroupName = "H. Short Bucket 3")]
         public TargetMode S3_TPMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "H. Short Bucket 3")]
         public double S3_TakeProfitPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "H. Short Bucket 3")]
         public int S3_TakeProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "SL Mode", Order = 12, GroupName = "H. Short Bucket 3")]
         public TargetMode S3_SLMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "H. Short Bucket 3")]
         public double S3_StopLossPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "H. Short Bucket 3")]
         public int S3_StopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 10000)]
         [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "H. Short Bucket 3")]
         public int S3_MaxStopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "H. Short Bucket 3")]
         public int S3_BreakevenTriggerPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "H. Short Bucket 3")]
         public int S3_BreakevenOffsetTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "H. Short Bucket 3")]
         public int S3_MaxBarsInTrade { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Trades/Day", Order = 19, GroupName = "H. Short Bucket 3")]
@@ -2094,91 +2565,110 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== I. Short Bucket 4 =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Enable S4", Order = 1, GroupName = "I. Short Bucket 4")]
         public bool S4_Enabled { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "I. Short Bucket 4")]
         public int S4_ORMinTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "I. Short Bucket 4")]
         public int S4_ORMaxTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Use Breakout Rearm", Order = 4, GroupName = "I. Short Bucket 4")]
         public bool S4_UseBreakoutRearm { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Require Return to Zone", Order = 5, GroupName = "I. Short Bucket 4")]
         public bool S4_RequireReturnToZone { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 6, GroupName = "I. Short Bucket 4")]
         public int S4_ConfirmationBars { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 7, GroupName = "I. Short Bucket 4")]
         public double S4_EntryOffsetPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 8, GroupName = "I. Short Bucket 4")]
         public int S4_VarianceTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "TP Mode", Order = 9, GroupName = "I. Short Bucket 4")]
         public TargetMode S4_TPMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Take Profit % of OR", Order = 10, GroupName = "I. Short Bucket 4")]
         public double S4_TakeProfitPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Take Profit (Ticks)", Order = 11, GroupName = "I. Short Bucket 4")]
         public int S4_TakeProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "SL Mode", Order = 12, GroupName = "I. Short Bucket 4")]
         public TargetMode S4_SLMode { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0.01, 500)]
         [Display(Name = "Stop Loss % of OR", Order = 13, GroupName = "I. Short Bucket 4")]
         public double S4_StopLossPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(1, 10000)]
         [Display(Name = "Stop Loss (Ticks)", Order = 14, GroupName = "I. Short Bucket 4")]
         public int S4_StopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 10000)]
         [Display(Name = "Max Stop Loss (Ticks)", Order = 15, GroupName = "I. Short Bucket 4")]
         public int S4_MaxStopLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "BE Trigger % of OR", Order = 16, GroupName = "I. Short Bucket 4")]
         public int S4_BreakevenTriggerPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 50)]
         [Display(Name = "BE Offset (Ticks)", Order = 17, GroupName = "I. Short Bucket 4")]
         public int S4_BreakevenOffsetTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 500)]
         [Display(Name = "Max Bars In Trade", Order = 18, GroupName = "I. Short Bucket 4")]
         public int S4_MaxBarsInTrade { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Trades/Day", Order = 19, GroupName = "I. Short Bucket 4")]
@@ -2188,11 +2678,13 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== J. Order Management =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 200)]
         [Display(Name = "Cancel Order % of OR", Order = 1, GroupName = "J. Orders")]
         public int CancelOrderPercent { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Cancel Order Bars", Order = 2, GroupName = "J. Orders")]
@@ -2201,16 +2693,19 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== K. Session Risk Management =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100000)]
         [Display(Name = "Max Session Profit (Ticks)", Order = 1, GroupName = "K. Session Risk")]
         public int MaxSessionProfitTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100000)]
         [Display(Name = "Max Session Loss (Ticks)", Order = 2, GroupName = "K. Session Risk")]
         public int MaxSessionLossTicks { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Max Total Trades/Day", Order = 3, GroupName = "K. Session Risk")]
@@ -2219,33 +2714,49 @@ USE ON 1-MINUTE CHART.";
         // ==========================================
         // ===== L. Time Settings =====
         // ==========================================
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "OR Start Time", Order = 1, GroupName = "L. Time")]
         public TimeSpan ORStartTime { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "OR End Time", Order = 2, GroupName = "L. Time")]
         public TimeSpan OREndTime { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Session End", Order = 3, GroupName = "L. Time")]
         public TimeSpan SessionEnd { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "No Trades After", Order = 4, GroupName = "L. Time")]
         public TimeSpan NoTradesAfter { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Skip Start", Order = 5, GroupName = "L. Time")]
         public TimeSpan SkipStart { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Skip End", Order = 6, GroupName = "L. Time")]
         public TimeSpan SkipEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use News Skip", Description = "Block entries inside the configured minutes before and after listed 14:00 news events.", GroupName = "N. News", Order = 0)]
+        public bool UseNewsSkip { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 240)]
+        [Display(Name = "News Block Minutes", Description = "Minutes blocked before and after each 14:00 news timestamp.", GroupName = "N. News", Order = 1)]
+        public int NewsBlockMinutes { get; set; }
         
         // ==========================================
         // ===== M. Visual =====
         // ==========================================
+        [Browsable(false)]
         [XmlIgnore]
         [Display(Name = "Range Box Color", Order = 1, GroupName = "M. Visual")]
         public Brush RangeBoxBrush { get; set; }
@@ -2257,14 +2768,17 @@ USE ON 1-MINUTE CHART.";
             set { RangeBoxBrush = Serialize.StringToBrush(value); }
         }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Show Entry Lines", Order = 2, GroupName = "M. Visual")]
         public bool ShowEntryLines { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Show Target Lines", Order = 3, GroupName = "M. Visual")]
         public bool ShowTargetLines { get; set; }
         
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "Show Stop Lines", Order = 4, GroupName = "M. Visual")]
         public bool ShowStopLines { get; set; }
