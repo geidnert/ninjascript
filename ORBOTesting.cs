@@ -902,6 +902,28 @@ USE ON 1-MINUTE CHART.";
                 { PlaceShortLimitEntry(entryLevel); return; }
             }
         }
+
+        private bool IsTradeArmed()
+        {
+            if (!IsReadyForNewOrder()) return false;
+            if (IsInNoTradesAfterWindow(Time[0])) return false;
+            if (IsInSkipWindow(Time[0])) return false;
+            if (IsInNewsSkipWindow(Time[0])) return false;
+
+            bool longArmed = !confirmationComplete
+                && longBreakoutOccurred
+                && !shortBreakoutOccurred
+                && longBucketFound
+                && (activeLongBucket.MaxTradesPerDay <= 0 || longTradeCount < activeLongBucket.MaxTradesPerDay);
+
+            bool shortArmed = !confirmationComplete
+                && shortBreakoutOccurred
+                && !longBreakoutOccurred
+                && shortBucketFound
+                && (activeShortBucket.MaxTradesPerDay <= 0 || shortTradeCount < activeShortBucket.MaxTradesPerDay);
+
+            return longArmed || shortArmed;
+        }
         
         private bool IsReadyForNewOrder()
         {
@@ -1618,6 +1640,8 @@ USE ON 1-MINUTE CHART.";
             if (!orCaptured)
             {
                 lines.Add(("OR Size: 0 pts", string.Empty, Brushes.LightGray, Brushes.Transparent));
+                bool armed = IsTradeArmed();
+                lines.Add(("Armed:", armed ? "✔" : "⛔", Brushes.LightGray, armed ? Brushes.LimeGreen : Brushes.IndianRed));
                 lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
             else
@@ -1633,7 +1657,9 @@ USE ON 1-MINUTE CHART.";
                         inTradeLine += " [BE]";
                     lines.Add((inTradeLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
                 }
-                
+
+                bool armed = IsTradeArmed();
+                lines.Add(("Armed:", armed ? "✔" : "⛔", Brushes.LightGray, armed ? Brushes.LimeGreen : Brushes.IndianRed));
                 lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
 
