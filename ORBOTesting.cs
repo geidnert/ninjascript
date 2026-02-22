@@ -1617,10 +1617,8 @@ USE ON 1-MINUTE CHART.";
 
             if (!orCaptured)
             {
-                string h = (orHigh == double.MinValue) ? "---" : orHigh.ToString("F2");
-                string l = (orLow == double.MaxValue) ? "---" : orLow.ToString("F2");
-                lines.Add(("Capturing OR (" + orStartTime.ToString(@"hh\:mm") + "-" + orEndTime.ToString(@"hh\:mm") + ")", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                lines.Add(("H=" + h + " L=" + l, string.Empty, Brushes.LightGray, Brushes.Transparent));
+                lines.Add(("OR Size: 0 pts", string.Empty, Brushes.LightGray, Brushes.Transparent));
+                lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
             else
             {
