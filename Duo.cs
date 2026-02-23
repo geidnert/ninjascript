@@ -459,9 +459,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CloseAtSessionEnd = false;
                 AsiaSessionBrush = Brushes.DarkCyan;
                 NewYorkSessionBrush = Brushes.Gold;
-                ShowEmaOnChart = true;
-                ShowAdxOnChart = true;
-                ShowAdxThresholdLines = true;
+                ShowEmaOnChart = false;
+                ShowAdxOnChart = false;
+                ShowAdxThresholdLines = false;
 
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
