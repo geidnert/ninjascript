@@ -945,7 +945,7 @@ USE ON 1-MINUTE CHART.";
                 entryLevel += random.Next(-activeLongBucket.VarianceTicks, activeLongBucket.VarianceTicks + 1) * TickSize;
             
             tradeCount++; longTradeCount++;
-            currentSignalName = "LongOR_" + tradeCount;
+            currentSignalName = BuildSignalName(true, tradeCount);
             limitEntryPrice = entryLevel;
             entryOrderBar = CurrentBar;
             lastTradeWasLong = true;
@@ -964,7 +964,7 @@ USE ON 1-MINUTE CHART.";
                 entryLevel += random.Next(-activeShortBucket.VarianceTicks, activeShortBucket.VarianceTicks + 1) * TickSize;
             
             tradeCount++; shortTradeCount++;
-            currentSignalName = "ShortOR_" + tradeCount;
+            currentSignalName = BuildSignalName(false, tradeCount);
             limitEntryPrice = entryLevel;
             entryOrderBar = CurrentBar;
             lastTradeWasLong = false;
@@ -1010,6 +1010,7 @@ USE ON 1-MINUTE CHART.";
         private void ResetForNewSetup()
         {
             entryOrder = null; entryOrderBar = -1; limitEntryPrice = 0;
+            currentSignalName = string.Empty;
             confirmationComplete = false; confirmationBarCount = 0;
             longBreakoutOccurred = false; shortBreakoutOccurred = false;
         }
@@ -1077,7 +1078,7 @@ USE ON 1-MINUTE CHART.";
                     lastFilledEntryPrice = averageFillPrice;
                     entryBar = CurrentBar;
                     limitEntryPrice = 0; entryOrderBar = -1;
-                    SetInitialStopAndTarget(lastTradeWasLong);
+                    SetInitialStopAndTarget(IsLongSignalName(orderName));
                     if (DebugMode) DebugPrint($"FILLED {(lastTradeWasLong ? "LONG" : "SHORT")} @ {averageFillPrice:F2}");
                 }
                 else if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
@@ -1092,6 +1093,18 @@ USE ON 1-MINUTE CHART.";
 
             return orderName.StartsWith("LongOR_", StringComparison.OrdinalIgnoreCase)
                 || orderName.StartsWith("ShortOR_", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsLongSignalName(string orderName)
+        {
+            return !string.IsNullOrEmpty(orderName)
+                && orderName.StartsWith("LongOR_", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string BuildSignalName(bool isLong, int ordinal)
+        {
+            string prefix = isLong ? "LongOR_" : "ShortOR_";
+            return string.Format("{0}{1}_{2}", prefix, Time[0].ToString("yyyyMMdd"), ordinal);
         }
 
         private void HandleOrderRejected(Order order, ErrorCode error, string nativeError)
@@ -1156,6 +1169,22 @@ USE ON 1-MINUTE CHART.";
                 string bl = isLong ? $"L{activeLongBucketIndex}" : $"S{activeShortBucketIndex}";
                 DebugPrint($"SL/TP [{bl}]: {(isLong?"LONG":"SHORT")} Entry={entryPrice:F2} Stop={stopPx:F2} Target={tpPx:F2}");
             }
+
+            double marketPx = Close[0];
+            if (isLong)
+            {
+                if (stopPx >= marketPx)
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(Math.Min(entryPrice - TickSize, marketPx - TickSize));
+                if (tpPx <= marketPx)
+                    tpPx = Instrument.MasterInstrument.RoundToTickSize(Math.Max(entryPrice + TickSize, marketPx + TickSize));
+            }
+            else
+            {
+                if (stopPx <= marketPx)
+                    stopPx = Instrument.MasterInstrument.RoundToTickSize(Math.Max(entryPrice + TickSize, marketPx + TickSize));
+                if (tpPx >= marketPx)
+                    tpPx = Instrument.MasterInstrument.RoundToTickSize(Math.Min(entryPrice - TickSize, marketPx - TickSize));
+            }
             
             SetStopLoss(currentSignalName, CalculationMode.Price, stopPx, false);
             SetProfitTarget(currentSignalName, CalculationMode.Price, tpPx);
@@ -1202,6 +1231,8 @@ USE ON 1-MINUTE CHART.";
                 hasReturnedOnce = false; waitingForConfirmation = false; confirmationComplete = false;
                 confirmationBarCount = 0; returnBar = -1;
                 orderPlaced = false; entryBar = -1; entryOrderBar = -1; entryOrder = null;
+                currentSignalName = string.Empty;
+                entryPrice = 0; limitEntryPrice = 0; lastFilledEntryPrice = 0;
                 beTriggerActive = false; maxAccountLimitHit = false;
                 wasInNoTradesAfterWindow = false; wasInSkipWindow = false; wasInNewsSkipWindow = false;
                 tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
