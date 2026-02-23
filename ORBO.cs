@@ -1849,7 +1849,7 @@ USE ON 1-MINUTE CHART.";
             List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
             if (weekNews.Count == 0)
             {
-                lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.IndianRed));
+                lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.LightGray));
             }
             else
             {
@@ -1859,12 +1859,12 @@ USE ON 1-MINUTE CHART.";
                     bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
                     string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
                     string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
-                    string label = "News: " + dayPart + " " + timePart;
-                    Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
-                    lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
+                    string value = dayPart + " " + timePart;
+                    Brush newsBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                    lines.Add(("News:", value, newsBrush, newsBrush));
                 }
             }
-            lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
+            lines.Add(("Session:", "New York", Brushes.LightGray, Brushes.LightGray));
 
             lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
 
