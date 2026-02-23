@@ -2480,7 +2480,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
         {
             var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
-
+            string contractsText;
+            switch (activeSession)
+            {
+                case SessionSlot.Asia:
+                    contractsText = string.Format(CultureInfo.InvariantCulture, "Asia {0}", Math.Max(1, AsiaContracts));
+                    break;
+                case SessionSlot.NewYork:
+                    contractsText = string.Format(CultureInfo.InvariantCulture, "NY {0}", Math.Max(1, NewYorkContracts));
+                    break;
+                default:
+                    contractsText = string.Format(CultureInfo.InvariantCulture, "Asia {0} | NY {1}", Math.Max(1, AsiaContracts), Math.Max(1, NewYorkContracts));
+                    break;
+            }
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double adxSlope = GetAdxSlopePoints();
             bool adxMinEnabled = activeAdxThreshold > 0.0;
@@ -2515,6 +2527,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add(("Contracts:", contractsText, Brushes.LightGray, Brushes.LightGray));
             lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
             string momentumThresholdText = activeAdxMinSlopePoints > 0.0
                 ? activeAdxMinSlopePoints.ToString("0.00", CultureInfo.InvariantCulture)
