@@ -1840,6 +1840,10 @@ USE ON 1-MINUTE CHART.";
 
             lines.Add((string.Format("ORBO v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", NumberOfContracts.ToString(CultureInfo.InvariantCulture), Brushes.LightGray, Brushes.LightGray));
+            string orSizeText = orCaptured && orRange > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0:F2} pts", orRange)
+                : "0 pts";
+            lines.Add(("OR Size:", orSizeText, Brushes.LightGray, Brushes.LightGray));
             bool isArmed = IsTradeArmed();
             lines.Add(("Armed:", isArmed ? "✔" : "⛔", Brushes.LightGray, isArmed ? Brushes.LimeGreen : Brushes.IndianRed));
             List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
