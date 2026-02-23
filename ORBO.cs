@@ -1846,22 +1846,29 @@ USE ON 1-MINUTE CHART.";
             lines.Add(("OR Size:", orSizeText, Brushes.LightGray, Brushes.LightGray));
             bool isArmed = IsTradeArmed();
             lines.Add(("Armed:", isArmed ? "✔" : "⛔", Brushes.LightGray, isArmed ? Brushes.LimeGreen : Brushes.IndianRed));
-            List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
-            if (weekNews.Count == 0)
+            if (!UseNewsSkip)
             {
-                lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.LightGray));
+                lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.LightGray));
             }
             else
             {
-                for (int i = 0; i < weekNews.Count; i++)
+                List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
+                if (weekNews.Count == 0)
                 {
-                    DateTime newsTime = weekNews[i];
-                    bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
-                    string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
-                    string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
-                    string value = dayPart + " " + timePart;
-                    Brush newsBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
-                    lines.Add(("News:", value, newsBrush, newsBrush));
+                    lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.LightGray));
+                }
+                else
+                {
+                    for (int i = 0; i < weekNews.Count; i++)
+                    {
+                        DateTime newsTime = weekNews[i];
+                        bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
+                        string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
+                        string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                        string value = dayPart + " " + timePart;
+                        Brush newsBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                        lines.Add(("News:", value, newsBrush, newsBrush));
+                    }
                 }
             }
             lines.Add(("Session:", "New York", Brushes.LightGray, Brushes.LightGray));

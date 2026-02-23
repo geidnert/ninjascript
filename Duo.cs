@@ -2531,22 +2531,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? activeAdxMinSlopePoints.ToString("0.00", CultureInfo.InvariantCulture)
                 : "Off";
             lines.Add(("Mom:", momentumThresholdText, Brushes.LightGray, Brushes.LightGray));
-            List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
-            if (weekNews.Count == 0)
+            if (!UseNewsSkip)
             {
-                lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.IndianRed));
+                lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.LightGray));
             }
             else
             {
-                for (int i = 0; i < weekNews.Count; i++)
+                List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
+                if (weekNews.Count == 0)
                 {
-                    DateTime newsTime = weekNews[i];
-                    bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
-                    string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
-                    string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
-                    string label = "News: " + dayPart + " " + timePart;
-                    Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
-                    lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
+                    lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.IndianRed));
+                }
+                else
+                {
+                    for (int i = 0; i < weekNews.Count; i++)
+                    {
+                        DateTime newsTime = weekNews[i];
+                        bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
+                        string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
+                        string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                        string label = "News: " + dayPart + " " + timePart;
+                        Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                        lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
+                    }
                 }
             }
 
