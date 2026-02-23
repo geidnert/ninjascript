@@ -197,6 +197,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(210, 0xD3, 0xD3, 0xD3);
         private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
         private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
+        private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
         
         #endregion
 
@@ -930,6 +931,7 @@ USE ON 1-MINUTE CHART.";
             if (Position.MarketPosition != MarketPosition.Flat) return false;
             if (entryOrder != null && entryOrder.OrderState == OrderState.Working) return false;
             if (!orCaptured || orRange <= 0) return false;
+            if (IsLastBarOfSession()) return false;
             if (maxAccountLimitHit) return false;
             if (sessionProfitLimitHit || sessionLossLimitHit) return false;
             if (!longBucketFound && !shortBucketFound) return false;
@@ -1018,6 +1020,8 @@ USE ON 1-MINUTE CHART.";
             int beOff = lastTradeWasLong ? activeLongBucket.BreakevenOffsetTicks : activeShortBucket.BreakevenOffsetTicks;
             
             if (bePct <= 0 || beTriggerActive || orRange <= 0) return;
+            if (entryBar >= 0 && CurrentBar <= entryBar) return;
+            if (IsAfterSessionEnd(Time[0])) return;
             
             double threshold = orRange * (bePct / 100.0);
             double profit = Position.MarketPosition == MarketPosition.Long ? Close[0] - entryPrice :
@@ -1339,6 +1343,11 @@ USE ON 1-MINUTE CHART.";
         private bool IsAfterSessionEnd(DateTime time)
         {
             return time.TimeOfDay >= sessionEndTime;
+        }
+
+        private bool IsLastBarOfSession()
+        {
+            return Bars != null && Bars.IsLastBarOfSession;
         }
         
         private void HandleNoTradeAndSkipTransitions()
@@ -1680,32 +1689,28 @@ USE ON 1-MINUTE CHART.";
             var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
 
             lines.Add((string.Format("ORBO v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
-
-            if (!orCaptured)
+            lines.Add(("Contracts:", NumberOfContracts.ToString(CultureInfo.InvariantCulture), Brushes.LightGray, Brushes.LightGray));
+            bool isArmed = IsTradeArmed();
+            lines.Add(("Armed:", isArmed ? "✔" : "⛔", Brushes.LightGray, isArmed ? Brushes.LimeGreen : Brushes.IndianRed));
+            List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
+            if (weekNews.Count == 0)
             {
-                lines.Add(("OR Size: 0 pts", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                bool armed = IsTradeArmed();
-                lines.Add(("Armed:", armed ? "✔" : "⛔", Brushes.LightGray, armed ? Brushes.LimeGreen : Brushes.IndianRed));
-                lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
+                lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.IndianRed));
             }
             else
             {
-                lines.Add(("OR Size: " + orRange.ToString("F2") + " pts", string.Empty, Brushes.LightGray, Brushes.Transparent));
-                
-                if (Position.MarketPosition != MarketPosition.Flat)
+                for (int i = 0; i < weekNews.Count; i++)
                 {
-                    double pft = Position.MarketPosition == MarketPosition.Long ? Close[0] - entryPrice : entryPrice - Close[0];
-                    double pPct = orRange > 0 ? (pft / orRange) * 100 : 0;
-                    string inTradeLine = "IN TRADE: " + pft.ToString("F2") + " (" + pPct.ToString("F1") + "% OR)";
-                    if (beTriggerActive)
-                        inTradeLine += " [BE]";
-                    lines.Add((inTradeLine, string.Empty, Brushes.LightGray, Brushes.Transparent));
+                    DateTime newsTime = weekNews[i];
+                    bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
+                    string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
+                    string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                    string label = "News: " + dayPart + " " + timePart;
+                    Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                    lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
                 }
-
-                bool armed = IsTradeArmed();
-                lines.Add(("Armed:", armed ? "✔" : "⛔", Brushes.LightGray, armed ? Brushes.LimeGreen : Brushes.IndianRed));
-                lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
             }
+            lines.Add(("Session: New York", string.Empty, Brushes.LightGray, Brushes.Transparent));
 
             lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
 
@@ -1748,6 +1753,31 @@ USE ON 1-MINUTE CHART.";
             Assembly assembly = GetType().Assembly;
             Version version = assembly.GetName().Version;
             return version != null ? version.ToString() : "0.0.0.0";
+        }
+
+        private List<DateTime> GetCurrentWeekNews(DateTime time)
+        {
+            EnsureNewsDatesInitialized();
+
+            var weekNews = new List<DateTime>();
+            DateTime weekStart = GetWeekStart(time.Date);
+            DateTime weekEnd = weekStart.AddDays(7);
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime candidate = NewsDates[i];
+                if (candidate >= weekStart && candidate < weekEnd)
+                    weekNews.Add(candidate);
+            }
+
+            weekNews.Sort();
+            return weekNews;
+        }
+
+        private DateTime GetWeekStart(DateTime date)
+        {
+            DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+            int diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
+            return date.AddDays(-diff).Date;
         }
         
         private void DebugPrint(string msg)
