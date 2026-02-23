@@ -401,7 +401,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Color.FromArgb(240, 0x14, 0x18, 0x28));
         private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
         private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
-        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(210, 0xD3, 0xD3, 0xD3);
+        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(255, 0x00, 0xFF, 0x00);
         private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
         private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
 
@@ -2383,10 +2383,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     value = rawLabel.Substring("News:".Length).TrimStart();
                 }
 
-                text.Inlines.Add(new Run(label) { Foreground = isHeader ? InfoHeaderTextBrush : InfoLabelBrush });
+                text.Inlines.Add(new Run(label) { Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : InfoLabelBrush });
                 if (!string.IsNullOrEmpty(value))
                 {
-                    text.Inlines.Add(new Run(" ") { Foreground = isHeader ? InfoHeaderTextBrush : InfoLabelBrush });
+                    text.Inlines.Add(new Run(" ") { Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : InfoLabelBrush });
 
                     Brush stateValueBrush = lines[i].valueBrush;
                     if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
