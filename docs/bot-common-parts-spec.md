@@ -1,0 +1,119 @@
+# Bot Common Parts Spec
+
+## Purpose
+This file defines reusable, non-strategy-specific parts that must be consistently applied to new NinjaTrader strategies.
+
+## Scope
+- Core module (required)
+- Webhooks module (optional)
+- Branding module (optional)
+
+## Canonical Infobox Contract
+Infobox row order is strict:
+1. Header
+2. Contracts
+3. Strategy-specific rows (zero or more)
+4. News
+5. Session
+6. Footer
+
+Hard rules:
+- `Contracts` is always the first row after header.
+- `News` is always directly above `Session`.
+- `Session` is always directly above footer.
+- Only strategy-specific rows are allowed between `Contracts` and `News`.
+
+### Infobox Colors
+- Header/footer text: branding color (per strategy family).
+- Contracts/News/Session value text: same light value color.
+- News rows fade when passed (enabled mode).
+
+### News Row Behavior
+- If `UseNewsSkip == false`: show exactly one row: `News: Disabled`.
+- If enabled and no events in week: `News: ⛔`.
+- If enabled with events: show rows for each event.
+- Past event rows must use faded brush (`PassedNewsRowBrush`).
+
+## Core Module Requirements
+
+### Session/Window Drawing
+- Session background drawing.
+- No-trades-after window/line drawing.
+- Skip window drawing.
+- News window drawing (when enabled).
+
+### Entry/Trade Gating
+- Entry path checks for:
+  - session availability
+  - no-trades-after window
+  - skip window
+  - news skip window
+
+### Transition Safety
+On entering blocked windows (skip/news/no-trades-after):
+- Cancel working entries/orders.
+- Flatten open position with reason tag.
+
+Reason tags used by convention:
+- `NoTradesAfter`
+- `SkipWindow`
+- `NewsSkip`
+- `SessionEnd`
+
+### Session Boundary Safety
+- `IsLastBarOfSession()` guard to prevent unsafe late entries.
+- Session end flatten guard.
+- Half-day/session-edge crash protection.
+
+### Shared Helpers
+- `CancelAllOrders()`
+- `ExitAllPositions(string reason)`
+- `GetCurrentWeekNews(DateTime time)`
+- `EnsureNewsDatesInitialized()` / loader equivalent
+
+## ORBO-Specific Common UI Rules (still reusable pattern)
+- Include `OR Size` row in infobox where strategy exposes OR range.
+- OR size format: points (`{0:F2} pts`).
+
+## Webhooks Module (Optional)
+
+### Providers
+- TradersPost
+- ProjectX
+
+### Requirements
+- Provider selection enum/property.
+- Entry/exit/cancel webhook events.
+- Safe no-op when configuration missing.
+- ProjectX auth token caching/reuse.
+- Optional ProjectX order id/contract id tracking for cancels.
+
+## Branding Module (Optional)
+- Header/footer text color per strategy family.
+- Keep body rows unchanged.
+
+## Integration Workflow For New External Strategy
+1. Import strategy file.
+2. Apply core module.
+3. Apply webhook module if required.
+4. Apply branding module.
+5. Insert strategy-specific rows into infobox middle zone only (between Contracts and News).
+6. Run compliance checks.
+
+## Compliance Checks (minimum)
+- Infobox row order follows contract.
+- `UseNewsSkip=false` renders `News: Disabled` single row.
+- Passed news rows fade.
+- Contracts/News/Session value colors are consistent.
+- Window transition cancel/flatten hooks exist.
+- Session-end and last-bar guards exist.
+
+## Commit-Derived Baseline Notes
+From ORBOTesting history after baseline commit `cabe7871c1bf1642f43be3bb7f388d9da6930c85`, common parts were added/finalized in phases:
+- Session drawing + skip/no-trades transitions
+- News skip framework + windows + transitions
+- Infobox simplification + contracts/armed/news/session
+- Session edge safety fixes (half-day/last-bar)
+- Webhook provider framework
+- Infobox polish (OR size points, news fade, disabled-news row)
+
