@@ -31,6 +31,7 @@ Hard rules:
 ### News Row Behavior
 - If `UseNewsSkip == false`: show exactly one row: `News: Disabled`.
 - If enabled and no events in week: show blocked icon row (`News: 🚫` default; strategy may use equivalent blocked icon).
+  The blocked icon value brush should be red (`Brushes.IndianRed`) to indicate active blocking mode with no events.
 - If enabled with events: show rows for each event.
 - Past event rows must use faded brush (`PassedNewsRowBrush`).
 

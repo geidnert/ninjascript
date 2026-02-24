@@ -25,6 +25,7 @@
 - [ ] Session directly above footer
 - [ ] `UseNewsSkip=false` => one row `News: Disabled`
 - [ ] `UseNewsSkip=true` and no events => blocked icon row (default `News: 🚫` or approved equivalent)
+- [ ] Empty-week blocked icon value brush is red (`Brushes.IndianRed`)
 - [ ] Passed news rows faded
 - [ ] Contracts/News/Session values use same light value color
 - [ ] Emoji icon values use emoji-capable rendering path and do not regress to white/gray fallback

@@ -1872,7 +1872,7 @@ USE ON 1-MINUTE CHART.";
                 List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
                 if (weekNews.Count == 0)
                 {
-                    lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.LightGray));
+                    lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
                 }
                 else
                 {
