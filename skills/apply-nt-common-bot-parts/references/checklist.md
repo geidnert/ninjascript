@@ -11,9 +11,12 @@
 - [ ] `IsLastBarOfSession()` guard used in entry readiness
 - [ ] Primary timeframe validator method exists (for example `ValidateRequiredPrimaryTimeframe`)
 - [ ] Primary timeframe validation is called during `State.DataLoaded`
-- [ ] Invalid primary timeframe triggers early return in `OnBarUpdate`
-- [ ] Invalid primary timeframe path cancels working orders and flattens open position (`InvalidTimeframe`)
+- [ ] Primary instrument validator method exists (for example `ValidateRequiredPrimaryInstrument`)
+- [ ] Primary instrument validation is called during `State.DataLoaded`
+- [ ] Invalid timeframe or instrument triggers early return in `OnBarUpdate`
+- [ ] Invalid configuration path cancels working orders and flattens open position (`InvalidConfiguration` preferred)
 - [ ] Invalid timeframe warning is user-visible once (popup and/or explicit log)
+- [ ] Invalid instrument warning is user-visible once (popup and/or explicit log)
 
 ## Infobox
 - [ ] Canonical order: Header > Contracts > Strategy-specific > News > Session > Footer
@@ -39,6 +42,6 @@ rg -n "BuildInfoLines|RenderInfoBoxOverlay|EnsureInfoBoxOverlay" <target>
 rg -n "UseNewsSkip|NewsBlockMinutes|GetCurrentWeekNews|PassedNewsRowBrush" <target>
 rg -n "CancelAllOrders|ExitAllPositions|IsLastBarOfSession" <target>
 rg -n "DrawSession|DrawSkip|DrawNews|NoTradesAfter" <target>
-rg -n "ValidateRequiredPrimaryTimeframe|isConfiguredTimeframeValid|InvalidTimeframe|timeframePopupShown" <target>
+rg -n "ValidateRequiredPrimaryTimeframe|isConfiguredTimeframeValid|ValidateRequiredPrimaryInstrument|isConfiguredInstrumentValid|InvalidConfiguration|timeframePopupShown|instrumentPopupShown" <target>
 rg -n "Webhook|ProjectX|TradersPost|SendWebhook" <target>
 ```

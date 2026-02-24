@@ -136,7 +136,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool maxAccountLimitHit = false;
         private double startingBalance = 0;
         private bool isConfiguredTimeframeValid = true;
+        private bool isConfiguredInstrumentValid = true;
         private bool timeframePopupShown;
+        private bool instrumentPopupShown;
         
         // ===== Session P&L Tracking =====
         private double sessionRealizedPnL = 0;
@@ -462,6 +464,7 @@ USE ON 1-MINUTE CHART.";
             else if (State == State.DataLoaded)
             {
                 ValidateRequiredPrimaryTimeframe(1);
+                ValidateRequiredPrimaryInstrument();
                 startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
                 EnsureNewsDatesInitialized();
             }
@@ -473,11 +476,11 @@ USE ON 1-MINUTE CHART.";
 
         protected override void OnBarUpdate()
         {
-            if (!isConfiguredTimeframeValid)
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
             {
                 CancelAllOrders();
                 if (Position.MarketPosition != MarketPosition.Flat)
-                    ExitAllPositions("InvalidTimeframe");
+                    ExitAllPositions("InvalidConfiguration");
                 return;
             }
 
@@ -2440,6 +2443,53 @@ USE ON 1-MINUTE CHART.";
             catch (Exception ex)
             {
                 Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show timeframe popup: {1}", Name, ex.Message));
+            }
+        }
+
+        private void ValidateRequiredPrimaryInstrument()
+        {
+            string instrumentName = Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+            bool instrumentMatches = instrumentName == "NQ" || instrumentName == "MNQ";
+            isConfiguredInstrumentValid = instrumentMatches;
+            if (instrumentMatches)
+                return;
+
+            string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on NQ or MNQ. Current instrument is {1}. Trading is disabled until instrument is corrected.",
+                Name,
+                actualInstrument);
+            Print(string.Format(CultureInfo.InvariantCulture, "{0} | {1}", Name, message));
+            ShowInstrumentValidationPopup(message);
+        }
+
+        private void ShowInstrumentValidationPopup(string message)
+        {
+            if (instrumentPopupShown)
+                return;
+
+            instrumentPopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Instrument",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show instrument popup: {1}", Name, ex.Message));
             }
         }
         

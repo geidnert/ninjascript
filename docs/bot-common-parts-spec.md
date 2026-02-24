@@ -83,8 +83,19 @@ Reason tags used by convention:
   - write a clear warning log including expected vs actual timeframe,
   - show a one-time warning popup,
   - disable trading path in `OnBarUpdate` by returning early,
-  - cancel working orders and flatten any open position with reason tag `InvalidTimeframe`.
+  - cancel working orders and flatten any open position with reason tag `InvalidConfiguration` (or `InvalidTimeframe` if strategy has not yet adopted combined config reason tags).
 - Timeframe check should verify both period type and minute value when strategy requires minute charts.
+
+### Primary Instrument Safety
+- Validate required primary instrument during `State.DataLoaded`.
+- Keep a strategy-level validity flag (for example `isConfiguredInstrumentValid`).
+- Allowed instruments for current bot family: `NQ` and `MNQ` only.
+- If invalid instrument is detected:
+  - write a clear warning log including actual instrument,
+  - show a one-time warning popup,
+  - disable trading path in `OnBarUpdate` by returning early,
+  - cancel working orders and flatten any open position with reason tag `InvalidConfiguration`.
+- Instrument check should use `Instrument.MasterInstrument.Name` (normalized, case-insensitive).
 
 ## ORBO-Specific Common UI Rules (still reusable pattern)
 - Include `OR Size` row in infobox where strategy exposes OR range.
@@ -122,6 +133,8 @@ Reason tags used by convention:
 - Contracts/News/Session value colors are consistent.
 - Window transition cancel/flatten hooks exist.
 - Session-end and last-bar guards exist.
+- Primary instrument validator exists and is called in `State.DataLoaded`.
+- Invalid instrument blocks trading path and triggers cancel/flatten protection.
 
 ## Commit-Derived Baseline Notes
 From ORBOTesting history after baseline commit `cabe7871c1bf1642f43be3bb7f388d9da6930c85`, common parts were added/finalized in phases:
@@ -132,3 +145,4 @@ From ORBOTesting history after baseline commit `cabe7871c1bf1642f43be3bb7f388d9d
 - Webhook provider framework
 - Infobox polish (OR size points, news fade, disabled-news row)
 - Primary timeframe safety guard (validate in `DataLoaded`, warn once, cancel/flatten and block trading when invalid) from commit `ddf7f1ede836712ffdf77d0b6c6b4c8b137b039f` (2026-02-24)
+- Primary instrument safety guard (`NQ`/`MNQ` allow-list, validate in `DataLoaded`, warn once, cancel/flatten and block trading when invalid) from commit lineage on 2026-02-24

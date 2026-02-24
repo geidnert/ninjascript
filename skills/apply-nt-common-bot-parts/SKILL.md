@@ -1,6 +1,6 @@
 ---
 name: apply-nt-common-bot-parts
-description: Apply standardized non-strategy-specific modules to NinjaTrader strategies (session/skip/news windows, transition safety cancel+flatten logic, canonical infobox order, optional webhooks, and branding) using docs/bot-common-parts-spec.md as source of truth.
+description: Apply standardized non-strategy-specific modules to NinjaTrader strategies (session/skip/news windows, transition safety cancel+flatten logic, startup timeframe/instrument validation, canonical infobox order, optional webhooks, and branding) using docs/bot-common-parts-spec.md as source of truth.
 ---
 
 # Apply NT Common Bot Parts
@@ -25,7 +25,7 @@ Use this skill when integrating a new strategy file from external developers and
 - session window methods
 - skip/news gating methods
 - cancel/flatten helpers
-- timeframe validation guards
+- timeframe/instrument validation guards
 - infobox builder and renderer
 - webhook plumbing and properties
 
@@ -33,7 +33,8 @@ Use this skill when integrating a new strategy file from external developers and
 - drawing windows and transition safety hooks
 - entry gating checks
 - session boundary guards
-- primary timeframe validation (`DataLoaded` validation + `OnBarUpdate` early-return guard + invalid-timeframe cancel/flatten)
+- primary timeframe validation (`DataLoaded` validation + `OnBarUpdate` early-return guard + invalid-configuration cancel/flatten)
+- primary instrument validation (`DataLoaded` validation + `OnBarUpdate` early-return guard + `NQ`/`MNQ` allow-list + invalid-configuration cancel/flatten)
 - news data helpers
 
 3. Normalize infobox to canonical row order:

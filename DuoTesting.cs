@@ -168,7 +168,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string currentPositionEntrySignal = string.Empty;
         private bool flipBreakEvenActivated;
         private bool isConfiguredTimeframeValid = true;
+        private bool isConfiguredInstrumentValid = true;
         private bool timeframePopupShown;
+        private bool instrumentPopupShown;
         private const double FlipBodyThresholdPercent = 0.0;
         private const string LongEntrySignal = "LongEntry";
         private const string ShortEntrySignal = "ShortEntry";
@@ -493,6 +495,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (State == State.DataLoaded)
             {
                 ValidateRequiredPrimaryTimeframe(5);
+                ValidateRequiredPrimaryInstrument();
 
                 emaAsia = EMA(AsiaEmaPeriod);
                 emaNewYork = EMA(NewYorkEmaPeriod);
@@ -567,13 +570,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
-            if (!isConfiguredTimeframeValid)
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
             {
                 CancelWorkingEntryOrders();
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("InvalidTimeframe", GetOpenLongEntrySignal());
+                    ExitLong("InvalidConfiguration", GetOpenLongEntrySignal());
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("InvalidTimeframe", GetOpenShortEntrySignal());
+                    ExitShort("InvalidConfiguration", GetOpenShortEntrySignal());
                 return;
             }
 
@@ -2833,6 +2836,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             catch (Exception ex)
             {
                 LogDebug("Failed to show timeframe popup: " + ex.Message);
+            }
+        }
+
+        private void ValidateRequiredPrimaryInstrument()
+        {
+            string instrumentName = Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+            bool instrumentMatches = instrumentName == "NQ" || instrumentName == "MNQ";
+            isConfiguredInstrumentValid = instrumentMatches;
+            if (instrumentMatches)
+                return;
+
+            string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on NQ or MNQ. Current instrument is {1}. Trading is disabled until instrument is corrected.",
+                Name,
+                actualInstrument);
+            LogDebug("Instrument validation failed | " + message);
+            ShowInstrumentValidationPopup(message);
+        }
+
+        private void ShowInstrumentValidationPopup(string message)
+        {
+            if (instrumentPopupShown)
+                return;
+
+            instrumentPopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Instrument",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                LogDebug("Failed to show instrument popup: " + ex.Message);
             }
         }
 
