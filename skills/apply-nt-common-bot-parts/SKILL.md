@@ -25,6 +25,7 @@ Use this skill when integrating a new strategy file from external developers and
 - session window methods
 - skip/news gating methods
 - cancel/flatten helpers
+- timeframe validation guards
 - infobox builder and renderer
 - webhook plumbing and properties
 
@@ -32,6 +33,7 @@ Use this skill when integrating a new strategy file from external developers and
 - drawing windows and transition safety hooks
 - entry gating checks
 - session boundary guards
+- primary timeframe validation (`DataLoaded` validation + `OnBarUpdate` early-return guard + invalid-timeframe cancel/flatten)
 - news data helpers
 
 3. Normalize infobox to canonical row order:
@@ -64,4 +66,3 @@ Return a compliance report with four sections:
 - Preserve strategy-specific trade logic.
 - Do not reorder strategy-specific rows outside the infobox middle zone.
 - Keep infobox invariants strict.
-

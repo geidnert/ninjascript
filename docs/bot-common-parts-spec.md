@@ -71,6 +71,16 @@ Reason tags used by convention:
 - `GetCurrentWeekNews(DateTime time)`
 - `EnsureNewsDatesInitialized()` / loader equivalent
 
+### Primary Timeframe Safety
+- Validate required primary chart timeframe during `State.DataLoaded`.
+- Keep a strategy-level validity flag (for example `isConfiguredTimeframeValid`).
+- If invalid timeframe is detected:
+  - write a clear warning log including expected vs actual timeframe,
+  - show a one-time warning popup,
+  - disable trading path in `OnBarUpdate` by returning early,
+  - cancel working orders and flatten any open position with reason tag `InvalidTimeframe`.
+- Timeframe check should verify both period type and minute value when strategy requires minute charts.
+
 ## ORBO-Specific Common UI Rules (still reusable pattern)
 - Include `OR Size` row in infobox where strategy exposes OR range.
 - OR size format: points (`{0:F2} pts`).
@@ -116,4 +126,4 @@ From ORBOTesting history after baseline commit `cabe7871c1bf1642f43be3bb7f388d9d
 - Session edge safety fixes (half-day/last-bar)
 - Webhook provider framework
 - Infobox polish (OR size points, news fade, disabled-news row)
-
+- Primary timeframe safety guard (validate in `DataLoaded`, warn once, cancel/flatten and block trading when invalid) from commit `ddf7f1ede836712ffdf77d0b6c6b4c8b137b039f` (2026-02-24)
