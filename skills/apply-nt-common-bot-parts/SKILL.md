@@ -46,14 +46,19 @@ Use this skill when integrating a new strategy file from external developers and
 
 4. Apply news rules exactly:
 - `UseNewsSkip == false` => single `News: Disabled` row
-- enabled + no events => `News: ⛔`
+- enabled + no events => blocked icon row (default `News: 🚫`; allow equivalent blocked icon if project standard differs)
 - enabled + events => rows with fade for passed events
 
-5. If module includes `webhooks`, apply provider and event mapping.
+5. For infobox icon rendering:
+- Route emoji values to an emoji-capable font (`Segoe UI Emoji`).
+- Route symbol-only values to a symbol font (`Segoe UI Symbol`) when needed.
+- In WPF/NinjaTrader, prefer applying value brush to emoji runs for deterministic non-white rendering when color emoji layers are not reliable.
 
-6. If module includes `branding`, apply header/footer text color only.
+6. If module includes `webhooks`, apply provider and event mapping.
 
-7. Validate with checklist and provide compliance report.
+7. If module includes `branding`, apply header/footer text color only.
+
+8. Validate with checklist and provide compliance report.
 
 ## Output Format
 Return a compliance report with four sections:

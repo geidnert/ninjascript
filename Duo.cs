@@ -2438,7 +2438,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     HorizontalAlignment = HorizontalAlignment.Stretch
                 };
                 TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
-                TextOptions.SetTextRenderingMode(text, TextRenderingMode.ClearType);
 
                 string rawLabel = lines[i].label ?? string.Empty;
                 string value = lines[i].value ?? string.Empty;
@@ -2449,6 +2448,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     label = "News:";
                     value = rawLabel.Substring("News:".Length).TrimStart();
                 }
+                string normalizedValue = NormalizeInfoValueToken(value);
+                bool valueUsesEmojiRendering = ClassifyInfoValueRunKind(normalizedValue) == InfoValueRunKind.Emoji;
+                TextOptions.SetTextRenderingMode(text, valueUsesEmojiRendering ? TextRenderingMode.Grayscale : TextRenderingMode.ClearType);
 
                 text.Inlines.Add(new Run(label) { Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : InfoLabelBrush });
                 if (!string.IsNullOrEmpty(value))
@@ -2461,12 +2463,96 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
                         stateValueBrush = InfoValueBrush;
 
-                    text.Inlines.Add(new Run(value) { Foreground = stateValueBrush });
+                    var valueRun = BuildInfoValueRun(normalizedValue, stateValueBrush);
+                    text.Inlines.Add(valueRun);
                 }
 
                 rowBorder.Child = text;
                 infoBoxRowsPanel.Children.Add(rowBorder);
             }
+        }
+
+        private static readonly FontFamily InfoEmojiFontFamily = new FontFamily("Segoe UI Emoji");
+        private static readonly FontFamily InfoSymbolFontFamily = new FontFamily("Segoe UI Symbol");
+
+        private static readonly HashSet<string> InfoEmojiTokens = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "✔", "✔️", "✅", "❌", "✖", "⛔", "⛔️", "🚫", "⬜", "🕒"
+        };
+
+        private static readonly HashSet<string> InfoSymbolTokens = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "■", "□", "●", "○", "▲", "▼", "◆", "◇"
+        };
+
+        private enum InfoValueRunKind
+        {
+            Default,
+            Emoji,
+            Symbol
+        }
+
+        private Run BuildInfoValueRun(string value, Brush stateValueBrush)
+        {
+            string safeValue = value ?? string.Empty;
+            string normalizedValue = NormalizeInfoValueToken(safeValue);
+            switch (ClassifyInfoValueRunKind(normalizedValue))
+            {
+                case InfoValueRunKind.Emoji:
+                    var emojiRun = new Run(normalizedValue) { FontFamily = InfoEmojiFontFamily, Foreground = stateValueBrush };
+                    TextOptions.SetTextRenderingMode(emojiRun, TextRenderingMode.Grayscale);
+                    return emojiRun;
+                case InfoValueRunKind.Symbol:
+                    return new Run(normalizedValue) { FontFamily = InfoSymbolFontFamily, Foreground = stateValueBrush };
+                default:
+                    return new Run(normalizedValue) { Foreground = stateValueBrush };
+            }
+        }
+
+        private string NormalizeInfoValueToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return value ?? string.Empty;
+
+            string token = value.Trim();
+            if (token == "○" || token == "◯" || token == "⚪")
+                return "🚫";
+
+            return value;
+        }
+
+        private InfoValueRunKind ClassifyInfoValueRunKind(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return InfoValueRunKind.Default;
+
+            string token = value.Trim();
+            if (InfoEmojiTokens.Contains(token) || ContainsEmojiCodePoint(token))
+                return InfoValueRunKind.Emoji;
+            if (InfoSymbolTokens.Contains(token))
+                return InfoValueRunKind.Symbol;
+            return InfoValueRunKind.Default;
+        }
+
+        private bool ContainsEmojiCodePoint(string text)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                int codePoint = text[i];
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    codePoint = char.ConvertToUtf32(text[i], text[i + 1]);
+                    i++;
+                }
+
+                if ((codePoint >= 0x1F300 && codePoint <= 0x1FAFF) ||
+                    (codePoint >= 0x2600 && codePoint <= 0x27BF))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private bool EnsureInfoBoxOverlay()
@@ -2609,7 +2695,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
                 if (weekNews.Count == 0)
                 {
-                    lines.Add(("News:", "⛔", Brushes.LightGray, Brushes.IndianRed));
+                    lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
                 }
                 else
                 {

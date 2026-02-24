@@ -30,9 +30,14 @@ Hard rules:
 
 ### News Row Behavior
 - If `UseNewsSkip == false`: show exactly one row: `News: Disabled`.
-- If enabled and no events in week: `News: ⛔`.
+- If enabled and no events in week: show blocked icon row (`News: 🚫` default; strategy may use equivalent blocked icon).
 - If enabled with events: show rows for each event.
 - Past event rows must use faded brush (`PassedNewsRowBrush`).
+
+### InfoBox Icon Rendering
+- Emoji-style state icons (for example `✅`, `🚫`, `🕒`) should render via emoji-capable font (`Segoe UI Emoji`).
+- For WPF/NinjaTrader environments where color emoji can flatten to white/gray, emoji value runs should explicitly use the row/value brush for deterministic coloring.
+- Symbol-only glyphs can use `Segoe UI Symbol` (or strategy-chosen equivalent) when cleaner than default text rendering.
 
 ## Core Module Requirements
 
