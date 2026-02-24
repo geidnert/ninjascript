@@ -164,6 +164,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int asiaTradesThisSession;
         private int newYorkTradesThisSession;
         private string currentPositionEntrySignal = string.Empty;
+        private bool flipBreakEvenActivated;
         private const double FlipBodyThresholdPercent = 0.0;
         private const string LongEntrySignal = "LongEntry";
         private const string ShortEntrySignal = "ShortEntry";
@@ -480,6 +481,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EntryOffsetPoints = 0.0;
                 RequireEntryConfirmation = false;
                 RequireMinAdxForFlips = true;
+                EnableFlipBreakEven = false;
+                FlipBreakEvenTriggerPoints = 0.0;
 
                 DebugLogging = false;
             }
@@ -527,6 +530,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 pendingShortStopForWebhook = 0.0;
                 currentTradePeakAdx = 0.0;
                 trackedAdxPeakPosition = MarketPosition.Flat;
+                flipBreakEvenActivated = false;
                 projectXSessionToken = null;
                 projectXTokenAcquiredUtc = Core.Globals.MinDate;
                 projectXLastOrderId = null;
@@ -631,6 +635,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
+                TryApplyFlipBreakEvenStop();
+
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
                     ExitLong("AdxLevelExit", GetOpenLongEntrySignal());
@@ -730,6 +736,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
+                TryApplyFlipBreakEvenStop();
+
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
                     ExitShort("AdxLevelExit", GetOpenShortEntrySignal());
@@ -1054,6 +1062,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (IsEntryOrderName(orderName))
             {
                 currentPositionEntrySignal = orderName;
+                flipBreakEvenActivated = false;
                 SessionSlot entrySession = activeSession != SessionSlot.None
                     ? activeSession
                     : DetermineSessionForTime(time);
@@ -1073,10 +1082,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug(string.Format("Session lock released from {0} after flat execution ({1}).", FormatSessionLabel(lockedTradeSession), orderName));
                 lockedTradeSession = SessionSlot.None;
                 currentPositionEntrySignal = string.Empty;
+                flipBreakEvenActivated = false;
             }
             else if (marketPosition == MarketPosition.Flat)
             {
                 currentPositionEntrySignal = string.Empty;
+                flipBreakEvenActivated = false;
             }
 
             if (ShouldSendExitWebhook(execution, orderName, marketPosition))
@@ -1129,6 +1140,50 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string GetOpenShortEntrySignal()
         {
             return IsShortEntryOrderName(currentPositionEntrySignal) ? currentPositionEntrySignal : ShortEntrySignal;
+        }
+
+        private bool IsFlipEntrySignal(string signal)
+        {
+            return string.Equals(signal, LongFlipEntrySignal, StringComparison.Ordinal)
+                || string.Equals(signal, ShortFlipEntrySignal, StringComparison.Ordinal);
+        }
+
+        private void TryApplyFlipBreakEvenStop()
+        {
+            if (!EnableFlipBreakEven || FlipBreakEvenTriggerPoints <= 0.0 || flipBreakEvenActivated)
+                return;
+
+            if (!IsFlipEntrySignal(currentPositionEntrySignal))
+                return;
+
+            double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            string entrySignal = Position.MarketPosition == MarketPosition.Long
+                ? GetOpenLongEntrySignal()
+                : GetOpenShortEntrySignal();
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                if (Close[0] < averagePrice + FlipBreakEvenTriggerPoints)
+                    return;
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                if (Close[0] > averagePrice - FlipBreakEvenTriggerPoints)
+                    return;
+            }
+            else
+            {
+                return;
+            }
+
+            SetStopLoss(entrySignal, CalculationMode.Price, averagePrice, false);
+            flipBreakEvenActivated = true;
+            LogDebug(string.Format(
+                "Flip BE armed | signal={0} triggerPts={1:0.00} avg={2:0.00} close={3:0.00}",
+                entrySignal,
+                FlipBreakEvenTriggerPoints,
+                averagePrice,
+                Close[0]));
         }
 
         private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
@@ -3388,8 +3443,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 5)]
         public bool RequireEntryConfirmation { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "13. Risk", Order = 6)]
+        public bool EnableFlipBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "13. Risk", Order = 7)]
+        public double FlipBreakEvenTriggerPoints { get; set; }
+
         // [NinjaScriptProperty]
-        // [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 6)]
+        // [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 8)]
         internal bool RequireMinAdxForFlips { get; set; }
 
         // [NinjaScriptProperty]
