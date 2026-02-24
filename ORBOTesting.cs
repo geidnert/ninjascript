@@ -135,6 +135,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime lastDate = DateTime.MinValue;
         private bool maxAccountLimitHit = false;
         private double startingBalance = 0;
+        private bool isConfiguredTimeframeValid = true;
+        private bool timeframePopupShown;
         
         // ===== Session P&L Tracking =====
         private double sessionRealizedPnL = 0;
@@ -459,6 +461,7 @@ USE ON 1-MINUTE CHART.";
             }
             else if (State == State.DataLoaded)
             {
+                ValidateRequiredPrimaryTimeframe(1);
                 startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
                 EnsureNewsDatesInitialized();
             }
@@ -470,6 +473,14 @@ USE ON 1-MINUTE CHART.";
 
         protected override void OnBarUpdate()
         {
+            if (!isConfiguredTimeframeValid)
+            {
+                CancelAllOrders();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    ExitAllPositions("InvalidTimeframe");
+                return;
+            }
+
             DrawSessionTimeWindows();
 
             if (CurrentBar < BarsRequiredToTrade)
@@ -2296,6 +2307,54 @@ USE ON 1-MINUTE CHART.";
         {
             if (DebugMode)
                 DebugPrint("[Webhook] " + message);
+        }
+
+        private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
+        {
+            bool isMinuteSeries = BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute;
+            bool timeframeMatches = isMinuteSeries && BarsPeriod.Value == requiredMinutes;
+            isConfiguredTimeframeValid = timeframeMatches;
+            if (timeframeMatches)
+                return;
+
+            string actualTimeframe = BarsPeriod == null
+                ? "Unknown"
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on a {1}-minute chart. Current chart is {2}. Trading is disabled until timeframe is corrected.",
+                Name,
+                requiredMinutes,
+                actualTimeframe);
+            Print(string.Format(CultureInfo.InvariantCulture, "{0} | {1}", Name, message));
+            ShowTimeframeValidationPopup(message);
+        }
+
+        private void ShowTimeframeValidationPopup(string message)
+        {
+            if (timeframePopupShown)
+                return;
+
+            timeframePopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Timeframe",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show timeframe popup: {1}", Name, ex.Message));
+            }
         }
         
         private void DebugPrint(string msg)

@@ -165,6 +165,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int newYorkTradesThisSession;
         private string currentPositionEntrySignal = string.Empty;
         private bool flipBreakEvenActivated;
+        private bool isConfiguredTimeframeValid = true;
+        private bool timeframePopupShown;
         private const double FlipBodyThresholdPercent = 0.0;
         private const string LongEntrySignal = "LongEntry";
         private const string ShortEntrySignal = "ShortEntry";
@@ -488,6 +490,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
+                ValidateRequiredPrimaryTimeframe(5);
+
                 emaAsia = EMA(AsiaEmaPeriod);
                 emaNewYork = EMA(NewYorkEmaPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
@@ -561,6 +565,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
+            if (!isConfiguredTimeframeValid)
+            {
+                CancelWorkingEntryOrders();
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("InvalidTimeframe", GetOpenLongEntrySignal());
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort("InvalidTimeframe", GetOpenShortEntrySignal());
+                return;
+            }
+
             if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())))
                 return;
 
@@ -2684,6 +2698,54 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int GetMaxConfiguredAdxPeriod()
         {
             return Math.Max(AsiaAdxPeriod, NewYorkAdxPeriod);
+        }
+
+        private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
+        {
+            bool isMinuteSeries = BarsPeriod != null && BarsPeriod.BarsPeriodType == NinjaTrader.Data.BarsPeriodType.Minute;
+            bool timeframeMatches = isMinuteSeries && BarsPeriod.Value == requiredMinutes;
+            isConfiguredTimeframeValid = timeframeMatches;
+            if (timeframeMatches)
+                return;
+
+            string actualTimeframe = BarsPeriod == null
+                ? "Unknown"
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on a {1}-minute chart. Current chart is {2}. Trading is disabled until timeframe is corrected.",
+                Name,
+                requiredMinutes,
+                actualTimeframe);
+            LogDebug("Timeframe validation failed | " + message);
+            ShowTimeframeValidationPopup(message);
+        }
+
+        private void ShowTimeframeValidationPopup(string message)
+        {
+            if (timeframePopupShown)
+                return;
+
+            timeframePopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Timeframe",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                LogDebug("Failed to show timeframe popup: " + ex.Message);
+            }
         }
 
         private bool ShowEntryConfirmation(string orderType, double price, int quantity)
