@@ -489,6 +489,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RequireMinAdxForFlips = true;
                 EnableFlipBreakEven = false;
                 FlipBreakEvenTriggerPoints = 0.0;
+                FlipTakeProfitPoints = 0.0;
 
                 DebugLogging = false;
             }
@@ -712,11 +713,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             LogDebug("Entry confirmation declined | Flip LONG->SHORT.");
                             return;
                         }
+                        double flipTakeProfitPoints = GetEffectiveFlipTakeProfitPoints();
                         pendingShortStopForWebhook = stopPrice;
                         SetStopLossByDistanceTicks(ShortFlipEntrySignal, entryPrice, stopPrice);
-                        SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, activeTakeProfitPoints);
+                        SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, flipTakeProfitPoints);
                         SendFlipWebhooks("sell", entryPrice, stopPrice, useMarketEntry, qty, MarketPosition.Long);
-                        StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                        StartTradeLines(entryPrice, stopPrice, flipTakeProfitPoints > 0.0 ? entryPrice - flipTakeProfitPoints : 0.0, flipTakeProfitPoints > 0.0);
                         SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortFlipEntrySignal);
 
                         LogDebug(string.Format(
@@ -813,11 +815,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             LogDebug("Entry confirmation declined | Flip SHORT->LONG.");
                             return;
                         }
+                        double flipTakeProfitPoints = GetEffectiveFlipTakeProfitPoints();
                         pendingLongStopForWebhook = stopPrice;
                         SetStopLossByDistanceTicks(LongFlipEntrySignal, entryPrice, stopPrice);
-                        SetProfitTargetByDistanceTicks(LongFlipEntrySignal, activeTakeProfitPoints);
+                        SetProfitTargetByDistanceTicks(LongFlipEntrySignal, flipTakeProfitPoints);
                         SendFlipWebhooks("buy", entryPrice, stopPrice, useMarketEntry, qty, MarketPosition.Short);
-                        StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
+                        StartTradeLines(entryPrice, stopPrice, flipTakeProfitPoints > 0.0 ? entryPrice + flipTakeProfitPoints : 0.0, flipTakeProfitPoints > 0.0);
                         SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongFlipEntrySignal);
 
                         LogDebug(string.Format(
@@ -1203,6 +1206,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 FlipBreakEvenTriggerPoints,
                 averagePrice,
                 Close[0]));
+        }
+
+        private double GetEffectiveFlipTakeProfitPoints()
+        {
+            return FlipTakeProfitPoints > 0.0 ? FlipTakeProfitPoints : activeTakeProfitPoints;
         }
 
         private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
@@ -3656,7 +3664,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double FlipBreakEvenTriggerPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 8)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "13. Risk", Order = 8)]
+        public double FlipTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 9)]
         public bool RequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
