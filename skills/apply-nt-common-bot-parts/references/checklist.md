@@ -19,10 +19,11 @@
 - [ ] Invalid instrument warning is user-visible once (popup and/or explicit log)
 
 ## Infobox
-- [ ] Canonical order: Header > Contracts > Strategy-specific > News > Session > Footer
+- [ ] Canonical order: Header > Contracts > News > Session > Footer
 - [ ] Contracts first line after header
 - [ ] News directly above Session
 - [ ] Session directly above footer
+- [ ] No strategy-specific rows copied from reference strategy
 - [ ] `UseNewsSkip=false` => one row `News: Disabled`
 - [ ] `UseNewsSkip=true` and no events => blocked icon row (default `News: 🚫` or approved equivalent)
 - [ ] Empty-week blocked icon value brush is red (`Brushes.IndianRed`)

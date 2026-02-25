@@ -12,16 +12,15 @@ This file defines reusable, non-strategy-specific parts that must be consistentl
 Infobox row order is strict:
 1. Header
 2. Contracts
-3. Strategy-specific rows (zero or more)
-4. News
-5. Session
-6. Footer
+3. News
+4. Session
+5. Footer
 
 Hard rules:
 - `Contracts` is always the first row after header.
 - `News` is always directly above `Session`.
 - `Session` is always directly above footer.
-- Only strategy-specific rows are allowed between `Contracts` and `News`.
+- Do not add strategy-specific rows when applying common parts from a reference strategy.
 
 ### Infobox Colors
 - Header/footer text: branding color (per strategy family).
@@ -124,7 +123,7 @@ Reason tags used by convention:
 2. Apply core module.
 3. Apply webhook module if required.
 4. Apply branding module.
-5. Insert strategy-specific rows into infobox middle zone only (between Contracts and News).
+5. Keep infobox to common rows only: Header, Contracts, News, Session, Footer.
 6. Run compliance checks.
 
 ## Compliance Checks (minimum)

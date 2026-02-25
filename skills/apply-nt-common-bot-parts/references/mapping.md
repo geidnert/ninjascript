@@ -30,6 +30,11 @@ For instrument safety equivalence, preserve this behavior even if names differ:
 - invalid instrument path cancels/flattens exposure
 - user is warned once via popup/log
 
-## Infobox Middle Zone
-Only strategy-specific rows belong between Contracts and News.
-Do not place Session/News-specific rows in this middle zone.
+## Infobox Rows
+When applying this skill, keep only common infobox rows:
+- Header
+- Contracts
+- News
+- Session
+- Footer
+Do not copy strategy-specific rows from the reference strategy.

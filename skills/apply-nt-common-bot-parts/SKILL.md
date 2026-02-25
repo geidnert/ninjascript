@@ -40,10 +40,9 @@ Use this skill when integrating a new strategy file from external developers and
 3. Normalize infobox to canonical row order:
 1. Header
 2. Contracts
-3. Strategy-specific rows
-4. News
-5. Session
-6. Footer
+3. News
+4. Session
+5. Footer
 
 4. Apply news rules exactly:
 - `UseNewsSkip == false` => single `News: Disabled` row
@@ -70,5 +69,5 @@ Return a compliance report with four sections:
 
 ## Constraints
 - Preserve strategy-specific trade logic.
-- Do not reorder strategy-specific rows outside the infobox middle zone.
+- Do not import strategy-specific infobox rows from the reference strategy.
 - Keep infobox invariants strict.
