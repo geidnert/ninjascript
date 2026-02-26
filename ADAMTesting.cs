@@ -1027,7 +1027,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 EnsureNewsDatesInitialized();
-                Print("Claude30sORBot_v3.03 loaded | TickSize=" + TickSize + " | Instrument=" + Instrument.FullName);
+                Print("ADAM30sORBot_v3.03 loaded | TickSize=" + TickSize + " | Instrument=" + Instrument.FullName);
                 Print(String.Format("  Cut-Off: {0}:{1:D2} | Forced Close: {2}:{3:D2}", 
                     CutOffHour, CutOffMinute, ForcedCloseHour, ForcedCloseMinute));
                 for (int b = 1; b <= 3; b++)
@@ -1126,9 +1126,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     Print(String.Format("{0} | *** FORCED CLOSE ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("ForcedClose", "ClaudeLong");
+                        ExitLong("ForcedClose", "AdamLong");
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("ForcedClose", "ClaudeShort");
+                        ExitShort("ForcedClose", "AdamShort");
                 }
                 if (orSet || orHigh > double.MinValue || orLow < double.MaxValue)
                 {
@@ -1153,9 +1153,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 Print(String.Format("{0} | *** CUT-OFF ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("CutOffExit", "ClaudeLong");
+                    ExitLong("CutOffExit", "AdamLong");
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("CutOffExit", "ClaudeShort");
+                    ExitShort("CutOffExit", "AdamShort");
             }
 
             // Max session loss total
@@ -1167,8 +1167,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("MaxLossExit", "ClaudeLong");
-                    else ExitShort("MaxLossExit", "ClaudeShort");
+                        ExitLong("MaxLossExit", "AdamLong");
+                    else ExitShort("MaxLossExit", "AdamShort");
                 }
                 UpdateInfoPanel();
                 return;
@@ -1180,7 +1180,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 maxLossLongReached = true;
                 Print(String.Format("{0} | *** MAX LONG LOSS ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("MaxLossLongExit", "ClaudeLong");
+                    ExitLong("MaxLossLongExit", "AdamLong");
                 UpdateInfoPanel();
             }
             if (activeS_MaxSessionLoss > 0 && sessionLossShort >= activeS_MaxSessionLoss && !maxLossShortReached)
@@ -1188,7 +1188,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 maxLossShortReached = true;
                 Print(String.Format("{0} | *** MAX SHORT LOSS ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("MaxLossShortExit", "ClaudeShort");
+                    ExitShort("MaxLossShortExit", "AdamShort");
                 UpdateInfoPanel();
             }
 
@@ -1220,7 +1220,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (beNewStopPrice > currentStopPrice)
                         {
                             currentStopPrice = beNewStopPrice;
-                            SetStopLoss("ClaudeLong", CalculationMode.Price, currentStopPrice, false);
+                            SetStopLoss("AdamLong", CalculationMode.Price, currentStopPrice, false);
                             Print(String.Format("{0} | *** BE LONG *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
                             DrawTradeLines();
@@ -1241,7 +1241,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (beNewStopPrice < currentStopPrice)
                         {
                             currentStopPrice = beNewStopPrice;
-                            SetStopLoss("ClaudeShort", CalculationMode.Price, currentStopPrice, false);
+                            SetStopLoss("AdamShort", CalculationMode.Price, currentStopPrice, false);
                             Print(String.Format("{0} | *** BE SHORT *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
                             DrawTradeLines();
@@ -1269,8 +1269,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (Position.MarketPosition != MarketPosition.Flat)
                     {
                         if (Position.MarketPosition == MarketPosition.Long)
-                            ExitLong("MaxProfitExit", "ClaudeLong");
-                        else ExitShort("MaxProfitExit", "ClaudeShort");
+                            ExitLong("MaxProfitExit", "AdamLong");
+                        else ExitShort("MaxProfitExit", "AdamShort");
                     }
                     UpdateInfoPanel();
                     return;
@@ -1288,7 +1288,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     maxProfitLongReached = true;
                     Print(String.Format("{0} | *** MAX LONG PROFIT ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("MaxProfitLongExit", "ClaudeLong");
+                        ExitLong("MaxProfitLongExit", "AdamLong");
                     UpdateInfoPanel();
                 }
             }
@@ -1302,7 +1302,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     maxProfitShortReached = true;
                     Print(String.Format("{0} | *** MAX SHORT PROFIT ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("MaxProfitShortExit", "ClaudeShort");
+                        ExitShort("MaxProfitShortExit", "AdamShort");
                     UpdateInfoPanel();
                 }
             }
@@ -1350,7 +1350,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print(String.Format("  Offset: -{0}t | Effective: {1:F2}", activeL_FirstTradeOffset, effectiveLongEntry));
                     
                     pendingTargetTicks = CalculateLongTargetTicks();
-                    EnterLong(ContractQuantity, "ClaudeLong");
+                    EnterLong(ContractQuantity, "AdamLong");
                     
                     canTakeNewEntry = false;
                     priceReturnedToOR = false;
@@ -1371,7 +1371,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print(String.Format("  Offset: +{0}t | Effective: {1:F2}", activeS_FirstTradeOffset, effectiveShortEntry));
                     
                     pendingTargetTicks = CalculateShortTargetTicks();
-                    EnterShort(ContractQuantity, "ClaudeShort");
+                    EnterShort(ContractQuantity, "AdamShort");
                     
                     canTakeNewEntry = false;
                     priceReturnedToOR = false;
@@ -2223,7 +2223,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             Print(String.Format("{0} | FILL | {1} at {2} | Pos: {3}", 
                 time.ToString("HH:mm:ss.fff"), execution.Order.Name, price, marketPosition));
             
-            if ((execution.Order.Name == "ClaudeLong" || execution.Order.Name == "ClaudeShort") 
+            if ((execution.Order.Name == "AdamLong" || execution.Order.Name == "AdamShort") 
                 && marketPosition != MarketPosition.Flat)
             {
                 entryPrice = price;
