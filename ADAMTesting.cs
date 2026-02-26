@@ -1661,6 +1661,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             
             sessionStart = tradingDay.Add(new TimeSpan(9, 30, 0));
             sessionEnd = tradingDay.Add(new TimeSpan(16, 0, 0));
+            DrawSessionBackground();
+            DrawCutOffWindow(tradingDay);
             
             RemoveDrawObject("ORHighLine"); RemoveDrawObject("ORLowLine");
             RemoveDrawObject("LongEntryLine"); RemoveDrawObject("ShortEntryLine");
@@ -1699,7 +1701,68 @@ namespace NinjaTrader.NinjaScript.Strategies
         #endregion
         
         #region Drawing
-        
+
+        private void DrawSessionBackground()
+        {
+            if (sessionStart == default(DateTime) || sessionEnd <= sessionStart)
+                return;
+
+            string rectTag = string.Format("ADAM_SessionFill_{0:yyyyMMdd_HHmm}", sessionStart);
+            if (DrawObjects[rectTag] != null)
+                return;
+
+            Draw.Rectangle(
+                this,
+                rectTag,
+                false,
+                sessionStart,
+                0,
+                sessionEnd,
+                30000,
+                Brushes.Transparent,
+                Brushes.Gold,
+                10).ZOrder = -1;
+        }
+
+        private void DrawCutOffWindow(DateTime tradingDay)
+        {
+            DateTime windowStart = tradingDay.Add(new TimeSpan(CutOffHour, CutOffMinute, 0));
+            DateTime configuredEnd = tradingDay.Add(new TimeSpan(ForcedCloseHour, ForcedCloseMinute, 0));
+            DateTime windowEnd = configuredEnd > windowStart ? configuredEnd : sessionEnd;
+            if (windowEnd <= windowStart)
+                windowEnd = windowStart.AddMinutes(1);
+
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+            try
+            {
+                if (areaBrush.CanFreeze)
+                    areaBrush.Freeze();
+                if (lineBrush.CanFreeze)
+                    lineBrush.Freeze();
+            }
+            catch
+            {
+            }
+
+            string tagBase = string.Format("ADAM_CutOff_{0:yyyyMMdd_HHmm}", windowStart);
+            Draw.Rectangle(
+                this,
+                tagBase + "_Rect",
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,
+                areaBrush,
+                2).ZOrder = -1;
+
+            Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+            if (windowEnd > windowStart)
+                Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+        }
+
         private void DrawSessionLines()
         {
             Draw.Line(this, "ORHighLine", false, sessionStart, orHigh, sessionEnd, orHigh, 
