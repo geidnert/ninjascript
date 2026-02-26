@@ -1130,6 +1130,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                     else if (Position.MarketPosition == MarketPosition.Short)
                         ExitShort("ForcedClose", "ClaudeShort");
                 }
+                if (orSet || orHigh > double.MinValue || orLow < double.MaxValue)
+                {
+                    orHigh = double.MinValue;
+                    orLow = double.MaxValue;
+                    orSet = false;
+                    longEntryLevel = 0;
+                    shortEntryLevel = 0;
+                    isInSession = false;
+                    RemoveDrawObject("ORHighLine");
+                    RemoveDrawObject("ORLowLine");
+                    RemoveDrawObject("LongEntryLine");
+                    RemoveDrawObject("ShortEntryLine");
+                    UpdateInfoPanel();
+                }
                 return;
             }
 
