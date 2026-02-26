@@ -2646,19 +2646,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
         {
             var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
-            string contractsText;
-            switch (activeSession)
-            {
-                case SessionSlot.Asia:
-                    contractsText = string.Format(CultureInfo.InvariantCulture, "Asia {0}", Math.Max(1, AsiaContracts));
-                    break;
-                case SessionSlot.NewYork:
-                    contractsText = string.Format(CultureInfo.InvariantCulture, "NY {0}", Math.Max(1, NewYorkContracts));
-                    break;
-                default:
-                    contractsText = string.Format(CultureInfo.InvariantCulture, "Asia {0} | NY {1}", Math.Max(1, AsiaContracts), Math.Max(1, NewYorkContracts));
-                    break;
-            }
+            string contractsText = Math.Max(1, activeContracts).ToString(CultureInfo.InvariantCulture);
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double adxSlope = GetAdxSlopePoints();
             bool adxMinEnabled = activeAdxThreshold > 0.0;
