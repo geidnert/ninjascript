@@ -74,6 +74,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         
         private bool beTriggered = false;
         private double beNewStopPrice = 0;
+        private bool bracketOrdersPlaced = false;
+        private string currentEntrySignal = string.Empty;
         
         private int activeBucketL = 0;
         private int activeBucketS = 0;
@@ -866,6 +868,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DefaultQuantity = 1;
                 IsUnmanaged = false;
                 IsOverlay = true;
+                StartBehavior = StartBehavior.WaitUntilFlat;
+                RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
+                StopTargetHandling = StopTargetHandling.PerEntryExecution;
+                BarsRequiredToTrade = 20;
+                IsInstantiatedOnEachOptimizationIteration = false;
                 
                 // Common
                 TradeWindowEndHour = 14;
@@ -1068,6 +1075,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ResetForNewSession(tradingDay);
             }
 
+            ExitIfSessionEnded();
+            if (IsAfterSessionEnd(Time[0]))
+                return;
+
             // Set OR
             if (!orSet)
             {
@@ -1125,10 +1136,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
                     Print(String.Format("{0} | *** FORCED CLOSE ***", Time[0].ToString("HH:mm:ss")));
+                    string activeSignal = GetActiveEntrySignal();
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("ForcedClose", "AdamLong");
+                        ExitLong("ForcedClose", activeSignal);
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("ForcedClose", "AdamShort");
+                        ExitShort("ForcedClose", activeSignal);
                 }
                 if (orSet || orHigh > double.MinValue || orLow < double.MaxValue)
                 {
@@ -1152,10 +1164,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (currentTimeOfDay >= cutOffTime && Position.MarketPosition != MarketPosition.Flat)
             {
                 Print(String.Format("{0} | *** CUT-OFF ***", Time[0].ToString("HH:mm:ss")));
+                string activeSignal = GetActiveEntrySignal();
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("CutOffExit", "AdamLong");
+                    ExitLong("CutOffExit", activeSignal);
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("CutOffExit", "AdamShort");
+                    ExitShort("CutOffExit", activeSignal);
             }
 
             // Max session loss total
@@ -1166,9 +1179,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(String.Format("{0} | *** MAX SESSION LOSS TOTAL ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
+                    string activeSignal = GetActiveEntrySignal();
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("MaxLossExit", "AdamLong");
-                    else ExitShort("MaxLossExit", "AdamShort");
+                        ExitLong("MaxLossExit", activeSignal);
+                    else ExitShort("MaxLossExit", activeSignal);
                 }
                 UpdateInfoPanel();
                 return;
@@ -1180,7 +1194,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 maxLossLongReached = true;
                 Print(String.Format("{0} | *** MAX LONG LOSS ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("MaxLossLongExit", "AdamLong");
+                    ExitLong("MaxLossLongExit", GetActiveEntrySignal());
                 UpdateInfoPanel();
             }
             if (activeS_MaxSessionLoss > 0 && sessionLossShort >= activeS_MaxSessionLoss && !maxLossShortReached)
@@ -1188,7 +1202,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 maxLossShortReached = true;
                 Print(String.Format("{0} | *** MAX SHORT LOSS ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("MaxLossShortExit", "AdamShort");
+                    ExitShort("MaxLossShortExit", GetActiveEntrySignal());
                 UpdateInfoPanel();
             }
 
@@ -1220,7 +1234,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (beNewStopPrice > currentStopPrice)
                         {
                             currentStopPrice = beNewStopPrice;
-                            SetStopLoss("AdamLong", CalculationMode.Price, currentStopPrice, false);
+                            SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
                             Print(String.Format("{0} | *** BE LONG *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
                             DrawTradeLines();
@@ -1241,7 +1255,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (beNewStopPrice < currentStopPrice)
                         {
                             currentStopPrice = beNewStopPrice;
-                            SetStopLoss("AdamShort", CalculationMode.Price, currentStopPrice, false);
+                            SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
                             Print(String.Format("{0} | *** BE SHORT *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
                             DrawTradeLines();
@@ -1268,9 +1282,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print(String.Format("{0} | *** MAX SESSION PROFIT TOTAL ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition != MarketPosition.Flat)
                     {
+                        string activeSignal = GetActiveEntrySignal();
                         if (Position.MarketPosition == MarketPosition.Long)
-                            ExitLong("MaxProfitExit", "AdamLong");
-                        else ExitShort("MaxProfitExit", "AdamShort");
+                            ExitLong("MaxProfitExit", activeSignal);
+                        else ExitShort("MaxProfitExit", activeSignal);
                     }
                     UpdateInfoPanel();
                     return;
@@ -1288,7 +1303,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     maxProfitLongReached = true;
                     Print(String.Format("{0} | *** MAX LONG PROFIT ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("MaxProfitLongExit", "AdamLong");
+                        ExitLong("MaxProfitLongExit", GetActiveEntrySignal());
                     UpdateInfoPanel();
                 }
             }
@@ -1302,7 +1317,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     maxProfitShortReached = true;
                     Print(String.Format("{0} | *** MAX SHORT PROFIT ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("MaxProfitShortExit", "AdamShort");
+                        ExitShort("MaxProfitShortExit", GetActiveEntrySignal());
                     UpdateInfoPanel();
                 }
             }
@@ -1344,17 +1359,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // LONG
                 if (longAllowed && currentPrice > effectiveLongEntry)
                 {
+                    string nextSignal = BuildEntrySignalName(true);
+                    currentEntrySignal = nextSignal;
                     pendingStopPrice = CalculateLongStopPrice();
                     Print(String.Format("=== LONG ENTRY (Bucket {0}) ===", activeBucketL));
                     if (sessionTradeCountLong == 0 && activeL_FirstTradeOffset > 0)
                         Print(String.Format("  Offset: -{0}t | Effective: {1:F2}", activeL_FirstTradeOffset, effectiveLongEntry));
                     
                     pendingTargetTicks = CalculateLongTargetTicks();
-                    EnterLong(ContractQuantity, "AdamLong");
+                    EnterLong(ContractQuantity, nextSignal);
                     
                     canTakeNewEntry = false;
                     priceReturnedToOR = false;
                     lastTradeDirection = MarketPosition.Long;
+                    bracketOrdersPlaced = false;
                     sessionTradeCountLong++;
                     sessionTradeCountTotal++;
                     
@@ -1365,17 +1383,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // SHORT
                 else if (shortAllowed && currentPrice < effectiveShortEntry)
                 {
+                    string nextSignal = BuildEntrySignalName(false);
+                    currentEntrySignal = nextSignal;
                     pendingStopPrice = CalculateShortStopPrice();
                     Print(String.Format("=== SHORT ENTRY (Bucket {0}) ===", activeBucketS));
                     if (sessionTradeCountShort == 0 && activeS_FirstTradeOffset > 0)
                         Print(String.Format("  Offset: +{0}t | Effective: {1:F2}", activeS_FirstTradeOffset, effectiveShortEntry));
                     
                     pendingTargetTicks = CalculateShortTargetTicks();
-                    EnterShort(ContractQuantity, "AdamShort");
+                    EnterShort(ContractQuantity, nextSignal);
                     
                     canTakeNewEntry = false;
                     priceReturnedToOR = false;
                     lastTradeDirection = MarketPosition.Short;
+                    bracketOrdersPlaced = false;
                     sessionTradeCountShort++;
                     sessionTradeCountTotal++;
                     
@@ -1580,6 +1601,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool CanTakeLong(TimeSpan currentTime)
         {
             if (activeBucketL == 0) return false;
+            if (IsLastBarOfSession()) return false;
             TimeSpan ws = new TimeSpan(9, 30 + activeL_TradeWindowStart, 30);
             if (currentTime < ws) return false;
             if (activeL_MaxTradesTotal > 0 && sessionTradeCountTotal >= activeL_MaxTradesTotal) return false;
@@ -1591,12 +1613,39 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool CanTakeShort(TimeSpan currentTime)
         {
             if (activeBucketS == 0) return false;
+            if (IsLastBarOfSession()) return false;
             TimeSpan ws = new TimeSpan(9, 30 + activeS_TradeWindowStart, 30);
             if (currentTime < ws) return false;
             if (activeS_MaxTradesTotal > 0 && sessionTradeCountTotal >= activeS_MaxTradesTotal) return false;
             if (activeS_MaxTrades > 0 && sessionTradeCountShort >= activeS_MaxTrades) return false;
             if (maxLossShortReached || maxProfitShortReached) return false;
             return true;
+        }
+
+        private string BuildEntrySignalName(bool isLong)
+        {
+            string side = isLong ? "AdamLong" : "AdamShort";
+            return string.Format("{0}_{1:yyyyMMdd}_{2}", side, Time[0], sessionTradeCountTotal + 1);
+        }
+
+        private bool IsEntrySignalName(string orderName)
+        {
+            if (string.IsNullOrEmpty(orderName))
+                return false;
+
+            return orderName.StartsWith("AdamLong", StringComparison.OrdinalIgnoreCase)
+                || orderName.StartsWith("AdamShort", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string GetActiveEntrySignal()
+        {
+            if (!string.IsNullOrEmpty(currentEntrySignal))
+                return currentEntrySignal;
+
+            if (Position.MarketPosition == MarketPosition.Short)
+                return "AdamShort";
+
+            return "AdamLong";
         }
         
         private double CalculateLongStopPrice()
@@ -1632,6 +1681,81 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return (int)(Math.Round((orHigh - orLow) / TickSize) * activeS_TakeProfitORMultiple);
             return activeS_TakeProfitTicks;
         }
+
+        private void ExitIfSessionEnded()
+        {
+            if (!IsLastBarOfSession())
+                return;
+
+            string activeSignal = GetActiveEntrySignal();
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong("SessionEnd", activeSignal);
+            else if (Position.MarketPosition == MarketPosition.Short)
+                ExitShort("SessionEnd", activeSignal);
+        }
+
+        private bool IsAfterSessionEnd(DateTime time)
+        {
+            return IsLastBarOfSession();
+        }
+
+        private bool IsLastBarOfSession()
+        {
+            return Bars != null && Bars.IsLastBarOfSession;
+        }
+
+        private bool TrySanitizeProtectivePrices(MarketPosition positionDirection, double fillPrice, double rawStopPrice, int rawTargetTicks, out double stopPrice, out double targetPrice)
+        {
+            stopPrice = 0;
+            targetPrice = 0;
+
+            if (fillPrice <= 0 || TickSize <= 0)
+                return false;
+
+            double marketPrice = Close[0];
+            double minTick = TickSize;
+            int targetTicks = Math.Max(0, rawTargetTicks);
+
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(rawStopPrice);
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - minTick);
+                if (stopPrice >= marketPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, marketPrice - minTick));
+
+                if (targetTicks > 0)
+                {
+                    targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + (targetTicks * TickSize));
+                    if (targetPrice <= fillPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + minTick);
+                    if (targetPrice <= marketPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, marketPrice + minTick));
+                }
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                if (stopPrice <= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + minTick);
+                if (stopPrice <= marketPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, marketPrice + minTick));
+
+                if (targetTicks > 0)
+                {
+                    targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - (targetTicks * TickSize));
+                    if (targetPrice >= fillPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - minTick);
+                    if (targetPrice >= marketPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, marketPrice - minTick));
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            return true;
+        }
         
         #endregion
         
@@ -1651,6 +1775,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             lastTradingDay = tradingDay;
             lastTradeDirection = MarketPosition.Flat;
             beTriggered = false; beNewStopPrice = 0;
+            bracketOrdersPlaced = false;
+            currentEntrySignal = string.Empty;
             activeBucketL = 0; activeBucketS = 0;
             noBucketMatched = false;
             sessionTradeCountLong = 0; sessionTradeCountShort = 0; sessionTradeCountTotal = 0;
@@ -1676,6 +1802,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             entryPrice = 0; pendingStopPrice = 0; pendingTargetTicks = 0;
             currentStopPrice = 0; currentTargetPrice = 0; currentTargetTicks = 0;
             beTriggered = false; beNewStopPrice = 0;
+            bracketOrdersPlaced = false;
+            currentEntrySignal = string.Empty;
             canTakeNewEntry = true;
             
             bool noLongsLeft = (activeL_MaxTrades > 0 && sessionTradeCountLong >= activeL_MaxTrades) || maxLossLongReached || maxProfitLongReached;
@@ -2215,6 +2343,24 @@ namespace NinjaTrader.NinjaScript.Strategies
         #endregion
         
         #region Execution Handling
+
+        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
+            double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string nativeError)
+        {
+            if (order == null || orderState != OrderState.Rejected)
+                return;
+
+            string name = order.Name ?? string.Empty;
+            Print(string.Format("{0} | REJECTED | name={1} state={2} error={3} comment={4}",
+                time.ToString("HH:mm:ss.fff"), name, orderState, error, nativeError ?? string.Empty));
+
+            if (IsEntrySignalName(name))
+                currentEntrySignal = string.Empty;
+            bracketOrdersPlaced = false;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+                ResetForNextTrade();
+        }
         
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
         {
@@ -2223,31 +2369,33 @@ namespace NinjaTrader.NinjaScript.Strategies
             Print(String.Format("{0} | FILL | {1} at {2} | Pos: {3}", 
                 time.ToString("HH:mm:ss.fff"), execution.Order.Name, price, marketPosition));
             
-            if ((execution.Order.Name == "AdamLong" || execution.Order.Name == "AdamShort") 
-                && marketPosition != MarketPosition.Flat)
+            if (IsEntrySignalName(execution.Order.Name)
+                && marketPosition != MarketPosition.Flat
+                && !bracketOrdersPlaced)
             {
+                currentEntrySignal = execution.Order.Name;
                 entryPrice = price;
                 currentStopPrice = pendingStopPrice;
                 currentTargetTicks = pendingTargetTicks;
-                
-                if (marketPosition == MarketPosition.Long)
+
+                double sanitizedStop;
+                double sanitizedTarget;
+                if (TrySanitizeProtectivePrices(marketPosition, entryPrice, currentStopPrice, currentTargetTicks, out sanitizedStop, out sanitizedTarget))
                 {
-                    currentTargetPrice = entryPrice + (currentTargetTicks * TickSize);
+                    currentStopPrice = sanitizedStop;
+                    currentTargetPrice = sanitizedTarget;
+
                     SetStopLoss(execution.Order.Name, CalculationMode.Price, currentStopPrice, false);
-                    if (currentTargetTicks > 0)
-                        SetProfitTarget(execution.Order.Name, CalculationMode.Ticks, currentTargetTicks);
-                    Print(String.Format("  LONG | Entry={0} SL={1} TP={2}", entryPrice, currentStopPrice, currentTargetPrice));
-                }
-                else if (marketPosition == MarketPosition.Short)
-                {
-                    currentTargetPrice = entryPrice - (currentTargetTicks * TickSize);
-                    SetStopLoss(execution.Order.Name, CalculationMode.Price, currentStopPrice, false);
-                    if (currentTargetTicks > 0)
-                        SetProfitTarget(execution.Order.Name, CalculationMode.Ticks, currentTargetTicks);
-                    Print(String.Format("  SHORT | Entry={0} SL={1} TP={2}", entryPrice, currentStopPrice, currentTargetPrice));
+                    if (currentTargetTicks > 0 && currentTargetPrice > 0)
+                        SetProfitTarget(execution.Order.Name, CalculationMode.Price, currentTargetPrice);
+
+                    Print(String.Format("  {0} | Entry={1} SL={2} TP={3}",
+                        marketPosition == MarketPosition.Long ? "LONG" : "SHORT",
+                        entryPrice, currentStopPrice, currentTargetTicks > 0 ? currentTargetPrice : 0));
                 }
                 
                 DrawTradeLines();
+                bracketOrdersPlaced = true;
                 pendingStopPrice = 0; pendingTargetTicks = 0;
                 UpdateInfoPanel();
             }
