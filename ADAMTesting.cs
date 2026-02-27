@@ -21,10 +21,15 @@ using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript.DrawingTools;
 #endregion
 
-namespace NinjaTrader.NinjaScript.Strategies
+namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class ADAMTesting : Strategy
     {
+        public ORBO()
+        {
+            VendorLicense(1175);
+        }
+
         #region Variables
         private double orHigh = double.MinValue;
         private double orLow = double.MaxValue;
