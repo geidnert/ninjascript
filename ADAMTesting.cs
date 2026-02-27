@@ -74,6 +74,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool maxProfitLongReached = false;
         private bool maxProfitShortReached = false;
         private bool maxProfitTotalReached = false;
+        private bool debugLogging = false;
         
         private MarketPosition lastTradeDirection = MarketPosition.Flat;
         
@@ -905,6 +906,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
                 RequireEntryConfirmation = false;
+                debugLogging = false;
                 
 
                 // Bucket 1 Long
@@ -1053,8 +1055,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (State == State.DataLoaded)
             {
                 EnsureNewsDatesInitialized();
-                Print("ADAM30sORBot_v3.03 loaded | TickSize=" + TickSize + " | Instrument=" + Instrument.FullName);
-                Print(String.Format("  Cut-Off: {0}:{1:D2} | Forced Close: {2}:{3:D2}", 
+                LogDebug("ADAM30sORBot_v3.03 loaded | TickSize=" + TickSize + " | Instrument=" + Instrument.FullName);
+                LogDebug(String.Format("  Cut-Off: {0}:{1:D2} | Forced Close: {2}:{3:D2}", 
                     CutOffHour, CutOffMinute, ForcedCloseHour, ForcedCloseMinute));
                 for (int b = 1; b <= 3; b++)
                 {
@@ -1064,7 +1066,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     int mxL = b == 1 ? B1L_ORMax : b == 2 ? B2L_ORMax : B3L_ORMax;
                     int mnS = b == 1 ? B1S_ORMin : b == 2 ? B2S_ORMin : B3S_ORMin;
                     int mxS = b == 1 ? B1S_ORMax : b == 2 ? B2S_ORMax : B3S_ORMax;
-                    Print(String.Format("  Bucket {0}: L:{1}({2}-{3}t) S:{4}({5}-{6}t)", 
+                    LogDebug(String.Format("  Bucket {0}: L:{1}({2}-{3}t) S:{4}({5}-{6}t)", 
                         b, enL ? "ON" : "OFF", mnL, mxL, enS ? "ON" : "OFF", mnS, mxS));
                 }
             }
@@ -1089,8 +1091,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             
             if (isNewSession && tradingDay != lastTradingDay)
             {
-                Print("");
-                Print(String.Format("========== SESSION RESET: {0} ==========", tradingDay.ToString("yyyy-MM-dd")));
+                LogDebug("");
+                LogDebug(String.Format("========== SESSION RESET: {0} ==========", tradingDay.ToString("yyyy-MM-dd")));
                 ResetForNewSession(tradingDay);
             }
 
@@ -1109,7 +1111,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     orLow = Low[0];
                     double rangeInTicks = Math.Round((orHigh - orLow) / TickSize);
                     
-                    Print(String.Format("{0} | *** OR BAR CLOSED *** High={1:F2} Low={2:F2} Range={3:F0}t",
+                    LogDebug(String.Format("{0} | *** OR BAR CLOSED *** High={1:F2} Low={2:F2} Range={3:F0}t",
                         Time[0].ToString("HH:mm:ss"), orHigh, orLow, rangeInTicks));
                     
                     int matchedLong = FindMatchingBucketLong((int)rangeInTicks);
@@ -1118,7 +1120,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (matchedLong == 0 && matchedShort == 0)
                     {
                         noBucketMatched = true;
-                        Print(String.Format("  *** NO BUCKET MATCHED *** OR={0}t - NO TRADING TODAY ***", rangeInTicks));
+                        LogDebug(String.Format("  *** NO BUCKET MATCHED *** OR={0}t - NO TRADING TODAY ***", rangeInTicks));
                         // Still set orSet so panel shows OR info
                         orSet = true;
                         UpdateInfoPanel();
@@ -1142,7 +1144,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         DrawSessionLines();
                         UpdateInfoPanel();
                         
-                        Print(String.Format("  *** OR SET *** Long B{0}>{1:F2} | Short B{2}<{3:F2} - READY ***",
+                        LogDebug(String.Format("  *** OR SET *** Long B{0}>{1:F2} | Short B{2}<{3:F2} - READY ***",
                             activeBucketL, longEntryLevel, activeBucketS, shortEntryLevel));
                     }
                 }
@@ -1155,7 +1157,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
-                    Print(String.Format("{0} | *** FORCED CLOSE ***", Time[0].ToString("HH:mm:ss")));
+                    LogDebug(String.Format("{0} | *** FORCED CLOSE ***", Time[0].ToString("HH:mm:ss")));
                     string activeSignal = GetActiveEntrySignal();
                     if (Position.MarketPosition == MarketPosition.Long)
                         ExitLong("ForcedClose", activeSignal);
@@ -1183,7 +1185,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TimeSpan cutOffTime = new TimeSpan(CutOffHour, CutOffMinute, 0);
             if (currentTimeOfDay >= cutOffTime && Position.MarketPosition != MarketPosition.Flat)
             {
-                Print(String.Format("{0} | *** CUT-OFF ***", Time[0].ToString("HH:mm:ss")));
+                LogDebug(String.Format("{0} | *** CUT-OFF ***", Time[0].ToString("HH:mm:ss")));
                 string activeSignal = GetActiveEntrySignal();
                 if (Position.MarketPosition == MarketPosition.Long)
                     ExitLong("CutOffExit", activeSignal);
@@ -1196,7 +1198,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 maxLossTotalReached = true;
                 canTakeNewEntry = false;
-                Print(String.Format("{0} | *** MAX SESSION LOSS TOTAL ***", Time[0].ToString("HH:mm:ss")));
+                LogDebug(String.Format("{0} | *** MAX SESSION LOSS TOTAL ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
                     string activeSignal = GetActiveEntrySignal();
@@ -1212,7 +1214,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (activeL_MaxSessionLoss > 0 && sessionLossLong >= activeL_MaxSessionLoss && !maxLossLongReached)
             {
                 maxLossLongReached = true;
-                Print(String.Format("{0} | *** MAX LONG LOSS ***", Time[0].ToString("HH:mm:ss")));
+                LogDebug(String.Format("{0} | *** MAX LONG LOSS ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Long)
                     ExitLong("MaxLossLongExit", GetActiveEntrySignal());
                 UpdateInfoPanel();
@@ -1220,7 +1222,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (activeS_MaxSessionLoss > 0 && sessionLossShort >= activeS_MaxSessionLoss && !maxLossShortReached)
             {
                 maxLossShortReached = true;
-                Print(String.Format("{0} | *** MAX SHORT LOSS ***", Time[0].ToString("HH:mm:ss")));
+                LogDebug(String.Format("{0} | *** MAX SHORT LOSS ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Short)
                     ExitShort("MaxLossShortExit", GetActiveEntrySignal());
                 UpdateInfoPanel();
@@ -1230,7 +1232,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool currentlyInPosition = Position.MarketPosition != MarketPosition.Flat;
             if (wasInPosition && !currentlyInPosition)
             {
-                Print(String.Format("{0} | Position closed", Time[0].ToString("HH:mm:ss")));
+                LogDebug(String.Format("{0} | Position closed", Time[0].ToString("HH:mm:ss")));
                 ResetForNextTrade();
             }
             wasInPosition = currentlyInPosition;
@@ -1255,7 +1257,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         {
                             currentStopPrice = beNewStopPrice;
                             SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
-                            Print(String.Format("{0} | *** BE LONG *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
+                            LogDebug(String.Format("{0} | *** BE LONG *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
                             UpdateTradeLines();
                         }
@@ -1276,7 +1278,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         {
                             currentStopPrice = beNewStopPrice;
                             SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
-                            Print(String.Format("{0} | *** BE SHORT *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
+                            LogDebug(String.Format("{0} | *** BE SHORT *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
                             UpdateTradeLines();
                         }
@@ -1299,7 +1301,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     maxProfitTotalReached = true;
                     canTakeNewEntry = false;
-                    Print(String.Format("{0} | *** MAX SESSION PROFIT TOTAL ***", Time[0].ToString("HH:mm:ss")));
+                    LogDebug(String.Format("{0} | *** MAX SESSION PROFIT TOTAL ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition != MarketPosition.Flat)
                     {
                         string activeSignal = GetActiveEntrySignal();
@@ -1321,7 +1323,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (lp >= activeL_MaxSessionProfit)
                 {
                     maxProfitLongReached = true;
-                    Print(String.Format("{0} | *** MAX LONG PROFIT ***", Time[0].ToString("HH:mm:ss")));
+                    LogDebug(String.Format("{0} | *** MAX LONG PROFIT ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Long)
                         ExitLong("MaxProfitLongExit", GetActiveEntrySignal());
                     UpdateInfoPanel();
@@ -1335,7 +1337,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (sp >= activeS_MaxSessionProfit)
                 {
                     maxProfitShortReached = true;
-                    Print(String.Format("{0} | *** MAX SHORT PROFIT ***", Time[0].ToString("HH:mm:ss")));
+                    LogDebug(String.Format("{0} | *** MAX SHORT PROFIT ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Short)
                         ExitShort("MaxProfitShortExit", GetActiveEntrySignal());
                     UpdateInfoPanel();
@@ -1348,7 +1350,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (currentPrice >= orLow && currentPrice <= orHigh)
                 {
                     priceReturnedToOR = true;
-                    Print(String.Format("{0} | *** PRICE RETURNED TO OR ***", Time[0].ToString("HH:mm:ss")));
+                    LogDebug(String.Format("{0} | *** PRICE RETURNED TO OR ***", Time[0].ToString("HH:mm:ss")));
                     UpdateInfoPanel();
                 }
             }
@@ -1384,15 +1386,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     int nextTargetTicks = CalculateLongTargetTicks();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", currentPrice, ContractQuantity))
                     {
-                        Print(String.Format("{0} | Entry confirmation declined | LONG.", Time[0].ToString("HH:mm:ss.fff")));
+                        LogDebug(String.Format("{0} | Entry confirmation declined | LONG.", Time[0].ToString("HH:mm:ss.fff")));
                         return;
                     }
 
                     currentEntrySignal = nextSignal;
                     pendingStopPrice = nextStopPrice;
-                    Print(String.Format("=== LONG ENTRY (Bucket {0}) ===", activeBucketL));
+                    LogDebug(String.Format("=== LONG ENTRY (Bucket {0}) ===", activeBucketL));
                     if (sessionTradeCountLong == 0 && activeL_FirstTradeOffset > 0)
-                        Print(String.Format("  Offset: -{0}t | Effective: {1:F2}", activeL_FirstTradeOffset, effectiveLongEntry));
+                        LogDebug(String.Format("  Offset: -{0}t | Effective: {1:F2}", activeL_FirstTradeOffset, effectiveLongEntry));
                     
                     pendingTargetTicks = nextTargetTicks;
                     EnterLong(ContractQuantity, nextSignal);
@@ -1404,7 +1406,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     sessionTradeCountLong++;
                     sessionTradeCountTotal++;
                     
-                    Print(String.Format("{0} | LONG #{1}(L:{2}/S:{3}) | Price={4} > {5} | SL={6} TP={7}t",
+                    LogDebug(String.Format("{0} | LONG #{1}(L:{2}/S:{3}) | Price={4} > {5} | SL={6} TP={7}t",
                         Time[0].ToString("HH:mm:ss.fff"), sessionTradeCountTotal, sessionTradeCountLong, sessionTradeCountShort,
                         currentPrice, effectiveLongEntry, pendingStopPrice, pendingTargetTicks));
                 }
@@ -1416,15 +1418,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     int nextTargetTicks = CalculateShortTargetTicks();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", currentPrice, ContractQuantity))
                     {
-                        Print(String.Format("{0} | Entry confirmation declined | SHORT.", Time[0].ToString("HH:mm:ss.fff")));
+                        LogDebug(String.Format("{0} | Entry confirmation declined | SHORT.", Time[0].ToString("HH:mm:ss.fff")));
                         return;
                     }
 
                     currentEntrySignal = nextSignal;
                     pendingStopPrice = nextStopPrice;
-                    Print(String.Format("=== SHORT ENTRY (Bucket {0}) ===", activeBucketS));
+                    LogDebug(String.Format("=== SHORT ENTRY (Bucket {0}) ===", activeBucketS));
                     if (sessionTradeCountShort == 0 && activeS_FirstTradeOffset > 0)
-                        Print(String.Format("  Offset: +{0}t | Effective: {1:F2}", activeS_FirstTradeOffset, effectiveShortEntry));
+                        LogDebug(String.Format("  Offset: +{0}t | Effective: {1:F2}", activeS_FirstTradeOffset, effectiveShortEntry));
                     
                     pendingTargetTicks = nextTargetTicks;
                     EnterShort(ContractQuantity, nextSignal);
@@ -1436,7 +1438,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     sessionTradeCountShort++;
                     sessionTradeCountTotal++;
                     
-                    Print(String.Format("{0} | SHORT #{1}(L:{2}/S:{3}) | Price={4} < {5} | SL={6} TP={7}t",
+                    LogDebug(String.Format("{0} | SHORT #{1}(L:{2}/S:{3}) | Price={4} < {5} | SL={6} TP={7}t",
                         Time[0].ToString("HH:mm:ss.fff"), sessionTradeCountTotal, sessionTradeCountLong, sessionTradeCountShort,
                         currentPrice, effectiveShortEntry, pendingStopPrice, pendingTargetTicks));
                 }
@@ -1544,7 +1546,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_BEOffsetTicks = B3L_BEOffsetTicks;
                     break;
             }
-            Print(String.Format("  LONG -> Bucket {0} | OR:{1}-{2}t SL={3} TP={4} BE={5}",
+            LogDebug(String.Format("  LONG -> Bucket {0} | OR:{1}-{2}t SL={3} TP={4} BE={5}",
                 bucket, activeL_ORMin, activeL_ORMax,
                 activeL_StopLossMode == SLModeEnum.FixedTicks ? activeL_StopLossTicks.ToString() + "t" : activeL_StopLossORMultiple.ToString() + "x",
                 activeL_TakeProfitMode == TPModeEnum.FixedTicks ? activeL_TakeProfitTicks.ToString() + "t" : activeL_TakeProfitORMultiple.ToString() + "x",
@@ -1626,7 +1628,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_BEOffsetTicks = B3S_BEOffsetTicks;
                     break;
             }
-            Print(String.Format("  SHORT -> Bucket {0} | OR:{1}-{2}t SL={3} TP={4} BE={5}",
+            LogDebug(String.Format("  SHORT -> Bucket {0} | OR:{1}-{2}t SL={3} TP={4} BE={5}",
                 bucket, activeS_ORMin, activeS_ORMax,
                 activeS_StopLossMode == SLModeEnum.FixedTicks ? activeS_StopLossTicks.ToString() + "t" : activeS_StopLossORMultiple.ToString() + "x",
                 activeS_TakeProfitMode == TPModeEnum.FixedTicks ? activeS_TakeProfitTicks.ToString() + "t" : activeS_TakeProfitORMultiple.ToString() + "x",
@@ -1829,7 +1831,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             RemoveDrawObject("ORHighLine"); RemoveDrawObject("ORLowLine");
             RemoveDrawObject("LongEntryLine"); RemoveDrawObject("ShortEntryLine");
             
-            Print(String.Format("  Prev: {0} trades | P&L: {1:F0}t | Reset done", prevTradeCount, prevPnL));
+            LogDebug(String.Format("  Prev: {0} trades | P&L: {1:F0}t | Reset done", prevTradeCount, prevPnL));
         }
         
         private void ResetForNextTrade()
@@ -1849,11 +1851,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (maxLossTotalReached || maxProfitTotalReached || ((noLongsLeft || totalMaxL) && (noShortsLeft || totalMaxS)))
             {
                 canTakeNewEntry = false;
-                Print("  *** NO MORE TRADES ***");
+                LogDebug("  *** NO MORE TRADES ***");
             }
             else
             {
-                Print(String.Format("  Waiting for OR | T:{0} L:{1} S:{2}", 
+                LogDebug(String.Format("  Waiting for OR | T:{0} L:{1} S:{2}", 
                     sessionTradeCountTotal, sessionTradeCountLong, sessionTradeCountShort));
             }
             
@@ -2015,6 +2017,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     endBarsAgo, tradeLineTpPrice,
                     Brushes.LimeGreen, DashStyleHelper.Solid, 2);
             }
+        }
+
+        private void LogDebug(string message)
+        {
+            if (!debugLogging)
+                return;
+
+            Print(message ?? string.Empty);
         }
         
         #endregion
@@ -2472,7 +2482,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             string name = order.Name ?? string.Empty;
-            Print(string.Format("{0} | REJECTED | name={1} state={2} error={3} comment={4}",
+            LogDebug(string.Format("{0} | REJECTED | name={1} state={2} error={3} comment={4}",
                 time.ToString("HH:mm:ss.fff"), name, orderState, error, nativeError ?? string.Empty));
 
             if (IsEntrySignalName(name))
@@ -2487,7 +2497,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (execution.Order == null || execution.Order.OrderState != OrderState.Filled) return;
             
-            Print(String.Format("{0} | FILL | {1} at {2} | Pos: {3}", 
+            LogDebug(String.Format("{0} | FILL | {1} at {2} | Pos: {3}", 
                 time.ToString("HH:mm:ss.fff"), execution.Order.Name, price, marketPosition));
             
             if (IsEntrySignalName(execution.Order.Name)
@@ -2510,7 +2520,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (currentTargetTicks > 0 && currentTargetPrice > 0)
                         SetProfitTarget(execution.Order.Name, CalculationMode.Price, currentTargetPrice);
 
-                    Print(String.Format("  {0} | Entry={1} SL={2} TP={3}",
+                    LogDebug(String.Format("  {0} | Entry={1} SL={2} TP={3}",
                         marketPosition == MarketPosition.Long ? "LONG" : "SHORT",
                         entryPrice, currentStopPrice, currentTargetTicks > 0 ? currentTargetPrice : 0));
 
@@ -2551,12 +2561,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     sessionPnLTotal += pnlTicks;
                     if (pnlTicks < 0) sessionLossTotal += Math.Abs(pnlTicks);
                     
-                    Print(String.Format("  {0} P&L: {1:F0}t | Session: T={2:F0} L={3:F0} S={4:F0}",
+                    LogDebug(String.Format("  {0} P&L: {1:F0}t | Session: T={2:F0} L={3:F0} S={4:F0}",
                         wasLong ? "LONG" : "SHORT", pnlTicks, sessionPnLTotal, sessionPnLLong, sessionPnLShort));
                 }
                 
                 FinalizeTradeLines();
-                Print(String.Format("  *** EXIT via {0} ***", execution.Order.Name));
+                LogDebug(String.Format("  *** EXIT via {0} ***", execution.Order.Name));
                 ResetForNextTrade();
             }
         }
@@ -2565,7 +2575,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (marketPosition == MarketPosition.Flat && entryPrice > 0)
             {
-                Print(String.Format("{0} | OnPositionUpdate: FLAT", Time[0].ToString("HH:mm:ss")));
+                LogDebug(String.Format("{0} | OnPositionUpdate: FLAT", Time[0].ToString("HH:mm:ss")));
                 FinalizeTradeLines();
                 ResetForNextTrade();
             }
