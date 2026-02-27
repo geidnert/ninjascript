@@ -242,6 +242,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "News Block Minutes", Description = "Minutes blocked before and after each listed news timestamp.", Order = 11, GroupName = "1. Common Parameters")]
         public int NewsBlockMinutes { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry.", Order = 12, GroupName = "1. Common Parameters")]
+        public bool RequireEntryConfirmation { get; set; }
+
 
         // ==================== BUCKET 1 LONG ====================
 
@@ -891,6 +895,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxSessionProfitTotal = 739;
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
+                RequireEntryConfirmation = false;
                 
 
                 // Bucket 1 Long
@@ -1365,13 +1370,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (longAllowed && currentPrice > effectiveLongEntry)
                 {
                     string nextSignal = BuildEntrySignalName(true);
+                    double nextStopPrice = CalculateLongStopPrice();
+                    int nextTargetTicks = CalculateLongTargetTicks();
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", currentPrice, ContractQuantity))
+                    {
+                        Print(String.Format("{0} | Entry confirmation declined | LONG.", Time[0].ToString("HH:mm:ss.fff")));
+                        return;
+                    }
+
                     currentEntrySignal = nextSignal;
-                    pendingStopPrice = CalculateLongStopPrice();
+                    pendingStopPrice = nextStopPrice;
                     Print(String.Format("=== LONG ENTRY (Bucket {0}) ===", activeBucketL));
                     if (sessionTradeCountLong == 0 && activeL_FirstTradeOffset > 0)
                         Print(String.Format("  Offset: -{0}t | Effective: {1:F2}", activeL_FirstTradeOffset, effectiveLongEntry));
                     
-                    pendingTargetTicks = CalculateLongTargetTicks();
+                    pendingTargetTicks = nextTargetTicks;
                     EnterLong(ContractQuantity, nextSignal);
                     
                     canTakeNewEntry = false;
@@ -1389,13 +1402,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else if (shortAllowed && currentPrice < effectiveShortEntry)
                 {
                     string nextSignal = BuildEntrySignalName(false);
+                    double nextStopPrice = CalculateShortStopPrice();
+                    int nextTargetTicks = CalculateShortTargetTicks();
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", currentPrice, ContractQuantity))
+                    {
+                        Print(String.Format("{0} | Entry confirmation declined | SHORT.", Time[0].ToString("HH:mm:ss.fff")));
+                        return;
+                    }
+
                     currentEntrySignal = nextSignal;
-                    pendingStopPrice = CalculateShortStopPrice();
+                    pendingStopPrice = nextStopPrice;
                     Print(String.Format("=== SHORT ENTRY (Bucket {0}) ===", activeBucketS));
                     if (sessionTradeCountShort == 0 && activeS_FirstTradeOffset > 0)
                         Print(String.Format("  Offset: +{0}t | Effective: {1:F2}", activeS_FirstTradeOffset, effectiveShortEntry));
                     
-                    pendingTargetTicks = CalculateShortTargetTicks();
+                    pendingTargetTicks = nextTargetTicks;
                     EnterShort(ContractQuantity, nextSignal);
                     
                     canTakeNewEntry = false;
@@ -2314,6 +2335,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
             int diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
             return date.AddDays(-diff).Date;
+        }
+
+        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
+        {
+            bool result = false;
+            if (System.Windows.Application.Current == null)
+                return false;
+
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                () =>
+                {
+                    string message = string.Format(CultureInfo.InvariantCulture, "Confirm {0} entry\nPrice: {1}\nQty: {2}", orderType, price, quantity);
+                    MessageBoxResult res =
+                        System.Windows.MessageBox.Show(message, "Entry Confirmation", System.Windows.MessageBoxButton.YesNo,
+                            System.Windows.MessageBoxImage.Question);
+                    result = res == System.Windows.MessageBoxResult.Yes;
+                });
+
+            return result;
         }
         
         private string GetStatusText()

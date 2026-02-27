@@ -247,6 +247,7 @@ USE ON 1-MINUTE CHART.";
                 // ===== A. General Settings =====
                 NumberOfContracts = 1;
                 MaxAccountBalance = 0;
+                RequireEntryConfirmation = false;
                 DebugMode = false;
 
                 // ===== B. Long Bucket 1 =====
@@ -978,6 +979,12 @@ USE ON 1-MINUTE CHART.";
         {
             if (activeLongBucket.VarianceTicks > 0)
                 entryLevel += random.Next(-activeLongBucket.VarianceTicks, activeLongBucket.VarianceTicks + 1) * TickSize;
+
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryLevel, NumberOfContracts))
+            {
+                if (DebugMode) DebugPrint("Entry confirmation declined | LONG.");
+                return;
+            }
             
             tradeCount++; longTradeCount++;
             currentSignalName = BuildSignalName(true, tradeCount);
@@ -997,6 +1004,12 @@ USE ON 1-MINUTE CHART.";
         {
             if (activeShortBucket.VarianceTicks > 0)
                 entryLevel += random.Next(-activeShortBucket.VarianceTicks, activeShortBucket.VarianceTicks + 1) * TickSize;
+
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryLevel, NumberOfContracts))
+            {
+                if (DebugMode) DebugPrint("Entry confirmation declined | SHORT.");
+                return;
+            }
             
             tradeCount++; shortTradeCount++;
             currentSignalName = BuildSignalName(false, tradeCount);
@@ -2492,6 +2505,26 @@ USE ON 1-MINUTE CHART.";
                 Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show instrument popup: {1}", Name, ex.Message));
             }
         }
+
+        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
+        {
+            bool result = false;
+            if (System.Windows.Application.Current == null)
+                return false;
+
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                () =>
+                {
+                    string message = string.Format(CultureInfo.InvariantCulture, "Confirm {0} entry\nPrice: {1}\nQty: {2}", orderType, price, quantity);
+                    MessageBoxResult res =
+                        System.Windows.MessageBox.Show(message, "Entry Confirmation", System.Windows.MessageBoxButton.YesNo,
+                            System.Windows.MessageBoxImage.Question);
+
+                    result = res == System.Windows.MessageBoxResult.Yes;
+                });
+
+            return result;
+        }
         
         private void DebugPrint(string msg)
         { Print($"[ORBO {Time[0]:HH:mm:ss}] {msg}"); }
@@ -2514,6 +2547,10 @@ USE ON 1-MINUTE CHART.";
         [Range(0, double.MaxValue)]
         [Display(Name = "Max Account Balance", Order = 4, GroupName = "A. General")]
         public double MaxAccountBalance { get; set; }
+        
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry.", Order = 5, GroupName = "A. General")]
+        public bool RequireEntryConfirmation { get; set; }
         
         
         [NinjaScriptProperty]
