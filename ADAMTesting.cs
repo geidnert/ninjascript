@@ -1160,9 +1160,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     LogDebug(String.Format("{0} | *** FORCED CLOSE ***", Time[0].ToString("HH:mm:ss")));
                     string activeSignal = GetActiveEntrySignal();
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("ForcedClose", activeSignal);
+                        ExitLong(BuildExitSignalName("ForcedClose"), activeSignal);
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("ForcedClose", activeSignal);
+                        ExitShort(BuildExitSignalName("ForcedClose"), activeSignal);
                 }
                 if (orSet || orHigh > double.MinValue || orLow < double.MaxValue)
                 {
@@ -1188,9 +1188,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug(String.Format("{0} | *** CUT-OFF ***", Time[0].ToString("HH:mm:ss")));
                 string activeSignal = GetActiveEntrySignal();
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("CutOffExit", activeSignal);
+                    ExitLong(BuildExitSignalName("CutOffExit"), activeSignal);
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("CutOffExit", activeSignal);
+                    ExitShort(BuildExitSignalName("CutOffExit"), activeSignal);
             }
 
             // Max session loss total
@@ -1203,8 +1203,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     string activeSignal = GetActiveEntrySignal();
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("MaxLossExit", activeSignal);
-                    else ExitShort("MaxLossExit", activeSignal);
+                        ExitLong(BuildExitSignalName("MaxLossExit"), activeSignal);
+                    else ExitShort(BuildExitSignalName("MaxLossExit"), activeSignal);
                 }
                 UpdateInfoPanel();
                 return;
@@ -1216,7 +1216,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 maxLossLongReached = true;
                 LogDebug(String.Format("{0} | *** MAX LONG LOSS ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("MaxLossLongExit", GetActiveEntrySignal());
+                    ExitLong(BuildExitSignalName("MaxLossLongExit"), GetActiveEntrySignal());
                 UpdateInfoPanel();
             }
             if (activeS_MaxSessionLoss > 0 && sessionLossShort >= activeS_MaxSessionLoss && !maxLossShortReached)
@@ -1224,7 +1224,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 maxLossShortReached = true;
                 LogDebug(String.Format("{0} | *** MAX SHORT LOSS ***", Time[0].ToString("HH:mm:ss")));
                 if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("MaxLossShortExit", GetActiveEntrySignal());
+                    ExitShort(BuildExitSignalName("MaxLossShortExit"), GetActiveEntrySignal());
                 UpdateInfoPanel();
             }
 
@@ -1306,8 +1306,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     {
                         string activeSignal = GetActiveEntrySignal();
                         if (Position.MarketPosition == MarketPosition.Long)
-                            ExitLong("MaxProfitExit", activeSignal);
-                        else ExitShort("MaxProfitExit", activeSignal);
+                            ExitLong(BuildExitSignalName("MaxProfitExit"), activeSignal);
+                        else ExitShort(BuildExitSignalName("MaxProfitExit"), activeSignal);
                     }
                     UpdateInfoPanel();
                     return;
@@ -1325,7 +1325,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     maxProfitLongReached = true;
                     LogDebug(String.Format("{0} | *** MAX LONG PROFIT ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("MaxProfitLongExit", GetActiveEntrySignal());
+                        ExitLong(BuildExitSignalName("MaxProfitLongExit"), GetActiveEntrySignal());
                     UpdateInfoPanel();
                 }
             }
@@ -1339,7 +1339,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     maxProfitShortReached = true;
                     LogDebug(String.Format("{0} | *** MAX SHORT PROFIT ***", Time[0].ToString("HH:mm:ss")));
                     if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("MaxProfitShortExit", GetActiveEntrySignal());
+                        ExitShort(BuildExitSignalName("MaxProfitShortExit"), GetActiveEntrySignal());
                     UpdateInfoPanel();
                 }
             }
@@ -1662,8 +1662,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string BuildEntrySignalName(bool isLong)
         {
-            string side = isLong ? "AdamLong" : "AdamShort";
-            return string.Format("{0}_{1:yyyyMMdd}_{2}", side, Time[0], sessionTradeCountTotal + 1);
+            return isLong ? "ADAMLong" : "ADAMShort";
         }
 
         private bool IsEntrySignalName(string orderName)
@@ -1671,8 +1670,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (string.IsNullOrEmpty(orderName))
                 return false;
 
-            return orderName.StartsWith("AdamLong", StringComparison.OrdinalIgnoreCase)
-                || orderName.StartsWith("AdamShort", StringComparison.OrdinalIgnoreCase);
+            return orderName.StartsWith("ADAMLong", StringComparison.OrdinalIgnoreCase)
+                || orderName.StartsWith("ADAMShort", StringComparison.OrdinalIgnoreCase);
         }
 
         private string GetActiveEntrySignal()
@@ -1681,9 +1680,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return currentEntrySignal;
 
             if (Position.MarketPosition == MarketPosition.Short)
-                return "AdamShort";
+                return "ADAMShort";
 
-            return "AdamLong";
+            return "ADAMLong";
+        }
+
+        private string BuildExitSignalName(string reason)
+        {
+            return "ADAM" + reason;
         }
         
         private double CalculateLongStopPrice()
@@ -1727,9 +1731,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             string activeSignal = GetActiveEntrySignal();
             if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong("SessionEnd", activeSignal);
+                ExitLong(BuildExitSignalName("SessionEnd"), activeSignal);
             else if (Position.MarketPosition == MarketPosition.Short)
-                ExitShort("SessionEnd", activeSignal);
+                ExitShort(BuildExitSignalName("SessionEnd"), activeSignal);
         }
 
         private bool IsAfterSessionEnd(DateTime time)
