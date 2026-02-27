@@ -25,7 +25,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class ADAMTesting : Strategy
     {
-        public ORBO()
+        public ADAMTesting()
         {
             VendorLicense(1175);
         }
