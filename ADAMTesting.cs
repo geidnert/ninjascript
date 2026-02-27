@@ -81,6 +81,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double beNewStopPrice = 0;
         private bool bracketOrdersPlaced = false;
         private string currentEntrySignal = string.Empty;
+        private string tradeLineTagPrefix = string.Empty;
+        private int tradeLineTagCounter = 0;
+        private bool tradeLinesActive = false;
+        private bool tradeLineHasTp = false;
+        private int tradeLineSignalBar = -1;
+        private int tradeLineExitBar = -1;
+        private double tradeLineEntryPrice = 0.0;
+        private double tradeLineTpPrice = 0.0;
+        private double tradeLineSlPrice = 0.0;
         
         private int activeBucketL = 0;
         private int activeBucketS = 0;
@@ -1088,6 +1097,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ExitIfSessionEnded();
             if (IsAfterSessionEnd(Time[0]))
                 return;
+            UpdateTradeLines();
 
             // Set OR
             if (!orSet)
@@ -1247,7 +1257,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
                             Print(String.Format("{0} | *** BE LONG *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
-                            DrawTradeLines();
+                            UpdateTradeLines();
                         }
                         UpdateInfoPanel();
                     }
@@ -1268,7 +1278,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
                             Print(String.Format("{0} | *** BE SHORT *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
-                            DrawTradeLines();
+                            UpdateTradeLines();
                         }
                         UpdateInfoPanel();
                     }
@@ -1818,7 +1828,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             
             RemoveDrawObject("ORHighLine"); RemoveDrawObject("ORLowLine");
             RemoveDrawObject("LongEntryLine"); RemoveDrawObject("ShortEntryLine");
-            RemoveDrawObject("EntryLine"); RemoveDrawObject("TargetLine"); RemoveDrawObject("StopLine");
             
             Print(String.Format("  Prev: {0} trades | P&L: {1:F0}t | Reset done", prevTradeCount, prevPnL));
         }
@@ -1848,7 +1857,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     sessionTradeCountTotal, sessionTradeCountLong, sessionTradeCountShort));
             }
             
-            RemoveDrawObject("EntryLine"); RemoveDrawObject("TargetLine"); RemoveDrawObject("StopLine");
             UpdateInfoPanel();
         }
         
@@ -1931,14 +1939,82 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         private void DrawTradeLines()
         {
-            if (entryPrice <= 0) return;
-            DateTime tradeStart = Time[0];
-            Draw.Line(this, "EntryLine", false, tradeStart, entryPrice, sessionEnd, entryPrice, 
-                System.Windows.Media.Brushes.Orange, DashStyleHelper.Solid, 2);
-            Draw.Line(this, "TargetLine", false, tradeStart, currentTargetPrice, sessionEnd, currentTargetPrice, 
-                System.Windows.Media.Brushes.DodgerBlue, DashStyleHelper.Solid, 2);
-            Draw.Line(this, "StopLine", false, tradeStart, currentStopPrice, sessionEnd, currentStopPrice, 
-                System.Windows.Media.Brushes.Red, DashStyleHelper.Solid, 2);
+            if (!tradeLinesActive || tradeLineSignalBar < 0)
+                return;
+
+            int startBarsAgo = Math.Max(0, CurrentBar - tradeLineSignalBar);
+            int endBarsAgo = tradeLineExitBar >= 0
+                ? Math.Max(0, CurrentBar - tradeLineExitBar)
+                : 0;
+
+            DrawTradeLinesAtBarsAgo(startBarsAgo, endBarsAgo);
+        }
+
+        private void StartTradeLines(double tradeEntryPrice, double stopPrice, double takeProfitPrice, bool hasTakeProfit)
+        {
+            if (tradeLinesActive)
+                FinalizeTradeLines();
+
+            tradeLineTagPrefix = string.Format("ADAM_TradeLine_{0}_{1}_", ++tradeLineTagCounter, CurrentBar);
+            tradeLinesActive = true;
+            tradeLineHasTp = hasTakeProfit;
+            tradeLineSignalBar = Math.Max(0, CurrentBar - 1);
+            tradeLineExitBar = -1;
+            tradeLineEntryPrice = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice);
+            tradeLineSlPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+            tradeLineTpPrice = hasTakeProfit ? Instrument.MasterInstrument.RoundToTickSize(takeProfitPrice) : 0.0;
+
+            DrawTradeLinesAtBarsAgo(1, 0);
+        }
+
+        private void UpdateTradeLines()
+        {
+            DrawTradeLines();
+        }
+
+        private void FinalizeTradeLines()
+        {
+            if (!tradeLinesActive)
+                return;
+
+            tradeLineExitBar = CurrentBar;
+            DrawTradeLines();
+            tradeLinesActive = false;
+            ClearTradeLineState();
+        }
+
+        private void ClearTradeLineState()
+        {
+            tradeLineHasTp = false;
+            tradeLineSignalBar = -1;
+            tradeLineExitBar = -1;
+            tradeLineEntryPrice = 0.0;
+            tradeLineTpPrice = 0.0;
+            tradeLineSlPrice = 0.0;
+        }
+
+        private void DrawTradeLinesAtBarsAgo(int startBarsAgo, int endBarsAgo)
+        {
+            if (string.IsNullOrEmpty(tradeLineTagPrefix))
+                return;
+
+            Draw.Line(this, tradeLineTagPrefix + "Entry", false,
+                startBarsAgo, tradeLineEntryPrice,
+                endBarsAgo, tradeLineEntryPrice,
+                Brushes.Gold, DashStyleHelper.Solid, 2);
+
+            Draw.Line(this, tradeLineTagPrefix + "SL", false,
+                startBarsAgo, tradeLineSlPrice,
+                endBarsAgo, tradeLineSlPrice,
+                Brushes.Red, DashStyleHelper.Solid, 2);
+
+            if (tradeLineHasTp)
+            {
+                Draw.Line(this, tradeLineTagPrefix + "TP", false,
+                    startBarsAgo, tradeLineTpPrice,
+                    endBarsAgo, tradeLineTpPrice,
+                    Brushes.LimeGreen, DashStyleHelper.Solid, 2);
+            }
         }
         
         #endregion
@@ -2437,9 +2513,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Print(String.Format("  {0} | Entry={1} SL={2} TP={3}",
                         marketPosition == MarketPosition.Long ? "LONG" : "SHORT",
                         entryPrice, currentStopPrice, currentTargetTicks > 0 ? currentTargetPrice : 0));
+
+                    StartTradeLines(entryPrice, currentStopPrice, currentTargetPrice, currentTargetTicks > 0 && currentTargetPrice > 0);
                 }
-                
-                DrawTradeLines();
+
                 bracketOrdersPlaced = true;
                 pendingStopPrice = 0; pendingTargetTicks = 0;
                 UpdateInfoPanel();
@@ -2478,6 +2555,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         wasLong ? "LONG" : "SHORT", pnlTicks, sessionPnLTotal, sessionPnLLong, sessionPnLShort));
                 }
                 
+                FinalizeTradeLines();
                 Print(String.Format("  *** EXIT via {0} ***", execution.Order.Name));
                 ResetForNextTrade();
             }
@@ -2488,6 +2566,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (marketPosition == MarketPosition.Flat && entryPrice > 0)
             {
                 Print(String.Format("{0} | OnPositionUpdate: FLAT", Time[0].ToString("HH:mm:ss")));
+                FinalizeTradeLines();
                 ResetForNextTrade();
             }
         }
