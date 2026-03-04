@@ -104,6 +104,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int      _longLosingToday,     _shortLosingToday;
         private bool     _forceFlatDone;
         private bool     _wasInSkipWindow;
+        private bool     _wasInNewsSkipWindow;
         private bool     isConfiguredTimeframeValid = true;
         private bool     isConfiguredInstrumentValid = true;
         private bool     timeframePopupShown;
@@ -544,6 +545,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             HandleSkipWindowTransition(inSkipWindow);
             if (inSkipWindow) return;
 
+            bool inNewsSkipWindow = IsInNewsSkipWindow(Time[0]);
+            HandleNewsSkipWindowTransition(inNewsSkipWindow);
+            if (inNewsSkipWindow) return;
+
             // ── D. Capture OR candle and select active bucket ─────────────────
             if (!_orSet)
             {
@@ -617,6 +622,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             var noNewTime = new TimeSpan(NoNewTradesHour, NoNewTradesMin, 0);
             bool canTradeLong  = _longORValid
                               && !inSkipWindow
+                              && !inNewsSkipWindow
                               && tod < noNewTime
                               && _longTradesToday     < GetLongMaxTradesPerDay()
                               && _longProfitableToday < GetLongMaxProfitableTrades()
@@ -624,6 +630,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool canTradeShort = _shortORValid
                               && !inSkipWindow
+                              && !inNewsSkipWindow
                               && tod < noNewTime
                               && _shortTradesToday     < GetShortMaxTradesPerDay()
                               && _shortProfitableToday < GetShortMaxProfitableTrades()
@@ -1231,6 +1238,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DrawSessionBackground(Time[0]);
             DrawNoNewTradesLine(Time[0]);
             DrawSkipWindow(Time[0]);
+            DrawNewsWindows(Time[0]);
         }
 
         private void DrawSessionBackground(DateTime barTime)
@@ -1309,6 +1317,51 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
         }
 
+        private void DrawNewsWindows(DateTime barTime)
+        {
+            if (!UseNewsSkip)
+                return;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barTime.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+
+                var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
+                try
+                {
+                    if (areaBrush.CanFreeze)
+                        areaBrush.Freeze();
+                    if (lineBrush.CanFreeze)
+                        lineBrush.Freeze();
+                }
+                catch
+                {
+                }
+
+                string tagBase = string.Format("EVE_News_{0:yyyyMMdd_HHmm}", newsTime);
+                Draw.Rectangle(
+                    this,
+                    tagBase + "_Rect",
+                    false,
+                    windowStart,
+                    0,
+                    windowEnd,
+                    30000,
+                    lineBrush,
+                    areaBrush,
+                    2).ZOrder = -1;
+
+                Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+                Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+            }
+        }
+
         private void DrawSessionLines()
         {
             DateTime t1 = _orDate.Add(new TimeSpan(9, 30, 0));
@@ -1376,6 +1429,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return now >= skipStart || now < skipEnd;
         }
 
+        private bool IsInNewsSkipWindow(DateTime time)
+        {
+            if (!UseNewsSkip)
+                return false;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != time.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+                if (time >= windowStart && time <= windowEnd)
+                    return true;
+            }
+
+            return false;
+        }
+
         private void HandleSkipWindowTransition(bool inSkipWindowNow)
         {
             if (!_wasInSkipWindow && inSkipWindowNow)
@@ -1395,6 +1468,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             _wasInSkipWindow = inSkipWindowNow;
+        }
+
+        private void HandleNewsSkipWindowTransition(bool inNewsSkipWindowNow)
+        {
+            if (!_wasInNewsSkipWindow && inNewsSkipWindowNow)
+            {
+                CancelPendingEntriesForSkip();
+
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("NewsSkipL", "LongEntry");
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort("NewsSkipS", "ShortEntry");
+
+                Print(Time[0] + " | Entered news skip window: canceled working entries and flattened open position.");
+            }
+
+            _wasInNewsSkipWindow = inNewsSkipWindowNow;
         }
 
         private void CancelPendingEntriesForSkip()
@@ -1584,6 +1674,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             _lastWinDirection = 0;
             _forceFlatDone    = false;
             _wasInSkipWindow  = false;
+            _wasInNewsSkipWindow = false;
         }
 
         // =====================================================================
@@ -1853,6 +1944,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!_orSet || _forceFlatDone || Position.MarketPosition != MarketPosition.Flat)
                 return false;
             if (IsInSkipWindow(Time[0]))
+                return false;
+            if (IsInNewsSkipWindow(Time[0]))
                 return false;
 
             if (_longEntryArmed || _shortEntryArmed)
