@@ -75,6 +75,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool maxProfitShortReached = false;
         private bool maxProfitTotalReached = false;
         private bool debugLogging = false;
+        private bool isConfiguredTimeframeValid = true;
+        private bool isConfiguredInstrumentValid = true;
+        private bool timeframePopupShown;
+        private bool instrumentPopupShown;
         
         private MarketPosition lastTradeDirection = MarketPosition.Flat;
         
@@ -1054,6 +1058,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
+                ValidateRequiredPrimaryTimeframe(30);
+                ValidateRequiredPrimaryInstrument();
                 EnsureNewsDatesInitialized();
                 LogDebug("ADAM30sORBot_v3.03 loaded | TickSize=" + TickSize + " | Instrument=" + Instrument.FullName);
                 LogDebug(String.Format("  Cut-Off: {0}:{1:D2} | Forced Close: {2}:{3:D2}", 
@@ -1079,6 +1085,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
+            {
+                CancelAllOrders();
+                ExitAllPositions("InvalidConfiguration");
+                return;
+            }
+
             if (CurrentBar < 20) return;
             if (BarsInProgress != 0) return;
 
@@ -1688,6 +1701,148 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string BuildExitSignalName(string reason)
         {
             return "ADAM" + reason;
+        }
+
+        private void CancelAllOrders()
+        {
+            if (Account == null || Instrument == null)
+                return;
+
+            try
+            {
+                foreach (Order order in Account.Orders)
+                {
+                    if (!IsOrderActive(order))
+                        continue;
+
+                    if (order.Instrument == null || order.Instrument.FullName != Instrument.FullName)
+                        continue;
+
+                    string orderName = order.Name ?? string.Empty;
+                    if (!orderName.StartsWith("ADAM", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    CancelOrder(order);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug("CancelAllOrders error: " + ex.Message);
+            }
+        }
+
+        private void ExitAllPositions(string reason)
+        {
+            string activeSignal = GetActiveEntrySignal();
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong(BuildExitSignalName(reason), activeSignal);
+            else if (Position.MarketPosition == MarketPosition.Short)
+                ExitShort(BuildExitSignalName(reason), activeSignal);
+        }
+
+        private bool IsOrderActive(Order order)
+        {
+            return order != null
+                && (order.OrderState == OrderState.Working
+                    || order.OrderState == OrderState.Submitted
+                    || order.OrderState == OrderState.Accepted
+                    || order.OrderState == OrderState.ChangePending
+                    || order.OrderState == OrderState.PartFilled);
+        }
+
+        private void ValidateRequiredPrimaryTimeframe(int requiredSeconds)
+        {
+            bool isSecondSeries = BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Second;
+            bool timeframeMatches = isSecondSeries && BarsPeriod.Value == requiredSeconds;
+            isConfiguredTimeframeValid = timeframeMatches;
+            if (timeframeMatches)
+                return;
+
+            string actualTimeframe = BarsPeriod == null
+                ? "Unknown"
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on a {1}-second chart. Current chart is {2}. Trading is disabled until timeframe is corrected.",
+                Name,
+                requiredSeconds,
+                actualTimeframe);
+            LogDebug("Timeframe validation failed | " + message);
+            ShowTimeframeValidationPopup(message);
+        }
+
+        private void ShowTimeframeValidationPopup(string message)
+        {
+            if (timeframePopupShown)
+                return;
+
+            timeframePopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Timeframe",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                LogDebug("Failed to show timeframe popup: " + ex.Message);
+            }
+        }
+
+        private void ValidateRequiredPrimaryInstrument()
+        {
+            string instrumentName = Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+            bool instrumentMatches = instrumentName == "NQ" || instrumentName == "MNQ";
+            isConfiguredInstrumentValid = instrumentMatches;
+            if (instrumentMatches)
+                return;
+
+            string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on NQ or MNQ. Current instrument is {1}. Trading is disabled until instrument is corrected.",
+                Name,
+                actualInstrument);
+            LogDebug("Instrument validation failed | " + message);
+            ShowInstrumentValidationPopup(message);
+        }
+
+        private void ShowInstrumentValidationPopup(string message)
+        {
+            if (instrumentPopupShown)
+                return;
+
+            instrumentPopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Instrument",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                LogDebug("Failed to show instrument popup: " + ex.Message);
+            }
         }
         
         private double CalculateLongStopPrice()
