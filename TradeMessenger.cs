@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Web.Script.Serialization;
 using NinjaTrader.Cbi;
@@ -86,6 +87,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Heartbeat Timeout (Seconds)", Description = "Seconds without update before warning", Order = 5, GroupName = "D. Alive monitoring")]
         public int HeartbeatTimeoutSeconds { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Auto Reconnect Enabled", Description = "When feed stalls, attempt account connection reconnects with backoff.", Order = 6, GroupName = "D. Alive monitoring")]
+        public bool AutoReconnectEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Reconnect Initial Delay (s)", Description = "Delay before first reconnect attempt.", Order = 7, GroupName = "D. Alive monitoring")]
+        public int ReconnectInitialDelaySeconds { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Reconnect Max Delay (s)", Description = "Max delay cap between reconnect attempts.", Order = 8, GroupName = "D. Alive monitoring")]
+        public int ReconnectMaxDelaySeconds { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Reconnect Max Attempts", Description = "0 means unlimited attempts.", Order = 9, GroupName = "D. Alive monitoring")]
+        public int ReconnectMaxAttempts { get; set; }
+
+
         private bool debug = false;
         private double entryPrice = 0;
         private bool entryIsShort = false;
@@ -96,6 +114,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Dictionary<string, DateTime> strategyHeartbeats = new Dictionary<string, DateTime>();
         private Dictionary<string, bool> strategyStalled = new Dictionary<string, bool>();
         private Dictionary<string, int> strategyStartupCount = new Dictionary<string, int>();
+        private readonly object reconnectLock = new object();
+        private bool reconnectLoopActive = false;
+        private bool reconnectInProgress = false;
+        private int reconnectAttemptCount = 0;
+        private DateTime nextReconnectAttemptUtc = DateTime.MinValue;
+        private string lastReconnectFailure = string.Empty;
 
         protected override void OnStateChange()
         {
@@ -113,10 +137,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 HeartbeatReporting = true;
                 HeartbeatFilePath = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
                 HeartbeatTimeoutSeconds = 60;
-				BotToken = "";//"8179492057:AAEdPEbpXTrS0X_ksrnpSZZrlFHb57Om--U";
+                AutoReconnectEnabled = false;
+                ReconnectInitialDelaySeconds = 10;
+                ReconnectMaxDelaySeconds = 120;
+                ReconnectMaxAttempts = 0;
+					BotToken = "";//"8179492057:AAEdPEbpXTrS0X_ksrnpSZZrlFHb57Om--U";
            		ChatId = "";//"5763704400";
                 DiscordWebhookUrl = "";
-			}
+				}
             else if (State == State.DataLoaded)
             {
                 Account.ExecutionUpdate += OnAccountExecutionUpdate;
@@ -136,6 +164,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     watchdogTimer.Dispose();
                     watchdogTimer = null;
                 }
+
+                StopReconnectLoop();
             }
 
         }
@@ -205,6 +235,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     LogToOutput2($"{Time[0]} - ⚠️ Data feed stalled: no ticks for {secondsSinceLastTick:F0} seconds.");
                     if (SendPushNotifications && DataFeedReporting)
                         sendPushNotification(Time[0], $"⚠️ WARNING: Data feed stalled on {Instrument.FullName}. No ticks for {secondsSinceLastTick:F0} seconds.");
+                    StartReconnectLoop(DateTime.UtcNow);
                 }
             }
         }
@@ -224,6 +255,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogToOutput2($"{Time[0]} - ✅ Data feed has resumed.");
                 if (SendPushNotifications)
                     sendPushNotification(Time[0], $"✅ Data feed has resumed on {Instrument.FullName}");
+                StopReconnectLoop();
             }
 
             // Timer-like check: only check every 5 seconds
@@ -240,6 +272,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogToOutput2($"{Time[0]} - ⚠️ Data feed stalled: no ticks for {secondsSinceLastTick:F0} seconds.");
                 if (SendPushNotifications)
                     sendPushNotification(Time[0], $"⚠️ WARNING: Data feed stalled on {Instrument.FullName}.");
+                StartReconnectLoop(DateTime.UtcNow);
             }
         }
 
@@ -378,7 +411,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogToOutput2($"{DateTime.UtcNow} - {logMessage}");
                 if (SendPushNotifications)
                     sendPushNotification(DateTime.UtcNow, logMessage);
+                StartReconnectLoop(DateTime.UtcNow);
             }
+
+            TryReconnectIfDue(DateTime.UtcNow);
 
             try
             {
@@ -390,6 +426,154 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 LogToOutput2($"Heartbeat watchdog error: {ex.Message}");
             }
+        }
+
+        private void StartReconnectLoop(DateTime nowUtc)
+        {
+            if (!AutoReconnectEnabled)
+                return;
+
+            lock (reconnectLock)
+            {
+                if (reconnectLoopActive)
+                    return;
+
+                reconnectLoopActive = true;
+                reconnectInProgress = false;
+                reconnectAttemptCount = 0;
+                lastReconnectFailure = string.Empty;
+                int initialDelaySeconds = Math.Max(1, ReconnectInitialDelaySeconds);
+                nextReconnectAttemptUtc = nowUtc.AddSeconds(initialDelaySeconds);
+                LogToOutput2($"{DateTime.UtcNow} - 🔁 Auto-reconnect armed. First attempt in {initialDelaySeconds}s.");
+            }
+        }
+
+        private void StopReconnectLoop()
+        {
+            lock (reconnectLock)
+            {
+                reconnectLoopActive = false;
+                reconnectInProgress = false;
+                reconnectAttemptCount = 0;
+                nextReconnectAttemptUtc = DateTime.MinValue;
+                lastReconnectFailure = string.Empty;
+            }
+        }
+
+        private void TryReconnectIfDue(DateTime nowUtc)
+        {
+            if (!AutoReconnectEnabled)
+                return;
+
+            lock (reconnectLock)
+            {
+                if (!reconnectLoopActive || reconnectInProgress || nowUtc < nextReconnectAttemptUtc)
+                    return;
+
+                if (ReconnectMaxAttempts > 0 && reconnectAttemptCount >= ReconnectMaxAttempts)
+                {
+                    LogToOutput2($"{DateTime.UtcNow} - 🛑 Auto-reconnect stopped: reached max attempts ({ReconnectMaxAttempts}).");
+                    reconnectLoopActive = false;
+                    return;
+                }
+
+                reconnectInProgress = true;
+                reconnectAttemptCount++;
+            }
+
+            bool issued = AttemptReconnectOnce(out string details);
+
+            lock (reconnectLock)
+            {
+                reconnectInProgress = false;
+                int delaySeconds = ComputeReconnectDelaySeconds(reconnectAttemptCount);
+                nextReconnectAttemptUtc = nowUtc.AddSeconds(delaySeconds);
+
+                if (issued)
+                {
+                    LogToOutput2($"{DateTime.UtcNow} - 🔁 Reconnect attempt #{reconnectAttemptCount} issued. Next retry in {delaySeconds}s if feed is still stalled.");
+                }
+                else
+                {
+                    if (!string.Equals(lastReconnectFailure, details, StringComparison.Ordinal))
+                    {
+                        LogToOutput2($"{DateTime.UtcNow} - ⚠️ Reconnect attempt #{reconnectAttemptCount} failed: {details}");
+                        lastReconnectFailure = details;
+                    }
+                }
+            }
+        }
+
+        private int ComputeReconnectDelaySeconds(int attemptNumber)
+        {
+            int initialDelay = Math.Max(1, ReconnectInitialDelaySeconds);
+            int maxDelay = Math.Max(initialDelay, ReconnectMaxDelaySeconds);
+            if (attemptNumber <= 1)
+                return initialDelay;
+
+            double scaled = initialDelay * Math.Pow(2.0, attemptNumber - 1);
+            if (scaled > int.MaxValue)
+                scaled = int.MaxValue;
+
+            return Math.Min(maxDelay, (int)scaled);
+        }
+
+        private bool AttemptReconnectOnce(out string details)
+        {
+            details = string.Empty;
+
+            try
+            {
+                if (Account == null)
+                {
+                    details = "Account is null.";
+                    return false;
+                }
+
+                object connection = Account.Connection;
+                if (connection == null)
+                {
+                    details = "Account.Connection is null.";
+                    return false;
+                }
+
+                bool disconnectIssued = TryInvokeParameterless(connection, "Disconnect");
+                System.Threading.Thread.Sleep(300);
+                bool connectIssued = TryInvokeParameterless(connection, "Connect");
+
+                if (!disconnectIssued && !connectIssued)
+                {
+                    details = "Connection API unavailable (no Connect/Disconnect methods).";
+                    return false;
+                }
+
+                details = string.Format("Disconnect={0}, Connect={1}", disconnectIssued ? "yes" : "no", connectIssued ? "yes" : "no");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                details = ex.Message;
+                return false;
+            }
+        }
+
+        private bool TryInvokeParameterless(object target, string methodName)
+        {
+            if (target == null || string.IsNullOrEmpty(methodName))
+                return false;
+
+            MethodInfo method = target.GetType().GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                Type.EmptyTypes,
+                null);
+
+            if (method == null)
+                return false;
+
+            method.Invoke(target, null);
+            return true;
         }
 
         private void CheckHeartbeatFileMulti()
