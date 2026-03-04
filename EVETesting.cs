@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Reflection;
+using System.Web.Script.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -49,6 +50,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // =========================================================================
     public class EVETesting : Strategy
     {
+        public enum WebhookProvider
+        {
+            TradersPost,
+            ProjectX
+        }
+
         // ── Opening Range ─────────────────────────────────────────────────────
         private double   _orHigh, _orLow, _orRange;
         private bool     _orSet;
@@ -101,6 +108,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool     isConfiguredInstrumentValid = true;
         private bool     timeframePopupShown;
         private bool     instrumentPopupShown;
+        private string   projectXSessionToken;
+        private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
+        private int?     projectXLastOrderId;
+        private string   projectXLastOrderContractId;
         private DateTime _lastResetDate = DateTime.MinValue;
         private int      _drawSeq;
 
@@ -277,6 +288,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CloseAtSkipStart = false;
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
+                WebhookUrl = string.Empty;
+                WebhookProviderType = WebhookProvider.TradersPost;
+                ProjectXApiBaseUrl = "https://gateway-api-demo.s2f.projectx.com";
+                ProjectXUsername = string.Empty;
+                ProjectXApiKey = string.Empty;
+                ProjectXAccountId = string.Empty;
+                ProjectXContractId = string.Empty;
 
                 // ══════════════════════════════════════════════════════════════
                 //  LONG BUCKET 1  (Small OR: 7 – 22.75 pts)
@@ -438,6 +456,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 ValidateRequiredPrimaryTimeframe(30);
                 ValidateRequiredPrimaryInstrument();
+                projectXSessionToken = null;
+                projectXTokenAcquiredUtc = Core.Globals.MinDate;
+                projectXLastOrderId = null;
+                projectXLastOrderContractId = null;
                 _longB1SwingInd  = Swing(LongB1SwingStrength);
                 _longB2SwingInd  = Swing(LongB2SwingStrength);
                 _longB3SwingInd  = Swing(LongB3SwingStrength);
@@ -909,17 +931,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int qty, int filled, double avgFill, OrderState state,
             DateTime time, ErrorCode err, string comment)
         {
-            if (order.Name == "LongEntry")  _longLimitOrder  = order;
-            if (order.Name == "ShortEntry") _shortLimitOrder = order;
+            if (order == null)
+                return;
+
+            if (order.Name == "LongEntry")
+            {
+                _longLimitOrder = order;
+                if (state == OrderState.Cancelled || state == OrderState.Rejected)
+                {
+                    _longEntryArmed = false;
+                    _longFVGPending = false;
+                    SendWebhook("cancel");
+                }
+            }
+            if (order.Name == "ShortEntry")
+            {
+                _shortLimitOrder = order;
+                if (state == OrderState.Cancelled || state == OrderState.Rejected)
+                {
+                    _shortEntryArmed = false;
+                    _shortFVGPending = false;
+                    SendWebhook("cancel");
+                }
+            }
         }
 
         protected override void OnExecutionUpdate(Execution exec, string execId, double price,
             int qty, MarketPosition mp, string orderId, DateTime time)
         {
             if (exec.Order.OrderState != OrderState.Filled) return;
+            string orderName = exec.Order != null ? (exec.Order.Name ?? string.Empty) : string.Empty;
+            int executionQty = Math.Max(1, qty);
 
             // ── Long entry filled ─────────────────────────────────────────────
-            if (exec.Order.Name == "LongEntry")
+            if (orderName == "LongEntry")
             {
                 _longInTrade    = true;
                 _longEntryArmed = false;
@@ -938,13 +983,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Draw.Line(this, "LongSL_" + (++_drawSeq), false,
                           slT1, sl, slT2, sl, Brushes.Red, DashStyleHelper.Dash, 2);
 
+                SendWebhook("buy", price, _longTarget, sl, exec.Order.OrderType == OrderType.Market, executionQty);
+
                 Print(time + " | ► LONG FILLED @ " + price
                       + "  SL=" + sl + "  TP=" + _longTarget
                       + "  [B" + _longActiveBucket + "  trade " + _longTradesToday + "/" + GetLongMaxTradesPerDay() + "]");
             }
 
             // ── Short entry filled ────────────────────────────────────────────
-            else if (exec.Order.Name == "ShortEntry")
+            else if (orderName == "ShortEntry")
             {
                 _shortInTrade    = true;
                 _shortEntryArmed = false;
@@ -963,10 +1010,35 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Draw.Line(this, "ShortSL_" + (++_drawSeq), false,
                           slT1, sl, slT2, sl, Brushes.Red, DashStyleHelper.Dash, 2);
 
+                SendWebhook("sell", price, _shortTarget, sl, exec.Order.OrderType == OrderType.Market, executionQty);
+
                 Print(time + " | ► SHORT FILLED @ " + price
                       + "  SL=" + sl + "  TP=" + _shortTarget
                       + "  [B" + _shortActiveBucket + "  trade " + _shortTradesToday + "/" + GetShortMaxTradesPerDay() + "]");
             }
+
+            if (ShouldSendExitWebhook(exec, orderName, mp))
+                SendWebhook("exit", 0, 0, 0, true, executionQty);
+        }
+
+        private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
+        {
+            if (execution == null || execution.Order == null)
+                return false;
+
+            if (IsEntryOrderName(orderName))
+                return false;
+
+            return marketPosition == MarketPosition.Flat;
+        }
+
+        private bool IsEntryOrderName(string orderName)
+        {
+            if (string.IsNullOrWhiteSpace(orderName))
+                return false;
+
+            return orderName.Equals("LongEntry", StringComparison.OrdinalIgnoreCase)
+                || orderName.Equals("ShortEntry", StringComparison.OrdinalIgnoreCase);
         }
 
         protected override void OnPositionUpdate(Position pos, double avgPx,
@@ -1921,6 +1993,331 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return date.AddDays(-diff).Date;
         }
 
+        private int GetDefaultWebhookQuantity()
+        {
+            int longQty = _longORValid ? GetLongContracts() : 0;
+            int shortQty = _shortORValid ? GetShortContracts() : 0;
+            int qty = Math.Max(longQty, shortQty);
+            return Math.Max(1, qty);
+        }
+
+        private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
+        {
+            if (State != State.Realtime)
+                return;
+
+            if (WebhookProviderType == WebhookProvider.ProjectX)
+            {
+                int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
+                SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(WebhookUrl))
+                return;
+
+            try
+            {
+                int orderQty = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
+                string ticker = Instrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN";
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
+                string json = string.Empty;
+                string action = (eventType ?? string.Empty).ToLowerInvariant();
+
+                if (action == "buy" || action == "sell")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"time\":\"{5}\",\"takeProfit\":{{\"limitPrice\":{6}}},\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{7}}}}}",
+                        ticker,
+                        action,
+                        isMarketEntry ? "market" : "limit",
+                        orderQty,
+                        entryPrice,
+                        timestamp,
+                        takeProfit,
+                        stopLoss);
+                }
+                else if (action == "exit")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"exit\",\"orderType\":\"market\",\"quantityType\":\"fixed_quantity\",\"quantity\":{1},\"cancel\":true,\"time\":\"{2}\"}}",
+                        ticker,
+                        orderQty,
+                        timestamp);
+                }
+                else if (action == "cancel")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"cancel\",\"time\":\"{1}\"}}",
+                        ticker,
+                        timestamp);
+                }
+
+                if (string.IsNullOrWhiteSpace(json))
+                    return;
+
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    client.UploadString(WebhookUrl, "POST", json);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private void SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        {
+            if (!EnsureProjectXSession())
+                return;
+
+            int accountId;
+            string contractId;
+            if (!TryGetProjectXIds(out accountId, out contractId))
+                return;
+
+            try
+            {
+                switch ((eventType ?? string.Empty).ToLowerInvariant())
+                {
+                    case "buy":
+                    case "sell":
+                        ProjectXPlaceOrder(eventType, accountId, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+                        break;
+                    case "exit":
+                        ProjectXClosePosition(accountId, contractId);
+                        break;
+                    case "cancel":
+                        ProjectXCancelOrders(accountId, contractId);
+                        break;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private bool EnsureProjectXSession()
+        {
+            if (string.IsNullOrWhiteSpace(ProjectXApiBaseUrl))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(projectXSessionToken) &&
+                (DateTime.UtcNow - projectXTokenAcquiredUtc).TotalHours < 23)
+                return true;
+
+            if (string.IsNullOrWhiteSpace(ProjectXUsername) || string.IsNullOrWhiteSpace(ProjectXApiKey))
+                return false;
+
+            string loginJson = string.Format(CultureInfo.InvariantCulture,
+                "{{\"userName\":\"{0}\",\"loginKey\":\"{1}\"}}",
+                ProjectXUsername,
+                ProjectXApiKey);
+
+            string response = ProjectXPost("/api/Auth/loginKey", loginJson, false);
+            if (string.IsNullOrWhiteSpace(response))
+                return false;
+
+            string token;
+            if (!TryGetJsonString(response, "token", out token))
+                return false;
+
+            projectXSessionToken = token;
+            projectXTokenAcquiredUtc = DateTime.UtcNow;
+            return true;
+        }
+
+        private bool TryGetProjectXIds(out int accountId, out string contractId)
+        {
+            accountId = 0;
+            contractId = null;
+
+            if (!int.TryParse(ProjectXAccountId, out accountId) || accountId <= 0)
+                return false;
+            if (string.IsNullOrWhiteSpace(ProjectXContractId))
+                return false;
+
+            contractId = ProjectXContractId.Trim();
+            return true;
+        }
+
+        private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        {
+            int orderSide = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            int orderType = isMarketEntry ? 2 : 1;
+            double entry = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
+            int tpTicks = Math.Max(1, PriceToTicks(Math.Abs(takeProfit - entry)));
+            int slTicks = Math.Max(1, PriceToTicks(Math.Abs(entry - stopLoss)));
+
+            string limitPart = isMarketEntry
+                ? string.Empty
+                : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", entry);
+
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":1,\"type\":1,\"ticks\":{6}}},\"stopLossBracket\":{{\"quantity\":1,\"type\":4,\"ticks\":{7}}}}}",
+                accountId,
+                contractId,
+                orderType,
+                orderSide,
+                Math.Max(1, quantity),
+                limitPart,
+                tpTicks,
+                slTicks);
+
+            string response = ProjectXPost("/api/Order/place", json, true);
+            int orderId;
+            if (TryGetJsonInt(response, "orderId", out orderId))
+            {
+                projectXLastOrderId = orderId;
+                projectXLastOrderContractId = contractId;
+            }
+
+            return response;
+        }
+
+        private string ProjectXClosePosition(int accountId, string contractId)
+        {
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\"}}",
+                accountId,
+                contractId);
+            return ProjectXPost("/api/Position/closeContract", json, true);
+        }
+
+        private string ProjectXCancelOrders(int accountId, string contractId)
+        {
+            if (projectXLastOrderId.HasValue && string.Equals(projectXLastOrderContractId, contractId, StringComparison.OrdinalIgnoreCase))
+            {
+                string cancelJson = string.Format(CultureInfo.InvariantCulture,
+                    "{{\"accountId\":{0},\"orderId\":{1}}}",
+                    accountId,
+                    projectXLastOrderId.Value);
+                return ProjectXPost("/api/Order/cancel", cancelJson, true);
+            }
+
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+            foreach (var order in ExtractProjectXOrders(searchResponse))
+            {
+                object contractObj;
+                if (!order.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object idObj;
+                int id;
+                if (!order.TryGetValue("id", out idObj) || !int.TryParse(idObj != null ? idObj.ToString() : string.Empty, out id) || id <= 0)
+                    continue;
+
+                string cancelJson = string.Format(CultureInfo.InvariantCulture,
+                    "{{\"accountId\":{0},\"orderId\":{1}}}",
+                    accountId,
+                    id);
+                ProjectXPost("/api/Order/cancel", cancelJson, true);
+            }
+
+            return searchResponse;
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuth)
+        {
+            string baseUrl = ProjectXApiBaseUrl != null ? ProjectXApiBaseUrl.TrimEnd('/') : string.Empty;
+            if (string.IsNullOrWhiteSpace(baseUrl))
+                return null;
+
+            using (var client = new System.Net.WebClient())
+            {
+                client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                if (requiresAuth && !string.IsNullOrWhiteSpace(projectXSessionToken))
+                    client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
+                return client.UploadString(baseUrl + path, "POST", json);
+            }
+        }
+
+        private int PriceToTicks(double priceDistance)
+        {
+            if (TickSize <= 0.0)
+                return 0;
+            return (int)Math.Round(priceDistance / TickSize, MidpointRounding.AwayFromZero);
+        }
+
+        private bool TryGetJsonString(string json, string key, out string value)
+        {
+            value = null;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                value = raw.ToString();
+                return !string.IsNullOrWhiteSpace(value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetJsonInt(string json, string key, out int value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return int.TryParse(raw.ToString(), out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXOrders(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            var serializer = new JavaScriptSerializer();
+            Dictionary<string, object> data;
+            try
+            {
+                data = serializer.Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("orders", out raw) || raw == null)
+                yield break;
+
+            var array = raw as object[];
+            if (array == null)
+                yield break;
+
+            for (int i = 0; i < array.Length; i++)
+            {
+                var dict = array[i] as Dictionary<string, object>;
+                if (dict != null)
+                    yield return dict;
+            }
+        }
+
         // =====================================================================
         //  PROPERTIES  –  NinjaTrader parameter UI
         // =====================================================================
@@ -2020,6 +2417,48 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                  Description = "Used for news row fade timing in infobox.",
                  GroupName = "02 - Common: Session Filters", Order = 4)]
         public int NewsBlockMinutes { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TradersPost Webhook URL",
+                 Description = "HTTP endpoint for order webhooks. Leave empty to disable TradersPost webhooks.",
+                 GroupName = "02 - Common: Session Filters", Order = 5)]
+        public string WebhookUrl { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Webhook Provider",
+                 Description = "Select webhook target: TradersPost or ProjectX.",
+                 GroupName = "02 - Common: Session Filters", Order = 6)]
+        public WebhookProvider WebhookProviderType { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX API Base URL",
+                 Description = "ProjectX gateway base URL.",
+                 GroupName = "02 - Common: Session Filters", Order = 7)]
+        public string ProjectXApiBaseUrl { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX Username",
+                 Description = "ProjectX login username.",
+                 GroupName = "02 - Common: Session Filters", Order = 8)]
+        public string ProjectXUsername { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX API Key",
+                 Description = "ProjectX login key.",
+                 GroupName = "02 - Common: Session Filters", Order = 9)]
+        public string ProjectXApiKey { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX Account ID",
+                 Description = "ProjectX account id used for order routing.",
+                 GroupName = "02 - Common: Session Filters", Order = 10)]
+        public string ProjectXAccountId { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX Contract ID",
+                 Description = "ProjectX contract id (for example CON.F.US.DA6.M25).",
+                 GroupName = "02 - Common: Session Filters", Order = 11)]
+        public string ProjectXContractId { get; set; }
 
         // ════════════════════════════════════════════════════════════════════
         //  GROUP 03  –  LONG BUCKET 1 : OPENING RANGE
