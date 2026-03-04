@@ -367,6 +367,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (BarsInProgress != 0) return;
             if (CurrentBar < 3)      return;
 
+            DrawSessionTimeWindows();
+
             // ── A. Daily reset ────────────────────────────────────────────────
             if (Time[0].Date != _lastResetDate)
             {
@@ -1039,6 +1041,46 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // =====================================================================
         //  DRAWING
         // =====================================================================
+
+        private void DrawSessionTimeWindows()
+        {
+            if (CurrentBar < 1)
+                return;
+
+            DrawSessionBackground(Time[0]);
+            DrawNoNewTradesLine(Time[0]);
+        }
+
+        private void DrawSessionBackground(DateTime barTime)
+        {
+            DateTime sessionStart = barTime.Date.Add(new TimeSpan(9, 30, 0));
+            DateTime sessionEnd = barTime.Date.Add(new TimeSpan(SessionEndHour, SessionEndMin, 0));
+            if (sessionEnd <= sessionStart)
+                sessionEnd = sessionEnd.AddDays(1);
+
+            string rectTag = string.Format("EVE_SessionFill_{0:yyyyMMdd_HHmm}", sessionStart);
+            if (DrawObjects[rectTag] == null)
+            {
+                Draw.Rectangle(
+                    this,
+                    rectTag,
+                    false,
+                    sessionStart,
+                    0,
+                    sessionEnd,
+                    30000,
+                    Brushes.Transparent,
+                    Brushes.Gold,
+                    10).ZOrder = -1;
+            }
+        }
+
+        private void DrawNoNewTradesLine(DateTime barTime)
+        {
+            DateTime lineTime = barTime.Date.Add(new TimeSpan(NoNewTradesHour, NoNewTradesMin, 0));
+            string tag = string.Format("EVE_NoNewTrades_{0:yyyyMMdd_HHmm}", lineTime);
+            Draw.VerticalLine(this, tag, lineTime, Brushes.Red, DashStyleHelper.DashDot, 2);
+        }
 
         private void DrawSessionLines()
         {
