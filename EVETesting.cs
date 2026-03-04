@@ -96,6 +96,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int      _longProfitableToday, _shortProfitableToday;
         private int      _longLosingToday,     _shortLosingToday;
         private bool     _forceFlatDone;
+        private bool     _wasInSkipWindow;
+        private bool     isConfiguredTimeframeValid = true;
+        private bool     isConfiguredInstrumentValid = true;
+        private bool     timeframePopupShown;
+        private bool     instrumentPopupShown;
         private DateTime _lastResetDate = DateTime.MinValue;
         private int      _drawSeq;
 
@@ -258,6 +263,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ── Shared: Time Filters ───────────────────────────────────────
                 NoNewTradesHour = 14;
                 NoNewTradesMin  = 36;
+                SkipStartHour   = 12;
+                SkipStartMin    = 0;
+                SkipEndHour     = 13;
+                SkipEndMin      = 30;
                 ForceFlatHour   = 15;
                 ForceFlatMin    = 57;
                 SessionEndHour  = 17;
@@ -265,6 +274,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── Shared: Session Filters ────────────────────────────────────
                 AlternatingEnabled = false;
+                CloseAtSkipStart = false;
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
 
@@ -426,6 +436,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
+                ValidateRequiredPrimaryTimeframe(30);
+                ValidateRequiredPrimaryInstrument();
                 _longB1SwingInd  = Swing(LongB1SwingStrength);
                 _longB2SwingInd  = Swing(LongB2SwingStrength);
                 _longB3SwingInd  = Swing(LongB3SwingStrength);
@@ -447,6 +459,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (BarsInProgress != 0) return;
             if (CurrentBar < 3)      return;
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
+            {
+                CancelPendingEntriesForInvalidConfiguration();
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong("InvalidConfigurationL", "LongEntry");
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort("InvalidConfigurationS", "ShortEntry");
+                return;
+            }
 
             DrawSessionTimeWindows();
             UpdateInfoText();
@@ -496,6 +517,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
             if (_forceFlatDone) return;
+
+            bool inSkipWindow = IsInSkipWindow(Time[0]);
+            HandleSkipWindowTransition(inSkipWindow);
+            if (inSkipWindow) return;
 
             // ── D. Capture OR candle and select active bucket ─────────────────
             if (!_orSet)
@@ -569,12 +594,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ── E. Trading permission gate (per direction) ────────────────────
             var noNewTime = new TimeSpan(NoNewTradesHour, NoNewTradesMin, 0);
             bool canTradeLong  = _longORValid
+                              && !inSkipWindow
                               && tod < noNewTime
                               && _longTradesToday     < GetLongMaxTradesPerDay()
                               && _longProfitableToday < GetLongMaxProfitableTrades()
                               && _longLosingToday     < GetLongMaxLosingTrades();
 
             bool canTradeShort = _shortORValid
+                              && !inSkipWindow
                               && tod < noNewTime
                               && _shortTradesToday     < GetShortMaxTradesPerDay()
                               && _shortProfitableToday < GetShortMaxProfitableTrades()
@@ -1131,6 +1158,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             DrawSessionBackground(Time[0]);
             DrawNoNewTradesLine(Time[0]);
+            DrawSkipWindow(Time[0]);
         }
 
         private void DrawSessionBackground(DateTime barTime)
@@ -1162,6 +1190,51 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime lineTime = barTime.Date.Add(new TimeSpan(NoNewTradesHour, NoNewTradesMin, 0));
             string tag = string.Format("EVE_NoNewTrades_{0:yyyyMMdd_HHmm}", lineTime);
             Draw.VerticalLine(this, tag, lineTime, Brushes.Red, DashStyleHelper.DashDot, 2);
+        }
+
+        private void DrawSkipWindow(DateTime barTime)
+        {
+            if (!IsSkipWindowConfigured())
+                return;
+
+            DateTime windowStart = barTime.Date.Add(new TimeSpan(SkipStartHour, SkipStartMin, 0));
+            DateTime windowEnd = barTime.Date.Add(new TimeSpan(SkipEndHour, SkipEndMin, 0));
+            if (windowStart > windowEnd)
+                windowEnd = windowEnd.AddDays(1);
+
+            int startBarsAgo = Bars.GetBar(windowStart);
+            int endBarsAgo = Bars.GetBar(windowEnd);
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+            try
+            {
+                if (areaBrush.CanFreeze)
+                    areaBrush.Freeze();
+                if (lineBrush.CanFreeze)
+                    lineBrush.Freeze();
+            }
+            catch
+            {
+            }
+
+            string tagBase = string.Format("EVE_Skip_{0:yyyyMMdd_HHmm}", windowStart);
+            Draw.Rectangle(
+                this,
+                tagBase + "_Rect",
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,
+                areaBrush,
+                2).ZOrder = -1;
+
+            Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
         }
 
         private void DrawSessionLines()
@@ -1207,6 +1280,170 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (o.OrderState == OrderState.Working ||
                 o.OrderState == OrderState.Accepted)
                 CancelOrder(o);
+        }
+
+        private bool IsSkipWindowConfigured()
+        {
+            return !(SkipStartHour == 0
+                && SkipStartMin == 0
+                && SkipEndHour == 0
+                && SkipEndMin == 0);
+        }
+
+        private bool IsInSkipWindow(DateTime time)
+        {
+            if (!IsSkipWindowConfigured())
+                return false;
+
+            TimeSpan skipStart = new TimeSpan(SkipStartHour, SkipStartMin, 0);
+            TimeSpan skipEnd = new TimeSpan(SkipEndHour, SkipEndMin, 0);
+            TimeSpan now = time.TimeOfDay;
+            if (skipStart < skipEnd)
+                return now >= skipStart && now < skipEnd;
+
+            return now >= skipStart || now < skipEnd;
+        }
+
+        private void HandleSkipWindowTransition(bool inSkipWindowNow)
+        {
+            if (!_wasInSkipWindow && inSkipWindowNow)
+            {
+                CancelPendingEntriesForSkip();
+
+                if (CloseAtSkipStart)
+                {
+                    if (Position.MarketPosition == MarketPosition.Long)
+                        ExitLong("SkipWindowL", "LongEntry");
+                    else if (Position.MarketPosition == MarketPosition.Short)
+                        ExitShort("SkipWindowS", "ShortEntry");
+                }
+
+                Print(Time[0] + " | Entered skip window: canceled working entries."
+                      + (CloseAtSkipStart ? " Open position flattened." : " CloseAtSkipStart disabled."));
+            }
+
+            _wasInSkipWindow = inSkipWindowNow;
+        }
+
+        private void CancelPendingEntriesForSkip()
+        {
+            TryCancelOrder(_longLimitOrder);
+            TryCancelOrder(_shortLimitOrder);
+
+            _longLimitOrder = null;
+            _shortLimitOrder = null;
+            _longEntryArmed = false;
+            _shortEntryArmed = false;
+            _longFVGPending = false;
+            _shortFVGPending = false;
+        }
+
+        private void CancelPendingEntriesForInvalidConfiguration()
+        {
+            TryCancelOrder(_longLimitOrder);
+            TryCancelOrder(_shortLimitOrder);
+
+            _longLimitOrder = null;
+            _shortLimitOrder = null;
+            _longEntryArmed = false;
+            _shortEntryArmed = false;
+            _longFVGPending = false;
+            _shortFVGPending = false;
+        }
+
+        private void ValidateRequiredPrimaryTimeframe(int requiredSeconds)
+        {
+            bool isSecondSeries = BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Second;
+            bool timeframeMatches = isSecondSeries && BarsPeriod.Value == requiredSeconds;
+            isConfiguredTimeframeValid = timeframeMatches;
+            if (timeframeMatches)
+                return;
+
+            string actualTimeframe = BarsPeriod == null
+                ? "Unknown"
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on a {1}-second chart. Current chart is {2}. Trading is disabled until timeframe is corrected.",
+                Name,
+                requiredSeconds,
+                actualTimeframe);
+            Print(string.Format(CultureInfo.InvariantCulture, "{0} | {1}", Name, message));
+            ShowTimeframeValidationPopup(message);
+        }
+
+        private void ShowTimeframeValidationPopup(string message)
+        {
+            if (timeframePopupShown)
+                return;
+
+            timeframePopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Timeframe",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show timeframe popup: {1}", Name, ex.Message));
+            }
+        }
+
+        private void ValidateRequiredPrimaryInstrument()
+        {
+            string instrumentName = Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+            bool instrumentMatches = instrumentName == "NQ" || instrumentName == "MNQ";
+            isConfiguredInstrumentValid = instrumentMatches;
+            if (instrumentMatches)
+                return;
+
+            string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on NQ or MNQ. Current instrument is {1}. Trading is disabled until instrument is corrected.",
+                Name,
+                actualInstrument);
+            Print(string.Format(CultureInfo.InvariantCulture, "{0} | {1}", Name, message));
+            ShowInstrumentValidationPopup(message);
+        }
+
+        private void ShowInstrumentValidationPopup(string message)
+        {
+            if (instrumentPopupShown)
+                return;
+
+            instrumentPopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Instrument",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show instrument popup: {1}", Name, ex.Message));
+            }
         }
 
         // =====================================================================
@@ -1274,6 +1511,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Shared
             _lastWinDirection = 0;
             _forceFlatDone    = false;
+            _wasInSkipWindow  = false;
         }
 
         // =====================================================================
@@ -1542,6 +1780,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (!_orSet || _forceFlatDone || Position.MarketPosition != MarketPosition.Flat)
                 return false;
+            if (IsInSkipWindow(Time[0]))
+                return false;
 
             if (_longEntryArmed || _shortEntryArmed)
                 return true;
@@ -1703,28 +1943,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NoNewTradesMin { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, 23)]
+        [Display(Name = "Skip Start – Hour (EST)",
+                 Description = "Set start/end both to 00:00 to disable skip window.",
+                 GroupName = "01 - Common: Time Filters", Order = 3)]
+        public int SkipStartHour { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 59)]
+        [Display(Name = "Skip Start – Minute",
+                 GroupName = "01 - Common: Time Filters", Order = 4)]
+        public int SkipStartMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 23)]
+        [Display(Name = "Skip End – Hour (EST)",
+                 GroupName = "01 - Common: Time Filters", Order = 5)]
+        public int SkipEndHour { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 59)]
+        [Display(Name = "Skip End – Minute",
+                 GroupName = "01 - Common: Time Filters", Order = 6)]
+        public int SkipEndMin { get; set; }
+
+        [NinjaScriptProperty]
         [Range(9, 18)]
         [Display(Name = "Force Flatten – Hour (EST)",
-                 GroupName = "01 - Common: Time Filters", Order = 3)]
+                 GroupName = "01 - Common: Time Filters", Order = 7)]
         public int ForceFlatHour { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 59)]
         [Display(Name = "Force Flatten – Minute",
-                 GroupName = "01 - Common: Time Filters", Order = 4)]
+                 GroupName = "01 - Common: Time Filters", Order = 8)]
         public int ForceFlatMin { get; set; }
 
         [NinjaScriptProperty]
         [Range(9, 23)]
         [Display(Name = "Session Lines End – Hour (EST)",
                  Description = "Visual end time of OR / Target / Trigger lines",
-                 GroupName = "01 - Common: Time Filters", Order = 5)]
+                 GroupName = "01 - Common: Time Filters", Order = 9)]
         public int SessionEndHour { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 59)]
         [Display(Name = "Session Lines End – Minute",
-                 GroupName = "01 - Common: Time Filters", Order = 6)]
+                 GroupName = "01 - Common: Time Filters", Order = 10)]
         public int SessionEndMin { get; set; }
 
         // ════════════════════════════════════════════════════════════════════
@@ -1738,16 +2003,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool AlternatingEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Close At Skip Start",
+                 Description = "If true, flatten open position when skip window begins.",
+                 GroupName = "02 - Common: Session Filters", Order = 2)]
+        public bool CloseAtSkipStart { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 2)]
+                 GroupName = "02 - Common: Session Filters", Order = 3)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 3)]
+                 GroupName = "02 - Common: Session Filters", Order = 4)]
         public int NewsBlockMinutes { get; set; }
 
         // ════════════════════════════════════════════════════════════════════
