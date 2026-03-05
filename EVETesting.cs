@@ -61,6 +61,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool     _orSet;
         private DateTime _orDate;
 
+
         // Active bucket per direction: 0 = none, 1 = B1, 2 = B2, 3 = B3
         private int  _longActiveBucket, _shortActiveBucket;
         private bool _longORValid, _shortORValid;
