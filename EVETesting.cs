@@ -287,8 +287,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── Shared: Session Filters ────────────────────────────────────
                 AlternatingEnabled = false;
+                UseSkipTime = true;
                 CloseAtSkipStart = false;
-                UseNewsSkip = true;
+                CloseAtNewsStart = false;
+                UseNewsSkip = false;
                 NewsBlockMinutes = 1;
                 WebhookUrl = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
@@ -544,7 +546,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool inSkipWindow = IsInSkipWindow(Time[0]);
             HandleSkipWindowTransition(inSkipWindow);
-            if (inSkipWindow) return;
 
             bool inNewsSkipWindow = IsInNewsSkipWindow(Time[0]);
             HandleNewsSkipWindowTransition(inNewsSkipWindow);
@@ -1410,6 +1411,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsSkipWindowConfigured()
         {
+            if (!UseSkipTime)
+                return false;
+
             return !(SkipStartHour == 0
                 && SkipStartMin == 0
                 && SkipEndHour == 0
@@ -1443,7 +1447,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
                 DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
-                if (time >= windowStart && time <= windowEnd)
+                if (time >= windowStart && time < windowEnd)
                     return true;
             }
 
@@ -1454,7 +1458,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (!_wasInSkipWindow && inSkipWindowNow)
             {
+                bool hadLongWorkingEntry = _longEntryArmed || _longFVGPending || _longLimitOrder != null;
+                bool hadShortWorkingEntry = _shortEntryArmed || _shortFVGPending || _shortLimitOrder != null;
+
                 CancelPendingEntriesForSkip();
+
+                // Preserve entry intent across skip window: if a working entry was canceled at skip start
+                // after trigger was already hit, request re-arm once skip window ends.
+                if (hadLongWorkingEntry && _longTriggerHit && !_longInTrade)
+                    _longRearmNeeded = true;
+                if (hadShortWorkingEntry && _shortTriggerHit && !_shortInTrade)
+                    _shortRearmNeeded = true;
 
                 if (CloseAtSkipStart)
                 {
@@ -1467,6 +1481,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Print(Time[0] + " | Entered skip window: canceled working entries."
                       + (CloseAtSkipStart ? " Open position flattened." : " CloseAtSkipStart disabled."));
             }
+            else if (_wasInSkipWindow && !inSkipWindowNow)
+            {
+                // If trigger was crossed while skip was active, schedule a post-skip re-arm attempt.
+                if (_longTriggerHit && !_longInTrade && !_longEntryArmed)
+                    _longRearmNeeded = true;
+                if (_shortTriggerHit && !_shortInTrade && !_shortEntryArmed)
+                    _shortRearmNeeded = true;
+            }
 
             _wasInSkipWindow = inSkipWindowNow;
         }
@@ -1477,12 +1499,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 CancelPendingEntriesForSkip();
 
-                if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("NewsSkipL", "LongEntry");
-                else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("NewsSkipS", "ShortEntry");
+                if (CloseAtNewsStart)
+                {
+                    if (Position.MarketPosition == MarketPosition.Long)
+                        ExitLong("NewsSkipL", "LongEntry");
+                    else if (Position.MarketPosition == MarketPosition.Short)
+                        ExitShort("NewsSkipS", "ShortEntry");
+                }
 
-                Print(Time[0] + " | Entered news skip window: canceled working entries and flattened open position.");
+                Print(Time[0] + " | Entered news skip window: canceled working entries."
+                      + (CloseAtNewsStart ? " Open position flattened." : " CloseAtNewsStart disabled."));
             }
 
             _wasInNewsSkipWindow = inNewsSkipWindowNow;
@@ -2494,64 +2520,76 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool AlternatingEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Use Skip Time",
+                 Description = "Enable skip time entry blocking between Skip Start and Skip End.",
+                 GroupName = "02 - Common: Session Filters", Order = 2)]
+        public bool UseSkipTime { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Close At Skip Start",
                  Description = "If true, flatten open position when skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 2)]
+                 GroupName = "02 - Common: Session Filters", Order = 3)]
         public bool CloseAtSkipStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Close At News Start",
+                 Description = "If true, flatten open position when news skip window begins.",
+                 GroupName = "02 - Common: Session Filters", Order = 4)]
+        public bool CloseAtNewsStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 3)]
+                 GroupName = "02 - Common: Session Filters", Order = 5)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 4)]
+                 GroupName = "02 - Common: Session Filters", Order = 6)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "TradersPost Webhook URL",
                  Description = "HTTP endpoint for order webhooks. Leave empty to disable TradersPost webhooks.",
-                 GroupName = "02 - Common: Session Filters", Order = 5)]
+                 GroupName = "02 - Common: Session Filters", Order = 7)]
         public string WebhookUrl { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Webhook Provider",
                  Description = "Select webhook target: TradersPost or ProjectX.",
-                 GroupName = "02 - Common: Session Filters", Order = 6)]
+                 GroupName = "02 - Common: Session Filters", Order = 8)]
         public WebhookProvider WebhookProviderType { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "ProjectX API Base URL",
                  Description = "ProjectX gateway base URL.",
-                 GroupName = "02 - Common: Session Filters", Order = 7)]
+                 GroupName = "02 - Common: Session Filters", Order = 9)]
         public string ProjectXApiBaseUrl { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "ProjectX Username",
                  Description = "ProjectX login username.",
-                 GroupName = "02 - Common: Session Filters", Order = 8)]
+                 GroupName = "02 - Common: Session Filters", Order = 10)]
         public string ProjectXUsername { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "ProjectX API Key",
                  Description = "ProjectX login key.",
-                 GroupName = "02 - Common: Session Filters", Order = 9)]
+                 GroupName = "02 - Common: Session Filters", Order = 11)]
         public string ProjectXApiKey { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "ProjectX Account ID",
                  Description = "ProjectX account id used for order routing.",
-                 GroupName = "02 - Common: Session Filters", Order = 10)]
+                 GroupName = "02 - Common: Session Filters", Order = 12)]
         public string ProjectXAccountId { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "ProjectX Contract ID",
                  Description = "ProjectX contract id (for example CON.F.US.DA6.M25).",
-                 GroupName = "02 - Common: Session Filters", Order = 11)]
+                 GroupName = "02 - Common: Session Filters", Order = 13)]
         public string ProjectXContractId { get; set; }
 
         // ════════════════════════════════════════════════════════════════════
