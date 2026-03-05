@@ -106,6 +106,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool     _forceFlatDone;
         private bool     _wasInSkipWindow;
         private bool     _wasInNewsSkipWindow;
+        private bool     _longTriggerHitDuringSkip;
+        private bool     _shortTriggerHitDuringSkip;
         private bool     isConfiguredTimeframeValid = true;
         private bool     isConfiguredInstrumentValid = true;
         private bool     timeframePopupShown;
@@ -116,7 +118,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string   projectXLastOrderContractId;
         private DateTime _lastResetDate = DateTime.MinValue;
         private int      _drawSeq;
-
         // ── Win / Loss – alternating state (shared) ───────────────────────────
         // _lastWinDirection: 0=no win yet, 1=Long, 2=Short
         private int  _lastWinDirection;
@@ -730,6 +731,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (_longBreakout && !_longTriggerHit && High[0] >= _longTrigger)
             {
                 _longTriggerHit = true;
+                if (inSkipWindow)
+                    _longTriggerHitDuringSkip = true;
                 Print(Time[0] + " | Long trigger crossed @ " + _longTrigger + "  [Bucket " + _longActiveBucket + "]");
                 if (canTradeLong && !_longInTrade && !_shortInTrade)
                     TryArmLong();
@@ -738,6 +741,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (_shortBreakout && !_shortTriggerHit && Low[0] <= _shortTrigger)
             {
                 _shortTriggerHit = true;
+                if (inSkipWindow)
+                    _shortTriggerHitDuringSkip = true;
                 Print(Time[0] + " | Short trigger crossed @ " + _shortTrigger + "  [Bucket " + _shortActiveBucket + "]");
                 if (canTradeShort && !_shortInTrade && !_longInTrade)
                     TryArmShort();
@@ -790,6 +795,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortTriggerHit = false;
                 Print(Time[0] + " | Short limit cancelled – target already reached");
             }
+
         }
 
         // =====================================================================
@@ -1460,6 +1466,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 bool hadLongWorkingEntry = _longEntryArmed || _longFVGPending || _longLimitOrder != null;
                 bool hadShortWorkingEntry = _shortEntryArmed || _shortFVGPending || _shortLimitOrder != null;
+                _longTriggerHitDuringSkip = false;
+                _shortTriggerHitDuringSkip = false;
 
                 CancelPendingEntriesForSkip();
 
@@ -1483,11 +1491,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (_wasInSkipWindow && !inSkipWindowNow)
             {
-                // If trigger was crossed while skip was active, schedule a post-skip re-arm attempt.
-                if (_longTriggerHit && !_longInTrade && !_longEntryArmed)
+                // If trigger was crossed during skip, schedule a post-skip re-arm attempt.
+                if (_longTriggerHitDuringSkip && _longTriggerHit && !_longInTrade && !_longEntryArmed)
                     _longRearmNeeded = true;
-                if (_shortTriggerHit && !_shortInTrade && !_shortEntryArmed)
+
+                if (_shortTriggerHitDuringSkip && _shortTriggerHit && !_shortInTrade && !_shortEntryArmed)
                     _shortRearmNeeded = true;
+
+                _longTriggerHitDuringSkip = false;
+                _shortTriggerHitDuringSkip = false;
             }
 
             _wasInSkipWindow = inSkipWindowNow;
@@ -1702,6 +1714,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             _forceFlatDone    = false;
             _wasInSkipWindow  = false;
             _wasInNewsSkipWindow = false;
+            _longTriggerHitDuringSkip = false;
+            _shortTriggerHitDuringSkip = false;
         }
 
         // =====================================================================
