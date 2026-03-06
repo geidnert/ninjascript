@@ -83,6 +83,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool isConfiguredInstrumentValid = true;
         private bool timeframePopupShown;
         private bool instrumentPopupShown;
+        private SessionIterator sessionIterator;
         
         private MarketPosition lastTradeDirection = MarketPosition.Flat;
         
@@ -90,6 +91,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double beNewStopPrice = 0;
         private bool bracketOrdersPlaced = false;
         private string currentEntrySignal = string.Empty;
+        private int entrySignalSequence = 0;
         private string tradeLineTagPrefix = string.Empty;
         private int tradeLineTagCounter = 0;
         private bool tradeLinesActive = false;
@@ -1196,6 +1198,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
+                sessionIterator = new SessionIterator(BarsArray[0]);
                 ValidateRequiredPrimaryTimeframe(30);
                 ValidateRequiredPrimaryInstrument();
                 EnsureNewsDatesInitialized();
@@ -1402,11 +1405,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         triggerTicks = Math.Round((orHigh - orLow) / TickSize) * activeL_BETriggerORMultiple;
                     if (profitTicks >= triggerTicks)
                     {
-                        beTriggered = true;
                         beNewStopPrice = entryPrice + (activeL_BEOffsetTicks * TickSize);
-                        if (beNewStopPrice > currentStopPrice)
+                        double sanitizedBeStop;
+                        if (TrySanitizeStopPriceForCurrentMarket(MarketPosition.Long, beNewStopPrice, out sanitizedBeStop)
+                            && sanitizedBeStop > currentStopPrice)
                         {
-                            currentStopPrice = beNewStopPrice;
+                            beTriggered = true;
+                            currentStopPrice = sanitizedBeStop;
                             SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
                             LogDebug(String.Format("{0} | *** BE LONG *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
@@ -1423,11 +1428,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         triggerTicks = Math.Round((orHigh - orLow) / TickSize) * activeS_BETriggerORMultiple;
                     if (profitTicks >= triggerTicks)
                     {
-                        beTriggered = true;
                         beNewStopPrice = entryPrice - (activeS_BEOffsetTicks * TickSize);
-                        if (beNewStopPrice < currentStopPrice)
+                        double sanitizedBeStop;
+                        if (TrySanitizeStopPriceForCurrentMarket(MarketPosition.Short, beNewStopPrice, out sanitizedBeStop)
+                            && sanitizedBeStop < currentStopPrice)
                         {
-                            currentStopPrice = beNewStopPrice;
+                            beTriggered = true;
+                            currentStopPrice = sanitizedBeStop;
                             SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
                             LogDebug(String.Format("{0} | *** BE SHORT *** +{1:F0}t >= {2:F0}t | SL->{3:F2}",
                                 Time[0].ToString("HH:mm:ss"), profitTicks, triggerTicks, currentStopPrice));
@@ -1813,7 +1820,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string BuildEntrySignalName(bool isLong)
         {
-            return isLong ? "ADAMLong" : "ADAMShort";
+            entrySignalSequence++;
+            return string.Format(CultureInfo.InvariantCulture, "{0}_{1}", isLong ? "ADAMLong" : "ADAMShort", entrySignalSequence);
         }
 
         private bool IsEntrySignalName(string orderName)
@@ -2039,6 +2047,54 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Bars != null && Bars.IsLastBarOfSession;
         }
 
+        private bool TrySanitizeStopPriceForCurrentMarket(MarketPosition positionDirection, double rawStopPrice, out double stopPrice)
+        {
+            stopPrice = 0;
+            if (rawStopPrice <= 0 || TickSize <= 0)
+                return false;
+
+            double minTick = TickSize;
+            double referencePrice = GetReferencePriceForStop(positionDirection);
+            if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
+                referencePrice = Close[0];
+
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(rawStopPrice);
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= referencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(referencePrice - minTick);
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                if (stopPrice <= referencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(referencePrice + minTick);
+            }
+            else
+            {
+                return false;
+            }
+
+            return stopPrice > 0 && !double.IsNaN(stopPrice) && !double.IsInfinity(stopPrice);
+        }
+
+        private double GetReferencePriceForStop(MarketPosition positionDirection)
+        {
+            if (positionDirection == MarketPosition.Long)
+            {
+                double bid = GetCurrentBid();
+                if (bid > 0)
+                    return bid;
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                double ask = GetCurrentAsk();
+                if (ask > 0)
+                    return ask;
+            }
+
+            return Close[0];
+        }
+
         private bool TrySanitizeProtectivePrices(MarketPosition positionDirection, double fillPrice, double rawStopPrice, int rawTargetTicks, out double stopPrice, out double targetPrice)
         {
             stopPrice = 0;
@@ -2048,6 +2104,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
 
             double marketPrice = Close[0];
+            double stopReferencePrice = GetReferencePriceForStop(positionDirection);
+            if (stopReferencePrice <= 0 || double.IsNaN(stopReferencePrice) || double.IsInfinity(stopReferencePrice))
+                stopReferencePrice = marketPrice;
             double minTick = TickSize;
             int targetTicks = Math.Max(0, rawTargetTicks);
 
@@ -2056,8 +2115,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (stopPrice >= fillPrice)
                     stopPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - minTick);
-                if (stopPrice >= marketPrice)
-                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, marketPrice - minTick));
+                if (stopPrice >= stopReferencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, stopReferencePrice - minTick));
 
                 if (targetTicks > 0)
                 {
@@ -2072,8 +2131,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (stopPrice <= fillPrice)
                     stopPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + minTick);
-                if (stopPrice <= marketPrice)
-                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, marketPrice + minTick));
+                if (stopPrice <= stopReferencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, stopReferencePrice + minTick));
 
                 if (targetTicks > 0)
                 {
@@ -2122,6 +2181,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             
             sessionStart = tradingDay.Add(new TimeSpan(9, 30, 0));
             sessionEnd = tradingDay.Add(new TimeSpan(16, 0, 0));
+            RefreshSessionBoundsFromIterator(Time[0]);
             DrawSessionBackground();
             DrawCutOffWindow(tradingDay);
             
@@ -2129,6 +2189,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             RemoveDrawObject("LongEntryLine"); RemoveDrawObject("ShortEntryLine");
             
             LogDebug(String.Format("  Prev: {0} trades | P&L: {1:F0}t | Reset done", prevTradeCount, prevPnL));
+        }
+
+        private void RefreshSessionBoundsFromIterator(DateTime referenceTime)
+        {
+            if (Bars == null)
+                return;
+
+            try
+            {
+                if (sessionIterator == null)
+                    sessionIterator = new SessionIterator(Bars);
+
+                sessionIterator.GetNextSession(referenceTime, true);
+                DateTime actualStart = sessionIterator.ActualSessionBegin;
+                DateTime actualEnd = sessionIterator.ActualSessionEnd;
+                if (actualStart > Core.Globals.MinDate && actualEnd > actualStart)
+                {
+                    sessionStart = actualStart;
+                    sessionEnd = actualEnd;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug("Session iterator update failed: " + ex.Message);
+            }
         }
         
         private void ResetForNextTrade()
