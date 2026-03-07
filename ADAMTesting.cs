@@ -79,7 +79,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool isConfiguredInstrumentValid = true;
         private bool timeframePopupShown;
         private bool instrumentPopupShown;
-        private SessionIterator sessionIterator;
         
         private MarketPosition lastTradeDirection = MarketPosition.Flat;
         
@@ -1060,7 +1059,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
-                sessionIterator = new SessionIterator(BarsArray[0]);
                 ValidateRequiredPrimaryTimeframe(30);
                 ValidateRequiredPrimaryInstrument();
                 EnsureNewsDatesInitialized();
@@ -2095,7 +2093,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             
             sessionStart = tradingDay.Add(new TimeSpan(9, 30, 0));
             sessionEnd = tradingDay.Add(new TimeSpan(16, 0, 0));
-            RefreshSessionBoundsFromIterator(Time[0]);
             DrawSessionBackground();
             DrawCutOffWindow(tradingDay);
             
@@ -2105,31 +2102,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             LogDebug(String.Format("  Prev: {0} trades | P&L: {1:F0}t | Reset done", prevTradeCount, prevPnL));
         }
 
-        private void RefreshSessionBoundsFromIterator(DateTime referenceTime)
-        {
-            if (Bars == null)
-                return;
-
-            try
-            {
-                if (sessionIterator == null)
-                    sessionIterator = new SessionIterator(Bars);
-
-                sessionIterator.GetNextSession(referenceTime, true);
-                DateTime actualStart = sessionIterator.ActualSessionBegin;
-                DateTime actualEnd = sessionIterator.ActualSessionEnd;
-                if (actualStart > Core.Globals.MinDate && actualEnd > actualStart)
-                {
-                    sessionStart = actualStart;
-                    sessionEnd = actualEnd;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogDebug("Session iterator update failed: " + ex.Message);
-            }
-        }
-        
         private void ResetForNextTrade()
         {
             entryPrice = 0; pendingStopPrice = 0; pendingTargetTicks = 0;

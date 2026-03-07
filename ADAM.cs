@@ -25,10 +25,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class ADAM : Strategy
     {
-        public enum TPModeEnum { FixedTicks, ORMultiple }
-        public enum SLModeEnum { FixedTicks, ORMultiple }
-        public enum BETriggerModeEnum { FixedTicks, ORMultiple }
-
         public ADAM()
         {
             VendorLicense(1175);
@@ -83,7 +79,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool isConfiguredInstrumentValid = true;
         private bool timeframePopupShown;
         private bool instrumentPopupShown;
-        private SessionIterator sessionIterator;
         
         private MarketPosition lastTradeDirection = MarketPosition.Flat;
         
@@ -209,27 +204,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ==================== COMMON PARAMETERS ====================
         
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(9, 16)]
         [Display(Name = "Trade Window End Hour", Description = "Hour (EST) to stop taking NEW trades", Order = 1, GroupName = "1. Common Parameters")]
+        [Browsable(false)]
         public int TradeWindowEndHour { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Trade Window End Minute", Description = "Minute to stop taking NEW trades", Order = 2, GroupName = "1. Common Parameters")]
+        [Browsable(false)]
         public int TradeWindowEndMinute { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(9, 16)]
         [Display(Name = "Cut-Off Hour", Description = "Hour (EST) to close any open position", Order = 3, GroupName = "1. Common Parameters")]
+        [Browsable(false)]
         public int CutOffHour { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Cut-Off Minute", Description = "Minute to close any open position", Order = 4, GroupName = "1. Common Parameters")]
+        [Browsable(false)]
         public int CutOffMinute { get; set; }
 
         [NinjaScriptProperty]
@@ -238,27 +233,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int ContractQuantity { get; set; }
         
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(9, 16)]
         [Display(Name = "Forced Close Hour", Description = "Hour (EST) to force close ALL positions", Order = 6, GroupName = "1. Common Parameters")]
+        [Browsable(false)]
         public int ForcedCloseHour { get; set; }
         
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Forced Close Minute", Description = "Minute to force close ALL positions", Order = 7, GroupName = "1. Common Parameters")]
+        [Browsable(false)]
         public int ForcedCloseMinute { get; set; }
         
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss Total (Ticks)", Description = "Max total session loss - stops ALL trading (0=disabled)", Order = 8, GroupName = "1. Common Parameters")]
+        [Browsable(false)]
         public int MaxSessionLossTotal { get; set; }
         
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit Total (Ticks)", Description = "Max total session profit - stops ALL trading (0=disabled)", Order = 9, GroupName = "1. Common Parameters")]
+        [Browsable(false)]
         public int MaxSessionProfitTotal { get; set; }
 
         [NinjaScriptProperty]
@@ -278,739 +273,739 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ==================== BUCKET 1 LONG ====================
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 1", Order = 1, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public bool B1L_Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_ORMin { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_ORMax { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks above OR High for LONG entry", Order = 4, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Reduce entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing LONG trades", Order = 6, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public SLModeEnum B1L_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public double B1L_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public TPModeEnum B1L_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public double B1L_TakeProfitORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 13, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from LONG trades (0=disabled)", Order = 15, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from LONG trades (0=disabled)", Order = 16, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public bool B1L_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public BETriggerModeEnum B1L_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public double B1L_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B1L. Bucket 1 Long")]
+        [Browsable(false)]
         public int B1L_BEOffsetTicks { get; set; }
 
         // ==================== BUCKET 1 SHORT ====================
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 1", Order = 1, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public bool B1S_Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_ORMin { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_ORMax { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks below OR Low for SHORT entry", Order = 4, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Increase entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing SHORT trades", Order = 6, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public SLModeEnum B1S_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public double B1S_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public TPModeEnum B1S_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public double B1S_TakeProfitORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 13, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from SHORT trades (0=disabled)", Order = 15, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from SHORT trades (0=disabled)", Order = 16, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public bool B1S_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public BETriggerModeEnum B1S_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public double B1S_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B1S. Bucket 1 Short")]
+        [Browsable(false)]
         public int B1S_BEOffsetTicks { get; set; }
 
         // ==================== BUCKET 2 LONG ====================
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 2", Order = 1, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public bool B2L_Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_ORMin { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_ORMax { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks above OR High for LONG entry", Order = 4, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Reduce entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing LONG trades", Order = 6, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public SLModeEnum B2L_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public double B2L_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public TPModeEnum B2L_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public double B2L_TakeProfitORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 13, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from LONG trades (0=disabled)", Order = 15, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from LONG trades (0=disabled)", Order = 16, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public bool B2L_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public BETriggerModeEnum B2L_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public double B2L_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B2L. Bucket 2 Long")]
+        [Browsable(false)]
         public int B2L_BEOffsetTicks { get; set; }
 
         // ==================== BUCKET 2 SHORT ====================
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 2", Order = 1, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public bool B2S_Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_ORMin { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_ORMax { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks below OR Low for SHORT entry", Order = 4, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Increase entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing SHORT trades", Order = 6, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public SLModeEnum B2S_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public double B2S_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public TPModeEnum B2S_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public double B2S_TakeProfitORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 13, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from SHORT trades (0=disabled)", Order = 15, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from SHORT trades (0=disabled)", Order = 16, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public bool B2S_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public BETriggerModeEnum B2S_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public double B2S_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B2S. Bucket 2 Short")]
+        [Browsable(false)]
         public int B2S_BEOffsetTicks { get; set; }
 
         // ==================== BUCKET 3 LONG ====================
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 3", Order = 1, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public bool B3L_Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_ORMin { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_ORMax { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks above OR High for LONG entry", Order = 4, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Reduce entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing LONG trades", Order = 6, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public SLModeEnum B3L_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public double B3L_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public TPModeEnum B3L_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public double B3L_TakeProfitORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 13, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from LONG trades (0=disabled)", Order = 15, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from LONG trades (0=disabled)", Order = 16, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public bool B3L_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public BETriggerModeEnum B3L_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public double B3L_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B3L. Bucket 3 Long")]
+        [Browsable(false)]
         public int B3L_BEOffsetTicks { get; set; }
 
         // ==================== BUCKET 3 SHORT ====================
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 3", Order = 1, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public bool B3S_Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_ORMin { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_ORMax { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks below OR Low for SHORT entry", Order = 4, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Increase entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing SHORT trades", Order = 6, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public SLModeEnum B3S_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public double B3S_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public TPModeEnum B3S_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public double B3S_TakeProfitORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 13, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from SHORT trades (0=disabled)", Order = 15, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from SHORT trades (0=disabled)", Order = 16, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public bool B3S_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public BETriggerModeEnum B3S_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public double B3S_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B3S. Bucket 3 Short")]
+        [Browsable(false)]
         public int B3S_BEOffsetTicks { get; set; }
 
         
@@ -1198,7 +1193,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
-                sessionIterator = new SessionIterator(BarsArray[0]);
                 ValidateRequiredPrimaryTimeframe(30);
                 ValidateRequiredPrimaryInstrument();
                 EnsureNewsDatesInitialized();
@@ -2150,6 +2144,58 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             return true;
         }
+
+        private MarketPosition ResolveEntryDirection(string entrySignalName, MarketPosition fallback)
+        {
+            if (!string.IsNullOrEmpty(entrySignalName))
+            {
+                if (entrySignalName.StartsWith("ADAMLong", StringComparison.OrdinalIgnoreCase))
+                    return MarketPosition.Long;
+                if (entrySignalName.StartsWith("ADAMShort", StringComparison.OrdinalIgnoreCase))
+                    return MarketPosition.Short;
+            }
+
+            if (fallback == MarketPosition.Long || fallback == MarketPosition.Short)
+                return fallback;
+
+            if (Position.MarketPosition == MarketPosition.Long || Position.MarketPosition == MarketPosition.Short)
+                return Position.MarketPosition;
+
+            return MarketPosition.Flat;
+        }
+
+        private bool TryFinalSanitizeStopForLiveMarket(MarketPosition positionDirection, double fillPrice, ref double stopPrice)
+        {
+            if (positionDirection != MarketPosition.Long && positionDirection != MarketPosition.Short)
+                return false;
+
+            double minTick = TickSize;
+            if (minTick <= 0)
+                return false;
+
+            double reference = GetReferencePriceForStop(positionDirection);
+            if (reference <= 0 || double.IsNaN(reference) || double.IsInfinity(reference))
+                reference = Close[0];
+
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= reference)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(reference - minTick);
+                if (stopPrice >= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, stopPrice));
+            }
+            else
+            {
+                if (stopPrice <= reference)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(reference + minTick);
+                if (stopPrice <= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, stopPrice));
+            }
+
+            return stopPrice > 0 && !double.IsNaN(stopPrice) && !double.IsInfinity(stopPrice);
+        }
         
         #endregion
         
@@ -2181,7 +2227,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             
             sessionStart = tradingDay.Add(new TimeSpan(9, 30, 0));
             sessionEnd = tradingDay.Add(new TimeSpan(16, 0, 0));
-            RefreshSessionBoundsFromIterator(Time[0]);
             DrawSessionBackground();
             DrawCutOffWindow(tradingDay);
             
@@ -2191,31 +2236,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             LogDebug(String.Format("  Prev: {0} trades | P&L: {1:F0}t | Reset done", prevTradeCount, prevPnL));
         }
 
-        private void RefreshSessionBoundsFromIterator(DateTime referenceTime)
-        {
-            if (Bars == null)
-                return;
-
-            try
-            {
-                if (sessionIterator == null)
-                    sessionIterator = new SessionIterator(Bars);
-
-                sessionIterator.GetNextSession(referenceTime, true);
-                DateTime actualStart = sessionIterator.ActualSessionBegin;
-                DateTime actualEnd = sessionIterator.ActualSessionEnd;
-                if (actualStart > Core.Globals.MinDate && actualEnd > actualStart)
-                {
-                    sessionStart = actualStart;
-                    sessionEnd = actualEnd;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogDebug("Session iterator update failed: " + ex.Message);
-            }
-        }
-        
         private void ResetForNextTrade()
         {
             entryPrice = 0; pendingStopPrice = 0; pendingTargetTicks = 0;
@@ -2311,7 +2331,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void DrawSessionLines()
         {
-            return;
+            Draw.Line(this, "ORHighLine", false, sessionStart, orHigh, sessionEnd, orHigh, 
+                System.Windows.Media.Brushes.White, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "ORLowLine", false, sessionStart, orLow, sessionEnd, orLow, 
+                System.Windows.Media.Brushes.White, DashStyleHelper.Solid, 2);
+            Draw.Line(this, "LongEntryLine", false, sessionStart, longEntryLevel, sessionEnd, longEntryLevel, 
+                System.Windows.Media.Brushes.Orange, DashStyleHelper.Dash, 2);
+            Draw.Line(this, "ShortEntryLine", false, sessionStart, shortEntryLevel, sessionEnd, shortEntryLevel, 
+                System.Windows.Media.Brushes.Orange, DashStyleHelper.Dash, 2);
         }
         
         private void DrawTradeLines()
@@ -2649,6 +2676,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             lines.Add((string.Format("ADAM v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", ContractQuantity.ToString(CultureInfo.InvariantCulture), Brushes.LightGray, Brushes.LightGray));
+            double orRange = 0.0;
+            if (orSet && orHigh > double.MinValue && orLow < double.MaxValue)
+                orRange = Math.Max(0.0, orHigh - orLow);
+
+            string orSizeText = orRange > 0.0
+                ? string.Format(CultureInfo.InvariantCulture, "{0:F2} pts", orRange)
+                : "0 pts";
+            lines.Add(("OR Size:", orSizeText, Brushes.LightGray, Brushes.LightGray));
 
             bool isArmed = false;
             if (Position.MarketPosition == MarketPosition.Flat
@@ -2868,7 +2903,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 time.ToString("HH:mm:ss.fff"), execution.Order.Name, price, marketPosition));
             
             if (IsEntrySignalName(execution.Order.Name)
-                && marketPosition != MarketPosition.Flat
                 && !bracketOrdersPlaced)
             {
                 currentEntrySignal = execution.Order.Name;
@@ -2876,9 +2910,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentStopPrice = pendingStopPrice;
                 currentTargetTicks = pendingTargetTicks;
 
+                MarketPosition entryDirection = ResolveEntryDirection(execution.Order.Name, marketPosition);
+                if (entryDirection == MarketPosition.Flat)
+                    entryDirection = ResolveEntryDirection(execution.Order.Name, Position.MarketPosition);
+
                 double sanitizedStop;
                 double sanitizedTarget;
-                if (TrySanitizeProtectivePrices(marketPosition, entryPrice, currentStopPrice, currentTargetTicks, out sanitizedStop, out sanitizedTarget))
+                if (TrySanitizeProtectivePrices(entryDirection, entryPrice, currentStopPrice, currentTargetTicks, out sanitizedStop, out sanitizedTarget)
+                    && TryFinalSanitizeStopForLiveMarket(entryDirection, entryPrice, ref sanitizedStop))
                 {
                     currentStopPrice = sanitizedStop;
                     currentTargetPrice = sanitizedTarget;
@@ -2888,10 +2927,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         SetProfitTarget(execution.Order.Name, CalculationMode.Price, currentTargetPrice);
 
                     LogDebug(String.Format("  {0} | Entry={1} SL={2} TP={3}",
-                        marketPosition == MarketPosition.Long ? "LONG" : "SHORT",
+                        entryDirection == MarketPosition.Long ? "LONG" : "SHORT",
                         entryPrice, currentStopPrice, currentTargetTicks > 0 ? currentTargetPrice : 0));
 
                     StartTradeLines(entryPrice, currentStopPrice, currentTargetPrice, currentTargetTicks > 0 && currentTargetPrice > 0);
+                }
+                else
+                {
+                    LogDebug(String.Format("  BRACKET SKIPPED | dir={0} entry={1} rawSL={2} rawTPt={3}",
+                        entryDirection, entryPrice, currentStopPrice, currentTargetTicks));
                 }
 
                 bracketOrdersPlaced = true;
@@ -2950,4 +2994,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         #endregion
     }
+    
+    public enum TPModeEnum { FixedTicks, ORMultiple }
+    public enum SLModeEnum { FixedTicks, ORMultiple }
+    public enum BETriggerModeEnum { FixedTicks, ORMultiple }
 }
