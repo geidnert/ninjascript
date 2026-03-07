@@ -30,6 +30,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             VendorLicense(1175);
         }
 
+        public enum TPModeEnum { FixedTicks, ORMultiple }
+        public enum SLModeEnum { FixedTicks, ORMultiple }
+        public enum BETriggerModeEnum { FixedTicks, ORMultiple }
+
         #region Variables
         private double orHigh = double.MinValue;
         private double orLow = double.MaxValue;
@@ -2860,8 +2864,4 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         #endregion
     }
-    
-    public enum TPModeEnum { FixedTicks, ORMultiple }
-    public enum SLModeEnum { FixedTicks, ORMultiple }
-    public enum BETriggerModeEnum { FixedTicks, ORMultiple }
 }
