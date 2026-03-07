@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge.MultiBot
 {
     public interface IMultiBotEngine
@@ -6,6 +8,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge.MultiBot
         int BarsInProgress { get; }
         bool IsEnabled { get; }
 
-        EngineSignal OnBarUpdate(MultiBotContext context);
+        IList<TradeIntent> OnBarUpdate(MultiBotContext context);
     }
 }
