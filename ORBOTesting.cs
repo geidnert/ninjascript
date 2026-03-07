@@ -1087,8 +1087,8 @@ USE ON 1-MINUTE CHART.";
         
         private void ExitAllPositions(string reason)
         {
-            if (Position.MarketPosition == MarketPosition.Long) ExitLong(BuildExitSignalName(reason), currentSignalName);
-            else if (Position.MarketPosition == MarketPosition.Short) ExitShort(BuildExitSignalName(reason), currentSignalName);
+            if (Position.MarketPosition == MarketPosition.Long) ExitLong("Exit_" + reason, currentSignalName);
+            else if (Position.MarketPosition == MarketPosition.Short) ExitShort("Exit_" + reason, currentSignalName);
             CancelAllOrders();
         }
         
@@ -1139,24 +1139,20 @@ USE ON 1-MINUTE CHART.";
             if (string.IsNullOrEmpty(orderName))
                 return false;
 
-            return string.Equals(orderName, "ORBOLong", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(orderName, "ORBOShort", StringComparison.OrdinalIgnoreCase);
+            return orderName.StartsWith("LongOR_", StringComparison.OrdinalIgnoreCase)
+                || orderName.StartsWith("ShortOR_", StringComparison.OrdinalIgnoreCase);
         }
 
         private bool IsLongSignalName(string orderName)
         {
             return !string.IsNullOrEmpty(orderName)
-                && string.Equals(orderName, "ORBOLong", StringComparison.OrdinalIgnoreCase);
+                && orderName.StartsWith("LongOR_", StringComparison.OrdinalIgnoreCase);
         }
 
         private string BuildSignalName(bool isLong, int ordinal)
         {
-            return isLong ? "ORBOLong" : "ORBOShort";
-        }
-
-        private string BuildExitSignalName(string reason)
-        {
-            return "ORBO" + reason;
+            string prefix = isLong ? "LongOR_" : "ShortOR_";
+            return string.Format("{0}{1}_{2}", prefix, Time[0].ToString("yyyyMMdd"), ordinal);
         }
 
         private void HandleOrderRejected(Order order, ErrorCode error, string nativeError)
@@ -1323,7 +1319,7 @@ USE ON 1-MINUTE CHART.";
                 || normalized.Equals("Profit target", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("Exit on session close", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("SessionEnd", StringComparison.OrdinalIgnoreCase)
-                || normalized.StartsWith("ORBO", StringComparison.OrdinalIgnoreCase))
+                || normalized.StartsWith("Exit_", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
