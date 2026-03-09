@@ -106,6 +106,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // ── Re-arm flags ──────────────────────────────────────────────────────
         private bool _longRearmNeeded, _shortRearmNeeded;
+        private int _longTargetCancelRetriesUsed, _shortTargetCancelRetriesUsed;
+        private bool _longTargetCancelResetSeen, _shortTargetCancelResetSeen;
 
         // ── Session bookkeeping – separate per direction ──────────────────────
         private int      _longTradesToday,    _shortTradesToday;
@@ -300,6 +302,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CommonContracts   = 5;
                 AlternatingEnabled = false;
                 ReEntryEnabled     = true;
+                RequireORCloseForReEntry = false;
+                EnforceLimitPriceSafety = false;
+                AllowReEntryAfterBEScratch = true;
+                MaxRetriesAfterTargetCancel = 1;
                 UseSkipTime = true;
                 CloseAtSkipStart = false;
                 CloseAtNewsStart = false;
@@ -661,6 +667,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (_longORValid  && !_longBreakout  && High[0] > _orHigh) _longBreakout  = true;
             if (_shortORValid && !_shortBreakout && Low[0]  < _orLow)  _shortBreakout = true;
 
+            if (_longTargetCancelRetriesUsed > 0 && !_longTargetCancelResetSeen && Low[0] <= _orHigh)
+            {
+                _longTargetCancelResetSeen = true;
+                Print(Time[0] + " | Long target-cancel reset seen – price returned to OR High  [B" + _longActiveBucket + "]");
+            }
+            if (_shortTargetCancelRetriesUsed > 0 && !_shortTargetCancelResetSeen && High[0] >= _orLow)
+            {
+                _shortTargetCancelResetSeen = true;
+                Print(Time[0] + " | Short target-cancel reset seen – price returned to OR Low  [B" + _shortActiveBucket + "]");
+            }
+
             // ── G. FVG scan ───────────────────────────────────────────────────
             if (_longORValid && GetLongEntryMethod() == NQOREntryMethod105.FVGLimit)
             {
@@ -785,18 +802,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ── J. Re-arm after stop-out ──────────────────────────────────────
-            // v6: Three-layer guard:
+            // Re-arm guard:
             //   1) ReEntryEnabled toggle must be on
-            //   2) Price must close back through OR in breakout direction
+            //   2) If configured, price must close back through OR in breakout direction
             //      (Long: Close > OR High | Short: Close < OR Low)
-            //   3) Flag only cleared AFTER confirmed arm – if TryArm* is blocked
-            //      by price guard it stays true and retries on subsequent bars
+            //   3) Target-cancel retries require a reset back to OR before retrying
+            //   4) Flag only cleared AFTER confirmed arm – if TryArm* is blocked
+            //      it stays true and retries on subsequent bars
             if (_longRearmNeeded && canTradeLong && !_longInTrade && !_longEntryArmed && !_shortInTrade)
             {
-                if (Close[0] > _orHigh)
+                if (CanRearmLongNow())
                 {
-                    Print(Time[0] + " | Long re-arm condition met – price closed above OR High ("
-                          + _orHigh + ")  [B" + _longActiveBucket + "] – attempting arm...");
+                    Print(Time[0] + " | Long re-arm condition met"
+                          + (RequireORCloseForReEntry ? " – price closed above OR High (" + _orHigh + ")" : " – immediate retry mode")
+                          + "  [B" + _longActiveBucket + "] – attempting arm...");
                     TryArmLong();
                     if (_longEntryArmed)
                     {
@@ -811,10 +830,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             if (_shortRearmNeeded && canTradeShort && !_shortInTrade && !_shortEntryArmed && !_longInTrade)
             {
-                if (Close[0] < _orLow)
+                if (CanRearmShortNow())
                 {
-                    Print(Time[0] + " | Short re-arm condition met – price closed below OR Low ("
-                          + _orLow + ")  [B" + _shortActiveBucket + "] – attempting arm...");
+                    Print(Time[0] + " | Short re-arm condition met"
+                          + (RequireORCloseForReEntry ? " – price closed below OR Low (" + _orLow + ")" : " – immediate retry mode")
+                          + "  [B" + _shortActiveBucket + "] – attempting arm...");
                     TryArmShort();
                     if (_shortEntryArmed)
                     {
@@ -834,6 +854,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TryCancelOrder(_longLimitOrder);
                 _longEntryArmed = false;
                 _longFVGPending = false;
+                ScheduleLongRetryAfterTargetCancel();
                 // Trigger hit is session state; do not reset here or Section H can re-arm every bar.
                 Print(Time[0] + " | Long limit cancelled – target already reached");
             }
@@ -842,6 +863,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TryCancelOrder(_shortLimitOrder);
                 _shortEntryArmed = false;
                 _shortFVGPending = false;
+                ScheduleShortRetryAfterTargetCancel();
                 // Trigger hit is session state; do not reset here or Section H can re-arm every bar.
                 Print(Time[0] + " | Short limit cancelled – target already reached");
             }
@@ -984,6 +1006,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // already on the wrong side, which can cause immediate unintended fills/rejections.
         private bool CanPlaceLongLimitSafely(double limitPrice, string context)
         {
+            if (!EnforceLimitPriceSafety)
+                return true;
+
             if (Close[0] <= limitPrice)
             {
                 Print(Time[0] + " | " + context + " skipped – price " + Close[0]
@@ -997,6 +1022,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool CanPlaceShortLimitSafely(double limitPrice, string context)
         {
+            if (!EnforceLimitPriceSafety)
+                return true;
+
             if (Close[0] >= limitPrice)
             {
                 Print(Time[0] + " | " + context + " skipped – price " + Close[0]
@@ -1006,6 +1034,52 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return true;
+        }
+
+        private bool CanRearmLongNow()
+        {
+            if (_longTargetCancelRetriesUsed > 0 && !_longTargetCancelResetSeen)
+                return false;
+
+            return !RequireORCloseForReEntry || Close[0] > _orHigh;
+        }
+
+        private bool CanRearmShortNow()
+        {
+            if (_shortTargetCancelRetriesUsed > 0 && !_shortTargetCancelResetSeen)
+                return false;
+
+            return !RequireORCloseForReEntry || Close[0] < _orLow;
+        }
+
+        private void ScheduleLongRetryAfterTargetCancel()
+        {
+            if (_longInTrade || !_longTriggerHit)
+                return;
+
+            if (_longTargetCancelRetriesUsed >= MaxRetriesAfterTargetCancel)
+                return;
+
+            _longTargetCancelRetriesUsed++;
+            _longTargetCancelResetSeen = false;
+            _longRearmNeeded = true;
+            Print(Time[0] + " | Long target-cancel retry scheduled  ["
+                  + _longTargetCancelRetriesUsed + "/" + MaxRetriesAfterTargetCancel + "]");
+        }
+
+        private void ScheduleShortRetryAfterTargetCancel()
+        {
+            if (_shortInTrade || !_shortTriggerHit)
+                return;
+
+            if (_shortTargetCancelRetriesUsed >= MaxRetriesAfterTargetCancel)
+                return;
+
+            _shortTargetCancelRetriesUsed++;
+            _shortTargetCancelResetSeen = false;
+            _shortRearmNeeded = true;
+            Print(Time[0] + " | Short target-cancel retry scheduled  ["
+                  + _shortTargetCancelRetriesUsed + "/" + MaxRetriesAfterTargetCancel + "]");
         }
 
         private double LongFVGEntryPrice(double bot, double top, double mid)
@@ -1225,7 +1299,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _longEntryPrice = 0;
 
                 bool canRearm = ReEntryEnabled
-                             && !isScratch
+                             && (!isScratch || AllowReEntryAfterBEScratch)
                              && _longTriggerHit
                              && !_forceFlatDone
                              && _longTradesToday     < GetLongMaxTradesPerDay()
@@ -1235,7 +1309,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 _longRearmNeeded = canRearm;
                 if (isScratch)
-                    Print(Time[0] + " | Long re-arm blocked – BE scratch, no re-entry");
+                    Print(Time[0] + " | Long BE scratch"
+                          + (AllowReEntryAfterBEScratch ? " – re-entry allowed" : " – re-entry blocked"));
                 else
                     Print(Time[0] + " | Long re-arm=" + _longRearmNeeded);
             }
@@ -1273,7 +1348,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortEntryPrice = 0;
 
                 bool canRearm = ReEntryEnabled
-                             && !isScratch
+                             && (!isScratch || AllowReEntryAfterBEScratch)
                              && _shortTriggerHit
                              && !_forceFlatDone
                              && _shortTradesToday     < GetShortMaxTradesPerDay()
@@ -1283,7 +1358,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 _shortRearmNeeded = canRearm;
                 if (isScratch)
-                    Print(Time[0] + " | Short re-arm blocked – BE scratch, no re-entry");
+                    Print(Time[0] + " | Short BE scratch"
+                          + (AllowReEntryAfterBEScratch ? " – re-entry allowed" : " – re-entry blocked"));
                 else
                     Print(Time[0] + " | Short re-arm=" + _shortRearmNeeded);
             }
@@ -1861,6 +1937,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // Re-arm
             _longRearmNeeded = _shortRearmNeeded = false;
+            _longTargetCancelRetriesUsed = _shortTargetCancelRetriesUsed = 0;
+            _longTargetCancelResetSeen = _shortTargetCancelResetSeen = false;
 
             // Break-even
             _longEntryPrice  = _shortEntryPrice  = 0;
@@ -2691,39 +2769,64 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Display(Name = "Re-Entry After Loss",
-                 Description = "After a genuine stop-loss, re-arm once price closes back through OR (Short: Close < OR Low | Long: Close > OR High). BE scratches never re-arm.",
+                 Description = "Allow another entry attempt after a qualifying flat exit, subject to the re-entry filters below.",
                  GroupName = "02 - Common: Session Filters", Order = 2)]
         public bool ReEntryEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Require OR Close For Re-Entry",
+                 Description = "If enabled, re-entry after loss waits for a close back through OR. Disable to retry immediately while keeping the target-cancel loop fix.",
+                 GroupName = "02 - Common: Session Filters", Order = 3)]
+        public bool RequireORCloseForReEntry { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enforce Limit Price Safety",
+                 Description = "If enabled, skip new limit entries when the bar has already closed beyond the intended limit price. Disable to restore the more permissive legacy behavior.",
+                 GroupName = "02 - Common: Session Filters", Order = 4)]
+        public bool EnforceLimitPriceSafety { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Allow Re-Entry After BE Scratch",
+                 Description = "If enabled, a break-even scratch may re-arm another entry attempt if the other session rules still allow it. If disabled, BE scratches consume a trade but do not retry.",
+                 GroupName = "02 - Common: Session Filters", Order = 5)]
+        public bool AllowReEntryAfterBEScratch { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "Max Retries After Target Cancel",
+                 Description = "Maximum controlled retries after a pending limit order is canceled because price already touched target. Each retry requires price to reset back to OR first, which avoids the old repeated cancel/re-arm loop.",
+                 GroupName = "02 - Common: Session Filters", Order = 6)]
+        public int MaxRetriesAfterTargetCancel { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Use Skip Time",
                  Description = "Enable skip time entry blocking between Skip Start and Skip End.",
-                 GroupName = "02 - Common: Session Filters", Order = 3)]
+                 GroupName = "02 - Common: Session Filters", Order = 7)]
         public bool UseSkipTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Skip Start",
                  Description = "If true, flatten open position when skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 4)]
+                 GroupName = "02 - Common: Session Filters", Order = 8)]
         public bool CloseAtSkipStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At News Start",
                  Description = "If true, flatten open position when news skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 5)]
+                 GroupName = "02 - Common: Session Filters", Order = 9)]
         public bool CloseAtNewsStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 5)]
+                 GroupName = "02 - Common: Session Filters", Order = 10)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 6)]
+                 GroupName = "02 - Common: Session Filters", Order = 11)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
