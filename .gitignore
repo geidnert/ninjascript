@@ -16,3 +16,32 @@ zh-Hans/
 
 # Old nested repo/worktree kept as backup after moving repo root to Custom
 Strategies/
+
+# Untracked NinjaTrader source tree not imported into this repo yet
+AssemblyInfo.cs
+BarsTypes/
+ChartStyles/
+DrawingTools/
+ImportTypes/
+Indicators/
+MarketAnalyzerColumns/
+NinjaTrader.Vendor.cs
+OpenEdgeBotV7.cs
+OptimizationFitnesses/
+Optimizers/
+PerformanceMetrics/
+Resource.Designer.cs
+Resource.de-DE.resx
+Resource.es-ES.resx
+Resource.fr-FR.resx
+Resource.it-IT.resx
+Resource.ko-KR.resx
+Resource.pt-PT.resx
+Resource.resx
+Resource.ru-RU.resx
+Resource.zh-Hans.resx
+ResourceEnumConverter.cs
+ShareServices/
+SuperDomColumns/
+VendorLicensing.cs
+XBotModel1V18.cs
