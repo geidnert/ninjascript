@@ -40,6 +40,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     /// </summary>
     public class ORBOTesting : Strategy
     {
+        private const string StrategySignalPrefix = "ORBOTesting";
+        private const string LongSignalPrefix = StrategySignalPrefix + "LongOR_";
+        private const string ShortSignalPrefix = StrategySignalPrefix + "ShortOR_";
+        private const string ExitSignalPrefix = StrategySignalPrefix;
+
         public ORBOTesting()
         {
             VendorLicense(204);
@@ -1087,8 +1092,8 @@ USE ON 1-MINUTE CHART.";
         
         private void ExitAllPositions(string reason)
         {
-            if (Position.MarketPosition == MarketPosition.Long) ExitLong("Exit_" + reason, currentSignalName);
-            else if (Position.MarketPosition == MarketPosition.Short) ExitShort("Exit_" + reason, currentSignalName);
+            if (Position.MarketPosition == MarketPosition.Long) ExitLong(BuildExitSignalName(reason), currentSignalName);
+            else if (Position.MarketPosition == MarketPosition.Short) ExitShort(BuildExitSignalName(reason), currentSignalName);
             CancelAllOrders();
         }
         
@@ -1139,20 +1144,25 @@ USE ON 1-MINUTE CHART.";
             if (string.IsNullOrEmpty(orderName))
                 return false;
 
-            return orderName.StartsWith("LongOR_", StringComparison.OrdinalIgnoreCase)
-                || orderName.StartsWith("ShortOR_", StringComparison.OrdinalIgnoreCase);
+            return orderName.StartsWith(LongSignalPrefix, StringComparison.OrdinalIgnoreCase)
+                || orderName.StartsWith(ShortSignalPrefix, StringComparison.OrdinalIgnoreCase);
         }
 
         private bool IsLongSignalName(string orderName)
         {
             return !string.IsNullOrEmpty(orderName)
-                && orderName.StartsWith("LongOR_", StringComparison.OrdinalIgnoreCase);
+                && orderName.StartsWith(LongSignalPrefix, StringComparison.OrdinalIgnoreCase);
         }
 
         private string BuildSignalName(bool isLong, int ordinal)
         {
-            string prefix = isLong ? "LongOR_" : "ShortOR_";
+            string prefix = isLong ? LongSignalPrefix : ShortSignalPrefix;
             return string.Format("{0}{1}_{2}", prefix, Time[0].ToString("yyyyMMdd"), ordinal);
+        }
+
+        private string BuildExitSignalName(string reason)
+        {
+            return ExitSignalPrefix + reason;
         }
 
         private void HandleOrderRejected(Order order, ErrorCode error, string nativeError)
@@ -1319,6 +1329,7 @@ USE ON 1-MINUTE CHART.";
                 || normalized.Equals("Profit target", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("Exit on session close", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("SessionEnd", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith(ExitSignalPrefix, StringComparison.OrdinalIgnoreCase)
                 || normalized.StartsWith("Exit_", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
