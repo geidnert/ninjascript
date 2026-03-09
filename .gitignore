@@ -1,0 +1,18 @@
+.DS_Store
+.vs/
+bin/
+obj/
+de-DE/
+es-ES/
+fr-FR/
+it-IT/
+ko-KR/
+pt-PT/
+ru-RU/
+zh-Hans/
+*.dll
+*.pdb
+*.xml
+
+# Old nested repo/worktree kept as backup after moving repo root to Custom
+Strategies/
