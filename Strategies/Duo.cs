@@ -396,6 +396,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 2026-12-30,14:00
 2026-12-31,08:30";
 
+
         private static readonly List<DateTime> NewsDates = new List<DateTime>();
         private static bool newsDatesInitialized;
         private Border infoBoxContainer;
