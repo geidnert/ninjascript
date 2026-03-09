@@ -423,32 +423,6 @@
     <Compile Include="Strategies\MultiBot\OrboCore.cs" />
     <Compile Include="Strategies\MultiBot\DuoLogicCore.cs" />
     <Compile Include="Strategies\ADAM.cs" />
-    <Compile Include="8020.cs" />
-    <Compile Include="ADAM.cs" />
-    <Compile Include="ADAMTesting.cs" />
-    <Compile Include="DR.cs" />
-    <Compile Include="DiscordNotifier.cs" />
-    <Compile Include="Duo.cs" />
-    <Compile Include="DuoEMA.cs" />
-    <Compile Include="DuoTesting.cs" />
-    <Compile Include="DuoTesting3.cs" />
-    <Compile Include="EVETesting.cs" />
-    <Compile Include="FiveMin.cs" />
-    <Compile Include="Heiken.cs" />
-    <Compile Include="MultiBot\AdamEngine.cs" />
-    <Compile Include="MultiBot\DuoEngine.cs" />
-    <Compile Include="MultiBot\EveEngine.cs" />
-    <Compile Include="MultiBot\IMultiBotEngine.cs" />
-    <Compile Include="MultiBot\MultiBotContext.cs" />
-    <Compile Include="MultiBot\MultiBotMaster.cs" />
-    <Compile Include="MultiBot\OrboEngine.cs" />
-    <Compile Include="MultiBot\RiskManager.cs" />
-    <Compile Include="ORBO.cs" />
-    <Compile Include="ORBOTesting.cs" />
-    <Compile Include="PassChallenge.cs" />
-    <Compile Include="Sweeper.cs" />
-    <Compile Include="TradeMessenger.cs" />
-    <Compile Include="iFVG.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">

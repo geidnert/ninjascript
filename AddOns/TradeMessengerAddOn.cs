@@ -1243,6 +1243,9 @@ namespace NinjaTrader.NinjaScript.AddOns
 
     public class TradeMessengerAddOnWindow : NTWindow
     {
+        private static readonly Brush TitleTextBrush = new SolidColorBrush(Color.FromRgb(0xC4, 0xC4, 0xC4));
+        private static readonly Brush DescriptionTextBrush = new SolidColorBrush(Color.FromRgb(0x98, 0x98, 0x98));
+
         private CheckBox debugCheckBox;
         private CheckBox pushNotificationsCheckBox;
         private CheckBox showEntryCheckBox;
@@ -1316,6 +1319,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 Child = new TextBlock
                 {
                     Text = "Configure reconnect, reporting, account filtering, and monitored instruments.",
+                    Foreground = TitleTextBrush,
                     TextWrapping = TextWrapping.Wrap
                 }
             };
@@ -1338,6 +1342,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             };
             statusTextBlock = new TextBlock
             {
+                Foreground = TitleTextBrush,
                 Margin = new Thickness(0, 0, 0, 12),
                 TextWrapping = TextWrapping.Wrap
             };
@@ -1373,65 +1378,62 @@ namespace NinjaTrader.NinjaScript.AddOns
             StackPanel stack = new StackPanel();
             stack.Children.Add(BuildSection(
                 "Notifications",
-                out pushNotificationsCheckBox, "Send Push Notifications",
-                out debugCheckBox, "Debug Output",
-                out discordCheckBox, "Send To Discord",
-                out telegramCheckBox, "Send To Telegram"));
+                out pushNotificationsCheckBox, "Send Push Notifications", "Master switch for sending alerts to NinjaTrader, Telegram, and Discord.",
+                out debugCheckBox, "Debug Output", "Writes extra diagnostic messages to the NinjaScript Output window.",
+                out discordCheckBox, "Send To Discord", "Enable Discord delivery. Requires a valid webhook URL below.",
+                out telegramCheckBox, "Send To Telegram", "Enable Telegram delivery. Requires both bot token and chat ID below."));
 
             stack.Children.Add(BuildSection(
                 "Trade Notifications",
-                out showEntryCheckBox, "Send Entry Messages",
-                out showExitCheckBox, "Send Exit Messages"));
+                out showEntryCheckBox, "Send Entry Messages", "Send alerts when a filled order opens a position.",
+                out showExitCheckBox, "Send Exit Messages", "Send alerts when a filled order closes or reduces a position."));
 
-            stack.Children.Add(BuildLabeledTextBox("Discord Webhook URL", out discordWebhookTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Telegram Bot Token", out botTokenTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Telegram Chat ID", out chatIdTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Discord Webhook URL", "Paste the full Discord incoming webhook URL. Leave blank if Discord is disabled.", out discordWebhookTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Telegram Bot Token", "BotFather token for your Telegram bot, for example `123456:ABC...`.", out botTokenTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Telegram Chat ID", "Numeric chat or channel ID that should receive messages.", out chatIdTextBox));
 
             stack.Children.Add(BuildSection(
                 "Monitoring",
-                out dataFeedReportingCheckBox, "Data Feed Reporting",
-                out heartbeatReportingCheckBox, "Heartbeat Reporting",
-                out autoReconnectCheckBox, "Auto Reconnect"));
+                out dataFeedReportingCheckBox, "Data Feed Reporting", "Watch the instruments below and report when market data stops updating.",
+                out heartbeatReportingCheckBox, "Heartbeat Reporting", "Monitor the heartbeat CSV written by your strategies to detect stalled scripts.",
+                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected."));
 
-            stack.Children.Add(BuildLabeledTextBox("Watchdog Timeout Seconds", out watchdogTimeoutTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Heartbeat File Path", out heartbeatFilePathTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Heartbeat Timeout Seconds", out heartbeatTimeoutTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Reconnect Initial Delay Seconds", out reconnectInitialDelayTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Reconnect Max Delay Seconds", out reconnectMaxDelayTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Reconnect Max Attempts (0 = unlimited)", out reconnectMaxAttemptsTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Watchdog Timeout Seconds", "How long an instrument can go without a `Last` tick before it is treated as stalled. Minimum 1.", out watchdogTimeoutTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Heartbeat File Path", "Full path to the heartbeat CSV file produced by your strategies.", out heartbeatFilePathTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Heartbeat Timeout Seconds", "How old a strategy heartbeat can be before the strategy is marked stalled. Minimum 1.", out heartbeatTimeoutTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Reconnect Initial Delay Seconds", "Delay before the first reconnect attempt after a problem is detected. Minimum 1.", out reconnectInitialDelayTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Reconnect Max Delay Seconds", "Maximum backoff delay between reconnect attempts. Must be at least the initial delay.", out reconnectMaxDelayTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Reconnect Max Attempts (0 = unlimited)", "Maximum reconnect tries before stopping. Use 0 to keep retrying indefinitely.", out reconnectMaxAttemptsTextBox));
 
             stack.Children.Add(BuildSectionHeader("Filters"));
-            stack.Children.Add(BuildLabeledTextBox("Monitored Connection Name", out monitoredConnectionTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Monitored Account Name", out monitoredAccountTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Monitored Instruments CSV", out monitoredInstrumentsTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Monitored Connection Name", "Exact NinjaTrader connection name to monitor, for example `Rithmic`. Leave blank to include all connections.", out monitoredConnectionTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Monitored Account Name", "Exact account name or display name to monitor. Leave blank to include all accounts.", out monitoredAccountTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Monitored Instruments CSV", "Comma-separated instrument names to watch for feed stalls, for example `ES 06-26,NQ 06-26`.", out monitoredInstrumentsTextBox));
 
             return stack;
         }
 
-        private Border BuildSection(string title, out CheckBox first, string firstLabel, out CheckBox second, string secondLabel, out CheckBox third, string thirdLabel)
+        private Border BuildSection(string title, out CheckBox first, string firstLabel, string firstDescription, out CheckBox second, string secondLabel, string secondDescription, out CheckBox third, string thirdLabel, string thirdDescription)
         {
-            return BuildSection(title, out first, firstLabel, out second, secondLabel, out third, thirdLabel, out _, string.Empty);
+            return BuildSection(title, out first, firstLabel, firstDescription, out second, secondLabel, secondDescription, out third, thirdLabel, thirdDescription, out _, string.Empty, string.Empty);
         }
 
-        private Border BuildSection(string title, out CheckBox first, string firstLabel, out CheckBox second, string secondLabel)
+        private Border BuildSection(string title, out CheckBox first, string firstLabel, string firstDescription, out CheckBox second, string secondLabel, string secondDescription)
         {
-            return BuildSection(title, out first, firstLabel, out second, secondLabel, out _, string.Empty, out _, string.Empty);
+            return BuildSection(title, out first, firstLabel, firstDescription, out second, secondLabel, secondDescription, out _, string.Empty, string.Empty, out _, string.Empty, string.Empty);
         }
 
-        private Border BuildSection(string title, out CheckBox first, string firstLabel, out CheckBox second, string secondLabel, out CheckBox third, string thirdLabel, out CheckBox fourth, string fourthLabel)
+        private Border BuildSection(string title, out CheckBox first, string firstLabel, string firstDescription, out CheckBox second, string secondLabel, string secondDescription, out CheckBox third, string thirdLabel, string thirdDescription, out CheckBox fourth, string fourthLabel, string fourthDescription)
         {
             StackPanel panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
             panel.Children.Add(BuildSectionHeader(title));
 
-            first = new CheckBox { Content = firstLabel, Margin = new Thickness(0, 0, 0, 6) };
-            second = new CheckBox { Content = secondLabel, Margin = new Thickness(0, 0, 0, 6) };
-            panel.Children.Add(first);
-            panel.Children.Add(second);
+            panel.Children.Add(BuildCheckBoxWithDescription(out first, firstLabel, firstDescription));
+            panel.Children.Add(BuildCheckBoxWithDescription(out second, secondLabel, secondDescription));
 
             if (!string.IsNullOrWhiteSpace(thirdLabel))
             {
-                third = new CheckBox { Content = thirdLabel, Margin = new Thickness(0, 0, 0, 6) };
-                panel.Children.Add(third);
+                panel.Children.Add(BuildCheckBoxWithDescription(out third, thirdLabel, thirdDescription));
             }
             else
             {
@@ -1440,8 +1442,7 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             if (!string.IsNullOrWhiteSpace(fourthLabel))
             {
-                fourth = new CheckBox { Content = fourthLabel, Margin = new Thickness(0, 0, 0, 6) };
-                panel.Children.Add(fourth);
+                panel.Children.Add(BuildCheckBoxWithDescription(out fourth, fourthLabel, fourthDescription));
             }
             else
             {
@@ -1456,22 +1457,62 @@ namespace NinjaTrader.NinjaScript.AddOns
             return new TextBlock
             {
                 Text = title,
+                Foreground = TitleTextBrush,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 8, 0, 8)
             };
         }
 
-        private Border BuildLabeledTextBox(string label, out TextBox textBox)
+        private Border BuildCheckBoxWithDescription(out CheckBox checkBox, string label, string description)
+        {
+            StackPanel panel = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+
+            checkBox = new CheckBox
+            {
+                Content = label,
+                Margin = new Thickness(0, 0, 0, 2),
+                ToolTip = description
+            };
+            panel.Children.Add(checkBox);
+
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = description,
+                    Foreground = DescriptionTextBrush,
+                    Margin = new Thickness(18, 0, 0, 0),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+
+            return new Border { Child = panel };
+        }
+
+        private Border BuildLabeledTextBox(string label, string description, out TextBox textBox)
         {
             StackPanel panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
             panel.Children.Add(new TextBlock
             {
                 Text = label,
+                Foreground = TitleTextBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
 
-            textBox = new TextBox { MinWidth = 320 };
+            textBox = new TextBox { MinWidth = 320, ToolTip = description };
             panel.Children.Add(textBox);
+
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = description,
+                    Foreground = DescriptionTextBrush,
+                    Margin = new Thickness(0, 4, 0, 0),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+
             return new Border { Child = panel };
         }
 
