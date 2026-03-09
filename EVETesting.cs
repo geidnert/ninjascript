@@ -50,6 +50,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // =========================================================================
     public class EVETesting : Strategy
     {
+        private const string StrategySignalPrefix = "EVE";
+        private const string LongEntrySignalPrefix = StrategySignalPrefix + "Long";
+        private const string ShortEntrySignalPrefix = StrategySignalPrefix + "Short";
+        private const string ExitSignalPrefix = StrategySignalPrefix;
+
         public enum WebhookProvider
         {
             TradersPost,
@@ -85,8 +90,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool  _shortInTrade;
         private bool  _shortFVGPending;
         private Order _shortLimitOrder;
-        private string _activeLongEntrySignal = "LongEntry";
-        private string _activeShortEntrySignal = "ShortEntry";
+        private string _activeLongEntrySignal = LongEntrySignalPrefix;
+        private string _activeShortEntrySignal = ShortEntrySignalPrefix;
         private int _entrySignalSequence;
 
         // ── FVG storage ───────────────────────────────────────────────────────
@@ -503,9 +508,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 CancelPendingEntriesForInvalidConfiguration();
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("InvalidConfigurationL", ActiveLongEntrySignal());
+                    ExitLong(BuildExitSignalName("InvalidConfigurationL"), ActiveLongEntrySignal());
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("InvalidConfigurationS", ActiveShortEntrySignal());
+                    ExitShort(BuildExitSignalName("InvalidConfigurationS"), ActiveShortEntrySignal());
                 return;
             }
 
@@ -1144,37 +1149,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool IsLongEntrySignalName(string orderName)
         {
             return !string.IsNullOrWhiteSpace(orderName)
-                && orderName.StartsWith("LongEntry", StringComparison.OrdinalIgnoreCase);
+                && orderName.StartsWith(LongEntrySignalPrefix, StringComparison.OrdinalIgnoreCase);
         }
 
         private bool IsShortEntrySignalName(string orderName)
         {
             return !string.IsNullOrWhiteSpace(orderName)
-                && orderName.StartsWith("ShortEntry", StringComparison.OrdinalIgnoreCase);
+                && orderName.StartsWith(ShortEntrySignalPrefix, StringComparison.OrdinalIgnoreCase);
         }
 
         private string NextLongEntrySignal()
         {
             _entrySignalSequence++;
-            _activeLongEntrySignal = string.Format(CultureInfo.InvariantCulture, "LongEntry_{0}", _entrySignalSequence);
+            _activeLongEntrySignal = string.Format(CultureInfo.InvariantCulture, "{0}_{1}", LongEntrySignalPrefix, _entrySignalSequence);
             return _activeLongEntrySignal;
         }
 
         private string NextShortEntrySignal()
         {
             _entrySignalSequence++;
-            _activeShortEntrySignal = string.Format(CultureInfo.InvariantCulture, "ShortEntry_{0}", _entrySignalSequence);
+            _activeShortEntrySignal = string.Format(CultureInfo.InvariantCulture, "{0}_{1}", ShortEntrySignalPrefix, _entrySignalSequence);
             return _activeShortEntrySignal;
         }
 
         private string ActiveLongEntrySignal()
         {
-            return string.IsNullOrWhiteSpace(_activeLongEntrySignal) ? "LongEntry" : _activeLongEntrySignal;
+            return string.IsNullOrWhiteSpace(_activeLongEntrySignal) ? LongEntrySignalPrefix : _activeLongEntrySignal;
         }
 
         private string ActiveShortEntrySignal()
         {
-            return string.IsNullOrWhiteSpace(_activeShortEntrySignal) ? "ShortEntry" : _activeShortEntrySignal;
+            return string.IsNullOrWhiteSpace(_activeShortEntrySignal) ? ShortEntrySignalPrefix : _activeShortEntrySignal;
+        }
+
+        private string BuildExitSignalName(string reason)
+        {
+            return ExitSignalPrefix + reason;
         }
 
         protected override void OnPositionUpdate(Position pos, double avgPx,
@@ -1558,9 +1568,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TryCancelOrder(_shortLimitOrder);
 
             if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong("ForceFlatL", ActiveLongEntrySignal());
+                ExitLong(BuildExitSignalName("ForceFlatL"), ActiveLongEntrySignal());
             else if (Position.MarketPosition == MarketPosition.Short)
-                ExitShort("ForceFlatS", ActiveShortEntrySignal());
+                ExitShort(BuildExitSignalName("ForceFlatS"), ActiveShortEntrySignal());
 
             Print(Time[0] + " | ★ Force flatten executed.");
         }
@@ -1639,9 +1649,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (CloseAtSkipStart)
                 {
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("SkipWindowL", ActiveLongEntrySignal());
+                        ExitLong(BuildExitSignalName("SkipWindowL"), ActiveLongEntrySignal());
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("SkipWindowS", ActiveShortEntrySignal());
+                        ExitShort(BuildExitSignalName("SkipWindowS"), ActiveShortEntrySignal());
                 }
 
                 Print(Time[0] + " | Entered skip window: canceled working entries."
@@ -1672,9 +1682,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (CloseAtNewsStart)
                 {
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("NewsSkipL", ActiveLongEntrySignal());
+                        ExitLong(BuildExitSignalName("NewsSkipL"), ActiveLongEntrySignal());
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("NewsSkipS", ActiveShortEntrySignal());
+                        ExitShort(BuildExitSignalName("NewsSkipS"), ActiveShortEntrySignal());
                 }
 
                 Print(Time[0] + " | Entered news skip window: canceled working entries."
