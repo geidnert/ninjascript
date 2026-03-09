@@ -42,6 +42,7 @@ ShareServices/
 SuperDomColumns/
 VendorLicensing.cs
 XBotModel1V18.cs
+Strategies/.git.backup/
 
 # Legacy root-level copies imported from the old Strategies-root repo
 /8020.cs
