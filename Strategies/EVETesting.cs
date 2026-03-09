@@ -108,6 +108,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool _longRearmNeeded, _shortRearmNeeded;
         private int _longTargetCancelRetriesUsed, _shortTargetCancelRetriesUsed;
         private bool _longTargetCancelResetSeen, _shortTargetCancelResetSeen;
+        private int _longTriggerResetsUsed, _shortTriggerResetsUsed;
+        private bool _longRetriggerResetSeen, _shortRetriggerResetSeen;
 
         // ── Session bookkeeping – separate per direction ──────────────────────
         private int      _longTradesToday,    _shortTradesToday;
@@ -306,7 +308,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EnforceLimitPriceSafety = false;
                 AllowReEntryAfterBEScratch = true;
                 MaxRetriesAfterTargetCancel = 1;
-                UseLegacyTargetCancelReset = false;
+                UseLegacyTargetCancelReset = true;
+                ResetTriggerAfterTargetCancel = false;
+                RequirePriceResetBeforeReTrigger = true;
+                MaxTriggerResetsAfterTargetCancel = 1;
                 UseSkipTime = true;
                 CloseAtSkipStart = false;
                 CloseAtNewsStart = false;
@@ -679,6 +684,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Print(Time[0] + " | Short target-cancel reset seen – price returned to OR Low  [B" + _shortActiveBucket + "]");
             }
 
+            if (_longTriggerResetsUsed > 0 && !_longRetriggerResetSeen && High[0] < _longTrigger)
+            {
+                _longRetriggerResetSeen = true;
+                Print(Time[0] + " | Long re-trigger reset seen – price moved back below trigger  [B" + _longActiveBucket + "]");
+            }
+            if (_shortTriggerResetsUsed > 0 && !_shortRetriggerResetSeen && Low[0] > _shortTrigger)
+            {
+                _shortRetriggerResetSeen = true;
+                Print(Time[0] + " | Short re-trigger reset seen – price moved back above trigger  [B" + _shortActiveBucket + "]");
+            }
+
             // ── G. FVG scan ───────────────────────────────────────────────────
             if (_longORValid && GetLongEntryMethod() == NQOREntryMethod105.FVGLimit)
             {
@@ -764,7 +780,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ── H. Trigger line crossed ───────────────────────────────────────
-            if (_longBreakout && !_longTriggerHit && High[0] >= _longTrigger)
+            if (_longBreakout && !_longTriggerHit && CanAcceptLongRetrigger() && High[0] >= _longTrigger)
             {
                 _longTriggerHit = true;
                 if (inSkipWindow)
@@ -774,7 +790,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     TryArmLong();
             }
 
-            if (_shortBreakout && !_shortTriggerHit && Low[0] <= _shortTrigger)
+            if (_shortBreakout && !_shortTriggerHit && CanAcceptShortRetrigger() && Low[0] <= _shortTrigger)
             {
                 _shortTriggerHit = true;
                 if (inSkipWindow)
@@ -860,6 +876,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _longTriggerHit = false;
                     Print(Time[0] + " | Long target-cancel legacy reset applied");
                 }
+                else if (TryApplyControlledLongTriggerReset())
+                {
+                    Print(Time[0] + " | Long target-cancel controlled trigger reset applied");
+                }
                 else
                 {
                     ScheduleLongRetryAfterTargetCancel();
@@ -875,6 +895,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     _shortTriggerHit = false;
                     Print(Time[0] + " | Short target-cancel legacy reset applied");
+                }
+                else if (TryApplyControlledShortTriggerReset())
+                {
+                    Print(Time[0] + " | Short target-cancel controlled trigger reset applied");
                 }
                 else
                 {
@@ -1065,6 +1089,56 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
 
             return !RequireORCloseForReEntry || Close[0] < _orLow;
+        }
+
+        private bool CanAcceptLongRetrigger()
+        {
+            if (!RequirePriceResetBeforeReTrigger)
+                return true;
+
+            if (_longTriggerResetsUsed <= 0)
+                return true;
+
+            return _longRetriggerResetSeen;
+        }
+
+        private bool CanAcceptShortRetrigger()
+        {
+            if (!RequirePriceResetBeforeReTrigger)
+                return true;
+
+            if (_shortTriggerResetsUsed <= 0)
+                return true;
+
+            return _shortRetriggerResetSeen;
+        }
+
+        private bool TryApplyControlledLongTriggerReset()
+        {
+            if (!ResetTriggerAfterTargetCancel || _longInTrade)
+                return false;
+
+            if (_longTriggerResetsUsed >= MaxTriggerResetsAfterTargetCancel)
+                return false;
+
+            _longTriggerResetsUsed++;
+            _longRetriggerResetSeen = !RequirePriceResetBeforeReTrigger;
+            _longTriggerHit = false;
+            return true;
+        }
+
+        private bool TryApplyControlledShortTriggerReset()
+        {
+            if (!ResetTriggerAfterTargetCancel || _shortInTrade)
+                return false;
+
+            if (_shortTriggerResetsUsed >= MaxTriggerResetsAfterTargetCancel)
+                return false;
+
+            _shortTriggerResetsUsed++;
+            _shortRetriggerResetSeen = !RequirePriceResetBeforeReTrigger;
+            _shortTriggerHit = false;
+            return true;
         }
 
         private void ScheduleLongRetryAfterTargetCancel()
@@ -1954,6 +2028,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             _longRearmNeeded = _shortRearmNeeded = false;
             _longTargetCancelRetriesUsed = _shortTargetCancelRetriesUsed = 0;
             _longTargetCancelResetSeen = _shortTargetCancelResetSeen = false;
+            _longTriggerResetsUsed = _shortTriggerResetsUsed = 0;
+            _longRetriggerResetSeen = _shortRetriggerResetSeen = false;
 
             // Break-even
             _longEntryPrice  = _shortEntryPrice  = 0;
@@ -2820,34 +2896,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool UseLegacyTargetCancelReset { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Reset Trigger After Target Cancel",
+                 Description = "Controlled alternative to the legacy mode. Resets trigger state after a target-cancel so a fresh trigger can form again, subject to the limits below.",
+                 GroupName = "02 - Common: Session Filters", Order = 8)]
+        public bool ResetTriggerAfterTargetCancel { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Require Price Reset Before Re-Trigger",
+                 Description = "If enabled, after a controlled trigger reset the market must move back through the trigger first before another trigger is allowed.",
+                 GroupName = "02 - Common: Session Filters", Order = 9)]
+        public bool RequirePriceResetBeforeReTrigger { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "Max Trigger Resets After Target Cancel",
+                 Description = "Maximum number of controlled trigger resets allowed per direction after target-cancel events in one session.",
+                 GroupName = "02 - Common: Session Filters", Order = 10)]
+        public int MaxTriggerResetsAfterTargetCancel { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Use Skip Time",
                  Description = "Enable skip time entry blocking between Skip Start and Skip End.",
-                 GroupName = "02 - Common: Session Filters", Order = 8)]
+                 GroupName = "02 - Common: Session Filters", Order = 11)]
         public bool UseSkipTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Skip Start",
                  Description = "If true, flatten open position when skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 9)]
+                 GroupName = "02 - Common: Session Filters", Order = 12)]
         public bool CloseAtSkipStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At News Start",
                  Description = "If true, flatten open position when news skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 10)]
+                 GroupName = "02 - Common: Session Filters", Order = 13)]
         public bool CloseAtNewsStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 11)]
+                 GroupName = "02 - Common: Session Filters", Order = 14)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 12)]
+                 GroupName = "02 - Common: Session Filters", Order = 15)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
