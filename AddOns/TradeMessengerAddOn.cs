@@ -33,6 +33,19 @@ namespace NinjaTrader.NinjaScript.AddOns
             public Delegate Handler { get; set; }
         }
 
+        private sealed class TrackedPositionState
+        {
+            public double SignedQuantity { get; set; }
+            public double AverageEntryPrice { get; set; }
+        }
+
+        private sealed class ExecutionMessageResult
+        {
+            public bool IsEntryNotification { get; set; }
+            public bool IsExitNotification { get; set; }
+            public string Message { get; set; }
+        }
+
         private readonly object reconnectLock = new object();
         private readonly Dictionary<string, DateTime> strategyHeartbeats = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, bool> strategyStalled = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
@@ -40,6 +53,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly Dictionary<string, DateTime> lastTickTimeByInstrument = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, bool> feedStalledByInstrument = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, ConnectionStatus> lastConnectionStatusByName = new Dictionary<string, ConnectionStatus>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, TrackedPositionState> trackedPositionsByKey = new Dictionary<string, TrackedPositionState>(StringComparer.OrdinalIgnoreCase);
         private readonly List<MarketDataSubscription> marketDataSubscriptions = new List<MarketDataSubscription>();
         private readonly HashSet<string> subscribedAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -437,6 +451,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                     return;
             }
 
+            account.ExecutionUpdate -= OnAccountExecutionUpdate;
             account.ExecutionUpdate += OnAccountExecutionUpdate;
         }
 
@@ -448,12 +463,6 @@ namespace NinjaTrader.NinjaScript.AddOns
                 {
                     if (account == null)
                         continue;
-
-                    lock (subscribedAccounts)
-                    {
-                        if (!subscribedAccounts.Contains(account.Name))
-                            continue;
-                    }
 
                     account.ExecutionUpdate -= OnAccountExecutionUpdate;
                 }
@@ -472,27 +481,170 @@ namespace NinjaTrader.NinjaScript.AddOns
                 return;
 
             string instrumentName = e.Execution.Instrument != null ? e.Execution.Instrument.FullName : "Unknown";
-            string accountName = sender is Account account ? account.Name : "Unknown";
-            OrderAction orderAction = e.Execution.Order.OrderAction;
-            bool isEntry = orderAction == OrderAction.Buy || orderAction == OrderAction.SellShort;
-            bool isExit = orderAction == OrderAction.Sell || orderAction == OrderAction.BuyToCover;
-
-            if ((isEntry && !showEntry) || (isExit && !showExit) || (!isEntry && !isExit))
+            Account account = sender as Account;
+            string accountName = account != null ? account.Name : "Unknown";
+            ExecutionMessageResult result = BuildExecutionMessage(account, e.Execution, accountName, instrumentName);
+            if (result == null || string.IsNullOrEmpty(result.Message))
                 return;
 
-            string action = orderAction.ToString();
-            string message = string.Format(
-                CultureInfo.InvariantCulture,
-                "{0} {1} filled {2} {3} @ {4}",
-                accountName,
-                instrumentName,
-                e.Execution.Quantity,
-                action,
-                e.Execution.Price);
+            if ((result.IsEntryNotification && !showEntry) || (result.IsExitNotification && !showExit))
+                return;
+
+            string message = result.Message;
 
             LogToOutput(message);
             if (sendPushNotifications)
                 SendPushNotification(e.Time, message);
+        }
+
+        private ExecutionMessageResult BuildExecutionMessage(Account account, Execution execution, string accountName, string instrumentName)
+        {
+            if (execution == null)
+                return new ExecutionMessageResult
+                {
+                    Message = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0} {1} filled @ unknown price",
+                        accountName,
+                        instrumentName)
+                };
+
+            double signedFillQuantity = GetSignedFillQuantity(execution.Order.OrderAction, execution.Quantity);
+            if (Math.Abs(signedFillQuantity) < 0.0000001)
+                return null;
+
+            string key = GetTrackedPositionKey(accountName, instrumentName);
+            bool isEntryNotification = false;
+            bool isExitNotification = false;
+            double realizedPnl = 0;
+
+            lock (trackedPositionsByKey)
+            {
+                TrackedPositionState state;
+                if (!trackedPositionsByKey.TryGetValue(key, out state))
+                {
+                    state = new TrackedPositionState();
+                    trackedPositionsByKey[key] = state;
+                }
+
+                if (Math.Abs(state.SignedQuantity) < 0.0000001)
+                {
+                    state.SignedQuantity = signedFillQuantity;
+                    state.AverageEntryPrice = execution.Price;
+                    isEntryNotification = true;
+                }
+                else if (Math.Sign(state.SignedQuantity) == Math.Sign(signedFillQuantity))
+                {
+                    double existingAbsoluteQuantity = Math.Abs(state.SignedQuantity);
+                    double fillAbsoluteQuantity = Math.Abs(signedFillQuantity);
+                    double combinedAbsoluteQuantity = existingAbsoluteQuantity + fillAbsoluteQuantity;
+                    state.AverageEntryPrice =
+                        ((state.AverageEntryPrice * existingAbsoluteQuantity) + (execution.Price * fillAbsoluteQuantity)) /
+                        combinedAbsoluteQuantity;
+                    state.SignedQuantity += signedFillQuantity;
+                    isEntryNotification = true;
+                }
+                else
+                {
+                    double closeQuantity = Math.Min(Math.Abs(state.SignedQuantity), Math.Abs(signedFillQuantity));
+                    double points = state.SignedQuantity > 0
+                        ? execution.Price - state.AverageEntryPrice
+                        : state.AverageEntryPrice - execution.Price;
+                    realizedPnl = points * execution.Instrument.MasterInstrument.PointValue * closeQuantity;
+                    isExitNotification = true;
+
+                    double newSignedQuantity = state.SignedQuantity + signedFillQuantity;
+                    if (Math.Abs(newSignedQuantity) < 0.0000001)
+                    {
+                        trackedPositionsByKey.Remove(key);
+                    }
+                    else if (Math.Sign(newSignedQuantity) == Math.Sign(state.SignedQuantity))
+                    {
+                        state.SignedQuantity = newSignedQuantity;
+                    }
+                    else
+                    {
+                        state.SignedQuantity = newSignedQuantity;
+                        state.AverageEntryPrice = execution.Price;
+                    }
+                }
+            }
+
+            if (isExitNotification)
+                return new ExecutionMessageResult
+                {
+                    IsExitNotification = true,
+                    Message = FormatExitMessage(account, accountName, instrumentName, realizedPnl)
+                };
+
+            if (isEntryNotification)
+                return new ExecutionMessageResult
+                {
+                    IsEntryNotification = true,
+                    Message = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0} {1}",
+                        instrumentName,
+                        signedFillQuantity > 0 ? "Long" : "Short")
+                };
+
+            return new ExecutionMessageResult
+            {
+                Message = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} {1} filled {2} {3} @ {4}",
+                    accountName,
+                    instrumentName,
+                    execution.Quantity,
+                    execution.Order.OrderAction,
+                    execution.Price)
+            };
+        }
+
+        private string FormatExitMessage(Account account, string accountName, string instrumentName, double realizedPnl)
+        {
+            CultureInfo usCulture = new CultureInfo("en-US");
+            string pnlText = realizedPnl.ToString("C", usCulture);
+            string emoji = realizedPnl >= 0 ? "💰" : "🔻";
+            string cashText = string.Empty;
+
+            if (account != null)
+            {
+                double cashValue = account.Get(AccountItem.CashValue, Currency.UsDollar) + realizedPnl;
+                cashText = cashValue.ToString("C0", usCulture);
+            }
+
+            if (string.IsNullOrEmpty(cashText))
+                return string.Format(CultureInfo.InvariantCulture, "{0} {1} {2}", emoji, pnlText, instrumentName);
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} {1} {2} \n🏦 {3} \n{4}",
+                emoji,
+                pnlText,
+                instrumentName,
+                cashText,
+                accountName);
+        }
+
+        private static string GetTrackedPositionKey(string accountName, string instrumentName)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountName ?? string.Empty, instrumentName ?? string.Empty);
+        }
+
+        private static double GetSignedFillQuantity(OrderAction orderAction, double quantity)
+        {
+            switch (orderAction)
+            {
+                case OrderAction.Buy:
+                case OrderAction.BuyToCover:
+                    return quantity;
+                case OrderAction.Sell:
+                case OrderAction.SellShort:
+                    return -quantity;
+                default:
+                    return 0;
+            }
         }
 
         private void SubscribeToMarketData()
@@ -873,8 +1025,14 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (string.IsNullOrWhiteSpace(monitoredAccountName))
                 return true;
 
-            return string.Equals(account.Name, monitoredAccountName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(account.DisplayName, monitoredAccountName, StringComparison.OrdinalIgnoreCase);
+            foreach (string accountFilter in ParseCsv(monitoredAccountName))
+            {
+                if (string.Equals(account.Name, accountFilter, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(account.DisplayName, accountFilter, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
 
         private string GetConnectionName(Connection connection)
@@ -1266,6 +1424,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private TextBox reconnectMaxAttemptsTextBox;
         private TextBox monitoredConnectionTextBox;
         private TextBox monitoredAccountTextBox;
+        private ComboBox accountPickerComboBox;
         private TextBox monitoredInstrumentsTextBox;
         private TextBlock statusTextBlock;
 
@@ -1304,6 +1463,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             monitoredAccountTextBox.Text = settings.MonitoredAccountName ?? string.Empty;
             monitoredInstrumentsTextBox.Text = settings.MonitoredInstrumentsCsv ?? string.Empty;
             statusTextBlock.Text = statusText ?? string.Empty;
+            RefreshAccountPickerOptions();
         }
 
         private UIElement BuildContent()
@@ -1406,11 +1566,62 @@ namespace NinjaTrader.NinjaScript.AddOns
             stack.Children.Add(BuildLabeledTextBox("Reconnect Max Attempts (0 = unlimited)", "Maximum reconnect tries before stopping. Use 0 to keep retrying indefinitely.", out reconnectMaxAttemptsTextBox));
 
             stack.Children.Add(BuildSectionHeader("Filters"));
-            stack.Children.Add(BuildLabeledTextBox("Monitored Connection Name", "Exact NinjaTrader connection name to monitor, for example `Rithmic`. Leave blank to include all connections.", out monitoredConnectionTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Monitored Account Name", "Exact account name or display name to monitor. Leave blank to include all accounts.", out monitoredAccountTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Monitored Connection Name", "Exact NinjaTrader connection name to monitor, for example `Rithmic`. Leave blank to include all connections. This is optional if account filtering alone is enough.", out monitoredConnectionTextBox));
+            stack.Children.Add(BuildLabeledTextBox("Monitored Account Names", "Comma-separated account names or display names to monitor, for example `Playback101,Apex-01,Lucid-02`. Leave blank to include all accounts.", out monitoredAccountTextBox));
+            stack.Children.Add(BuildAccountPickerRow());
             stack.Children.Add(BuildLabeledTextBox("Monitored Instruments CSV", "Comma-separated instrument names to watch for feed stalls, for example `ES 06-26,NQ 06-26`.", out monitoredInstrumentsTextBox));
 
             return stack;
+        }
+
+        private Border BuildAccountPickerRow()
+        {
+            StackPanel panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Available Accounts",
+                Foreground = TitleTextBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+
+            DockPanel row = new DockPanel { LastChildFill = true };
+
+            Button refreshAccountsButton = new Button
+            {
+                Content = "Refresh Accounts",
+                MinWidth = 130,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+            refreshAccountsButton.Click += (_, __) => RefreshAccountPickerOptions();
+            DockPanel.SetDock(refreshAccountsButton, Dock.Right);
+            row.Children.Add(refreshAccountsButton);
+
+            Button addAccountButton = new Button
+            {
+                Content = "Add Account",
+                MinWidth = 100,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+            addAccountButton.Click += OnAddAccountClick;
+            DockPanel.SetDock(addAccountButton, Dock.Right);
+            row.Children.Add(addAccountButton);
+
+            accountPickerComboBox = new ComboBox
+            {
+                MinWidth = 280
+            };
+            row.Children.Add(accountPickerComboBox);
+
+            panel.Children.Add(row);
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Choose one of the currently available NinjaTrader accounts and append it to the monitored-account list.",
+                Foreground = DescriptionTextBrush,
+                Margin = new Thickness(0, 4, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            return new Border { Child = panel };
         }
 
         private Border BuildSection(string title, out CheckBox first, string firstLabel, string firstDescription, out CheckBox second, string secondLabel, string secondDescription, out CheckBox third, string thirdLabel, string thirdDescription)
@@ -1524,6 +1735,19 @@ namespace NinjaTrader.NinjaScript.AddOns
             LoadFromSettings(TradeMessengerAddOn.Instance.GetSettingsSnapshot(), TradeMessengerAddOn.Instance.GetStatusSnapshot());
         }
 
+        private void OnAddAccountClick(object sender, RoutedEventArgs e)
+        {
+            string selectedAccount = accountPickerComboBox != null ? accountPickerComboBox.SelectedItem as string : null;
+            if (string.IsNullOrWhiteSpace(selectedAccount) || monitoredAccountTextBox == null)
+                return;
+
+            List<string> existing = ParseCsvLocal(monitoredAccountTextBox.Text).ToList();
+            if (!existing.Any(value => string.Equals(value, selectedAccount, StringComparison.OrdinalIgnoreCase)))
+                existing.Add(selectedAccount);
+
+            monitoredAccountTextBox.Text = string.Join(",", existing);
+        }
+
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
             if (TradeMessengerAddOn.Instance == null)
@@ -1561,6 +1785,64 @@ namespace NinjaTrader.NinjaScript.AddOns
         private static int ParseIntOrDefault(string value, int fallback)
         {
             return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) ? parsed : fallback;
+        }
+
+        private static IEnumerable<string> ParseCsvLocal(string csv)
+        {
+            if (string.IsNullOrWhiteSpace(csv))
+                yield break;
+
+            foreach (string value in csv.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string trimmed = value.Trim();
+                if (!string.IsNullOrWhiteSpace(trimmed))
+                    yield return trimmed;
+            }
+        }
+
+        private void RefreshAccountPickerOptions()
+        {
+            if (accountPickerComboBox == null)
+                return;
+
+            string selected = accountPickerComboBox.SelectedItem as string;
+            List<string> accountNames = new List<string>();
+
+            lock (Connection.Connections)
+            {
+                foreach (Connection connection in Connection.Connections)
+                {
+                    if (connection == null || connection.Status != ConnectionStatus.Connected)
+                        continue;
+
+                    lock (connection.Accounts)
+                    {
+                        foreach (Account account in connection.Accounts)
+                        {
+                            if (account == null)
+                                continue;
+
+                            string name = !string.IsNullOrWhiteSpace(account.DisplayName)
+                                ? account.DisplayName
+                                : account.Name;
+                            if (!string.IsNullOrWhiteSpace(name))
+                                accountNames.Add(name);
+                        }
+                    }
+                }
+            }
+
+            accountNames = accountNames
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            accountPickerComboBox.ItemsSource = accountNames;
+            if (!string.IsNullOrWhiteSpace(selected))
+                accountPickerComboBox.SelectedItem = accountNames.FirstOrDefault(name => string.Equals(name, selected, StringComparison.OrdinalIgnoreCase));
+
+            if (accountPickerComboBox.SelectedItem == null && accountNames.Count > 0)
+                accountPickerComboBox.SelectedIndex = 0;
         }
     }
 }

@@ -423,6 +423,7 @@
     <Compile Include="Strategies\MultiBot\OrboCore.cs" />
     <Compile Include="Strategies\MultiBot\DuoLogicCore.cs" />
     <Compile Include="Strategies\ADAM.cs" />
+    <Compile Include="Strategies\TradeMessenger.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">
