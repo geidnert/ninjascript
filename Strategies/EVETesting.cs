@@ -306,6 +306,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EnforceLimitPriceSafety = false;
                 AllowReEntryAfterBEScratch = true;
                 MaxRetriesAfterTargetCancel = 1;
+                UseLegacyTargetCancelReset = false;
                 UseSkipTime = true;
                 CloseAtSkipStart = false;
                 CloseAtNewsStart = false;
@@ -854,8 +855,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TryCancelOrder(_longLimitOrder);
                 _longEntryArmed = false;
                 _longFVGPending = false;
-                ScheduleLongRetryAfterTargetCancel();
-                // Trigger hit is session state; do not reset here or Section H can re-arm every bar.
+                if (UseLegacyTargetCancelReset)
+                {
+                    _longTriggerHit = false;
+                    Print(Time[0] + " | Long target-cancel legacy reset applied");
+                }
+                else
+                {
+                    ScheduleLongRetryAfterTargetCancel();
+                }
                 Print(Time[0] + " | Long limit cancelled – target already reached");
             }
             if (_shortEntryArmed && _shortLimitOrder != null && Low[0] <= _shortTarget)
@@ -863,8 +871,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TryCancelOrder(_shortLimitOrder);
                 _shortEntryArmed = false;
                 _shortFVGPending = false;
-                ScheduleShortRetryAfterTargetCancel();
-                // Trigger hit is session state; do not reset here or Section H can re-arm every bar.
+                if (UseLegacyTargetCancelReset)
+                {
+                    _shortTriggerHit = false;
+                    Print(Time[0] + " | Short target-cancel legacy reset applied");
+                }
+                else
+                {
+                    ScheduleShortRetryAfterTargetCancel();
+                }
                 Print(Time[0] + " | Short limit cancelled – target already reached");
             }
 
@@ -2799,34 +2814,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int MaxRetriesAfterTargetCancel { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Use Legacy Target Cancel Reset",
+                 Description = "Test-only option. Restores the old behavior that resets trigger state when a pending limit is canceled after target touch. This can increase trades, but it may reintroduce the repeated cancel/re-arm loop and distort drawdown/results.",
+                 GroupName = "02 - Common: Session Filters", Order = 7)]
+        public bool UseLegacyTargetCancelReset { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Use Skip Time",
                  Description = "Enable skip time entry blocking between Skip Start and Skip End.",
-                 GroupName = "02 - Common: Session Filters", Order = 7)]
+                 GroupName = "02 - Common: Session Filters", Order = 8)]
         public bool UseSkipTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Skip Start",
                  Description = "If true, flatten open position when skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 8)]
+                 GroupName = "02 - Common: Session Filters", Order = 9)]
         public bool CloseAtSkipStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At News Start",
                  Description = "If true, flatten open position when news skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 9)]
+                 GroupName = "02 - Common: Session Filters", Order = 10)]
         public bool CloseAtNewsStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 10)]
+                 GroupName = "02 - Common: Session Filters", Order = 11)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 11)]
+                 GroupName = "02 - Common: Session Filters", Order = 12)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
