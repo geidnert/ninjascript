@@ -302,6 +302,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── Shared: Session Filters ────────────────────────────────────
                 CommonContracts   = 5;
+                EnableLongTrades  = false;
+                EnableShortTrades = true;
                 AlternatingEnabled = false;
                 ReEntryEnabled     = true;
                 RequireORCloseForReEntry = false;
@@ -597,22 +599,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     // ── Bucket selection: Long ────────────────────────────────
                     _longActiveBucket = 0;
-                    if (LongB1Enabled && range >= LongB1MinORSize && range <  LongB1MaxORSize)
+                    if (EnableLongTrades && LongB1Enabled && range >= LongB1MinORSize && range <  LongB1MaxORSize)
                         _longActiveBucket = 1;
-                    else if (LongB2Enabled && range >= LongB2MinORSize && range <  LongB2MaxORSize)
+                    else if (EnableLongTrades && LongB2Enabled && range >= LongB2MinORSize && range <  LongB2MaxORSize)
                         _longActiveBucket = 2;
-                    else if (LongB3Enabled && range >= LongB3MinORSize && range <= LongB3MaxORSize)
+                    else if (EnableLongTrades && LongB3Enabled && range >= LongB3MinORSize && range <= LongB3MaxORSize)
                         _longActiveBucket = 3;
 
                     _longORValid = (_longActiveBucket > 0);
 
                     // ── Bucket selection: Short ───────────────────────────────
                     _shortActiveBucket = 0;
-                    if (ShortB1Enabled && range >= ShortB1MinORSize && range <  ShortB1MaxORSize)
+                    if (EnableShortTrades && ShortB1Enabled && range >= ShortB1MinORSize && range <  ShortB1MaxORSize)
                         _shortActiveBucket = 1;
-                    else if (ShortB2Enabled && range >= ShortB2MinORSize && range <  ShortB2MaxORSize)
+                    else if (EnableShortTrades && ShortB2Enabled && range >= ShortB2MinORSize && range <  ShortB2MaxORSize)
                         _shortActiveBucket = 2;
-                    else if (ShortB3Enabled && range >= ShortB3MinORSize && range <= ShortB3MaxORSize)
+                    else if (EnableShortTrades && ShortB3Enabled && range >= ShortB3MinORSize && range <= ShortB3MaxORSize)
                         _shortActiveBucket = 3;
 
                     _shortORValid = (_shortActiveBucket > 0);
@@ -2853,96 +2855,108 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int CommonContracts { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Enable Long Trades",
+                 Description = "Master switch for long entries. If disabled, no long bucket will be selected and no long trades will be taken.",
+                 GroupName = "02 - Common: Session Filters", Order = 1)]
+        public bool EnableLongTrades { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Short Trades",
+                 Description = "Master switch for short entries. If disabled, no short bucket will be selected and no short trades will be taken.",
+                 GroupName = "02 - Common: Session Filters", Order = 2)]
+        public bool EnableShortTrades { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Alternating Direction",
                  Description = "After a WIN on either side, only allow the opposite direction next",
-                 GroupName = "02 - Common: Session Filters", Order = 1)]
+                 GroupName = "02 - Common: Session Filters", Order = 3)]
         public bool AlternatingEnabled { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Re-Entry After Loss",
                  Description = "Allow another entry attempt after a qualifying flat exit, subject to the re-entry filters below.",
-                 GroupName = "02 - Common: Session Filters", Order = 2)]
+                 GroupName = "02 - Common: Session Filters", Order = 4)]
         public bool ReEntryEnabled { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require OR Close For Re-Entry",
                  Description = "If enabled, re-entry after loss waits for a close back through OR. Disable to retry immediately while keeping the target-cancel loop fix.",
-                 GroupName = "02 - Common: Session Filters", Order = 3)]
+                 GroupName = "02 - Common: Session Filters", Order = 5)]
         public bool RequireORCloseForReEntry { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enforce Limit Price Safety",
                  Description = "If enabled, skip new limit entries when the bar has already closed beyond the intended limit price. Disable to restore the more permissive legacy behavior.",
-                 GroupName = "02 - Common: Session Filters", Order = 4)]
+                 GroupName = "02 - Common: Session Filters", Order = 6)]
         public bool EnforceLimitPriceSafety { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Allow Re-Entry After BE Scratch",
                  Description = "If enabled, a break-even scratch may re-arm another entry attempt if the other session rules still allow it. If disabled, BE scratches consume a trade but do not retry.",
-                 GroupName = "02 - Common: Session Filters", Order = 5)]
+                 GroupName = "02 - Common: Session Filters", Order = 7)]
         public bool AllowReEntryAfterBEScratch { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 10)]
         [Display(Name = "Max Retries After Target Cancel",
                  Description = "Maximum controlled retries after a pending limit order is canceled because price already touched target. Each retry requires price to reset back to OR first, which avoids the old repeated cancel/re-arm loop.",
-                 GroupName = "02 - Common: Session Filters", Order = 6)]
+                 GroupName = "02 - Common: Session Filters", Order = 8)]
         public int MaxRetriesAfterTargetCancel { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use Legacy Target Cancel Reset",
                  Description = "Test-only option. Restores the old behavior that resets trigger state when a pending limit is canceled after target touch. This can increase trades, but it may reintroduce the repeated cancel/re-arm loop and distort drawdown/results.",
-                 GroupName = "02 - Common: Session Filters", Order = 7)]
+                 GroupName = "02 - Common: Session Filters", Order = 9)]
         public bool UseLegacyTargetCancelReset { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Reset Trigger After Target Cancel",
                  Description = "Controlled alternative to the legacy mode. Resets trigger state after a target-cancel so a fresh trigger can form again, subject to the limits below.",
-                 GroupName = "02 - Common: Session Filters", Order = 8)]
+                 GroupName = "02 - Common: Session Filters", Order = 10)]
         public bool ResetTriggerAfterTargetCancel { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require Price Reset Before Re-Trigger",
                  Description = "If enabled, after a controlled trigger reset the market must move back through the trigger first before another trigger is allowed.",
-                 GroupName = "02 - Common: Session Filters", Order = 9)]
+                 GroupName = "02 - Common: Session Filters", Order = 11)]
         public bool RequirePriceResetBeforeReTrigger { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 10)]
         [Display(Name = "Max Trigger Resets After Target Cancel",
                  Description = "Maximum number of controlled trigger resets allowed per direction after target-cancel events in one session.",
-                 GroupName = "02 - Common: Session Filters", Order = 10)]
+                 GroupName = "02 - Common: Session Filters", Order = 12)]
         public int MaxTriggerResetsAfterTargetCancel { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use Skip Time",
                  Description = "Enable skip time entry blocking between Skip Start and Skip End.",
-                 GroupName = "02 - Common: Session Filters", Order = 11)]
+                 GroupName = "02 - Common: Session Filters", Order = 13)]
         public bool UseSkipTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Skip Start",
                  Description = "If true, flatten open position when skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 12)]
+                 GroupName = "02 - Common: Session Filters", Order = 14)]
         public bool CloseAtSkipStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At News Start",
                  Description = "If true, flatten open position when news skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 13)]
+                 GroupName = "02 - Common: Session Filters", Order = 15)]
         public bool CloseAtNewsStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 14)]
+                 GroupName = "02 - Common: Session Filters", Order = 16)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 15)]
+                 GroupName = "02 - Common: Session Filters", Order = 17)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
