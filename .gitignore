@@ -14,9 +14,6 @@ zh-Hans/
 *.pdb
 *.xml
 
-# Old nested repo/worktree kept as backup after moving repo root to Custom
-Strategies/
-
 # Untracked NinjaTrader source tree not imported into this repo yet
 AssemblyInfo.cs
 BarsTypes/
@@ -45,3 +42,26 @@ ShareServices/
 SuperDomColumns/
 VendorLicensing.cs
 XBotModel1V18.cs
+
+# Legacy root-level copies imported from the old Strategies-root repo
+8020.cs
+ADAM.cs
+ADAMTesting.cs
+DR.cs
+DiscordNotifier.cs
+Duo.cs
+DuoEMA.cs
+DuoTesting.cs
+DuoTesting3.cs
+EVETesting.cs
+FiveMin.cs
+Heiken.cs
+MultiBot/
+ORBO.cs
+ORBOTesting.cs
+PassChallenge.cs
+Sweeper.cs
+TradeMessenger.cs
+docs/
+skills/
+iFVG.cs
