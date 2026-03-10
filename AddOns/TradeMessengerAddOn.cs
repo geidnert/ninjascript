@@ -709,9 +709,6 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             lock (trackedPositionsByKey)
             {
-                if (string.IsNullOrWhiteSpace(botName))
-                    botName = FindTrackedBotName(accountName, instrumentName);
-
                 string key = GetTrackedPositionKey(accountName, instrumentName, botName);
                 TrackedPositionState state;
                 if (!trackedPositionsByKey.TryGetValue(key, out state))
@@ -863,33 +860,6 @@ namespace NinjaTrader.NinjaScript.AddOns
                 return botName;
 
             return ExtractBotName(orderName);
-        }
-
-        private string FindTrackedBotName(string accountName, string instrumentName)
-        {
-            string prefix = string.Format(
-                CultureInfo.InvariantCulture,
-                "{0}|{1}|",
-                accountName ?? string.Empty,
-                instrumentName ?? string.Empty);
-
-            string matchedBotName = string.Empty;
-            foreach (KeyValuePair<string, TrackedPositionState> item in trackedPositionsByKey)
-            {
-                if (!item.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string candidate = item.Key.Substring(prefix.Length);
-                if (string.IsNullOrWhiteSpace(candidate))
-                    continue;
-
-                if (!string.IsNullOrWhiteSpace(matchedBotName) && !string.Equals(matchedBotName, candidate, StringComparison.OrdinalIgnoreCase))
-                    return string.Empty;
-
-                matchedBotName = candidate;
-            }
-
-            return matchedBotName;
         }
 
         private static string FormatMessageTitle(string botName, string instrumentName)
