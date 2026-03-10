@@ -2015,6 +2015,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool ShowEntryConfirmation(string orderType, double price, int quantity)
         {
+            if (State != State.Realtime)
+                return true;
+
             bool result = false;
             if (System.Windows.Application.Current == null)
                 return false;

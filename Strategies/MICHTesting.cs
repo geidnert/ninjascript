@@ -201,6 +201,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IsInstantiatedOnEachOptimizationIteration = true;
 
                 // ─── 0. General ───
+                NumberOfContracts             = 1;
                 EnableLongTrades                = true;
                 EnableShortTrades               = true;
                 RequireEntryConfirmation        = false;
@@ -740,15 +741,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     if (tpPrice <= tradeEntryPrice) tpPrice = tradeEntryPrice + (tradeDirection == 1 ? LongTakeProfitTicks : ShortTakeProfitTicks) * TickSize;
                     if (slPrice >= tradeEntryPrice) slPrice = tradeEntryPrice - 4 * TickSize;
-                    ExitLongLimit(0, true, 1, tpPrice, "TP", entryName);
-                    ExitLongStopMarket(0, true, 1, slPrice, "SL", entryName);
+                    ExitLongLimit(0, true, NumberOfContracts, tpPrice, "TP", entryName);
+                    ExitLongStopMarket(0, true, NumberOfContracts, slPrice, "SL", entryName);
                 }
                 else
                 {
                     if (tpPrice >= tradeEntryPrice) tpPrice = tradeEntryPrice - (tradeDirection == 1 ? LongTakeProfitTicks : ShortTakeProfitTicks) * TickSize;
                     if (slPrice <= tradeEntryPrice) slPrice = tradeEntryPrice + 4 * TickSize;
-                    ExitShortLimit(0, true, 1, tpPrice, "TP", entryName);
-                    ExitShortStopMarket(0, true, 1, slPrice, "SL", entryName);
+                    ExitShortLimit(0, true, NumberOfContracts, tpPrice, "TP", entryName);
+                    ExitShortStopMarket(0, true, NumberOfContracts, slPrice, "SL", entryName);
                 }
 
                 originalStopPrice = slPrice;
@@ -1015,6 +1016,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool ShowEntryConfirmation(string orderType, double price, int quantity)
         {
+            if (State != State.Realtime)
+                return true;
+
             bool result = false;
             if (System.Windows.Application.Current == null)
                 return false;
@@ -1299,39 +1303,39 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (entryMode == MichalEntryMode.Market)
             {
-                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", closePrice, 1))
+                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", closePrice, NumberOfContracts))
                 {
                     Print(string.Format("{0} | Entry confirmation declined | {1}.", Time[0], direction == 1 ? "LONG" : "SHORT"));
                     return;
                 }
-                entryOrder = direction == 1 ? EnterLong(1, entryName) : EnterShort(1, entryName);
+                entryOrder = direction == 1 ? EnterLong(NumberOfContracts, entryName) : EnterShort(NumberOfContracts, entryName);
             }
             else if (entryMode == MichalEntryMode.LimitOffset)
             {
                 double limitPrice = direction == 1
                     ? closePrice - limitOffsetTicks * TickSize
                     : closePrice + limitOffsetTicks * TickSize;
-                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", limitPrice, 1))
+                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", limitPrice, NumberOfContracts))
                 {
                     Print(string.Format("{0} | Entry confirmation declined | {1}.", Time[0], direction == 1 ? "LONG" : "SHORT"));
                     return;
                 }
                 entryOrder = direction == 1
-                    ? EnterLongLimit(0, true, 1, limitPrice, entryName)
-                    : EnterShortLimit(0, true, 1, limitPrice, entryName);
+                    ? EnterLongLimit(0, true, NumberOfContracts, limitPrice, entryName)
+                    : EnterShortLimit(0, true, NumberOfContracts, limitPrice, entryName);
             }
             else if (entryMode == MichalEntryMode.LimitRetracement)
             {
                 double retrace = signalCandleRange * (limitRetracePct / 100.0);
                 double limitPrice = direction == 1 ? closePrice - retrace : closePrice + retrace;
-                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", limitPrice, 1))
+                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", limitPrice, NumberOfContracts))
                 {
                     Print(string.Format("{0} | Entry confirmation declined | {1}.", Time[0], direction == 1 ? "LONG" : "SHORT"));
                     return;
                 }
                 entryOrder = direction == 1
-                    ? EnterLongLimit(0, true, 1, limitPrice, entryName)
-                    : EnterShortLimit(0, true, 1, limitPrice, entryName);
+                    ? EnterLongLimit(0, true, NumberOfContracts, limitPrice, entryName)
+                    : EnterShortLimit(0, true, NumberOfContracts, limitPrice, entryName);
             }
 
             WMA wma = direction == 1 ? longWmaFilter : shortWmaFilter;
@@ -1480,7 +1484,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double bePrice = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice + offsetTicks * TickSize);
                     if (bePrice > originalStopPrice && bePrice < Close[0])
                     {
-                        ExitLongStopMarket(0, true, 1, bePrice, "SL", "LongEntry");
+                        ExitLongStopMarket(0, true, NumberOfContracts, bePrice, "SL", "LongEntry");
                         originalStopPrice = bePrice;
                         breakEvenApplied = true;
                         Print(string.Format("{0} | BREAKEVEN LONG: SL -> {1:F2}", Time[0], bePrice));
@@ -1491,7 +1495,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double bePrice = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice - offsetTicks * TickSize);
                     if (bePrice < originalStopPrice && bePrice > Close[0])
                     {
-                        ExitShortStopMarket(0, true, 1, bePrice, "SL", "ShortEntry");
+                        ExitShortStopMarket(0, true, NumberOfContracts, bePrice, "SL", "ShortEntry");
                         originalStopPrice = bePrice;
                         breakEvenApplied = true;
                         Print(string.Format("{0} | BREAKEVEN SHORT: SL -> {1:F2}", Time[0], bePrice));
@@ -1513,7 +1517,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 newStop = Instrument.MasterInstrument.RoundToTickSize(newStop);
                 if (newStop > originalStopPrice && newStop < Close[0])
                 {
-                    ExitLongStopMarket(0, true, 1, newStop, "SL", "LongEntry");
+                    ExitLongStopMarket(0, true, NumberOfContracts, newStop, "SL", "LongEntry");
                     Print(string.Format("{0} | TRAIL UP -> {1:F2}", Time[0], newStop));
                 }
             }
@@ -1523,7 +1527,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 newStop = Instrument.MasterInstrument.RoundToTickSize(newStop);
                 if (newStop < originalStopPrice && newStop > Close[0])
                 {
-                    ExitShortStopMarket(0, true, 1, newStop, "SL", "ShortEntry");
+                    ExitShortStopMarket(0, true, NumberOfContracts, newStop, "SL", "ShortEntry");
                     Print(string.Format("{0} | TRAIL DOWN -> {1:F2}", Time[0], newStop));
                 }
             }
@@ -1545,7 +1549,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double newSl = Instrument.MasterInstrument.RoundToTickSize(Low[1] - slExtraTicks * TickSize);
                 if (newSl > originalStopPrice && newSl < Close[0])
                 {
-                    ExitLongStopMarket(0, true, 1, newSl, "SL", "LongEntry");
+                    ExitLongStopMarket(0, true, NumberOfContracts, newSl, "SL", "LongEntry");
                     originalStopPrice = newSl;
                     Print(string.Format("{0} | ENTRY BAR SL LONG: SL -> {1:F2} (entry bar low={2:F2})", Time[0], newSl, Low[1]));
                 }
@@ -1555,7 +1559,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double newSl = Instrument.MasterInstrument.RoundToTickSize(High[1] + slExtraTicks * TickSize);
                 if (newSl < originalStopPrice && newSl > Close[0])
                 {
-                    ExitShortStopMarket(0, true, 1, newSl, "SL", "ShortEntry");
+                    ExitShortStopMarket(0, true, NumberOfContracts, newSl, "SL", "ShortEntry");
                     originalStopPrice = newSl;
                     Print(string.Format("{0} | ENTRY BAR SL SHORT: SL -> {1:F2} (entry bar high={2:F2})", Time[0], newSl, High[1]));
                 }
@@ -1575,7 +1579,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double newStop = Instrument.MasterInstrument.RoundToTickSize(Low[trailCandleOffset] - slExtraTicks * TickSize);
                 if (newStop > originalStopPrice && newStop < Close[0])
                 {
-                    ExitLongStopMarket(0, true, 1, newStop, "SL", "LongEntry");
+                    ExitLongStopMarket(0, true, NumberOfContracts, newStop, "SL", "LongEntry");
                     Print(string.Format("{0} | CANDLE-LAG TRAIL UP -> {1:F2} (Low[{2}]={3:F2})", Time[0], newStop, trailCandleOffset, Low[trailCandleOffset]));
                 }
             }
@@ -1584,7 +1588,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double newStop = Instrument.MasterInstrument.RoundToTickSize(High[trailCandleOffset] + slExtraTicks * TickSize);
                 if (newStop < originalStopPrice && newStop > Close[0])
                 {
-                    ExitShortStopMarket(0, true, 1, newStop, "SL", "ShortEntry");
+                    ExitShortStopMarket(0, true, NumberOfContracts, newStop, "SL", "ShortEntry");
                     Print(string.Format("{0} | CANDLE-LAG TRAIL DOWN -> {1:F2} (High[{2}]={3:F2})", Time[0], newStop, trailCandleOffset, High[trailCandleOffset]));
                 }
             }
@@ -1610,7 +1614,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     Print(string.Format("{0} | ENGULFING EXIT SHORT: Bullish engulfing (O={1:F2} C={2:F2} engulfs {3:F2}-{4:F2})",
                         Time[0], currentOpen, currentClose, prevBodyLow, prevBodyHigh));
-                    ExitShort(1, "EngulfExit", "ShortEntry");
+                    ExitShort(Math.Max(1, Position.Quantity), "EngulfExit", "ShortEntry");
                 }
             }
             else if (tradeDirection == 1 && Position.MarketPosition == MarketPosition.Long)
@@ -1620,7 +1624,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     Print(string.Format("{0} | ENGULFING EXIT LONG: Bearish engulfing (O={1:F2} C={2:F2} engulfs {3:F2}-{4:F2})",
                         Time[0], currentOpen, currentClose, prevBodyLow, prevBodyHigh));
-                    ExitLong(1, "EngulfExit", "LongEntry");
+                    ExitLong(Math.Max(1, Position.Quantity), "EngulfExit", "LongEntry");
                 }
             }
         }
@@ -1655,7 +1659,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double newStop = Instrument.MasterInstrument.RoundToTickSize(Close[0] - priceOffsetTrailDistance);
                     if (newStop > originalStopPrice && newStop < Close[0])
                     {
-                        ExitLongStopMarket(0, true, 1, newStop, "SL", "LongEntry");
+                    ExitLongStopMarket(0, true, NumberOfContracts, newStop, "SL", "LongEntry");
                         Print(string.Format("{0} | PRICE-OFFSET TRAIL UP -> {1:F2}", Time[0], newStop));
                     }
                 }
@@ -1679,7 +1683,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double newStop = Instrument.MasterInstrument.RoundToTickSize(Close[0] + priceOffsetTrailDistance);
                     if (newStop < originalStopPrice && newStop > Close[0])
                     {
-                        ExitShortStopMarket(0, true, 1, newStop, "SL", "ShortEntry");
+                    ExitShortStopMarket(0, true, NumberOfContracts, newStop, "SL", "ShortEntry");
                         Print(string.Format("{0} | PRICE-OFFSET TRAIL DOWN -> {1:F2}", Time[0], newStop));
                     }
                 }
@@ -1708,7 +1712,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     else if (Close[0] > opposingBarBenchmark)
                     {
                         Print(string.Format("{0} | OPP BAR EXIT SHORT: Bullish close {1:F2} > benchmark {2:F2}", Time[0], Close[0], opposingBarBenchmark));
-                        ExitShort(1, "OppBarExit", "ShortEntry");
+                        ExitShort(Math.Max(1, Position.Quantity), "OppBarExit", "ShortEntry");
                     }
                 }
             }
@@ -1725,7 +1729,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     else if (Close[0] < opposingBarBenchmark)
                     {
                         Print(string.Format("{0} | OPP BAR EXIT LONG: Bearish close {1:F2} < benchmark {2:F2}", Time[0], Close[0], opposingBarBenchmark));
-                        ExitLong(1, "OppBarExit", "LongEntry");
+                        ExitLong(Math.Max(1, Position.Quantity), "OppBarExit", "LongEntry");
                     }
                 }
             }
@@ -1854,12 +1858,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
-                ExitLong(1, "ForcedExit", "LongEntry");
+                ExitLong(Math.Max(1, Position.Quantity), "ForcedExit", "LongEntry");
                 Print(string.Format("{0} | {1}: Close LONG", Time[0], reason));
             }
             else if (Position.MarketPosition == MarketPosition.Short)
             {
-                ExitShort(1, "ForcedExit", "ShortEntry");
+                ExitShort(Math.Max(1, Position.Quantity), "ForcedExit", "ShortEntry");
                 Print(string.Format("{0} | {1}: Close SHORT", Time[0], reason));
             }
         }
@@ -2238,7 +2242,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
 
             lines.Add((string.Format("MICH v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
-            lines.Add(("Contracts:", "1", Brushes.LightGray, Brushes.LightGray));
+            lines.Add(("Contracts:", NumberOfContracts.ToString(CultureInfo.InvariantCulture), Brushes.LightGray, Brushes.LightGray));
 
             if (!UseNewsSkip)
             {
@@ -2380,15 +2384,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ═══════════════════════════════════════
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Long Trades", Description = "Allow long entries.", Order = 1, GroupName = "00. General")]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Order quantity for entries and attached exits.", Order = 1, GroupName = "00. General")]
+        public int NumberOfContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Long Trades", Description = "Allow long entries.", Order = 2, GroupName = "00. General")]
         public bool EnableLongTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Short Trades", Description = "Allow short entries.", Order = 2, GroupName = "00. General")]
+        [Display(Name = "Enable Short Trades", Description = "Allow short entries.", Order = 3, GroupName = "00. General")]
         public bool EnableShortTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Require Entry Confirmation", Description = "Show a confirmation prompt before submitting each entry order.", Order = 3, GroupName = "00. General")]
+        [Display(Name = "Require Entry Confirmation", Description = "Show a confirmation prompt before submitting each entry order.", Order = 4, GroupName = "00. General")]
         public bool RequireEntryConfirmation { get; set; }
 
         // ═══════════════════════════════════════
