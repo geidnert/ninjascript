@@ -226,6 +226,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ForcedCloseTime                 = DateTime.Parse("15:50", System.Globalization.CultureInfo.InvariantCulture);
                 UseNewsSkip                     = true;
                 NewsBlockMinutes                = 1;
+                FlattenOnBlockedWindowTransition = true;
 
                 // ─── 2. Common: Session Limits ───
                 MaxTradesPerSession             = 4;
@@ -1853,14 +1854,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inSkipWindow = IsInSkipWindow(Time[0]);
             bool inNewsSkipWindow = IsInNewsSkipWindow(Time[0]);
 
-            if (!wasInNoTradesAfterWindow && inNoTradesAfterWindow)
-                FlattenAndCancel("NoTradesAfter");
+            if (FlattenOnBlockedWindowTransition)
+            {
+                if (!wasInNoTradesAfterWindow && inNoTradesAfterWindow)
+                    FlattenAndCancel("NoTradesAfter");
 
-            if (!wasInSkipWindow && inSkipWindow)
-                FlattenAndCancel("SkipWindow");
+                if (!wasInSkipWindow && inSkipWindow)
+                    FlattenAndCancel("SkipWindow");
 
-            if (!wasInNewsSkipWindow && inNewsSkipWindow)
-                FlattenAndCancel("NewsSkip");
+                if (!wasInNewsSkipWindow && inNewsSkipWindow)
+                    FlattenAndCancel("NewsSkip");
+            }
 
             wasInNoTradesAfterWindow = inNoTradesAfterWindow;
             wasInSkipWindow = inSkipWindow;
@@ -2477,6 +2481,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, 60)]
         [Display(Name = "News Block Minutes", Description = "Minutes before/after listed news times to block trading.", Order = 8, GroupName = "01. Common: Session Management")]
         public int NewsBlockMinutes { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Flatten On Blocked Window", Description = "If enabled, flatten open positions when skip/news/no-new-trades windows begin. If disabled, only block new entries like the original behavior.", Order = 9, GroupName = "01. Common: Session Management")]
+        public bool FlattenOnBlockedWindowTransition { get; set; }
 
         // ═══════════════════════════════════════
         //  2. COMMON: SESSION LIMITS
