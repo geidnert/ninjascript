@@ -73,6 +73,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private int watchdogDataTimeoutSeconds;
         private bool heartbeatReporting;
         private int heartbeatTimeoutSeconds;
+        private bool runHeadlessWhenWindowClosed;
         private bool autoReconnectEnabled;
         private int reconnectInitialDelaySeconds;
         private int reconnectMaxDelaySeconds;
@@ -87,6 +88,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private DateTime nextReconnectAttemptUtc = DateTime.MinValue;
         private string lastReconnectFailure = string.Empty;
         private bool connectionIssueActive;
+        private bool monitoringActive;
         private NTMenuItem newMenuItem;
         private NTMenuItem autoEdgeMenuItem;
         private NTMenuItem launcherMenuItem;
@@ -105,17 +107,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                 heartbeatFilePath = Path.Combine(Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
                 ApplyDefaultSettings();
                 LoadSettings();
-                SubscribeToAccountExecutions();
-                SubscribeToMarketData();
-                StartWatchdog();
+                RefreshMonitoringState();
             }
             else if (State == State.Terminated)
             {
                 CloseSettingsWindow();
-                StopWatchdog();
-                UnsubscribeFromMarketData();
-                UnsubscribeFromAccountExecutions();
-                StopReconnectLoop();
+                StopMonitoring();
                 RemoveMenuItem();
                 Instance = null;
             }
@@ -153,6 +150,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             watchdogDataTimeoutSeconds = 60;
             heartbeatReporting = true;
             heartbeatTimeoutSeconds = 60;
+            runHeadlessWhenWindowClosed = true;
             autoReconnectEnabled = true;
             reconnectInitialDelaySeconds = 10;
             reconnectMaxDelaySeconds = 120;
@@ -180,6 +178,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 HeartbeatReporting = heartbeatReporting,
                 HeartbeatFilePath = heartbeatFilePath,
                 HeartbeatTimeoutSeconds = heartbeatTimeoutSeconds,
+                RunHeadlessWhenWindowClosed = runHeadlessWhenWindowClosed,
                 AutoReconnectEnabled = autoReconnectEnabled,
                 ReconnectInitialDelaySeconds = reconnectInitialDelaySeconds,
                 ReconnectMaxDelaySeconds = reconnectMaxDelaySeconds,
@@ -200,7 +199,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "Reconnect loop: {0} | Feed stalled: {1} | Connection issue: {2} | Accounts: {3} | Instruments: {4}",
-                reconnectLoopActive ? "armed" : "idle",
+                monitoringActive ? (reconnectLoopActive ? "armed" : "idle") : "stopped",
                 AnyFeedCurrentlyStalled() ? "yes" : "no",
                 connectionIssueActive ? "yes" : "no",
                 subscribedAccountCount,
@@ -228,6 +227,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 ? Path.Combine(Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv")
                 : settings.HeartbeatFilePath;
             heartbeatTimeoutSeconds = Math.Max(1, settings.HeartbeatTimeoutSeconds);
+            runHeadlessWhenWindowClosed = settings.RunHeadlessWhenWindowClosed;
             autoReconnectEnabled = settings.AutoReconnectEnabled;
             reconnectInitialDelaySeconds = Math.Max(1, settings.ReconnectInitialDelaySeconds);
             reconnectMaxDelaySeconds = Math.Max(reconnectInitialDelaySeconds, settings.ReconnectMaxDelaySeconds);
@@ -236,12 +236,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             monitoredAccountName = (settings.MonitoredAccountName ?? string.Empty).Trim();
             monitoredInstrumentsCsv = (settings.MonitoredInstrumentsCsv ?? string.Empty).Trim();
 
-            PersistSettings();
+            if (monitoringActive)
+                StopMonitoring();
 
-            UnsubscribeFromMarketData();
-            SubscribeToMarketData();
-            UnsubscribeFromAccountExecutions();
-            SubscribeToAccountExecutions();
+            PersistSettings();
+            RefreshMonitoringState();
         }
 
         private void LoadSettings()
@@ -312,6 +311,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                     case "HeartbeatTimeoutSeconds":
                         heartbeatTimeoutSeconds = ParseInt(value, heartbeatTimeoutSeconds);
                         break;
+                    case "RunHeadlessWhenWindowClosed":
+                        runHeadlessWhenWindowClosed = ParseBool(value, runHeadlessWhenWindowClosed);
+                        break;
                     case "AutoReconnectEnabled":
                         autoReconnectEnabled = ParseBool(value, autoReconnectEnabled);
                         break;
@@ -356,6 +358,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 "HeartbeatReporting=true",
                 "HeartbeatFilePath=" + heartbeatFilePath,
                 "HeartbeatTimeoutSeconds=60",
+                "RunHeadlessWhenWindowClosed=true",
                 "AutoReconnectEnabled=true",
                 "ReconnectInitialDelaySeconds=10",
                 "ReconnectMaxDelaySeconds=120",
@@ -388,6 +391,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 "HeartbeatReporting=" + settings.HeartbeatReporting.ToString().ToLowerInvariant(),
                 "HeartbeatFilePath=" + settings.HeartbeatFilePath,
                 "HeartbeatTimeoutSeconds=" + settings.HeartbeatTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
+                "RunHeadlessWhenWindowClosed=" + settings.RunHeadlessWhenWindowClosed.ToString().ToLowerInvariant(),
                 "AutoReconnectEnabled=" + settings.AutoReconnectEnabled.ToString().ToLowerInvariant(),
                 "ReconnectInitialDelaySeconds=" + settings.ReconnectInitialDelaySeconds.ToString(CultureInfo.InvariantCulture),
                 "ReconnectMaxDelaySeconds=" + settings.ReconnectMaxDelaySeconds.ToString(CultureInfo.InvariantCulture),
@@ -400,8 +404,55 @@ namespace NinjaTrader.NinjaScript.AddOns
             File.WriteAllLines(configFilePath, lines);
         }
 
+        private void RefreshMonitoringState()
+        {
+            if (runHeadlessWhenWindowClosed || settingsWindow != null)
+                StartMonitoring();
+            else
+                StopMonitoring();
+        }
+
+        private void StartMonitoring()
+        {
+            if (monitoringActive)
+                return;
+
+            monitoringActive = true;
+            SubscribeToAccountExecutions();
+            SubscribeToMarketData();
+            StartWatchdog();
+        }
+
+        private void StopMonitoring()
+        {
+            if (!monitoringActive)
+                return;
+
+            monitoringActive = false;
+            StopWatchdog();
+            UnsubscribeFromMarketData();
+            UnsubscribeFromAccountExecutions();
+            StopReconnectLoop();
+
+            lock (trackedPositionsByKey)
+                trackedPositionsByKey.Clear();
+
+            strategyHeartbeats.Clear();
+            strategyStalled.Clear();
+            strategyStartupCount.Clear();
+            lastConnectionStatusByName.Clear();
+            connectionIssueActive = false;
+            reconnectInProgress = false;
+            reconnectAttemptCount = 0;
+            nextReconnectAttemptUtc = DateTime.MinValue;
+            lastReconnectFailure = string.Empty;
+        }
+
         private void StartWatchdog()
         {
+            if (watchdogTimer != null)
+                return;
+
             watchdogTimer = new Timer(5000);
             watchdogTimer.Elapsed += WatchdogTimerElapsed;
             watchdogTimer.AutoReset = true;
@@ -1334,6 +1385,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 settingsWindow.Closed += OnSettingsWindowClosed;
             }
 
+            RefreshMonitoringState();
             settingsWindow.LoadFromSettings(GetSettingsSnapshot(), GetStatusSnapshot());
             settingsWindow.Show();
             settingsWindow.Activate();
@@ -1344,6 +1396,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (settingsWindow != null)
                 settingsWindow.Closed -= OnSettingsWindowClosed;
             settingsWindow = null;
+            RefreshMonitoringState();
         }
 
         private void CloseSettingsWindow()
@@ -1390,6 +1443,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         public bool HeartbeatReporting { get; set; }
         public string HeartbeatFilePath { get; set; }
         public int HeartbeatTimeoutSeconds { get; set; }
+        public bool RunHeadlessWhenWindowClosed { get; set; }
         public bool AutoReconnectEnabled { get; set; }
         public int ReconnectInitialDelaySeconds { get; set; }
         public int ReconnectMaxDelaySeconds { get; set; }
@@ -1418,6 +1472,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private CheckBox heartbeatReportingCheckBox;
         private TextBox heartbeatFilePathTextBox;
         private TextBox heartbeatTimeoutTextBox;
+        private CheckBox runHeadlessCheckBox;
         private CheckBox autoReconnectCheckBox;
         private TextBox reconnectInitialDelayTextBox;
         private TextBox reconnectMaxDelayTextBox;
@@ -1455,6 +1510,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             heartbeatReportingCheckBox.IsChecked = settings.HeartbeatReporting;
             heartbeatFilePathTextBox.Text = settings.HeartbeatFilePath ?? string.Empty;
             heartbeatTimeoutTextBox.Text = settings.HeartbeatTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+            runHeadlessCheckBox.IsChecked = settings.RunHeadlessWhenWindowClosed;
             autoReconnectCheckBox.IsChecked = settings.AutoReconnectEnabled;
             reconnectInitialDelayTextBox.Text = settings.ReconnectInitialDelaySeconds.ToString(CultureInfo.InvariantCulture);
             reconnectMaxDelayTextBox.Text = settings.ReconnectMaxDelaySeconds.ToString(CultureInfo.InvariantCulture);
@@ -1539,23 +1595,28 @@ namespace NinjaTrader.NinjaScript.AddOns
             stack.Children.Add(BuildSection(
                 "Notifications",
                 out pushNotificationsCheckBox, "Send Push Notifications", "Master switch for sending alerts to NinjaTrader, Telegram, and Discord.",
-                out debugCheckBox, "Debug Output", "Writes extra diagnostic messages to the NinjaScript Output window.",
+                out debugCheckBox, "Debug Output", "Writes extra diagnostic messages to the NinjaScript Output window."));
+            stack.Children.Add(BuildNotificationChannelSection(
+                "Delivery Channels",
                 out discordCheckBox, "Send To Discord", "Enable Discord delivery. Requires a valid webhook URL below.",
-                out telegramCheckBox, "Send To Telegram", "Enable Telegram delivery. Requires both bot token and chat ID below."));
+                out discordWebhookTextBox, "Discord Webhook URL", "Paste the full Discord incoming webhook URL. Leave blank if Discord is disabled.",
+                out telegramCheckBox, "Send To Telegram", "Enable Telegram delivery. Requires both bot token and chat ID below.",
+                out botTokenTextBox, "Telegram Bot Token", "BotFather token for your Telegram bot, for example `123456:ABC...`.",
+                out chatIdTextBox, "Telegram Chat ID", "Numeric chat or channel ID that should receive messages."));
 
             stack.Children.Add(BuildSection(
                 "Trade Notifications",
                 out showEntryCheckBox, "Send Entry Messages", "Send alerts when a filled order opens a position.",
                 out showExitCheckBox, "Send Exit Messages", "Send alerts when a filled order closes or reduces a position."));
 
-            stack.Children.Add(BuildLabeledTextBox("Discord Webhook URL", "Paste the full Discord incoming webhook URL. Leave blank if Discord is disabled.", out discordWebhookTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Telegram Bot Token", "BotFather token for your Telegram bot, for example `123456:ABC...`.", out botTokenTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Telegram Chat ID", "Numeric chat or channel ID that should receive messages.", out chatIdTextBox));
-
             stack.Children.Add(BuildSection(
                 "Monitoring",
                 out dataFeedReportingCheckBox, "Data Feed Reporting", "Watch the instruments below and report when market data stops updating.",
                 out heartbeatReportingCheckBox, "Heartbeat Reporting", "Monitor the heartbeat CSV written by your strategies to detect stalled scripts.",
+                out runHeadlessCheckBox, "Run Headless When Window Closed", "Keep monitoring and reporting active after this window is closed."));
+
+            stack.Children.Add(BuildSection(
+                "Recovery",
                 out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected."));
 
             stack.Children.Add(BuildLabeledTextBox("Watchdog Timeout Seconds", "How long an instrument can go without a `Last` tick before it is treated as stalled. Minimum 1.", out watchdogTimeoutTextBox));
@@ -1572,6 +1633,21 @@ namespace NinjaTrader.NinjaScript.AddOns
             stack.Children.Add(BuildLabeledTextBox("Monitored Instruments CSV", "Comma-separated instrument names to watch for feed stalls, for example `ES 06-26,NQ 06-26`.", out monitoredInstrumentsTextBox));
 
             return stack;
+        }
+
+        private Border BuildNotificationChannelSection(string title, out CheckBox discordToggle, string discordLabel, string discordDescription, out TextBox discordTextBox, string discordTextLabel, string discordTextDescription, out CheckBox telegramToggle, string telegramLabel, string telegramDescription, out TextBox telegramTokenTextBox, string telegramTokenLabel, string telegramTokenDescription, out TextBox telegramChatTextBox, string telegramChatLabel, string telegramChatDescription)
+        {
+            StackPanel panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+            panel.Children.Add(BuildSectionHeader(title));
+
+            panel.Children.Add(BuildCheckBoxWithDescription(out discordToggle, discordLabel, discordDescription));
+            panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(discordTextLabel, discordTextDescription, out discordTextBox)));
+
+            panel.Children.Add(BuildCheckBoxWithDescription(out telegramToggle, telegramLabel, telegramDescription));
+            panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(telegramTokenLabel, telegramTokenDescription, out telegramTokenTextBox)));
+            panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(telegramChatLabel, telegramChatDescription, out telegramChatTextBox)));
+
+            return new Border { Child = panel };
         }
 
         private Border BuildAccountPickerRow()
@@ -1629,6 +1705,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             return BuildSection(title, out first, firstLabel, firstDescription, out second, secondLabel, secondDescription, out third, thirdLabel, thirdDescription, out _, string.Empty, string.Empty);
         }
 
+        private Border BuildSection(string title, out CheckBox first, string firstLabel, string firstDescription)
+        {
+            return BuildSection(title, out first, firstLabel, firstDescription, out _, string.Empty, string.Empty, out _, string.Empty, string.Empty, out _, string.Empty, string.Empty);
+        }
+
         private Border BuildSection(string title, out CheckBox first, string firstLabel, string firstDescription, out CheckBox second, string secondLabel, string secondDescription)
         {
             return BuildSection(title, out first, firstLabel, firstDescription, out second, secondLabel, secondDescription, out _, string.Empty, string.Empty, out _, string.Empty, string.Empty);
@@ -1639,8 +1720,23 @@ namespace NinjaTrader.NinjaScript.AddOns
             StackPanel panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
             panel.Children.Add(BuildSectionHeader(title));
 
-            panel.Children.Add(BuildCheckBoxWithDescription(out first, firstLabel, firstDescription));
-            panel.Children.Add(BuildCheckBoxWithDescription(out second, secondLabel, secondDescription));
+            if (!string.IsNullOrWhiteSpace(firstLabel))
+            {
+                panel.Children.Add(BuildCheckBoxWithDescription(out first, firstLabel, firstDescription));
+            }
+            else
+            {
+                first = null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(secondLabel))
+            {
+                panel.Children.Add(BuildCheckBoxWithDescription(out second, secondLabel, secondDescription));
+            }
+            else
+            {
+                second = null;
+            }
 
             if (!string.IsNullOrWhiteSpace(thirdLabel))
             {
@@ -1698,6 +1794,15 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
 
             return new Border { Child = panel };
+        }
+
+        private Border BuildIndentedContent(UIElement child)
+        {
+            return new Border
+            {
+                Margin = new Thickness(18, 0, 0, 8),
+                Child = child
+            };
         }
 
         private Border BuildLabeledTextBox(string label, string description, out TextBox textBox)
@@ -1769,6 +1874,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 HeartbeatReporting = heartbeatReportingCheckBox.IsChecked == true,
                 HeartbeatFilePath = heartbeatFilePathTextBox.Text,
                 HeartbeatTimeoutSeconds = ParseIntOrDefault(heartbeatTimeoutTextBox.Text, 60),
+                RunHeadlessWhenWindowClosed = runHeadlessCheckBox.IsChecked == true,
                 AutoReconnectEnabled = autoReconnectCheckBox.IsChecked == true,
                 ReconnectInitialDelaySeconds = ParseIntOrDefault(reconnectInitialDelayTextBox.Text, 10),
                 ReconnectMaxDelaySeconds = ParseIntOrDefault(reconnectMaxDelayTextBox.Text, 120),
