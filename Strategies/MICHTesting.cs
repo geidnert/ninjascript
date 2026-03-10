@@ -471,6 +471,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ─── Session Reset ───
             CheckSessionReset();
 
+            // ─── Chart Drawings ───
+            DrawSessionTimeWindows();
+
             // ─── Forced Close ───
             if (IsInForcedCloseWindow())
             {
@@ -772,6 +775,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double barSM   = ToSessionMinutes(Time[0].TimeOfDay);
             double closeSM = ToSessionMinutes(ForcedCloseTime.TimeOfDay);
             return barSM >= closeSM;
+        }
+
+        private bool IsSkipWindowConfigured()
+        {
+            return SkipTimeStart.TimeOfDay != SkipTimeEnd.TimeOfDay;
         }
 
         #endregion
@@ -1535,6 +1543,104 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ExitShort(1, "ForcedExit", "ShortEntry");
                 Print(string.Format("{0} | {1}: Close SHORT", Time[0], reason));
             }
+        }
+
+        #endregion
+
+        #region Drawing Helpers
+
+        private void DrawSessionTimeWindows()
+        {
+            if (CurrentBar < 1)
+                return;
+
+            DrawSessionBackground(Time[0]);
+            DrawNoNewTradesLine(Time[0]);
+            DrawSkipWindow(Time[0]);
+        }
+
+        private void DrawSessionBackground(DateTime barTime)
+        {
+            DateTime sessionStart = barTime.Date + TradeWindowStart.TimeOfDay;
+            DateTime sessionEnd = barTime.Date + ForcedCloseTime.TimeOfDay;
+            if (ForcedCloseTime.TimeOfDay <= TradeWindowStart.TimeOfDay)
+                sessionEnd = sessionEnd.AddDays(1);
+            if (sessionEnd <= sessionStart)
+                return;
+
+            string rectTag = string.Format("MICH_SessionFill_{0:yyyyMMdd_HHmm}", sessionStart);
+            if (DrawObjects[rectTag] != null)
+                return;
+
+            Draw.Rectangle(
+                this,
+                rectTag,
+                false,
+                sessionStart,
+                0,
+                sessionEnd,
+                30000,
+                Brushes.Transparent,
+                Brushes.Gold,
+                10).ZOrder = -1;
+        }
+
+        private void DrawNoNewTradesLine(DateTime barTime)
+        {
+            DateTime lineTime = barTime.Date + NoNewTradesAfter.TimeOfDay;
+            string tag = string.Format("MICH_NoNewTradesAfter_{0:yyyyMMdd_HHmm}", lineTime);
+            if (DrawObjects[tag] != null)
+                return;
+
+            Draw.VerticalLine(this, tag, lineTime, Brushes.Red, DashStyleHelper.DashDot, 2);
+        }
+
+        private void DrawSkipWindow(DateTime barTime)
+        {
+            if (!IsSkipWindowConfigured())
+                return;
+
+            DateTime windowStart = barTime.Date + SkipTimeStart.TimeOfDay;
+            DateTime windowEnd = barTime.Date + SkipTimeEnd.TimeOfDay;
+            if (SkipTimeStart.TimeOfDay > SkipTimeEnd.TimeOfDay)
+                windowEnd = windowEnd.AddDays(1);
+
+            int startBarsAgo = Bars.GetBar(windowStart);
+            int endBarsAgo = Bars.GetBar(windowEnd);
+            if (startBarsAgo < 0 || endBarsAgo < 0)
+                return;
+
+            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+            try
+            {
+                if (areaBrush.CanFreeze)
+                    areaBrush.Freeze();
+                if (lineBrush.CanFreeze)
+                    lineBrush.Freeze();
+            }
+            catch
+            {
+            }
+
+            string tagBase = string.Format("MICH_Skip_{0:yyyyMMdd_HHmm}", windowStart);
+            if (DrawObjects[tagBase + "_Rect"] != null)
+                return;
+
+            Draw.Rectangle(
+                this,
+                tagBase + "_Rect",
+                false,
+                windowStart,
+                0,
+                windowEnd,
+                30000,
+                lineBrush,
+                areaBrush,
+                2).ZOrder = -1;
+
+            Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
         }
 
         #endregion
