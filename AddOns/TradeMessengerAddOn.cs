@@ -1722,8 +1722,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             StackPanel stack = new StackPanel();
             stack.Children.Add(BuildSection(
                 "Notifications",
-                out pushNotificationsCheckBox, "Send Push Notifications", "Master switch for sending alerts to NinjaTrader, Telegram, and Discord.",
-                out debugCheckBox, "Debug Output", "Writes extra diagnostic messages to the NinjaScript Output window."));
+                out pushNotificationsCheckBox, "Send Push Notifications", "Master switch for sending alerts to NinjaTrader, Telegram, and Discord."));
+            stack.Children.Add(BuildHiddenElement(BuildCheckBoxWithDescription(
+                out debugCheckBox,
+                "Debug Output",
+                "Writes extra diagnostic messages to the NinjaScript Output window.")));
             stack.Children.Add(BuildNotificationChannelSection(
                 "Delivery Channels",
                 out discordCheckBox, "Send To Discord", "Enable Discord delivery. Requires a valid webhook URL below.",
@@ -1737,30 +1740,68 @@ namespace NinjaTrader.NinjaScript.AddOns
                 out showEntryCheckBox, "Send Entry Messages", "Send alerts when a filled order opens a position.",
                 out showExitCheckBox, "Send Exit Messages", "Send alerts when a filled order closes or reduces a position."));
 
-            stack.Children.Add(BuildSection(
-                "Monitoring",
-                out dataFeedReportingCheckBox, "Data Feed Reporting", "Watch the instruments below and report when market data stops updating.",
-                out heartbeatReportingCheckBox, "Heartbeat Reporting", "Monitor the heartbeat CSV written by your strategies to detect stalled scripts.",
-                out runHeadlessCheckBox, "Run Headless When Window Closed", "Keep monitoring and reporting active after this window is closed."));
-
-            stack.Children.Add(BuildSection(
+            stack.Children.Add(BuildMonitoringSection());
+            stack.Children.Add(BuildHiddenElement(BuildSection(
                 "Recovery",
-                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected."));
-
-            stack.Children.Add(BuildLabeledTextBox("Watchdog Timeout Seconds", "How long an instrument can go without a `Last` tick before it is treated as stalled. Minimum 1.", out watchdogTimeoutTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Heartbeat File Path", "Full path to the heartbeat CSV file produced by your strategies.", out heartbeatFilePathTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Heartbeat Timeout Seconds", "How old a strategy heartbeat can be before the strategy is marked stalled. Minimum 1.", out heartbeatTimeoutTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Reconnect Initial Delay Seconds", "Delay before the first reconnect attempt after a problem is detected. Minimum 1.", out reconnectInitialDelayTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Reconnect Max Delay Seconds", "Maximum backoff delay between reconnect attempts. Must be at least the initial delay.", out reconnectMaxDelayTextBox));
-            stack.Children.Add(BuildLabeledTextBox("Reconnect Max Attempts (0 = unlimited)", "Maximum reconnect tries before stopping. Use 0 to keep retrying indefinitely.", out reconnectMaxAttemptsTextBox));
+                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected.")));
+            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
+                "Reconnect Initial Delay Seconds",
+                "Delay before the first reconnect attempt after a problem is detected. Minimum 1.",
+                out reconnectInitialDelayTextBox)));
+            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
+                "Reconnect Max Delay Seconds",
+                "Maximum backoff delay between reconnect attempts. Must be at least the initial delay.",
+                out reconnectMaxDelayTextBox)));
+            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
+                "Reconnect Max Attempts (0 = unlimited)",
+                "Maximum reconnect tries before stopping. Use 0 to keep retrying indefinitely.",
+                out reconnectMaxAttemptsTextBox)));
 
             stack.Children.Add(BuildSectionHeader("Filters"));
             stack.Children.Add(BuildLabeledTextBox("Monitored Connection Name", "Exact NinjaTrader connection name to monitor, for example `Rithmic`. Leave blank to include all connections. This is optional if account filtering alone is enough.", out monitoredConnectionTextBox));
             stack.Children.Add(BuildLabeledTextBox("Monitored Account Names", "Comma-separated account names or display names to monitor, for example `Playback101,Apex-01,Lucid-02`. Leave blank to include all accounts.", out monitoredAccountTextBox));
             stack.Children.Add(BuildAccountPickerRow());
-            stack.Children.Add(BuildLabeledTextBox("Monitored Instruments CSV", "Comma-separated instrument names to watch for feed stalls, for example `ES 06-26,NQ 06-26`.", out monitoredInstrumentsTextBox));
 
             return stack;
+        }
+
+        private Border BuildMonitoringSection()
+        {
+            StackPanel panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+            panel.Children.Add(BuildSectionHeader("Monitoring"));
+
+            panel.Children.Add(BuildCheckBoxWithDescription(
+                out dataFeedReportingCheckBox,
+                "Data Feed Reporting",
+                "Watch the instruments below and report when market data stops updating."));
+            panel.Children.Add(BuildHiddenElement(BuildIndentedContent(BuildLabeledTextBox(
+                "Watchdog Timeout Seconds",
+                "How long an instrument can go without a `Last` tick before it is treated as stalled. Minimum 1.",
+                out watchdogTimeoutTextBox))));
+            panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(
+                "Monitored Instruments CSV",
+                "Comma-separated instrument names to watch for feed stalls, for example `ES 06-26,NQ 06-26`.",
+                out monitoredInstrumentsTextBox)));
+
+            panel.Children.Add(BuildCheckBoxWithDescription(
+                out heartbeatReportingCheckBox,
+                "Heartbeat Reporting",
+                "Monitor the heartbeat CSV written by your strategies to detect stalled scripts."));
+            panel.Children.Add(BuildHiddenElement(BuildIndentedContent(BuildLabeledTextBox(
+                "Heartbeat File Path",
+                "Full path to the heartbeat CSV file produced by your strategies.",
+                out heartbeatFilePathTextBox))));
+            panel.Children.Add(BuildHiddenElement(BuildIndentedContent(BuildLabeledTextBox(
+                "Heartbeat Timeout Seconds",
+                "How old a strategy heartbeat can be before the strategy is marked stalled. Minimum 1.",
+                out heartbeatTimeoutTextBox))));
+
+            panel.Children.Add(BuildCheckBoxWithDescription(
+                out runHeadlessCheckBox,
+                "Run Headless When Window Closed",
+                "Keep monitoring and reporting active after this window is closed."));
+
+            return new Border { Child = panel };
         }
 
         private Border BuildNotificationChannelSection(string title, out CheckBox discordToggle, string discordLabel, string discordDescription, out TextBox discordTextBox, string discordTextLabel, string discordTextDescription, out CheckBox telegramToggle, string telegramLabel, string telegramDescription, out TextBox telegramTokenTextBox, string telegramTokenLabel, string telegramTokenDescription, out TextBox telegramChatTextBox, string telegramChatLabel, string telegramChatDescription)
@@ -1929,6 +1970,15 @@ namespace NinjaTrader.NinjaScript.AddOns
             return new Border
             {
                 Margin = new Thickness(18, 0, 0, 8),
+                Child = child
+            };
+        }
+
+        private Border BuildHiddenElement(UIElement child)
+        {
+            return new Border
+            {
+                Visibility = Visibility.Collapsed,
                 Child = child
             };
         }
