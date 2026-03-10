@@ -3,10 +3,14 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Xml.Serialization;
@@ -99,6 +103,74 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ── ADX peak tracking (early exit) ───────────────────────────────────
         private double tradePeakAdx;
 
+        // ── Time-window transition tracking ──────────────────────────────────
+        private bool wasInNoTradesAfterWindow;
+        private bool wasInSkipWindow;
+        private bool wasInNewsSkipWindow;
+
+        // ── News skip ────────────────────────────────────────────────────────
+        private static readonly string NewsDatesRaw =
+@"2025-01-08,14:00
+2025-01-29,14:00
+2025-02-19,14:00
+2025-03-19,14:00
+2025-04-09,14:00
+2025-05-07,14:00
+2025-05-28,14:00
+2025-06-18,14:00
+2025-07-09,14:00
+2025-07-30,14:00
+2025-08-20,14:00
+2025-09-17,14:00
+2025-10-08,14:00
+2025-10-29,14:00
+2025-11-19,14:00
+2025-12-10,14:00
+2025-12-30,14:00
+2026-01-28,14:00
+2026-02-18,14:00
+2026-03-18,14:00
+2026-04-08,14:00
+2026-04-29,14:00
+2026-05-20,14:00
+2026-06-17,14:00
+2026-07-08,14:00
+2026-07-29,14:00
+2026-08-19,14:00
+2026-09-16,14:00
+2026-10-07,14:00
+2026-10-28,14:00
+2026-11-18,14:00
+2026-12-09,14:00
+2026-12-30,14:00";
+        private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static bool newsDatesInitialized;
+
+        // ── Info box overlay ─────────────────────────────────────────────────
+        private Border infoBoxContainer;
+        private StackPanel infoBoxRowsPanel;
+        private bool legacyInfoDrawingsCleared;
+        private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
+            Color.FromArgb(240, 0x2A, 0x2F, 0x45),
+            Color.FromArgb(240, 0x1E, 0x23, 0x36),
+            Color.FromArgb(240, 0x14, 0x18, 0x28));
+        private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
+        private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
+        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(255, 0xFF, 0x8C, 0x00);
+        private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
+        private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
+        private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
+        private static readonly FontFamily InfoEmojiFontFamily = new FontFamily("Segoe UI Emoji");
+        private static readonly FontFamily InfoSymbolFontFamily = new FontFamily("Segoe UI Symbol");
+        private static readonly HashSet<string> InfoEmojiTokens = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "✔", "✅", "❌", "✖", "⛔", "⬜", "🕒", "🚫"
+        };
+        private static readonly HashSet<string> InfoSymbolTokens = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "■", "□", "●", "○", "▲", "▼", "◆", "◇"
+        };
+
         #endregion
 
         protected override void OnStateChange()
@@ -135,6 +207,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SkipTimeEnd                     = DateTime.Parse("13:05", System.Globalization.CultureInfo.InvariantCulture);
                 NoNewTradesAfter                = DateTime.Parse("15:00", System.Globalization.CultureInfo.InvariantCulture);
                 ForcedCloseTime                 = DateTime.Parse("15:50", System.Globalization.CultureInfo.InvariantCulture);
+                UseNewsSkip                     = false;
+                NewsBlockMinutes                = 1;
 
                 // ─── 2. Common: Session Limits ───
                 MaxTradesPerSession             = 4;
@@ -332,10 +406,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     longWmaFilter.Plots[0].Brush = Brushes.Gold;
                     AddChartIndicator(longWmaFilter);
                 }
+
+                EnsureNewsDatesInitialized();
             }
             else if (State == State.Transition)
             {
                 ResetAll();
+            }
+            else if (State == State.Terminated)
+            {
+                DisposeInfoBoxOverlay();
             }
         }
 
@@ -473,6 +553,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // ─── Chart Drawings ───
             DrawSessionTimeWindows();
+            UpdateInfoBox();
+
+            // ─── Blocked window transitions ───
+            HandleTimeWindowTransitions();
 
             // ─── Forced Close ───
             if (IsInForcedCloseWindow())
@@ -767,6 +851,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (barSM < startSM || barSM >= endSM)  return false;
             if (barSM >= skipStartSM && barSM < skipEndSM) return false;
+            if (IsInNewsSkipWindow(Time[0])) return false;
             return true;
         }
 
@@ -780,6 +865,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool IsSkipWindowConfigured()
         {
             return SkipTimeStart.TimeOfDay != SkipTimeEnd.TimeOfDay;
+        }
+
+        private bool IsInNoTradesAfterWindow(DateTime time)
+        {
+            return ToSessionMinutes(time.TimeOfDay) >= ToSessionMinutes(NoNewTradesAfter.TimeOfDay);
+        }
+
+        private bool IsInSkipWindow(DateTime time)
+        {
+            if (!IsSkipWindowConfigured())
+                return false;
+
+            double barSM = ToSessionMinutes(time.TimeOfDay);
+            double skipStartSM = ToSessionMinutes(SkipTimeStart.TimeOfDay);
+            double skipEndSM = ToSessionMinutes(SkipTimeEnd.TimeOfDay);
+            return barSM >= skipStartSM && barSM < skipEndSM;
+        }
+
+        private bool IsInNewsSkipWindow(DateTime time)
+        {
+            if (!UseNewsSkip)
+                return false;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != time.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+                if (time >= windowStart && time < windowEnd)
+                    return true;
+            }
+
+            return false;
         }
 
         #endregion
@@ -1506,6 +1627,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             entryOrder               = null;
             prevMarketPosition       = MarketPosition.Flat;
             tradePeakAdx             = 0.0;
+            wasInNoTradesAfterWindow = false;
+            wasInSkipWindow          = false;
+            wasInNewsSkipWindow      = false;
         }
 
         private void CheckSessionLimitsInternal()
@@ -1531,8 +1655,50 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private void HandleTimeWindowTransitions()
+        {
+            bool inNoTradesAfterWindow = IsInNoTradesAfterWindow(Time[0]);
+            bool inSkipWindow = IsInSkipWindow(Time[0]);
+            bool inNewsSkipWindow = IsInNewsSkipWindow(Time[0]);
+
+            if (!wasInNoTradesAfterWindow && inNoTradesAfterWindow)
+                FlattenAndCancel("NoTradesAfter");
+
+            if (!wasInSkipWindow && inSkipWindow)
+                FlattenAndCancel("SkipWindow");
+
+            if (!wasInNewsSkipWindow && inNewsSkipWindow)
+                FlattenAndCancel("NewsSkip");
+
+            wasInNoTradesAfterWindow = inNoTradesAfterWindow;
+            wasInSkipWindow = inSkipWindow;
+            wasInNewsSkipWindow = inNewsSkipWindow;
+        }
+
+        private void CancelWorkingEntryOrder()
+        {
+            if (entryOrder == null)
+                return;
+
+            try
+            {
+                if (entryOrder.OrderState == OrderState.Working
+                    || entryOrder.OrderState == OrderState.Accepted
+                    || entryOrder.OrderState == OrderState.Submitted
+                    || entryOrder.OrderState == OrderState.PartFilled)
+                {
+                    CancelOrder(entryOrder);
+                }
+            }
+            catch
+            {
+            }
+        }
+
         private void FlattenAndCancel(string reason)
         {
+            CancelWorkingEntryOrder();
+
             if (Position.MarketPosition == MarketPosition.Long)
             {
                 ExitLong(1, "ForcedExit", "LongEntry");
@@ -1557,6 +1723,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DrawSessionBackground(Time[0]);
             DrawNoNewTradesLine(Time[0]);
             DrawSkipWindow(Time[0]);
+            DrawNewsWindows(Time[0]);
         }
 
         private void DrawSessionBackground(DateTime barTime)
@@ -1643,6 +1810,414 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
         }
 
+        private void DrawNewsWindows(DateTime barTime)
+        {
+            if (!UseNewsSkip)
+                return;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barTime.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+
+                var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
+                try
+                {
+                    if (areaBrush.CanFreeze)
+                        areaBrush.Freeze();
+                    if (lineBrush.CanFreeze)
+                        lineBrush.Freeze();
+                }
+                catch
+                {
+                }
+
+                string tagBase = string.Format("MICH_News_{0:yyyyMMdd_HHmm}", newsTime);
+                if (DrawObjects[tagBase + "_Rect"] != null)
+                    continue;
+
+                Draw.Rectangle(
+                    this,
+                    tagBase + "_Rect",
+                    false,
+                    windowStart,
+                    0,
+                    windowEnd,
+                    30000,
+                    lineBrush,
+                    areaBrush,
+                    2).ZOrder = -1;
+
+                Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
+                Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
+            }
+        }
+
+        #endregion
+
+        #region Info Box
+
+        private enum InfoValueRunKind
+        {
+            Default,
+            Emoji,
+            Symbol
+        }
+
+        private void UpdateInfoBox()
+        {
+            if (State != State.Realtime && State != State.Historical)
+                return;
+
+            if (ChartControl == null || ChartControl.Dispatcher == null)
+                return;
+
+            var lines = BuildInfoLines();
+            if (!legacyInfoDrawingsCleared)
+            {
+                RemoveLegacyInfoBoxDrawings();
+                legacyInfoDrawingsCleared = true;
+            }
+
+            ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines));
+        }
+
+        private void RenderInfoBoxOverlay(List<(string label, string value, Brush labelBrush, Brush valueBrush)> lines)
+        {
+            if (!EnsureInfoBoxOverlay() || infoBoxRowsPanel == null)
+                return;
+
+            infoBoxRowsPanel.Children.Clear();
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                bool isHeader = i == 0;
+                bool isFooter = i == lines.Count - 1;
+                var rowBorder = new Border
+                {
+                    Background = (isHeader || isFooter)
+                        ? InfoHeaderFooterGradientBrush
+                        : (i % 2 == 0 ? InfoBodyEvenBrush : InfoBodyOddBrush),
+                    Padding = new Thickness(6, 2, 6, 2)
+                };
+
+                var text = new TextBlock
+                {
+                    FontFamily = new FontFamily("Segoe UI"),
+                    FontSize = isHeader ? 15 : 14,
+                    FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal,
+                    TextAlignment = (isHeader || isFooter) ? TextAlignment.Center : TextAlignment.Left,
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
+
+                string label = lines[i].label ?? string.Empty;
+                string value = lines[i].value ?? string.Empty;
+                string normalizedValue = NormalizeInfoValueToken(value);
+                bool valueUsesEmojiRendering = ClassifyInfoValueRunKind(normalizedValue) == InfoValueRunKind.Emoji;
+                TextOptions.SetTextRenderingMode(text, valueUsesEmojiRendering ? TextRenderingMode.Grayscale : TextRenderingMode.ClearType);
+
+                text.Inlines.Add(new Run(label) { Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : InfoLabelBrush });
+                if (!string.IsNullOrEmpty(value))
+                {
+                    text.Inlines.Add(new Run(" ") { Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : InfoLabelBrush });
+
+                    Brush stateValueBrush = lines[i].valueBrush;
+                    if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
+                        stateValueBrush = lines[i].labelBrush;
+                    if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
+                        stateValueBrush = InfoValueBrush;
+
+                    text.Inlines.Add(BuildInfoValueRun(normalizedValue, stateValueBrush));
+                }
+
+                rowBorder.Child = text;
+                infoBoxRowsPanel.Children.Add(rowBorder);
+            }
+        }
+
+        private Run BuildInfoValueRun(string value, Brush stateValueBrush)
+        {
+            string safeValue = value ?? string.Empty;
+            string normalizedValue = NormalizeInfoValueToken(safeValue);
+            switch (ClassifyInfoValueRunKind(normalizedValue))
+            {
+                case InfoValueRunKind.Emoji:
+                    var emojiRun = new Run(normalizedValue) { FontFamily = InfoEmojiFontFamily, Foreground = stateValueBrush };
+                    TextOptions.SetTextRenderingMode(emojiRun, TextRenderingMode.Grayscale);
+                    return emojiRun;
+                case InfoValueRunKind.Symbol:
+                    return new Run(normalizedValue) { FontFamily = InfoSymbolFontFamily, Foreground = stateValueBrush };
+                default:
+                    return new Run(normalizedValue) { Foreground = stateValueBrush };
+            }
+        }
+
+        private string NormalizeInfoValueToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return value ?? string.Empty;
+
+            string token = value.Trim();
+            if (token == "○" || token == "◯" || token == "⚪")
+                return "⛔";
+
+            return value;
+        }
+
+        private InfoValueRunKind ClassifyInfoValueRunKind(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return InfoValueRunKind.Default;
+
+            string token = value.Trim();
+            if (InfoEmojiTokens.Contains(token) || ContainsEmojiCodePoint(token))
+                return InfoValueRunKind.Emoji;
+            if (InfoSymbolTokens.Contains(token))
+                return InfoValueRunKind.Symbol;
+            return InfoValueRunKind.Default;
+        }
+
+        private bool ContainsEmojiCodePoint(string text)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                int codePoint = text[i];
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    codePoint = char.ConvertToUtf32(text[i], text[i + 1]);
+                    i++;
+                }
+
+                if ((codePoint >= 0x1F300 && codePoint <= 0x1FAFF)
+                    || (codePoint >= 0x2600 && codePoint <= 0x27BF))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool EnsureInfoBoxOverlay()
+        {
+            if (ChartControl == null)
+                return false;
+
+            if (infoBoxContainer != null && infoBoxRowsPanel != null)
+                return true;
+
+            var host = ChartControl.Parent as System.Windows.Controls.Panel;
+            if (host == null)
+                return false;
+
+            infoBoxRowsPanel = new StackPanel
+            {
+                Orientation = Orientation.Vertical
+            };
+
+            infoBoxContainer = new Border
+            {
+                Child = infoBoxRowsPanel,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(5, 8, 8, 37),
+                Background = Brushes.Transparent
+            };
+
+            host.Children.Add(infoBoxContainer);
+            System.Windows.Controls.Panel.SetZIndex(infoBoxContainer, int.MaxValue);
+            return true;
+        }
+
+        private void DisposeInfoBoxOverlay()
+        {
+            try
+            {
+                if (ChartControl == null || ChartControl.Dispatcher == null)
+                {
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                    return;
+                }
+
+                ChartControl.Dispatcher.InvokeAsync(() =>
+                {
+                    if (infoBoxContainer != null)
+                    {
+                        var parent = infoBoxContainer.Parent as System.Windows.Controls.Panel;
+                        if (parent != null)
+                            parent.Children.Remove(infoBoxContainer);
+                    }
+
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                });
+            }
+            catch
+            {
+                infoBoxRowsPanel = null;
+                infoBoxContainer = null;
+            }
+        }
+
+        private void RemoveLegacyInfoBoxDrawings()
+        {
+            RemoveDrawObject("Info");
+            RemoveDrawObject("myStatusLabel_bg");
+            RemoveDrawObject("myStatusLabel_bg_top");
+            RemoveDrawObject("myStatusLabel_bg_bottom");
+            for (int i = 0; i < 64; i++)
+            {
+                RemoveDrawObject(string.Format("myStatusLabel_bg_{0}", i));
+                RemoveDrawObject(string.Format("myStatusLabel_label_{0}", i));
+                RemoveDrawObject(string.Format("myStatusLabel_val_{0}", i));
+            }
+        }
+
+        private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
+        {
+            var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
+
+            lines.Add((string.Format("MICH v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add(("Contracts:", "1", Brushes.LightGray, Brushes.LightGray));
+
+            if (!UseNewsSkip)
+            {
+                lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.LightGray));
+            }
+            else
+            {
+                List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
+                if (weekNews.Count == 0)
+                {
+                    lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
+                }
+                else
+                {
+                    for (int i = 0; i < weekNews.Count; i++)
+                    {
+                        DateTime newsTime = weekNews[i];
+                        bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
+                        string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
+                        string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                        string value = dayPart + " " + timePart;
+                        Brush newsBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                        lines.Add(("News:", value, newsBrush, newsBrush));
+                    }
+                }
+            }
+
+            lines.Add(("Session:", "New York", Brushes.LightGray, Brushes.LightGray));
+            lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
+
+            return lines;
+        }
+
+        private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            try
+            {
+                if (brush.CanFreeze)
+                    brush.Freeze();
+            }
+            catch
+            {
+            }
+            return brush;
+        }
+
+        private static Brush CreateFrozenVerticalGradientBrush(Color top, Color mid, Color bottom)
+        {
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new Point(0.5, 0.0),
+                EndPoint = new Point(0.5, 1.0)
+            };
+            brush.GradientStops.Add(new GradientStop(top, 0.0));
+            brush.GradientStops.Add(new GradientStop(mid, 0.5));
+            brush.GradientStops.Add(new GradientStop(bottom, 1.0));
+            try
+            {
+                if (brush.CanFreeze)
+                    brush.Freeze();
+            }
+            catch
+            {
+            }
+            return brush;
+        }
+
+        private string GetAddOnVersion()
+        {
+            Assembly assembly = GetType().Assembly;
+            Version version = assembly.GetName().Version;
+            return version != null ? version.ToString() : "0.0.0.0";
+        }
+
+        #endregion
+
+        #region News Helpers
+
+        private void EnsureNewsDatesInitialized()
+        {
+            if (newsDatesInitialized)
+                return;
+
+            NewsDates.Clear();
+            LoadHardcodedNewsDates();
+            NewsDates.Sort();
+            newsDatesInitialized = true;
+        }
+
+        private void LoadHardcodedNewsDates()
+        {
+            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+                return;
+
+            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < entries.Length; i++)
+            {
+                DateTime parsed;
+                if (!DateTime.TryParse(entries[i], CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out parsed))
+                    continue;
+
+                if (parsed.TimeOfDay == new TimeSpan(14, 0, 0) && !NewsDates.Contains(parsed))
+                    NewsDates.Add(parsed);
+            }
+        }
+
+        private List<DateTime> GetCurrentWeekNews(DateTime time)
+        {
+            EnsureNewsDatesInitialized();
+
+            var weekNews = new List<DateTime>();
+            DateTime weekStart = GetWeekStart(time.Date);
+            DateTime weekEnd = weekStart.AddDays(7);
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime candidate = NewsDates[i];
+                if (candidate >= weekStart && candidate < weekEnd)
+                    weekNews.Add(candidate);
+            }
+
+            weekNews.Sort();
+            return weekNews;
+        }
+
+        private DateTime GetWeekStart(DateTime date)
+        {
+            DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+            int diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
+            return date.AddDays(-diff).Date;
+        }
+
         #endregion
 
         #region Properties
@@ -1692,6 +2267,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
         [Display(Name = "Forced Close Time", Order = 6, GroupName = "01. Common: Session Management")]
         public DateTime ForcedCloseTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use News Skip", Description = "Block entries and flatten/cancel on listed news windows.", Order = 7, GroupName = "01. Common: Session Management")]
+        public bool UseNewsSkip { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 60)]
+        [Display(Name = "News Block Minutes", Description = "Minutes before/after listed news times to block trading.", Order = 8, GroupName = "01. Common: Session Management")]
+        public int NewsBlockMinutes { get; set; }
 
         // ═══════════════════════════════════════
         //  2. COMMON: SESSION LIMITS
