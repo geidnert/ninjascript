@@ -29,6 +29,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class MICHTesting : Strategy
     {
+        public MICHTesting()
+        {
+            VendorLicense(1235);
+        }
+        
         #region Private Variables
 
         // ── Long-side indicators ─────────────────────────────────────────────

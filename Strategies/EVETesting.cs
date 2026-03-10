@@ -50,6 +50,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // =========================================================================
     public class EVETesting : Strategy
     {
+        public EVETesting()
+        {
+            VendorLicense(1236);
+        }
+        
         private const string StrategySignalPrefix = "EVE";
         private const string LongEntrySignalPrefix = StrategySignalPrefix + "Long";
         private const string ShortEntrySignalPrefix = StrategySignalPrefix + "Short";
