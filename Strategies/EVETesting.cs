@@ -50,18 +50,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // =========================================================================
     public class EVETesting : Strategy
     {
-        private const string HeartbeatStrategyName = "EVETesting";
-
-        public EVETesting()
-        {
-            VendorLicense(1236);
-        }
-        
-        private const string StrategySignalPrefix = "EVE";
-        private const string LongEntrySignalPrefix = StrategySignalPrefix + "Long";
-        private const string ShortEntrySignalPrefix = StrategySignalPrefix + "Short";
-        private const string ExitSignalPrefix = StrategySignalPrefix;
-
         public enum WebhookProvider
         {
             TradersPost,
@@ -80,7 +68,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // ── Calculated levels ─────────────────────────────────────────────────
         private double _longTarget,  _shortTarget;
-        private StrategyHeartbeatReporter heartbeatReporter;
         private double _longTrigger, _shortTrigger;
 
         // ── Long side state machine ───────────────────────────────────────────
@@ -98,9 +85,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool  _shortInTrade;
         private bool  _shortFVGPending;
         private Order _shortLimitOrder;
-        private string _activeLongEntrySignal = LongEntrySignalPrefix;
-        private string _activeShortEntrySignal = ShortEntrySignalPrefix;
-        private int _entrySignalSequence;
 
         // ── FVG storage ───────────────────────────────────────────────────────
         private bool   _longFVGFound,  _shortFVGFound;
@@ -114,10 +98,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // ── Re-arm flags ──────────────────────────────────────────────────────
         private bool _longRearmNeeded, _shortRearmNeeded;
-        private int _longTargetCancelRetriesUsed, _shortTargetCancelRetriesUsed;
-        private bool _longTargetCancelResetSeen, _shortTargetCancelResetSeen;
-        private int _longTriggerResetsUsed, _shortTriggerResetsUsed;
-        private bool _longRetriggerResetSeen, _shortRetriggerResetSeen;
 
         // ── Session bookkeeping – separate per direction ──────────────────────
         private int      _longTradesToday,    _shortTradesToday;
@@ -287,6 +267,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (State == State.SetDefaults)
             {
                 Name        = "EVETesting";
+                Description = "EVETesting – Based on EVETesting-1008. Adds EnableTargetCancel toggle: when OFF, Section K is skipped entirely and limit orders sit until filled, session end, or skip window. Tests hypothesis that cancel/re-arm cycle adds no value.";
                 Description = "EVETesting v8 – v6: Re-arm logic hardened. v7: Per-bucket Max SL cap (all methods except Fixed).";
                 Calculate   = Calculate.OnBarClose;
 
@@ -310,22 +291,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── Shared: Session Filters ────────────────────────────────────
                 CommonContracts   = 5;
-                EnableLongTrades  = false;
-                EnableShortTrades = true;
-                AlternatingEnabled = false;
-                ReEntryEnabled     = true;
-                RequireORCloseForReEntry = false;
-                EnforceLimitPriceSafety = false;
-                AllowReEntryAfterBEScratch = true;
-                MaxRetriesAfterTargetCancel = 1;
-                UseLegacyTargetCancelReset = true;
-                ResetTriggerAfterTargetCancel = false;
-                RequirePriceResetBeforeReTrigger = true;
-                MaxTriggerResetsAfterTargetCancel = 1;
+                AlternatingEnabled  = false;
+                ReEntryEnabled      = true;
+                EnableTargetCancel  = true;   // ON = original 1008 behaviour; OFF = orders sit until filled
                 UseSkipTime = true;
                 CloseAtSkipStart = false;
                 CloseAtNewsStart = false;
-                RequireEntryConfirmation = false;
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
                 WebhookUrl = string.Empty;
@@ -513,23 +484,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortB2SwingInd = Swing(ShortB2SwingStrength);
                 _shortB3SwingInd = Swing(ShortB3SwingStrength);
                 EnsureNewsDatesInitialized();
-                heartbeatReporter = new StrategyHeartbeatReporter(
-                    HeartbeatStrategyName,
-                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
-            }
-            else if (State == State.Realtime)
-            {
-                if (heartbeatReporter != null)
-                    heartbeatReporter.Start();
             }
             else if (State == State.Terminated)
             {
-                if (heartbeatReporter != null)
-                {
-                    heartbeatReporter.Dispose();
-                    heartbeatReporter = null;
-                }
-
                 DisposeInfoBoxOverlay();
             }
         }
@@ -545,9 +502,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 CancelPendingEntriesForInvalidConfiguration();
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong(BuildExitSignalName("InvalidConfigurationL"), ActiveLongEntrySignal());
+                    ExitLong("InvalidConfigurationL", "LongEntry");
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort(BuildExitSignalName("InvalidConfigurationS"), ActiveShortEntrySignal());
+                    ExitShort("InvalidConfigurationS", "ShortEntry");
                 return;
             }
 
@@ -564,27 +521,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ── B. Apply pending OCO brackets ─────────────────────────────────
             if (_applyLongOCO)
             {
-                SetStopLoss(ActiveLongEntrySignal(),  CalculationMode.Price, _pendingLongSL,  false);
-                SetProfitTarget(ActiveLongEntrySignal(),  CalculationMode.Price, _pendingLongTP);
+                SetStopLoss("LongEntry",  CalculationMode.Price, _pendingLongSL,  false);
+                SetProfitTarget("LongEntry",  CalculationMode.Price, _pendingLongTP);
                 _applyLongOCO = false;
             }
             if (_applyShortOCO)
             {
-                SetStopLoss(ActiveShortEntrySignal(), CalculationMode.Price, _pendingShortSL, false);
-                SetProfitTarget(ActiveShortEntrySignal(), CalculationMode.Price, _pendingShortTP);
+                SetStopLoss("ShortEntry", CalculationMode.Price, _pendingShortSL, false);
+                SetProfitTarget("ShortEntry", CalculationMode.Price, _pendingShortTP);
                 _applyShortOCO = false;
             }
 
             // ── B2. Apply pending Break-Even SL updates ───────────────────────
             if (_applyLongBE)
             {
-                SetStopLoss(ActiveLongEntrySignal(), CalculationMode.Price, _pendingLongBESL, false);
+                SetStopLoss("LongEntry", CalculationMode.Price, _pendingLongBESL, false);
                 _applyLongBE = false;
                 Print(Time[0] + " | ✦ Long SL moved to BE @ " + _pendingLongBESL);
             }
             if (_applyShortBE)
             {
-                SetStopLoss(ActiveShortEntrySignal(), CalculationMode.Price, _pendingShortBESL, false);
+                SetStopLoss("ShortEntry", CalculationMode.Price, _pendingShortBESL, false);
                 _applyShortBE = false;
                 Print(Time[0] + " | ✦ Short SL moved to BE @ " + _pendingShortBESL);
             }
@@ -622,22 +579,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     // ── Bucket selection: Long ────────────────────────────────
                     _longActiveBucket = 0;
-                    if (EnableLongTrades && LongB1Enabled && range >= LongB1MinORSize && range <  LongB1MaxORSize)
+                    if (LongB1Enabled && range >= LongB1MinORSize && range <  LongB1MaxORSize)
                         _longActiveBucket = 1;
-                    else if (EnableLongTrades && LongB2Enabled && range >= LongB2MinORSize && range <  LongB2MaxORSize)
+                    else if (LongB2Enabled && range >= LongB2MinORSize && range <  LongB2MaxORSize)
                         _longActiveBucket = 2;
-                    else if (EnableLongTrades && LongB3Enabled && range >= LongB3MinORSize && range <= LongB3MaxORSize)
+                    else if (LongB3Enabled && range >= LongB3MinORSize && range <= LongB3MaxORSize)
                         _longActiveBucket = 3;
 
                     _longORValid = (_longActiveBucket > 0);
 
                     // ── Bucket selection: Short ───────────────────────────────
                     _shortActiveBucket = 0;
-                    if (EnableShortTrades && ShortB1Enabled && range >= ShortB1MinORSize && range <  ShortB1MaxORSize)
+                    if (ShortB1Enabled && range >= ShortB1MinORSize && range <  ShortB1MaxORSize)
                         _shortActiveBucket = 1;
-                    else if (EnableShortTrades && ShortB2Enabled && range >= ShortB2MinORSize && range <  ShortB2MaxORSize)
+                    else if (ShortB2Enabled && range >= ShortB2MinORSize && range <  ShortB2MaxORSize)
                         _shortActiveBucket = 2;
-                    else if (EnableShortTrades && ShortB3Enabled && range >= ShortB3MinORSize && range <= ShortB3MaxORSize)
+                    else if (ShortB3Enabled && range >= ShortB3MinORSize && range <= ShortB3MaxORSize)
                         _shortActiveBucket = 3;
 
                     _shortORValid = (_shortActiveBucket > 0);
@@ -697,28 +654,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ── F. OR breakout detection ──────────────────────────────────────
             if (_longORValid  && !_longBreakout  && High[0] > _orHigh) _longBreakout  = true;
             if (_shortORValid && !_shortBreakout && Low[0]  < _orLow)  _shortBreakout = true;
-
-            if (_longTargetCancelRetriesUsed > 0 && !_longTargetCancelResetSeen && Low[0] <= _orHigh)
-            {
-                _longTargetCancelResetSeen = true;
-                Print(Time[0] + " | Long target-cancel reset seen – price returned to OR High  [B" + _longActiveBucket + "]");
-            }
-            if (_shortTargetCancelRetriesUsed > 0 && !_shortTargetCancelResetSeen && High[0] >= _orLow)
-            {
-                _shortTargetCancelResetSeen = true;
-                Print(Time[0] + " | Short target-cancel reset seen – price returned to OR Low  [B" + _shortActiveBucket + "]");
-            }
-
-            if (_longTriggerResetsUsed > 0 && !_longRetriggerResetSeen && High[0] < _longTrigger)
-            {
-                _longRetriggerResetSeen = true;
-                Print(Time[0] + " | Long re-trigger reset seen – price moved back below trigger  [B" + _longActiveBucket + "]");
-            }
-            if (_shortTriggerResetsUsed > 0 && !_shortRetriggerResetSeen && Low[0] > _shortTrigger)
-            {
-                _shortRetriggerResetSeen = true;
-                Print(Time[0] + " | Short re-trigger reset seen – price moved back above trigger  [B" + _shortActiveBucket + "]");
-            }
 
             // ── G. FVG scan ───────────────────────────────────────────────────
             if (_longORValid && GetLongEntryMethod() == NQOREntryMethod105.FVGLimit)
@@ -805,7 +740,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ── H. Trigger line crossed ───────────────────────────────────────
-            if (_longBreakout && !_longTriggerHit && CanAcceptLongRetrigger() && High[0] >= _longTrigger)
+            if (_longBreakout && !_longTriggerHit && High[0] >= _longTrigger)
             {
                 _longTriggerHit = true;
                 if (inSkipWindow)
@@ -815,7 +750,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     TryArmLong();
             }
 
-            if (_shortBreakout && !_shortTriggerHit && CanAcceptShortRetrigger() && Low[0] <= _shortTrigger)
+            if (_shortBreakout && !_shortTriggerHit && Low[0] <= _shortTrigger)
             {
                 _shortTriggerHit = true;
                 if (inSkipWindow)
@@ -844,20 +779,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ── J. Re-arm after stop-out ──────────────────────────────────────
-            // Re-arm guard:
+            // v6: Three-layer guard:
             //   1) ReEntryEnabled toggle must be on
-            //   2) If configured, price must close back through OR in breakout direction
+            //   2) Price must close back through OR in breakout direction
             //      (Long: Close > OR High | Short: Close < OR Low)
-            //   3) Target-cancel retries require a reset back to OR before retrying
-            //   4) Flag only cleared AFTER confirmed arm – if TryArm* is blocked
-            //      it stays true and retries on subsequent bars
+            //   3) Flag only cleared AFTER confirmed arm – if TryArm* is blocked
+            //      by price guard it stays true and retries on subsequent bars
             if (_longRearmNeeded && canTradeLong && !_longInTrade && !_longEntryArmed && !_shortInTrade)
             {
-                if (CanRearmLongNow())
+                if (Close[0] > _orHigh)
                 {
-                    Print(Time[0] + " | Long re-arm condition met"
-                          + (RequireORCloseForReEntry ? " – price closed above OR High (" + _orHigh + ")" : " – immediate retry mode")
-                          + "  [B" + _longActiveBucket + "] – attempting arm...");
+                    Print(Time[0] + " | Long re-arm condition met – price closed above OR High ("
+                          + _orHigh + ")  [B" + _longActiveBucket + "] – attempting arm...");
                     TryArmLong();
                     if (_longEntryArmed)
                     {
@@ -872,11 +805,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             if (_shortRearmNeeded && canTradeShort && !_shortInTrade && !_shortEntryArmed && !_longInTrade)
             {
-                if (CanRearmShortNow())
+                if (Close[0] < _orLow)
                 {
-                    Print(Time[0] + " | Short re-arm condition met"
-                          + (RequireORCloseForReEntry ? " – price closed below OR Low (" + _orLow + ")" : " – immediate retry mode")
-                          + "  [B" + _shortActiveBucket + "] – attempting arm...");
+                    Print(Time[0] + " | Short re-arm condition met – price closed below OR Low ("
+                          + _orLow + ")  [B" + _shortActiveBucket + "] – attempting arm...");
                     TryArmShort();
                     if (_shortEntryArmed)
                     {
@@ -891,45 +823,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ── K. Cancel limit orders if price already reached target ────────
-            if (_longEntryArmed && _longLimitOrder != null && High[0] >= _longTarget)
+            // Fix2: gated by EnableTargetCancel. When OFF, orders sit until
+            // filled, session end, or skip window – no cancel/re-arm churn.
+            if (EnableTargetCancel)
             {
-                TryCancelOrder(_longLimitOrder);
-                _longEntryArmed = false;
-                _longFVGPending = false;
-                if (UseLegacyTargetCancelReset)
+                if (_longEntryArmed && _longLimitOrder != null && High[0] >= _longTarget)
                 {
+                    TryCancelOrder(_longLimitOrder);
+                    _longEntryArmed = false;
+                    _longFVGPending = false;
                     _longTriggerHit = false;
-                    Print(Time[0] + " | Long target-cancel legacy reset applied");
+                    Print(Time[0] + " | Long limit cancelled – target already reached");
                 }
-                else if (TryApplyControlledLongTriggerReset())
+                if (_shortEntryArmed && _shortLimitOrder != null && Low[0] <= _shortTarget)
                 {
-                    Print(Time[0] + " | Long target-cancel controlled trigger reset applied");
-                }
-                else
-                {
-                    ScheduleLongRetryAfterTargetCancel();
-                }
-                Print(Time[0] + " | Long limit cancelled – target already reached");
-            }
-            if (_shortEntryArmed && _shortLimitOrder != null && Low[0] <= _shortTarget)
-            {
-                TryCancelOrder(_shortLimitOrder);
-                _shortEntryArmed = false;
-                _shortFVGPending = false;
-                if (UseLegacyTargetCancelReset)
-                {
+                    TryCancelOrder(_shortLimitOrder);
+                    _shortEntryArmed = false;
+                    _shortFVGPending = false;
                     _shortTriggerHit = false;
-                    Print(Time[0] + " | Short target-cancel legacy reset applied");
+                    Print(Time[0] + " | Short limit cancelled – target already reached");
                 }
-                else if (TryApplyControlledShortTriggerReset())
-                {
-                    Print(Time[0] + " | Short target-cancel controlled trigger reset applied");
-                }
-                else
-                {
-                    ScheduleShortRetryAfterTargetCancel();
-                }
-                Print(Time[0] + " | Short limit cancelled – target already reached");
             }
 
         }
@@ -957,12 +870,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _pendingLongSL = CalcLongSL(Close[0]);
                     _pendingLongTP = _longTarget;
                     _applyLongOCO  = true;
-                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], GetLongContracts()))
-                    {
-                        Print(Time[0] + " | Entry confirmation declined | LONG.");
-                        return;
-                    }
-                    EnterLong(GetLongContracts(), NextLongEntrySignal());
+                    EnterLong(GetLongContracts(), "LongEntry");
                     _longEntryArmed = true;
                     Print(Time[0] + " | Long MARKET order submitted  [B" + _longActiveBucket + "]");
                     break;
@@ -974,13 +882,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!CanPlaceLongLimitSafely(limitPx, "Long re-arm"))
                         return;
-                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", limitPx, GetLongContracts()))
-                    {
-                        Print(Time[0] + " | Entry confirmation declined | LONG.");
-                        return;
-                    }
 
-                    _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), limitPx, NextLongEntrySignal());
+                    _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), limitPx, "LongEntry");
                     _longEntryArmed = true;
                     Print(Time[0] + " | Long RETRACEMENT limit @ " + limitPx
                           + "  (" + GetLongRetracePct() + "% of " + (_longTarget - _orHigh) + " pts)"
@@ -1019,12 +922,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _pendingShortSL = CalcShortSL(Close[0]);
                     _pendingShortTP = _shortTarget;
                     _applyShortOCO  = true;
-                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], GetShortContracts()))
-                    {
-                        Print(Time[0] + " | Entry confirmation declined | SHORT.");
-                        return;
-                    }
-                    EnterShort(GetShortContracts(), NextShortEntrySignal());
+                    EnterShort(GetShortContracts(), "ShortEntry");
                     _shortEntryArmed = true;
                     Print(Time[0] + " | Short MARKET order submitted  [B" + _shortActiveBucket + "]");
                     break;
@@ -1036,13 +934,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!CanPlaceShortLimitSafely(limitPx, "Short re-arm"))
                         return;
-                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", limitPx, GetShortContracts()))
-                    {
-                        Print(Time[0] + " | Entry confirmation declined | SHORT.");
-                        return;
-                    }
 
-                    _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), limitPx, NextShortEntrySignal());
+                    _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), limitPx, "ShortEntry");
                     _shortEntryArmed = true;
                     Print(Time[0] + " | Short RETRACEMENT limit @ " + limitPx
                           + "  (" + GetShortRetracePct() + "% of " + (_orLow - _shortTarget) + " pts)"
@@ -1067,12 +960,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px       = LongFVGEntryPrice(_longFVGBot, _longFVGTop, _longFVGMid);
             if (!CanPlaceLongLimitSafely(px, "Long FVG"))
                 return;
-            if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", px, GetLongContracts()))
-            {
-                Print(Time[0] + " | Entry confirmation declined | LONG.");
-                return;
-            }
-            _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), px, NextLongEntrySignal());
+            _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), px, "LongEntry");
             _longEntryArmed = true;
             Print(Time[0] + " | Long FVG LIMIT @ " + px
                   + "  (gap: " + _longFVGBot + "–" + _longFVGTop + ")"
@@ -1084,12 +972,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px        = ShortFVGEntryPrice(_shortFVGBot, _shortFVGTop, _shortFVGMid);
             if (!CanPlaceShortLimitSafely(px, "Short FVG"))
                 return;
-            if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", px, GetShortContracts()))
-            {
-                Print(Time[0] + " | Entry confirmation declined | SHORT.");
-                return;
-            }
-            _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), px, NextShortEntrySignal());
+            _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), px, "ShortEntry");
             _shortEntryArmed = true;
             Print(Time[0] + " | Short FVG LIMIT @ " + px
                   + "  (gap: " + _shortFVGBot + "–" + _shortFVGTop + ")"
@@ -1100,9 +983,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // already on the wrong side, which can cause immediate unintended fills/rejections.
         private bool CanPlaceLongLimitSafely(double limitPrice, string context)
         {
-            if (!EnforceLimitPriceSafety)
-                return true;
-
             if (Close[0] <= limitPrice)
             {
                 Print(Time[0] + " | " + context + " skipped – price " + Close[0]
@@ -1116,9 +996,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool CanPlaceShortLimitSafely(double limitPrice, string context)
         {
-            if (!EnforceLimitPriceSafety)
-                return true;
-
             if (Close[0] >= limitPrice)
             {
                 Print(Time[0] + " | " + context + " skipped – price " + Close[0]
@@ -1128,102 +1005,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return true;
-        }
-
-        private bool CanRearmLongNow()
-        {
-            if (_longTargetCancelRetriesUsed > 0 && !_longTargetCancelResetSeen)
-                return false;
-
-            return !RequireORCloseForReEntry || Close[0] > _orHigh;
-        }
-
-        private bool CanRearmShortNow()
-        {
-            if (_shortTargetCancelRetriesUsed > 0 && !_shortTargetCancelResetSeen)
-                return false;
-
-            return !RequireORCloseForReEntry || Close[0] < _orLow;
-        }
-
-        private bool CanAcceptLongRetrigger()
-        {
-            if (!RequirePriceResetBeforeReTrigger)
-                return true;
-
-            if (_longTriggerResetsUsed <= 0)
-                return true;
-
-            return _longRetriggerResetSeen;
-        }
-
-        private bool CanAcceptShortRetrigger()
-        {
-            if (!RequirePriceResetBeforeReTrigger)
-                return true;
-
-            if (_shortTriggerResetsUsed <= 0)
-                return true;
-
-            return _shortRetriggerResetSeen;
-        }
-
-        private bool TryApplyControlledLongTriggerReset()
-        {
-            if (!ResetTriggerAfterTargetCancel || _longInTrade)
-                return false;
-
-            if (_longTriggerResetsUsed >= MaxTriggerResetsAfterTargetCancel)
-                return false;
-
-            _longTriggerResetsUsed++;
-            _longRetriggerResetSeen = !RequirePriceResetBeforeReTrigger;
-            _longTriggerHit = false;
-            return true;
-        }
-
-        private bool TryApplyControlledShortTriggerReset()
-        {
-            if (!ResetTriggerAfterTargetCancel || _shortInTrade)
-                return false;
-
-            if (_shortTriggerResetsUsed >= MaxTriggerResetsAfterTargetCancel)
-                return false;
-
-            _shortTriggerResetsUsed++;
-            _shortRetriggerResetSeen = !RequirePriceResetBeforeReTrigger;
-            _shortTriggerHit = false;
-            return true;
-        }
-
-        private void ScheduleLongRetryAfterTargetCancel()
-        {
-            if (_longInTrade || !_longTriggerHit)
-                return;
-
-            if (_longTargetCancelRetriesUsed >= MaxRetriesAfterTargetCancel)
-                return;
-
-            _longTargetCancelRetriesUsed++;
-            _longTargetCancelResetSeen = false;
-            _longRearmNeeded = true;
-            Print(Time[0] + " | Long target-cancel retry scheduled  ["
-                  + _longTargetCancelRetriesUsed + "/" + MaxRetriesAfterTargetCancel + "]");
-        }
-
-        private void ScheduleShortRetryAfterTargetCancel()
-        {
-            if (_shortInTrade || !_shortTriggerHit)
-                return;
-
-            if (_shortTargetCancelRetriesUsed >= MaxRetriesAfterTargetCancel)
-                return;
-
-            _shortTargetCancelRetriesUsed++;
-            _shortTargetCancelResetSeen = false;
-            _shortRearmNeeded = true;
-            Print(Time[0] + " | Short target-cancel retry scheduled  ["
-                  + _shortTargetCancelRetriesUsed + "/" + MaxRetriesAfterTargetCancel + "]");
         }
 
         private double LongFVGEntryPrice(double bot, double top, double mid)
@@ -1257,7 +1038,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (order == null)
                 return;
 
-            if (IsLongEntrySignalName(order.Name))
+            if (order.Name == "LongEntry")
             {
                 _longLimitOrder = order;
                 if (state == OrderState.Cancelled || state == OrderState.Rejected)
@@ -1267,7 +1048,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     SendWebhook("cancel");
                 }
             }
-            if (IsShortEntrySignalName(order.Name))
+            if (order.Name == "ShortEntry")
             {
                 _shortLimitOrder = order;
                 if (state == OrderState.Cancelled || state == OrderState.Rejected)
@@ -1287,7 +1068,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int executionQty = Math.Max(1, qty);
 
             // ── Long entry filled ─────────────────────────────────────────────
-            if (IsLongEntrySignalName(orderName))
+            if (orderName == "LongEntry")
             {
                 _longInTrade    = true;
                 _longEntryArmed = false;
@@ -1314,7 +1095,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // ── Short entry filled ────────────────────────────────────────────
-            else if (IsShortEntrySignalName(orderName))
+            else if (orderName == "ShortEntry")
             {
                 _shortInTrade    = true;
                 _shortEntryArmed = false;
@@ -1360,49 +1141,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (string.IsNullOrWhiteSpace(orderName))
                 return false;
 
-            return IsLongEntrySignalName(orderName)
-                || IsShortEntrySignalName(orderName);
-        }
-
-        private bool IsLongEntrySignalName(string orderName)
-        {
-            return !string.IsNullOrWhiteSpace(orderName)
-                && orderName.StartsWith(LongEntrySignalPrefix, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private bool IsShortEntrySignalName(string orderName)
-        {
-            return !string.IsNullOrWhiteSpace(orderName)
-                && orderName.StartsWith(ShortEntrySignalPrefix, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private string NextLongEntrySignal()
-        {
-            _entrySignalSequence++;
-            _activeLongEntrySignal = string.Format(CultureInfo.InvariantCulture, "{0}_{1}", LongEntrySignalPrefix, _entrySignalSequence);
-            return _activeLongEntrySignal;
-        }
-
-        private string NextShortEntrySignal()
-        {
-            _entrySignalSequence++;
-            _activeShortEntrySignal = string.Format(CultureInfo.InvariantCulture, "{0}_{1}", ShortEntrySignalPrefix, _entrySignalSequence);
-            return _activeShortEntrySignal;
-        }
-
-        private string ActiveLongEntrySignal()
-        {
-            return string.IsNullOrWhiteSpace(_activeLongEntrySignal) ? LongEntrySignalPrefix : _activeLongEntrySignal;
-        }
-
-        private string ActiveShortEntrySignal()
-        {
-            return string.IsNullOrWhiteSpace(_activeShortEntrySignal) ? ShortEntrySignalPrefix : _activeShortEntrySignal;
-        }
-
-        private string BuildExitSignalName(string reason)
-        {
-            return ExitSignalPrefix + reason;
+            return orderName.Equals("LongEntry", StringComparison.OrdinalIgnoreCase)
+                || orderName.Equals("ShortEntry", StringComparison.OrdinalIgnoreCase);
         }
 
         protected override void OnPositionUpdate(Position pos, double avgPx,
@@ -1443,7 +1183,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _longEntryPrice = 0;
 
                 bool canRearm = ReEntryEnabled
-                             && (!isScratch || AllowReEntryAfterBEScratch)
+                             && !isScratch
                              && _longTriggerHit
                              && !_forceFlatDone
                              && _longTradesToday     < GetLongMaxTradesPerDay()
@@ -1453,8 +1193,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 _longRearmNeeded = canRearm;
                 if (isScratch)
-                    Print(Time[0] + " | Long BE scratch"
-                          + (AllowReEntryAfterBEScratch ? " – re-entry allowed" : " – re-entry blocked"));
+                    Print(Time[0] + " | Long re-arm blocked – BE scratch, no re-entry");
                 else
                     Print(Time[0] + " | Long re-arm=" + _longRearmNeeded);
             }
@@ -1492,7 +1231,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortEntryPrice = 0;
 
                 bool canRearm = ReEntryEnabled
-                             && (!isScratch || AllowReEntryAfterBEScratch)
+                             && !isScratch
                              && _shortTriggerHit
                              && !_forceFlatDone
                              && _shortTradesToday     < GetShortMaxTradesPerDay()
@@ -1502,8 +1241,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 _shortRearmNeeded = canRearm;
                 if (isScratch)
-                    Print(Time[0] + " | Short BE scratch"
-                          + (AllowReEntryAfterBEScratch ? " – re-entry allowed" : " – re-entry blocked"));
+                    Print(Time[0] + " | Short re-arm blocked – BE scratch, no re-entry");
                 else
                     Print(Time[0] + " | Short re-arm=" + _shortRearmNeeded);
             }
@@ -1645,20 +1383,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime sessionStart = barTime.Date.Add(new TimeSpan(9, 30, 0));
             DateTime sessionEnd = barTime.Date.Add(new TimeSpan(SessionEndHour, SessionEndMin, 0));
             if (sessionEnd <= sessionStart)
-                return;
+                sessionEnd = sessionEnd.AddDays(1);
 
             string rectTag = string.Format("EVE_SessionFill_{0:yyyyMMdd_HHmm}", sessionStart);
-            Draw.Rectangle(
-                this,
-                rectTag,
-                false,
-                sessionStart,
-                0,
-                sessionEnd,
-                30000,
-                Brushes.Transparent,
-                Brushes.Gold,
-                10).ZOrder = -1;
+            if (DrawObjects[rectTag] == null)
+            {
+                Draw.Rectangle(
+                    this,
+                    rectTag,
+                    false,
+                    sessionStart,
+                    0,
+                    sessionEnd,
+                    30000,
+                    Brushes.Transparent,
+                    Brushes.Gold,
+                    10).ZOrder = -1;
+            }
         }
 
         private void DrawNoNewTradesLine(DateTime barTime)
@@ -1788,9 +1529,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TryCancelOrder(_shortLimitOrder);
 
             if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong(BuildExitSignalName("ForceFlatL"), ActiveLongEntrySignal());
+                ExitLong("ForceFlatL", "LongEntry");
             else if (Position.MarketPosition == MarketPosition.Short)
-                ExitShort(BuildExitSignalName("ForceFlatS"), ActiveShortEntrySignal());
+                ExitShort("ForceFlatS", "ShortEntry");
 
             Print(Time[0] + " | ★ Force flatten executed.");
         }
@@ -1869,9 +1610,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (CloseAtSkipStart)
                 {
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong(BuildExitSignalName("SkipWindowL"), ActiveLongEntrySignal());
+                        ExitLong("SkipWindowL", "LongEntry");
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort(BuildExitSignalName("SkipWindowS"), ActiveShortEntrySignal());
+                        ExitShort("SkipWindowS", "ShortEntry");
                 }
 
                 Print(Time[0] + " | Entered skip window: canceled working entries."
@@ -1902,9 +1643,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (CloseAtNewsStart)
                 {
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong(BuildExitSignalName("NewsSkipL"), ActiveLongEntrySignal());
+                        ExitLong("NewsSkipL", "LongEntry");
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort(BuildExitSignalName("NewsSkipS"), ActiveShortEntrySignal());
+                        ExitShort("NewsSkipS", "ShortEntry");
                 }
 
                 Print(Time[0] + " | Entered news skip window: canceled working entries."
@@ -2035,37 +1776,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
-        {
-            if (State != State.Realtime)
-                return true;
-
-            bool result = false;
-            if (System.Windows.Application.Current == null)
-                return false;
-
-            System.Windows.Application.Current.Dispatcher.Invoke(
-                () =>
-                {
-                    string message = string.Format(
-                        CultureInfo.InvariantCulture,
-                        "Confirm {0} entry?\nPrice: {1:F2}\nQuantity: {2}",
-                        orderType,
-                        price,
-                        quantity);
-
-                    System.Windows.MessageBoxResult res =
-                        System.Windows.MessageBox.Show(
-                            message,
-                            "Entry Confirmation",
-                            System.Windows.MessageBoxButton.YesNo,
-                            System.Windows.MessageBoxImage.Question);
-                    result = res == System.Windows.MessageBoxResult.Yes;
-                });
-
-            return result;
-        }
-
         // =====================================================================
         //  SESSION RESET
         // =====================================================================
@@ -2112,10 +1822,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // Re-arm
             _longRearmNeeded = _shortRearmNeeded = false;
-            _longTargetCancelRetriesUsed = _shortTargetCancelRetriesUsed = 0;
-            _longTargetCancelResetSeen = _shortTargetCancelResetSeen = false;
-            _longTriggerResetsUsed = _shortTriggerResetsUsed = 0;
-            _longRetriggerResetSeen = _shortRetriggerResetSeen = false;
 
             // Break-even
             _longEntryPrice  = _shortEntryPrice  = 0;
@@ -2939,114 +2645,52 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int CommonContracts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Long Trades",
-                 Description = "Master switch for long entries. If disabled, no long bucket will be selected and no long trades will be taken.",
-                 GroupName = "02 - Common: Session Filters", Order = 1)]
-        public bool EnableLongTrades { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Short Trades",
-                 Description = "Master switch for short entries. If disabled, no short bucket will be selected and no short trades will be taken.",
-                 GroupName = "02 - Common: Session Filters", Order = 2)]
-        public bool EnableShortTrades { get; set; }
-
-        [NinjaScriptProperty]
         [Display(Name = "Alternating Direction",
                  Description = "After a WIN on either side, only allow the opposite direction next",
-                 GroupName = "02 - Common: Session Filters", Order = 3)]
+                 GroupName = "02 - Common: Session Filters", Order = 1)]
         public bool AlternatingEnabled { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Re-Entry After Loss",
-                 Description = "Allow another entry attempt after a qualifying flat exit, subject to the re-entry filters below.",
-                 GroupName = "02 - Common: Session Filters", Order = 4)]
+                 Description = "After a genuine stop-loss, re-arm once price closes back through OR (Short: Close < OR Low | Long: Close > OR High). BE scratches never re-arm.",
+                 GroupName = "02 - Common: Session Filters", Order = 2)]
         public bool ReEntryEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Require OR Close For Re-Entry",
-                 Description = "If enabled, re-entry after loss waits for a close back through OR. Disable to retry immediately while keeping the target-cancel loop fix.",
-                 GroupName = "02 - Common: Session Filters", Order = 5)]
-        public bool RequireORCloseForReEntry { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Enforce Limit Price Safety",
-                 Description = "If enabled, skip new limit entries when the bar has already closed beyond the intended limit price. Disable to restore the more permissive legacy behavior.",
-                 GroupName = "02 - Common: Session Filters", Order = 6)]
-        public bool EnforceLimitPriceSafety { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Allow Re-Entry After BE Scratch",
-                 Description = "If enabled, a break-even scratch may re-arm another entry attempt if the other session rules still allow it. If disabled, BE scratches consume a trade but do not retry.",
-                 GroupName = "02 - Common: Session Filters", Order = 7)]
-        public bool AllowReEntryAfterBEScratch { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 10)]
-        [Display(Name = "Max Retries After Target Cancel",
-                 Description = "Maximum controlled retries after a pending limit order is canceled because price already touched target. Each retry requires price to reset back to OR first, which avoids the old repeated cancel/re-arm loop.",
-                 GroupName = "02 - Common: Session Filters", Order = 8)]
-        public int MaxRetriesAfterTargetCancel { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Use Legacy Target Cancel Reset",
-                 Description = "Test-only option. Restores the old behavior that resets trigger state when a pending limit is canceled after target touch. This can increase trades, but it may reintroduce the repeated cancel/re-arm loop and distort drawdown/results.",
-                 GroupName = "02 - Common: Session Filters", Order = 9)]
-        public bool UseLegacyTargetCancelReset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Reset Trigger After Target Cancel",
-                 Description = "Controlled alternative to the legacy mode. Resets trigger state after a target-cancel so a fresh trigger can form again, subject to the limits below.",
-                 GroupName = "02 - Common: Session Filters", Order = 10)]
-        public bool ResetTriggerAfterTargetCancel { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Require Price Reset Before Re-Trigger",
-                 Description = "If enabled, after a controlled trigger reset the market must move back through the trigger first before another trigger is allowed.",
-                 GroupName = "02 - Common: Session Filters", Order = 11)]
-        public bool RequirePriceResetBeforeReTrigger { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 10)]
-        [Display(Name = "Max Trigger Resets After Target Cancel",
-                 Description = "Maximum number of controlled trigger resets allowed per direction after target-cancel events in one session.",
-                 GroupName = "02 - Common: Session Filters", Order = 12)]
-        public int MaxTriggerResetsAfterTargetCancel { get; set; }
+        [Display(Name = "Enable Target Cancel",
+                 Description = "Fix2: When ON (default), limit orders are cancelled if price reaches the target before entry fills – identical to 1008 behaviour. When OFF, Section K is skipped entirely: orders sit until filled, session end, or skip window. Turn OFF to test whether the cancel/re-arm cycle adds any value.",
+                 GroupName = "02 - Common: Session Filters", Order = 3)]
+        public bool EnableTargetCancel { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use Skip Time",
                  Description = "Enable skip time entry blocking between Skip Start and Skip End.",
-                 GroupName = "02 - Common: Session Filters", Order = 13)]
+                 GroupName = "02 - Common: Session Filters", Order = 3)]
         public bool UseSkipTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Skip Start",
                  Description = "If true, flatten open position when skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 14)]
+                 GroupName = "02 - Common: Session Filters", Order = 4)]
         public bool CloseAtSkipStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At News Start",
                  Description = "If true, flatten open position when news skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 15)]
+                 GroupName = "02 - Common: Session Filters", Order = 5)]
         public bool CloseAtNewsStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Confirmation",
-                 Description = "Show a Yes/No confirmation popup before each new long/short entry.",
-                 GroupName = "02 - Common: Session Filters", Order = 16)]
-        public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 17)]
+                 GroupName = "02 - Common: Session Filters", Order = 5)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 18)]
+                 GroupName = "02 - Common: Session Filters", Order = 6)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
