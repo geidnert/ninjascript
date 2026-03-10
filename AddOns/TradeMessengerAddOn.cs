@@ -43,6 +43,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             public bool IsEntryNotification { get; set; }
             public bool IsExitNotification { get; set; }
+            public string BotName { get; set; }
             public string Message { get; set; }
         }
 
@@ -56,7 +57,6 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly Dictionary<string, TrackedPositionState> trackedPositionsByKey = new Dictionary<string, TrackedPositionState>(StringComparer.OrdinalIgnoreCase);
         private readonly List<MarketDataSubscription> marketDataSubscriptions = new List<MarketDataSubscription>();
         private readonly HashSet<string> subscribedAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         private Timer watchdogTimer;
         private string configFilePath;
         private string heartbeatFilePath;
@@ -564,13 +564,17 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (Math.Abs(signedFillQuantity) < 0.0000001)
                 return null;
 
-            string key = GetTrackedPositionKey(accountName, instrumentName);
+            string botName = ResolveBotName(execution);
             bool isEntryNotification = false;
             bool isExitNotification = false;
             double realizedPnl = 0;
 
             lock (trackedPositionsByKey)
             {
+                if (string.IsNullOrWhiteSpace(botName))
+                    botName = FindTrackedBotName(accountName, instrumentName);
+
+                string key = GetTrackedPositionKey(accountName, instrumentName, botName);
                 TrackedPositionState state;
                 if (!trackedPositionsByKey.TryGetValue(key, out state))
                 {
@@ -625,34 +629,37 @@ namespace NinjaTrader.NinjaScript.AddOns
                 return new ExecutionMessageResult
                 {
                     IsExitNotification = true,
-                    Message = FormatExitMessage(account, accountName, instrumentName, realizedPnl)
+                    BotName = botName,
+                    Message = FormatExitMessage(account, accountName, instrumentName, realizedPnl, botName)
                 };
 
             if (isEntryNotification)
                 return new ExecutionMessageResult
                 {
                     IsEntryNotification = true,
+                    BotName = botName,
                     Message = string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0} {1}",
-                        instrumentName,
+                        "{0}\n{1}",
+                        FormatMessageTitle(botName, instrumentName),
                         signedFillQuantity > 0 ? "Long" : "Short")
                 };
 
             return new ExecutionMessageResult
             {
+                BotName = botName,
                 Message = string.Format(
                     CultureInfo.InvariantCulture,
-                    "{0} {1} filled {2} {3} @ {4}",
+                    "{0}\n{1} filled {2} {3} @ {4}",
+                    FormatMessageTitle(botName, instrumentName),
                     accountName,
-                    instrumentName,
                     execution.Quantity,
                     execution.Order.OrderAction,
                     execution.Price)
             };
         }
 
-        private string FormatExitMessage(Account account, string accountName, string instrumentName, double realizedPnl)
+        private string FormatExitMessage(Account account, string accountName, string instrumentName, double realizedPnl, string botName)
         {
             CultureInfo usCulture = new CultureInfo("en-US");
             string pnlText = realizedPnl.ToString("C", usCulture);
@@ -666,21 +673,142 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
 
             if (string.IsNullOrEmpty(cashText))
-                return string.Format(CultureInfo.InvariantCulture, "{0} {1} {2}", emoji, pnlText, instrumentName);
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}\n{1} {2}",
+                    FormatMessageTitle(botName, instrumentName),
+                    emoji,
+                    pnlText);
 
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "{0} {1} {2} \n🏦 {3} \n{4}",
+                "{0}\n{1} {2}\n🏦 {3} | {4}",
+                FormatMessageTitle(botName, instrumentName),
                 emoji,
                 pnlText,
-                instrumentName,
                 cashText,
                 accountName);
         }
 
-        private static string GetTrackedPositionKey(string accountName, string instrumentName)
+        private static string GetTrackedPositionKey(string accountName, string instrumentName, string botName)
         {
-            return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountName ?? string.Empty, instrumentName ?? string.Empty);
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}|{1}|{2}",
+                accountName ?? string.Empty,
+                instrumentName ?? string.Empty,
+                botName ?? string.Empty);
+        }
+
+        private static string ResolveBotName(Execution execution)
+        {
+            if (execution == null || execution.Order == null)
+                return string.Empty;
+
+            string orderName = execution.Order.Name ?? string.Empty;
+            string fromEntrySignal = execution.Order.FromEntrySignal ?? string.Empty;
+
+            string botName = ExtractBotName(fromEntrySignal);
+            if (!string.IsNullOrWhiteSpace(botName))
+                return botName;
+
+            return ExtractBotName(orderName);
+        }
+
+        private string FindTrackedBotName(string accountName, string instrumentName)
+        {
+            string prefix = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}|{1}|",
+                accountName ?? string.Empty,
+                instrumentName ?? string.Empty);
+
+            string matchedBotName = string.Empty;
+            foreach (KeyValuePair<string, TrackedPositionState> item in trackedPositionsByKey)
+            {
+                if (!item.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string candidate = item.Key.Substring(prefix.Length);
+                if (string.IsNullOrWhiteSpace(candidate))
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(matchedBotName) && !string.Equals(matchedBotName, candidate, StringComparison.OrdinalIgnoreCase))
+                    return string.Empty;
+
+                matchedBotName = candidate;
+            }
+
+            return matchedBotName;
+        }
+
+        private static string FormatMessageTitle(string botName, string instrumentName)
+        {
+            if (string.IsNullOrWhiteSpace(botName))
+                return instrumentName ?? string.Empty;
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} | {1}",
+                botName,
+                instrumentName ?? string.Empty);
+        }
+
+        private static string ExtractBotName(string signalName)
+        {
+            if (string.IsNullOrWhiteSpace(signalName))
+                return string.Empty;
+
+            string normalized = signalName.Trim();
+            int cutoffIndex = normalized.Length;
+            bool foundBoundary = false;
+
+            foundBoundary |= UpdateCutoffIndex(normalized, "Long", ref cutoffIndex);
+            foundBoundary |= UpdateCutoffIndex(normalized, "Short", ref cutoffIndex);
+            foundBoundary |= UpdateCutoffIndex(normalized, "Exit", ref cutoffIndex);
+            foundBoundary |= UpdateCutoffIndex(normalized, "TP", ref cutoffIndex);
+            foundBoundary |= UpdateCutoffIndex(normalized, "SL", ref cutoffIndex);
+
+            if (!foundBoundary)
+                return string.Empty;
+
+            string candidate = cutoffIndex > 0
+                ? normalized.Substring(0, cutoffIndex)
+                : normalized;
+
+            candidate = candidate.TrimEnd('_', '-', ' ');
+
+            if (string.IsNullOrWhiteSpace(candidate))
+                candidate = normalized;
+
+            int trailingSeparator = candidate.IndexOfAny(new[] { '_', '-' });
+            if (trailingSeparator > 0)
+                candidate = candidate.Substring(0, trailingSeparator);
+
+            candidate = candidate.Trim();
+            if (candidate.Length == 0)
+                return string.Empty;
+
+            int trailingDigitsStart = candidate.Length;
+            while (trailingDigitsStart > 0 && char.IsDigit(candidate[trailingDigitsStart - 1]))
+                trailingDigitsStart--;
+
+            if (trailingDigitsStart > 0 && trailingDigitsStart < candidate.Length)
+                candidate = candidate.Substring(0, trailingDigitsStart);
+
+            return candidate;
+        }
+
+        private static bool UpdateCutoffIndex(string value, string token, ref int cutoffIndex)
+        {
+            int tokenIndex = value.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+            if (tokenIndex > 0 && tokenIndex < cutoffIndex)
+            {
+                cutoffIndex = tokenIndex;
+                return true;
+            }
+
+            return false;
         }
 
         private static double GetSignedFillQuantity(OrderAction orderAction, double quantity)
