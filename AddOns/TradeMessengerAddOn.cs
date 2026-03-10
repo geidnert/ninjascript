@@ -43,6 +43,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             public bool IsEntryNotification { get; set; }
             public bool IsExitNotification { get; set; }
+            public bool IsEntrySideFill { get; set; }
             public string BotName { get; set; }
             public string Message { get; set; }
         }
@@ -55,8 +56,12 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly Dictionary<string, bool> feedStalledByInstrument = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, ConnectionStatus> lastConnectionStatusByName = new Dictionary<string, ConnectionStatus>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, TrackedPositionState> trackedPositionsByKey = new Dictionary<string, TrackedPositionState>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTime> recentExecutionKeys = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTime> recentMessages = new Dictionary<string, DateTime>(StringComparer.Ordinal);
         private readonly List<MarketDataSubscription> marketDataSubscriptions = new List<MarketDataSubscription>();
         private readonly HashSet<string> subscribedAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly TimeSpan ExecutionDeduplicationWindow = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan MessageDeduplicationWindow = TimeSpan.FromSeconds(10);
         private Timer watchdogTimer;
         private string configFilePath;
         private string heartbeatFilePath;
@@ -89,6 +94,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private string lastReconnectFailure = string.Empty;
         private bool connectionIssueActive;
         private bool monitoringActive;
+        private DateTime lastExecutionEventTimeUtc = DateTime.MinValue;
         private NTMenuItem newMenuItem;
         private NTMenuItem autoEdgeMenuItem;
         private NTMenuItem launcherMenuItem;
@@ -437,6 +443,12 @@ namespace NinjaTrader.NinjaScript.AddOns
             lock (trackedPositionsByKey)
                 trackedPositionsByKey.Clear();
 
+            lock (recentExecutionKeys)
+                recentExecutionKeys.Clear();
+
+            lock (recentMessages)
+                recentMessages.Clear();
+
             strategyHeartbeats.Clear();
             strategyStalled.Clear();
             strategyStartupCount.Clear();
@@ -446,6 +458,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             reconnectAttemptCount = 0;
             nextReconnectAttemptUtc = DateTime.MinValue;
             lastReconnectFailure = string.Empty;
+            lastExecutionEventTimeUtc = DateTime.MinValue;
         }
 
         private void StartWatchdog()
@@ -534,6 +547,10 @@ namespace NinjaTrader.NinjaScript.AddOns
             string instrumentName = e.Execution.Instrument != null ? e.Execution.Instrument.FullName : "Unknown";
             Account account = sender as Account;
             string accountName = account != null ? account.Name : "Unknown";
+            ResetExecutionTrackingIfPlaybackRewound(e.Time);
+            if (IsDuplicateExecutionEvent(accountName, instrumentName, e.Execution, e.Time))
+                return;
+
             ExecutionMessageResult result = BuildExecutionMessage(account, e.Execution, accountName, instrumentName);
             if (result == null || string.IsNullOrEmpty(result.Message))
                 return;
@@ -541,11 +558,132 @@ namespace NinjaTrader.NinjaScript.AddOns
             if ((result.IsEntryNotification && !showEntry) || (result.IsExitNotification && !showExit))
                 return;
 
+            if (result.IsEntrySideFill && !showEntry)
+                return;
+
             string message = result.Message;
+            if (IsDuplicateMessage(message))
+                return;
 
             LogToOutput(message);
             if (sendPushNotifications)
                 SendPushNotification(e.Time, message);
+        }
+
+        private bool IsDuplicateExecutionEvent(string accountName, string instrumentName, Execution execution, DateTime eventTime)
+        {
+            string key = BuildExecutionDeduplicationKey(accountName, instrumentName, execution, eventTime);
+            DateTime nowUtc = DateTime.UtcNow;
+
+            lock (recentExecutionKeys)
+            {
+                List<string> expiredKeys = null;
+                foreach (KeyValuePair<string, DateTime> item in recentExecutionKeys)
+                {
+                    if (nowUtc - item.Value <= ExecutionDeduplicationWindow)
+                        continue;
+
+                    if (expiredKeys == null)
+                        expiredKeys = new List<string>();
+
+                    expiredKeys.Add(item.Key);
+                }
+
+                if (expiredKeys != null)
+                {
+                    foreach (string expiredKey in expiredKeys)
+                        recentExecutionKeys.Remove(expiredKey);
+                }
+
+                if (recentExecutionKeys.ContainsKey(key))
+                    return true;
+
+                recentExecutionKeys[key] = nowUtc;
+                return false;
+            }
+        }
+
+        private bool IsDuplicateMessage(string message)
+        {
+            if (string.IsNullOrEmpty(message))
+                return false;
+
+            DateTime nowUtc = DateTime.UtcNow;
+
+            lock (recentMessages)
+            {
+                List<string> expiredKeys = null;
+                foreach (KeyValuePair<string, DateTime> item in recentMessages)
+                {
+                    if (nowUtc - item.Value <= MessageDeduplicationWindow)
+                        continue;
+
+                    if (expiredKeys == null)
+                        expiredKeys = new List<string>();
+
+                    expiredKeys.Add(item.Key);
+                }
+
+                if (expiredKeys != null)
+                {
+                    foreach (string expiredKey in expiredKeys)
+                        recentMessages.Remove(expiredKey);
+                }
+
+                if (recentMessages.ContainsKey(message))
+                    return true;
+
+                recentMessages[message] = nowUtc;
+                return false;
+            }
+        }
+
+        private void ResetExecutionTrackingIfPlaybackRewound(DateTime eventTime)
+        {
+            DateTime eventTimeUtc = eventTime.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(eventTime, DateTimeKind.Utc)
+                : eventTime.ToUniversalTime();
+
+            if (lastExecutionEventTimeUtc != DateTime.MinValue && eventTimeUtc < lastExecutionEventTimeUtc.AddSeconds(-30))
+            {
+                lock (trackedPositionsByKey)
+                    trackedPositionsByKey.Clear();
+
+                lock (recentExecutionKeys)
+                    recentExecutionKeys.Clear();
+
+                lock (recentMessages)
+                    recentMessages.Clear();
+            }
+
+            lastExecutionEventTimeUtc = eventTimeUtc;
+        }
+
+        private static string BuildExecutionDeduplicationKey(string accountName, string instrumentName, Execution execution, DateTime eventTime)
+        {
+            Order order = execution != null ? execution.Order : null;
+            string orderId = order != null ? order.OrderId ?? string.Empty : string.Empty;
+            string orderName = order != null ? order.Name ?? string.Empty : string.Empty;
+            string fromEntrySignal = order != null ? order.FromEntrySignal ?? string.Empty : string.Empty;
+            string action = order != null ? order.OrderAction.ToString() : string.Empty;
+            string quantity = execution != null ? execution.Quantity.ToString(CultureInfo.InvariantCulture) : "0";
+            string price = execution != null ? execution.Price.ToString("0.########", CultureInfo.InvariantCulture) : "0";
+            string time = string.IsNullOrEmpty(orderId)
+                ? eventTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture)
+                : string.Empty;
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}",
+                accountName ?? string.Empty,
+                instrumentName ?? string.Empty,
+                orderId,
+                orderName,
+                fromEntrySignal,
+                action,
+                quantity,
+                price,
+                time);
         }
 
         private ExecutionMessageResult BuildExecutionMessage(Account account, Execution execution, string accountName, string instrumentName)
@@ -597,7 +735,6 @@ namespace NinjaTrader.NinjaScript.AddOns
                         ((state.AverageEntryPrice * existingAbsoluteQuantity) + (execution.Price * fillAbsoluteQuantity)) /
                         combinedAbsoluteQuantity;
                     state.SignedQuantity += signedFillQuantity;
-                    isEntryNotification = true;
                 }
                 else
                 {
@@ -637,6 +774,19 @@ namespace NinjaTrader.NinjaScript.AddOns
                 return new ExecutionMessageResult
                 {
                     IsEntryNotification = true,
+                    IsEntrySideFill = true,
+                    BotName = botName,
+                    Message = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0}\n{1}",
+                        FormatMessageTitle(botName, instrumentName),
+                        signedFillQuantity > 0 ? "Long" : "Short")
+                };
+
+            if (execution.Order.OrderAction == OrderAction.Buy || execution.Order.OrderAction == OrderAction.SellShort)
+                return new ExecutionMessageResult
+                {
+                    IsEntrySideFill = true,
                     BotName = botName,
                     Message = string.Format(
                         CultureInfo.InvariantCulture,
