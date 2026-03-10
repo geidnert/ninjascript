@@ -24,6 +24,7 @@ namespace NinjaTrader.NinjaScript.AddOns
     public class TradeMessengerAddOn : AddOnBase
     {
         internal static TradeMessengerAddOn Instance { get; private set; }
+        private const int TradeMessengerVendorLicenseId = 338;
 
         private sealed class MarketDataSubscription
         {
@@ -95,20 +96,48 @@ namespace NinjaTrader.NinjaScript.AddOns
         private bool connectionIssueActive;
         private bool monitoringActive;
         private DateTime lastExecutionEventTimeUtc = DateTime.MinValue;
+        private bool licenseValidated;
+        private string licenseFailureMessage;
+        private bool licenseFailureShown;
         private NTMenuItem newMenuItem;
         private NTMenuItem autoEdgeMenuItem;
         private NTMenuItem launcherMenuItem;
         private TradeMessengerAddOnWindow settingsWindow;
 
+        public TradeMessengerAddOn()
+        {
+            try
+            {
+                VendorLicense(TradeMessengerVendorLicenseId);
+                licenseValidated = true;
+                licenseFailureMessage = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                licenseValidated = false;
+                licenseFailureMessage = string.IsNullOrWhiteSpace(ex.Message)
+                    ? "Trade Messenger license validation failed."
+                    : ex.Message;
+            }
+        }
+
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
-                Name = "TradeMessengerAddOn";
+                Name = "TradeMessenger";
             }
             else if (State == State.Active)
             {
                 Instance = this;
+                if (!licenseValidated)
+                {
+                    StopMonitoring();
+                    RemoveMenuItem();
+                    ShowLicenseFailureMessage();
+                    return;
+                }
+
                 configFilePath = Path.Combine(Core.Globals.UserDataDir, "TradeMessengerAddOn.config");
                 heartbeatFilePath = Path.Combine(Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv");
                 ApplyDefaultSettings();
@@ -126,6 +155,9 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         protected override void OnWindowCreated(Window window)
         {
+            if (!licenseValidated)
+                return;
+
             ControlCenter controlCenter = window as ControlCenter;
             if (controlCenter == null)
                 return;
@@ -412,6 +444,12 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void RefreshMonitoringState()
         {
+            if (!licenseValidated)
+            {
+                StopMonitoring();
+                return;
+            }
+
             if (runHeadlessWhenWindowClosed || settingsWindow != null)
                 StartMonitoring();
             else
@@ -420,7 +458,7 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void StartMonitoring()
         {
-            if (monitoringActive)
+            if (!licenseValidated || monitoringActive)
                 return;
 
             monitoringActive = true;
@@ -1538,6 +1576,9 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void EnsureMenuItem(ControlCenter controlCenter)
         {
+            if (!licenseValidated)
+                return;
+
             if (launcherMenuItem != null)
                 return;
 
@@ -1627,6 +1668,12 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void OnLauncherMenuItemClick(object sender, RoutedEventArgs e)
         {
+            if (!licenseValidated)
+            {
+                ShowLicenseFailureMessage();
+                return;
+            }
+
             if (settingsWindow == null)
             {
                 settingsWindow = new TradeMessengerAddOnWindow();
@@ -1672,6 +1719,29 @@ namespace NinjaTrader.NinjaScript.AddOns
                     newMenuItem.Items.Remove(autoEdgeMenuItem);
                 autoEdgeMenuItem = null;
             }
+        }
+
+        private void ShowLicenseFailureMessage()
+        {
+            if (licenseFailureShown)
+                return;
+
+            licenseFailureShown = true;
+            string message = string.IsNullOrWhiteSpace(licenseFailureMessage)
+                ? "Trade Messenger is not licensed on this machine. Monitoring, messaging, and the UI are disabled."
+                : "Trade Messenger license not found. Monitoring, messaging, and the UI are disabled.\n\n" + licenseFailureMessage;
+
+            if (Application.Current == null || Application.Current.Dispatcher == null)
+                return;
+
+            Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                System.Windows.MessageBox.Show(
+                    message,
+                    "Trade Messenger License",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }));
         }
     }
 
