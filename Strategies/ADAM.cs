@@ -25,6 +25,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class ADAM : Strategy
     {
+        private const string HeartbeatStrategyName = "ADAM";
+
         public ADAM()
         {
             VendorLicense(1175);
@@ -103,6 +105,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         private int activeBucketL = 0;
         private int activeBucketS = 0;
+        private StrategyHeartbeatReporter heartbeatReporter;
         
 
         // Active parameters for matched Long bucket
@@ -1200,6 +1203,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ValidateRequiredPrimaryTimeframe(30);
                 ValidateRequiredPrimaryInstrument();
                 EnsureNewsDatesInitialized();
+                heartbeatReporter = new StrategyHeartbeatReporter(
+                    HeartbeatStrategyName,
+                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
                 LogDebug("ADAM30sORBot_v3.03 loaded | TickSize=" + TickSize + " | Instrument=" + Instrument.FullName);
                 LogDebug(String.Format("  Cut-Off: {0}:{1:D2} | Forced Close: {2}:{3:D2}", 
                     CutOffHour, CutOffMinute, ForcedCloseHour, ForcedCloseMinute));
@@ -1215,8 +1221,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         b, enL ? "ON" : "OFF", mnL, mxL, enS ? "ON" : "OFF", mnS, mxS));
                 }
             }
+            else if (State == State.Realtime)
+            {
+                if (heartbeatReporter != null)
+                    heartbeatReporter.Start();
+            }
             else if (State == State.Terminated)
             {
+                if (heartbeatReporter != null)
+                {
+                    heartbeatReporter.Dispose();
+                    heartbeatReporter = null;
+                }
+
                 DisposeInfoBoxOverlay();
             }
         }

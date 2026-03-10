@@ -50,6 +50,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // =========================================================================
     public class EVETesting : Strategy
     {
+        private const string HeartbeatStrategyName = "EVETesting";
+
         public EVETesting()
         {
             VendorLicense(1236);
@@ -78,6 +80,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // ── Calculated levels ─────────────────────────────────────────────────
         private double _longTarget,  _shortTarget;
+        private StrategyHeartbeatReporter heartbeatReporter;
         private double _longTrigger, _shortTrigger;
 
         // ── Long side state machine ───────────────────────────────────────────
@@ -510,9 +513,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortB2SwingInd = Swing(ShortB2SwingStrength);
                 _shortB3SwingInd = Swing(ShortB3SwingStrength);
                 EnsureNewsDatesInitialized();
+                heartbeatReporter = new StrategyHeartbeatReporter(
+                    HeartbeatStrategyName,
+                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
+            }
+            else if (State == State.Realtime)
+            {
+                if (heartbeatReporter != null)
+                    heartbeatReporter.Start();
             }
             else if (State == State.Terminated)
             {
+                if (heartbeatReporter != null)
+                {
+                    heartbeatReporter.Dispose();
+                    heartbeatReporter = null;
+                }
+
                 DisposeInfoBoxOverlay();
             }
         }

@@ -24,6 +24,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class Duo : Strategy
     {
+        private const string HeartbeatStrategyName = "Duo";
+
         public Duo()
         {
             VendorLicense(337);
@@ -106,6 +108,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int missingShortEntryOrderBars;
         private double asiaAdxMinSlopePoints;
         private double newYorkAdxMinSlopePoints;
+        private StrategyHeartbeatReporter heartbeatReporter;
 
         private bool asiaSessionClosed;
         private bool newYorkSessionClosed;
@@ -553,6 +556,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 newYorkTradesThisSession = 0;
 
                 EnsureNewsDatesInitialized();
+                heartbeatReporter = new StrategyHeartbeatReporter(
+                    HeartbeatStrategyName,
+                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
 
                 LogDebug(
                     string.Format(
@@ -565,8 +571,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         activeExitCrossPoints,
                         activeEntryStopMode));
             }
+            else if (State == State.Realtime)
+            {
+                if (heartbeatReporter != null)
+                    heartbeatReporter.Start();
+            }
             else if (State == State.Terminated)
             {
+                if (heartbeatReporter != null)
+                {
+                    heartbeatReporter.Dispose();
+                    heartbeatReporter = null;
+                }
+
                 DisposeInfoBoxOverlay();
             }
         }

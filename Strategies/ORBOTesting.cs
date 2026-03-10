@@ -40,6 +40,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     /// </summary>
     public class ORBOTesting : Strategy
     {
+        private const string HeartbeatStrategyName = "ORBOTesting";
         private const string StrategySignalPrefix = "ORBOTesting";
         private const string LongSignalPrefix = StrategySignalPrefix + "LongOR_";
         private const string ShortSignalPrefix = StrategySignalPrefix + "ShortOR_";
@@ -135,6 +136,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         // ===== Breakeven State =====
         private bool beTriggerActive = false;
+        private StrategyHeartbeatReporter heartbeatReporter;
         
         // ===== Session State =====
         private DateTime lastDate = DateTime.MinValue;
@@ -473,9 +475,23 @@ USE ON 1-MINUTE CHART.";
                 ValidateRequiredPrimaryInstrument();
                 startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
                 EnsureNewsDatesInitialized();
+                heartbeatReporter = new StrategyHeartbeatReporter(
+                    HeartbeatStrategyName,
+                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
+            }
+            else if (State == State.Realtime)
+            {
+                if (heartbeatReporter != null)
+                    heartbeatReporter.Start();
             }
             else if (State == State.Terminated)
             {
+                if (heartbeatReporter != null)
+                {
+                    heartbeatReporter.Dispose();
+                    heartbeatReporter = null;
+                }
+
                 DisposeInfoBoxOverlay();
             }
         }
