@@ -170,6 +170,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             "■", "□", "●", "○", "▲", "▼", "◆", "◇"
         };
+        private bool isConfiguredTimeframeValid = true;
+        private bool isConfiguredInstrumentValid = true;
+        private bool timeframePopupShown;
+        private bool instrumentPopupShown;
 
         #endregion
 
@@ -199,6 +203,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ─── 0. General ───
                 EnableLongTrades                = true;
                 EnableShortTrades               = true;
+                RequireEntryConfirmation        = false;
 
                 // ─── 1. Common: Session Management ───
                 SessionStartTime                = DateTime.Parse("18:00", System.Globalization.CultureInfo.InvariantCulture);
@@ -408,6 +413,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 EnsureNewsDatesInitialized();
+                ValidateRequiredPrimaryTimeframe(5);
+                ValidateRequiredPrimaryInstrument();
             }
             else if (State == State.Transition)
             {
@@ -539,6 +546,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
+            {
+                CancelWorkingEntryOrder();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    FlattenAndCancel("InvalidConfiguration");
+                return;
+            }
+
             // Compute minBars from all direction-specific periods
             int minBars = Math.Max(Math.Max(LongMaPeriod + 2,  ShortMaPeriod + 2),
                           Math.Max(LongEmaPeriod + 2, ShortEmaPeriod + 2));
@@ -903,6 +918,129 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return false;
         }
 
+        private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
+        {
+            bool isMinuteSeries = BarsPeriod != null && BarsPeriod.BarsPeriodType == NinjaTrader.Data.BarsPeriodType.Minute;
+            bool timeframeMatches = isMinuteSeries && BarsPeriod.Value == requiredMinutes;
+            isConfiguredTimeframeValid = timeframeMatches;
+            if (timeframeMatches)
+                return;
+
+            string actualTimeframe = BarsPeriod == null
+                ? "Unknown"
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on a {1}-minute chart. Current chart is {2}. Trading is disabled until timeframe is corrected.",
+                Name,
+                requiredMinutes,
+                actualTimeframe);
+            Print("Timeframe validation failed | " + message);
+            ShowTimeframeValidationPopup(message);
+        }
+
+        private void ShowTimeframeValidationPopup(string message)
+        {
+            if (timeframePopupShown)
+                return;
+
+            timeframePopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Timeframe",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Print("Failed to show timeframe popup: " + ex.Message);
+            }
+        }
+
+        private void ValidateRequiredPrimaryInstrument()
+        {
+            string instrumentName = Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+            bool instrumentMatches = instrumentName == "NQ" || instrumentName == "MNQ";
+            isConfiguredInstrumentValid = instrumentMatches;
+            if (instrumentMatches)
+                return;
+
+            string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on NQ or MNQ. Current instrument is {1}. Trading is disabled until instrument is corrected.",
+                Name,
+                actualInstrument);
+            Print("Instrument validation failed | " + message);
+            ShowInstrumentValidationPopup(message);
+        }
+
+        private void ShowInstrumentValidationPopup(string message)
+        {
+            if (instrumentPopupShown)
+                return;
+
+            instrumentPopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Instrument",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Print("Failed to show instrument popup: " + ex.Message);
+            }
+        }
+
+        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
+        {
+            bool result = false;
+            if (System.Windows.Application.Current == null)
+                return false;
+
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                () =>
+                {
+                    string message = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Confirm {0} entry?\nPrice: {1:F2}\nQuantity: {2}",
+                        orderType,
+                        price,
+                        quantity);
+
+                    System.Windows.MessageBoxResult res =
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Entry Confirmation",
+                            System.Windows.MessageBoxButton.YesNo,
+                            System.Windows.MessageBoxImage.Question);
+                    result = res == System.Windows.MessageBoxResult.Yes;
+                });
+
+            return result;
+        }
+
         #endregion
 
         #region Entry Signal Detection
@@ -1161,6 +1299,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (entryMode == MichalEntryMode.Market)
             {
+                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", closePrice, 1))
+                {
+                    Print(string.Format("{0} | Entry confirmation declined | {1}.", Time[0], direction == 1 ? "LONG" : "SHORT"));
+                    return;
+                }
                 entryOrder = direction == 1 ? EnterLong(1, entryName) : EnterShort(1, entryName);
             }
             else if (entryMode == MichalEntryMode.LimitOffset)
@@ -1168,6 +1311,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double limitPrice = direction == 1
                     ? closePrice - limitOffsetTicks * TickSize
                     : closePrice + limitOffsetTicks * TickSize;
+                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", limitPrice, 1))
+                {
+                    Print(string.Format("{0} | Entry confirmation declined | {1}.", Time[0], direction == 1 ? "LONG" : "SHORT"));
+                    return;
+                }
                 entryOrder = direction == 1
                     ? EnterLongLimit(0, true, 1, limitPrice, entryName)
                     : EnterShortLimit(0, true, 1, limitPrice, entryName);
@@ -1176,6 +1324,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 double retrace = signalCandleRange * (limitRetracePct / 100.0);
                 double limitPrice = direction == 1 ? closePrice - retrace : closePrice + retrace;
+                if (RequireEntryConfirmation && !ShowEntryConfirmation(direction == 1 ? "Long" : "Short", limitPrice, 1))
+                {
+                    Print(string.Format("{0} | Entry confirmation declined | {1}.", Time[0], direction == 1 ? "LONG" : "SHORT"));
+                    return;
+                }
                 entryOrder = direction == 1
                     ? EnterLongLimit(0, true, 1, limitPrice, entryName)
                     : EnterShortLimit(0, true, 1, limitPrice, entryName);
@@ -2233,6 +2386,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Enable Short Trades", Description = "Allow short entries.", Order = 2, GroupName = "00. General")]
         public bool EnableShortTrades { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Require Entry Confirmation", Description = "Show a confirmation prompt before submitting each entry order.", Order = 3, GroupName = "00. General")]
+        public bool RequireEntryConfirmation { get; set; }
 
         // ═══════════════════════════════════════
         //  1. COMMON: SESSION MANAGEMENT
