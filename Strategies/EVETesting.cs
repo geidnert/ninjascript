@@ -317,6 +317,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseSkipTime = true;
                 CloseAtSkipStart = false;
                 CloseAtNewsStart = false;
+                RequireEntryConfirmation = false;
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
                 WebhookUrl = string.Empty;
@@ -934,6 +935,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _pendingLongSL = CalcLongSL(Close[0]);
                     _pendingLongTP = _longTarget;
                     _applyLongOCO  = true;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], GetLongContracts()))
+                    {
+                        Print(Time[0] + " | Entry confirmation declined | LONG.");
+                        return;
+                    }
                     EnterLong(GetLongContracts(), NextLongEntrySignal());
                     _longEntryArmed = true;
                     Print(Time[0] + " | Long MARKET order submitted  [B" + _longActiveBucket + "]");
@@ -946,6 +952,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!CanPlaceLongLimitSafely(limitPx, "Long re-arm"))
                         return;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", limitPx, GetLongContracts()))
+                    {
+                        Print(Time[0] + " | Entry confirmation declined | LONG.");
+                        return;
+                    }
 
                     _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), limitPx, NextLongEntrySignal());
                     _longEntryArmed = true;
@@ -986,6 +997,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _pendingShortSL = CalcShortSL(Close[0]);
                     _pendingShortTP = _shortTarget;
                     _applyShortOCO  = true;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], GetShortContracts()))
+                    {
+                        Print(Time[0] + " | Entry confirmation declined | SHORT.");
+                        return;
+                    }
                     EnterShort(GetShortContracts(), NextShortEntrySignal());
                     _shortEntryArmed = true;
                     Print(Time[0] + " | Short MARKET order submitted  [B" + _shortActiveBucket + "]");
@@ -998,6 +1014,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!CanPlaceShortLimitSafely(limitPx, "Short re-arm"))
                         return;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", limitPx, GetShortContracts()))
+                    {
+                        Print(Time[0] + " | Entry confirmation declined | SHORT.");
+                        return;
+                    }
 
                     _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), limitPx, NextShortEntrySignal());
                     _shortEntryArmed = true;
@@ -1024,6 +1045,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px       = LongFVGEntryPrice(_longFVGBot, _longFVGTop, _longFVGMid);
             if (!CanPlaceLongLimitSafely(px, "Long FVG"))
                 return;
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", px, GetLongContracts()))
+            {
+                Print(Time[0] + " | Entry confirmation declined | LONG.");
+                return;
+            }
             _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), px, NextLongEntrySignal());
             _longEntryArmed = true;
             Print(Time[0] + " | Long FVG LIMIT @ " + px
@@ -1036,6 +1062,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px        = ShortFVGEntryPrice(_shortFVGBot, _shortFVGTop, _shortFVGMid);
             if (!CanPlaceShortLimitSafely(px, "Short FVG"))
                 return;
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", px, GetShortContracts()))
+            {
+                Print(Time[0] + " | Entry confirmation declined | SHORT.");
+                return;
+            }
             _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), px, NextShortEntrySignal());
             _shortEntryArmed = true;
             Print(Time[0] + " | Short FVG LIMIT @ " + px
@@ -1980,6 +2011,34 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show instrument popup: {1}", Name, ex.Message));
             }
+        }
+
+        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
+        {
+            bool result = false;
+            if (System.Windows.Application.Current == null)
+                return false;
+
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                () =>
+                {
+                    string message = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Confirm {0} entry?\nPrice: {1:F2}\nQuantity: {2}",
+                        orderType,
+                        price,
+                        quantity);
+
+                    System.Windows.MessageBoxResult res =
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Entry Confirmation",
+                            System.Windows.MessageBoxButton.YesNo,
+                            System.Windows.MessageBoxImage.Question);
+                    result = res == System.Windows.MessageBoxResult.Yes;
+                });
+
+            return result;
         }
 
         // =====================================================================
@@ -2947,16 +3006,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool CloseAtNewsStart { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Confirmation",
+                 Description = "Show a Yes/No confirmation popup before each new long/short entry.",
+                 GroupName = "02 - Common: Session Filters", Order = 16)]
+        public bool RequireEntryConfirmation { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 16)]
+                 GroupName = "02 - Common: Session Filters", Order = 17)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 17)]
+                 GroupName = "02 - Common: Session Filters", Order = 18)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
