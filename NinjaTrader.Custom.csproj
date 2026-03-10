@@ -377,12 +377,11 @@
     <Compile Include="Strategies\Model930.cs" />
     <Compile Include="Strategies\NfpCpi.cs" />
     <Compile Include="Strategies\NineThirty.cs" />
-    <Compile Include="Strategies\ORBO1m.cs" />
-    <Compile Include="Strategies\ORBO1mTesting.cs" />
     <Compile Include="Strategies\PassChallenge.cs" />
     <Compile Include="Strategies\ProfitNavigator.cs" />
     <Compile Include="Strategies\SampleIntrabarBacktest.cs" />
     <Compile Include="Strategies\SingleCandleTesting.cs" />
+    <Compile Include="Strategies\StrategyHeartbeatReporter.cs" />
     <Compile Include="Strategies\TestDuo.cs" />
     <Compile Include="Strategies\ThreeBarWickTestScalping.cs" />
     <Compile Include="Strategies\WickTest.cs" />
@@ -412,7 +411,6 @@
     <Compile Include="Strategies\DuoEMA.cs" />
     <Compile Include="Strategies\DuoTesting.cs" />
     <Compile Include="Strategies\DuoTesting3.cs" />
-    <Compile Include="Strategies\EVETesting.cs" />
     <Compile Include="Strategies\ORBO.cs" />
     <Compile Include="Strategies\ORBOTesting.cs" />
     <Compile Include="Strategies\MultiBot\DuoEngine.cs" />
@@ -424,6 +422,8 @@
     <Compile Include="Strategies\MultiBot\DuoLogicCore.cs" />
     <Compile Include="Strategies\ADAM.cs" />
     <Compile Include="Strategies\TradeMessenger.cs" />
+    <Compile Include="Strategies\EVETesting.cs" />
+    <Compile Include="Strategies\MICHTesting.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">
