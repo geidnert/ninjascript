@@ -25,6 +25,9 @@ Use this skill when integrating a new strategy file from external developers and
 - session window methods
 - skip/news gating methods
 - cancel/flatten helpers
+- signal naming helpers/constants
+- strategy lifecycle hooks for startup/shutdown
+- heartbeat reporter wiring
 - timeframe/instrument validation guards
 - infobox builder and renderer
 - webhook plumbing and properties
@@ -33,32 +36,48 @@ Use this skill when integrating a new strategy file from external developers and
 - drawing windows and transition safety hooks
 - entry gating checks
 - session boundary guards
+- strategy-name-prefixed signal constants/helpers for entries and exits
+- heartbeat reporting using `StrategyHeartbeatReporter`
 - primary timeframe validation (`DataLoaded` validation + `OnBarUpdate` early-return guard + invalid-configuration cancel/flatten)
 - primary instrument validation (`DataLoaded` validation + `OnBarUpdate` early-return guard + `NQ`/`MNQ` allow-list + invalid-configuration cancel/flatten)
 - news data helpers
 
-3. Normalize infobox to canonical row order:
+3. For signal naming, follow the reference strategy pattern:
+- Prefix entry and exit signal names with the strategy name.
+- Prefer constants/helpers over inline string literals.
+- Wire protective exits/stops/targets to the active prefixed entry signal.
+- Use `Duo.cs` as the default reference for this convention unless the target already has an equivalent strategy-specific helper pattern.
+
+4. For heartbeat reporting, follow the reference strategy pattern:
+- Add a strategy-level `HeartbeatStrategyName` constant.
+- Add a `StrategyHeartbeatReporter heartbeatReporter` field.
+- Instantiate it during `State.DataLoaded` with `TradeMessengerHeartbeats.csv` under `NinjaTrader.Core.Globals.UserDataDir`.
+- Start it in `State.Realtime`.
+- Dispose and null it in `State.Terminated`.
+- Use `Duo.cs` as the default reference for lifecycle placement unless the target already has an equivalent implementation.
+
+5. Normalize infobox to canonical row order:
 1. Header
 2. Contracts
 3. News
 4. Session
 5. Footer
 
-4. Apply news rules exactly:
+6. Apply news rules exactly:
 - `UseNewsSkip == false` => single `News: Disabled` row
 - enabled + no events => blocked icon row (default `News: 🚫`; allow equivalent blocked icon if project standard differs)
 - enabled + events => rows with fade for passed events
 
-5. For infobox icon rendering:
+7. For infobox icon rendering:
 - Route emoji values to an emoji-capable font (`Segoe UI Emoji`).
 - Route symbol-only values to a symbol font (`Segoe UI Symbol`) when needed.
 - In WPF/NinjaTrader, prefer applying value brush to emoji runs for deterministic non-white rendering when color emoji layers are not reliable.
 
-6. If module includes `webhooks`, apply provider and event mapping.
+8. If module includes `webhooks`, apply provider and event mapping.
 
-7. If module includes `branding`, apply header/footer text color only.
+9. If module includes `branding`, apply header/footer text color only.
 
-8. Validate with checklist and provide compliance report.
+10. Validate with checklist and provide compliance report.
 
 ## Output Format
 Return a compliance report with four sections:

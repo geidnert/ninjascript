@@ -6,8 +6,15 @@
 - [ ] Skip draw/check exists
 - [ ] News draw/check exists (conditional on `UseNewsSkip`)
 - [ ] Entry path blocks in skip/news/no-trades-after windows
+- [ ] Entry and exit signal names are prefixed with the strategy name
+- [ ] Protective stops/targets use the active prefixed entry signal
 - [ ] Transition to blocked window cancels orders
 - [ ] Transition to blocked window flattens open position
+- [ ] `HeartbeatStrategyName` constant exists
+- [ ] `StrategyHeartbeatReporter heartbeatReporter` field exists
+- [ ] Heartbeat reporter is created during `State.DataLoaded`
+- [ ] Heartbeat reporter is started during `State.Realtime`
+- [ ] Heartbeat reporter is disposed during `State.Terminated`
 - [ ] `IsLastBarOfSession()` guard used in entry readiness
 - [ ] Primary timeframe validator method exists (for example `ValidateRequiredPrimaryTimeframe`)
 - [ ] Primary timeframe validation is called during `State.DataLoaded`
@@ -43,6 +50,8 @@
 rg -n "BuildInfoLines|RenderInfoBoxOverlay|EnsureInfoBoxOverlay" <target>
 rg -n "UseNewsSkip|NewsBlockMinutes|GetCurrentWeekNews|PassedNewsRowBrush" <target>
 rg -n "CancelAllOrders|ExitAllPositions|IsLastBarOfSession" <target>
+rg -n "HeartbeatStrategyName|heartbeatReporter|State == State.Realtime|State == State.Terminated" <target>
+rg -n "LongEntrySignal|ShortEntrySignal|BuildExitSignalName|GetOpenLongEntrySignal|GetOpenShortEntrySignal|SetStopLoss|SetProfitTarget" <target>
 rg -n "DrawSession|DrawSkip|DrawNews|NoTradesAfter" <target>
 rg -n "ValidateRequiredPrimaryTimeframe|isConfiguredTimeframeValid|ValidateRequiredPrimaryInstrument|isConfiguredInstrumentValid|InvalidConfiguration|timeframePopupShown|instrumentPopupShown" <target>
 rg -n "Webhook|ProjectX|TradersPost|SendWebhook" <target>

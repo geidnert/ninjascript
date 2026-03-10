@@ -76,6 +76,23 @@ Reason tags used by convention:
 - `GetCurrentWeekNews(DateTime time)`
 - `EnsureNewsDatesInitialized()` / loader equivalent
 
+### Strategy Signal Naming
+- Entry and exit signals must be prefixed with the strategy name.
+- Prefer strategy-level constants/helpers instead of inline signal literals.
+- Protective orders (`SetStopLoss`, `SetProfitTarget`) and exits should reference the active prefixed entry signal.
+- Exit signal builders should preserve the strategy prefix (for example `Duo` + reason).
+- `Duo.cs` is the default reference for this convention when applying the skill.
+
+### Heartbeat Reporting
+- Strategies should report liveness through `StrategyHeartbeatReporter`.
+- Add a strategy-level `HeartbeatStrategyName` constant matching the strategy identity used in alerts/logging.
+- Add a `StrategyHeartbeatReporter heartbeatReporter` field.
+- Instantiate the reporter during `State.DataLoaded` using:
+  `System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv")`
+- Start the reporter during `State.Realtime`.
+- Dispose the reporter and set the field to `null` during `State.Terminated`.
+- `Duo.cs` is the default reference for lifecycle placement when applying the skill.
+
 ### Primary Timeframe Safety
 - Validate required primary chart timeframe during `State.DataLoaded`.
 - Keep a strategy-level validity flag (for example `isConfiguredTimeframeValid`).
@@ -131,6 +148,11 @@ Reason tags used by convention:
 - `UseNewsSkip=false` renders `News: Disabled` single row.
 - Passed news rows fade.
 - Contracts/News/Session value colors are consistent.
+- Entry/exit signal names are strategy-prefixed.
+- Stops/targets/exits reference the active prefixed entry signal.
+- Heartbeat reporter is instantiated in `State.DataLoaded`.
+- Heartbeat reporter is started in `State.Realtime`.
+- Heartbeat reporter is disposed in `State.Terminated`.
 - Window transition cancel/flatten hooks exist.
 - Session-end and last-bar guards exist.
 - Primary instrument validator exists and is called in `State.DataLoaded`.
@@ -146,3 +168,4 @@ From ORBOTesting history after baseline commit `cabe7871c1bf1642f43be3bb7f388d9d
 - Infobox polish (OR size points, news fade, disabled-news row)
 - Primary timeframe safety guard (validate in `DataLoaded`, warn once, cancel/flatten and block trading when invalid) from commit `ddf7f1ede836712ffdf77d0b6c6b4c8b137b039f` (2026-02-24)
 - Primary instrument safety guard (`NQ`/`MNQ` allow-list, validate in `DataLoaded`, warn once, cancel/flatten and block trading when invalid) from commit lineage on 2026-02-24
+- Heartbeat lifecycle reporting and strategy-prefixed signal naming are reflected in `Duo.cs` and should be treated as current baseline conventions for new integrations.
