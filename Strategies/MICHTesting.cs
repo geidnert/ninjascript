@@ -213,7 +213,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SkipTimeEnd                     = DateTime.Parse("13:05", System.Globalization.CultureInfo.InvariantCulture);
                 NoNewTradesAfter                = DateTime.Parse("15:00", System.Globalization.CultureInfo.InvariantCulture);
                 ForcedCloseTime                 = DateTime.Parse("15:50", System.Globalization.CultureInfo.InvariantCulture);
-                UseNewsSkip                     = false;
+                UseNewsSkip                     = true;
                 NewsBlockMinutes                = 1;
 
                 // ─── 2. Common: Session Limits ───
