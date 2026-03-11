@@ -541,27 +541,47 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ── B. Apply pending OCO brackets ─────────────────────────────────
             if (_applyLongOCO)
             {
-                SetStopLoss(LongEntrySignal,  CalculationMode.Price, _pendingLongSL,  false);
-                SetProfitTarget(LongEntrySignal,  CalculationMode.Price, _pendingLongTP);
+                TryApplyPendingProtectiveOrders(
+                    LongEntrySignal,
+                    MarketPosition.Long,
+                    _longEntryPrice > 0 ? _longEntryPrice : Close[0],
+                    ref _pendingLongSL,
+                    ref _pendingLongTP,
+                    "Long");
                 _applyLongOCO = false;
             }
             if (_applyShortOCO)
             {
-                SetStopLoss(ShortEntrySignal, CalculationMode.Price, _pendingShortSL, false);
-                SetProfitTarget(ShortEntrySignal, CalculationMode.Price, _pendingShortTP);
+                TryApplyPendingProtectiveOrders(
+                    ShortEntrySignal,
+                    MarketPosition.Short,
+                    _shortEntryPrice > 0 ? _shortEntryPrice : Close[0],
+                    ref _pendingShortSL,
+                    ref _pendingShortTP,
+                    "Short");
                 _applyShortOCO = false;
             }
 
             // ── B2. Apply pending Break-Even SL updates ───────────────────────
             if (_applyLongBE)
             {
-                SetStopLoss(LongEntrySignal, CalculationMode.Price, _pendingLongBESL, false);
+                TryApplyPendingBreakEvenStop(
+                    LongEntrySignal,
+                    MarketPosition.Long,
+                    _longEntryPrice,
+                    ref _pendingLongBESL,
+                    "Long");
                 _applyLongBE = false;
                 Print(Time[0] + " | ✦ Long SL moved to BE @ " + _pendingLongBESL);
             }
             if (_applyShortBE)
             {
-                SetStopLoss(ShortEntrySignal, CalculationMode.Price, _pendingShortBESL, false);
+                TryApplyPendingBreakEvenStop(
+                    ShortEntrySignal,
+                    MarketPosition.Short,
+                    _shortEntryPrice,
+                    ref _pendingShortBESL,
+                    "Short");
                 _applyShortBE = false;
                 Print(Time[0] + " | ✦ Short SL moved to BE @ " + _pendingShortBESL);
             }
@@ -1133,8 +1153,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _longTradesToday++;
 
                 double sl = CalcLongSL(price);
-                _pendingLongSL = sl;
-                _pendingLongTP = _longTarget;
+                double tp = _longTarget;
+                int targetTicks = Math.Max(0, PriceToTicks(Math.Abs(tp - price)));
+                if (TrySanitizeProtectivePrices(MarketPosition.Long, price, sl, targetTicks, out sl, out tp))
+                {
+                    _pendingLongSL = sl;
+                    _pendingLongTP = tp;
+                }
+                else
+                {
+                    _pendingLongSL = sl;
+                    _pendingLongTP = _longTarget;
+                }
                 _applyLongOCO  = true;
 
                 DateTime slT1 = time;
@@ -1142,10 +1172,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Draw.Line(this, "LongSL_" + (++_drawSeq), false,
                           slT1, sl, slT2, sl, Brushes.Red, DashStyleHelper.Dash, 2);
 
-                SendWebhook("buy", price, _longTarget, sl, exec.Order.OrderType == OrderType.Market, executionQty);
+                SendWebhook("buy", price, _pendingLongTP, sl, exec.Order.OrderType == OrderType.Market, executionQty);
 
                 Print(time + " | ► LONG FILLED @ " + price
-                      + "  SL=" + sl + "  TP=" + _longTarget
+                      + "  SL=" + sl + "  TP=" + _pendingLongTP
                       + "  [B" + _longActiveBucket + "  trade " + _longTradesToday + "/" + GetLongMaxTradesPerDay() + "]");
             }
 
@@ -1160,8 +1190,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortTradesToday++;
 
                 double sl = CalcShortSL(price);
-                _pendingShortSL = sl;
-                _pendingShortTP = _shortTarget;
+                double tp = _shortTarget;
+                int targetTicks = Math.Max(0, PriceToTicks(Math.Abs(tp - price)));
+                if (TrySanitizeProtectivePrices(MarketPosition.Short, price, sl, targetTicks, out sl, out tp))
+                {
+                    _pendingShortSL = sl;
+                    _pendingShortTP = tp;
+                }
+                else
+                {
+                    _pendingShortSL = sl;
+                    _pendingShortTP = _shortTarget;
+                }
                 _applyShortOCO  = true;
 
                 DateTime slT1 = time;
@@ -1169,10 +1209,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Draw.Line(this, "ShortSL_" + (++_drawSeq), false,
                           slT1, sl, slT2, sl, Brushes.Red, DashStyleHelper.Dash, 2);
 
-                SendWebhook("sell", price, _shortTarget, sl, exec.Order.OrderType == OrderType.Market, executionQty);
+                SendWebhook("sell", price, _pendingShortTP, sl, exec.Order.OrderType == OrderType.Market, executionQty);
 
                 Print(time + " | ► SHORT FILLED @ " + price
-                      + "  SL=" + sl + "  TP=" + _shortTarget
+                      + "  SL=" + sl + "  TP=" + _pendingShortTP
                       + "  [B" + _shortActiveBucket + "  trade " + _shortTradesToday + "/" + GetShortMaxTradesPerDay() + "]");
             }
 
@@ -1222,6 +1262,193 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string BuildExitSignalName(string reason)
         {
             return StrategySignalPrefix + reason;
+        }
+
+        private bool TryApplyPendingProtectiveOrders(string entrySignal, MarketPosition direction, double fillPrice, ref double pendingStop, ref double pendingTarget, string label)
+        {
+            int targetTicks = pendingTarget > 0 && fillPrice > 0
+                ? Math.Max(0, PriceToTicks(Math.Abs(pendingTarget - fillPrice)))
+                : 0;
+
+            double stopPrice;
+            double targetPrice;
+            if (!TrySanitizeProtectivePrices(direction, fillPrice, pendingStop, targetTicks, out stopPrice, out targetPrice))
+            {
+                Print(Time[0] + " | " + label + " protective order sanitize failed. SL=" + pendingStop + " TP=" + pendingTarget + " fill=" + fillPrice);
+                return false;
+            }
+
+            if (Math.Abs(stopPrice - pendingStop) >= TickSize || (targetTicks > 0 && Math.Abs(targetPrice - pendingTarget) >= TickSize))
+            {
+                Print(Time[0] + " | " + label + " protective orders adjusted to live market. SL " + pendingStop + " -> " + stopPrice
+                      + (targetTicks > 0 ? " | TP " + pendingTarget + " -> " + targetPrice : string.Empty));
+            }
+
+            pendingStop = stopPrice;
+            if (targetTicks > 0)
+                pendingTarget = targetPrice;
+
+            SetStopLoss(entrySignal, CalculationMode.Price, pendingStop, false);
+            if (targetTicks > 0)
+                SetProfitTarget(entrySignal, CalculationMode.Price, pendingTarget);
+
+            return true;
+        }
+
+        private bool TryApplyPendingBreakEvenStop(string entrySignal, MarketPosition direction, double fillPrice, ref double pendingStop, string label)
+        {
+            double stopPrice = pendingStop;
+            if (!TryFinalSanitizeStopForLiveMarket(direction, fillPrice, ref stopPrice))
+            {
+                Print(Time[0] + " | " + label + " BE sanitize failed. SL=" + pendingStop + " fill=" + fillPrice);
+                return false;
+            }
+
+            if (Math.Abs(stopPrice - pendingStop) >= TickSize)
+                Print(Time[0] + " | " + label + " BE adjusted to live market. SL " + pendingStop + " -> " + stopPrice);
+
+            pendingStop = stopPrice;
+            SetStopLoss(entrySignal, CalculationMode.Price, pendingStop, false);
+            return true;
+        }
+
+        private bool TrySanitizeStopPriceForCurrentMarket(MarketPosition positionDirection, double rawStopPrice, out double stopPrice)
+        {
+            stopPrice = 0;
+            if (rawStopPrice <= 0 || TickSize <= 0)
+                return false;
+
+            double minTick = TickSize;
+            double referencePrice = GetReferencePriceForStop(positionDirection);
+            if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
+                referencePrice = Close[0];
+
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(rawStopPrice);
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= referencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(referencePrice - minTick);
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                if (stopPrice <= referencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(referencePrice + minTick);
+            }
+            else
+            {
+                return false;
+            }
+
+            return stopPrice > 0 && !double.IsNaN(stopPrice) && !double.IsInfinity(stopPrice);
+        }
+
+        private double GetReferencePriceForStop(MarketPosition positionDirection)
+        {
+            if (positionDirection == MarketPosition.Long)
+            {
+                double bid = GetCurrentBid();
+                if (bid > 0)
+                    return bid;
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                double ask = GetCurrentAsk();
+                if (ask > 0)
+                    return ask;
+            }
+
+            return Close[0];
+        }
+
+        private bool TrySanitizeProtectivePrices(MarketPosition positionDirection, double fillPrice, double rawStopPrice, int rawTargetTicks, out double stopPrice, out double targetPrice)
+        {
+            stopPrice = 0;
+            targetPrice = 0;
+
+            if (fillPrice <= 0 || TickSize <= 0)
+                return false;
+
+            if (!TrySanitizeStopPriceForCurrentMarket(positionDirection, rawStopPrice, out stopPrice))
+                return false;
+
+            double marketPrice = Close[0];
+            double stopReferencePrice = GetReferencePriceForStop(positionDirection);
+            if (stopReferencePrice <= 0 || double.IsNaN(stopReferencePrice) || double.IsInfinity(stopReferencePrice))
+                stopReferencePrice = marketPrice;
+            double minTick = TickSize;
+            int targetTicks = Math.Max(0, rawTargetTicks);
+
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - minTick);
+                if (stopPrice >= stopReferencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, stopReferencePrice - minTick));
+
+                if (targetTicks > 0)
+                {
+                    targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + (targetTicks * TickSize));
+                    if (targetPrice <= fillPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + minTick);
+                    if (targetPrice <= marketPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, marketPrice + minTick));
+                }
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                if (stopPrice <= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + minTick);
+                if (stopPrice <= stopReferencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, stopReferencePrice + minTick));
+
+                if (targetTicks > 0)
+                {
+                    targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - (targetTicks * TickSize));
+                    if (targetPrice >= fillPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - minTick);
+                    if (targetPrice >= marketPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, marketPrice - minTick));
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryFinalSanitizeStopForLiveMarket(MarketPosition positionDirection, double fillPrice, ref double stopPrice)
+        {
+            if (positionDirection != MarketPosition.Long && positionDirection != MarketPosition.Short)
+                return false;
+
+            double minTick = TickSize;
+            if (minTick <= 0)
+                return false;
+
+            double reference = GetReferencePriceForStop(positionDirection);
+            if (reference <= 0 || double.IsNaN(reference) || double.IsInfinity(reference))
+                reference = Close[0];
+
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= reference)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(reference - minTick);
+                if (stopPrice >= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, stopPrice));
+            }
+            else
+            {
+                if (stopPrice <= reference)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(reference + minTick);
+                if (stopPrice <= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, stopPrice));
+            }
+
+            return stopPrice > 0 && !double.IsNaN(stopPrice) && !double.IsInfinity(stopPrice);
         }
 
         protected override void OnPositionUpdate(Position pos, double avgPx,
