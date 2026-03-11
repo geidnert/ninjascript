@@ -300,6 +300,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AlternatingEnabled  = false;
                 ReEntryEnabled      = true;
                 EnableTargetCancel  = true;   // ON = AGGRESSIVE MODE by default; OFF = CALM MODE
+                RequireEntryConfirmation = false;
                 UseSkipTime = true;
                 CloseAtSkipStart = false;
                 CloseAtNewsStart = false;
@@ -890,6 +891,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (GetLongEntryMethod())
             {
                 case NQOREntryMethod105.MarketOnTrigger:
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], GetLongContracts()))
+                    {
+                        Print(Time[0] + " | Long entry confirmation declined.");
+                        return;
+                    }
                     _pendingLongSL = CalcLongSL(Close[0]);
                     _pendingLongTP = _longTarget;
                     _applyLongOCO  = true;
@@ -905,6 +911,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!CanPlaceLongLimitSafely(limitPx, "Long re-arm"))
                         return;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", limitPx, GetLongContracts()))
+                    {
+                        Print(Time[0] + " | Long entry confirmation declined.");
+                        return;
+                    }
 
                     _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), limitPx, LongEntrySignal);
                     _longEntryArmed = true;
@@ -943,6 +954,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (GetShortEntryMethod())
             {
                 case NQOREntryMethod105.MarketOnTrigger:
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], GetShortContracts()))
+                    {
+                        Print(Time[0] + " | Short entry confirmation declined.");
+                        return;
+                    }
                     _pendingShortSL = CalcShortSL(Close[0]);
                     _pendingShortTP = _shortTarget;
                     _applyShortOCO  = true;
@@ -958,6 +974,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!CanPlaceShortLimitSafely(limitPx, "Short re-arm"))
                         return;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", limitPx, GetShortContracts()))
+                    {
+                        Print(Time[0] + " | Short entry confirmation declined.");
+                        return;
+                    }
 
                     _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), limitPx, ShortEntrySignal);
                     _shortEntryArmed = true;
@@ -984,6 +1005,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px       = LongFVGEntryPrice(_longFVGBot, _longFVGTop, _longFVGMid);
             if (!CanPlaceLongLimitSafely(px, "Long FVG"))
                 return;
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", px, GetLongContracts()))
+            {
+                Print(Time[0] + " | Long entry confirmation declined.");
+                return;
+            }
             _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), px, LongEntrySignal);
             _longEntryArmed = true;
             Print(Time[0] + " | Long FVG LIMIT @ " + px
@@ -996,6 +1022,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px        = ShortFVGEntryPrice(_shortFVGBot, _shortFVGTop, _shortFVGMid);
             if (!CanPlaceShortLimitSafely(px, "Short FVG"))
                 return;
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", px, GetShortContracts()))
+            {
+                Print(Time[0] + " | Short entry confirmation declined.");
+                return;
+            }
             _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), px, ShortEntrySignal);
             _shortEntryArmed = true;
             Print(Time[0] + " | Short FVG LIMIT @ " + px
@@ -1827,6 +1858,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show instrument popup: {1}", Name, ex.Message));
             }
+        }
+
+        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
+        {
+            bool result = false;
+            if (System.Windows.Application.Current == null)
+                return false;
+
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                () =>
+                {
+                    string message = string.Format(CultureInfo.InvariantCulture, "Confirm {0} entry\nPrice: {1}\nQty: {2}", orderType, price, quantity);
+                    MessageBoxResult response = System.Windows.MessageBox.Show(
+                        message,
+                        "Entry Confirmation",
+                        System.Windows.MessageBoxButton.YesNo,
+                        System.Windows.MessageBoxImage.Question);
+                    result = response == System.Windows.MessageBoxResult.Yes;
+                });
+
+            return result;
         }
 
         // =====================================================================
@@ -2718,9 +2770,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool EnableTargetCancel { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Confirmation",
+                 Description = "Show a Yes/No confirmation popup before each new long/short entry.",
+                 GroupName = "02 - Common: Session Filters", Order = 4)]
+        public bool RequireEntryConfirmation { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Use Skip Time",
                  Description = "Enable skip time entry blocking between Skip Start and Skip End.",
-                 GroupName = "02 - Common: Session Filters", Order = 3)]
+                 GroupName = "02 - Common: Session Filters", Order = 5)]
         public bool UseSkipTime { get; set; }
 
         [NinjaScriptProperty]
