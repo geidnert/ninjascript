@@ -273,7 +273,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (State == State.SetDefaults)
             {
                 Name        = "EVETesting";
-                Description = "EVETesting – Based on EVETesting-1008. Adds EnableTargetCancel toggle: when OFF, Section K is skipped entirely and limit orders sit until filled, session end, or skip window. Tests hypothesis that cancel/re-arm cycle adds no value.";
+                Description = "EVETesting – Based on EVETesting-1008. Adds AGGRESSIVE MODE / CALM MODE toggle: CALM MODE skips Section K and lets limit orders sit until filled, session end, or skip window.";
                 Description = "EVETesting v8 – v6: Re-arm logic hardened. v7: Per-bucket Max SL cap (all methods except Fixed).";
                 Calculate   = Calculate.OnBarClose;
 
@@ -299,7 +299,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CommonContracts   = 5;
                 AlternatingEnabled  = false;
                 ReEntryEnabled      = true;
-                EnableTargetCancel  = true;   // ON = original 1008 behaviour; OFF = orders sit until filled
+                EnableTargetCancel  = true;   // ON = AGGRESSIVE MODE by default; OFF = CALM MODE
                 UseSkipTime = true;
                 CloseAtSkipStart = false;
                 CloseAtNewsStart = false;
@@ -2712,8 +2712,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool ReEntryEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Target Cancel",
-                 Description = "Fix2: When ON (default), limit orders are cancelled if price reaches the target before entry fills – identical to 1008 behaviour. When OFF, Section K is skipped entirely: orders sit until filled, session end, or skip window. Turn OFF to test whether the cancel/re-arm cycle adds any value.",
+        [Display(Name = "AGGRESSIVE MODE",
+                 Description = "Enabled = AGGRESSIVE MODE: cancel limit orders if price reaches target before entry fills. Disabled = CALM MODE: skip Section K and let orders sit until filled, session end, or skip window.",
                  GroupName = "02 - Common: Session Filters", Order = 3)]
         public bool EnableTargetCancel { get; set; }
 
