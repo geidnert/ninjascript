@@ -1,11 +1,13 @@
 #region Using declarations
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Timers;
 using System.Web.Script.Serialization;
@@ -17,6 +19,7 @@ using NinjaTrader.NinjaScript;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Input;
 #endregion
 
 namespace NinjaTrader.NinjaScript.AddOns
@@ -49,6 +52,22 @@ namespace NinjaTrader.NinjaScript.AddOns
             public string Message { get; set; }
         }
 
+        private sealed class StrategyRecoveryEntry
+        {
+            public string Key { get; set; }
+            public string DisplayName { get; set; }
+        }
+
+        private sealed class StrategyUiEntry
+        {
+            public string Key { get; set; }
+            public string DisplayName { get; set; }
+            public bool? IsEnabled { get; set; }
+            public object EnableCommand { get; set; }
+            public object EnableParameter { get; set; }
+            public object SourceObject { get; set; }
+        }
+
         private readonly object reconnectLock = new object();
         private readonly Dictionary<string, DateTime> strategyHeartbeats = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, bool> strategyStalled = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
@@ -61,11 +80,14 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly Dictionary<string, DateTime> recentMessages = new Dictionary<string, DateTime>(StringComparer.Ordinal);
         private readonly List<MarketDataSubscription> marketDataSubscriptions = new List<MarketDataSubscription>();
         private readonly HashSet<string> subscribedAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<StrategyRecoveryEntry> strategiesPendingRecovery = new List<StrategyRecoveryEntry>();
         private static readonly TimeSpan ExecutionDeduplicationWindow = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan MessageDeduplicationWindow = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan StrategyRestoreStabilityDelay = TimeSpan.FromSeconds(15);
         private Timer watchdogTimer;
         private string configFilePath;
         private string heartbeatFilePath;
+        private bool isEnabled;
         private bool debug;
         private bool sendPushNotifications;
         private bool showEntry;
@@ -92,13 +114,19 @@ namespace NinjaTrader.NinjaScript.AddOns
         private bool reconnectInProgress;
         private int reconnectAttemptCount;
         private DateTime nextReconnectAttemptUtc = DateTime.MinValue;
+        private DateTime nextStrategyRestoreAttemptUtc = DateTime.MinValue;
         private string lastReconnectFailure = string.Empty;
+        private string lastReconnectTargetName = string.Empty;
+        private bool strategyRestorePending;
         private bool connectionIssueActive;
         private bool monitoringActive;
         private DateTime lastExecutionEventTimeUtc = DateTime.MinValue;
+        private bool manualFeedStallEnabled;
         private bool licenseValidated;
         private string licenseFailureMessage;
         private bool licenseFailureShown;
+        private Window controlCenterWindow;
+        private NTMenuItem connectionsMenuItem;
         private NTMenuItem newMenuItem;
         private NTMenuItem autoEdgeMenuItem;
         private NTMenuItem launcherMenuItem;
@@ -158,23 +186,32 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (!licenseValidated)
                 return;
 
-            ControlCenter controlCenter = window as ControlCenter;
-            if (controlCenter == null)
-                return;
+            if (LooksLikeControlCenterWindow(window))
+            {
+                controlCenterWindow = window;
+                LogToOutput($"🪟 Captured main window: type={window.GetType().FullName}, title={window.Title}");
+            }
 
-            controlCenter.Dispatcher.BeginInvoke(new Action(() => EnsureMenuItem(controlCenter)));
+            ControlCenter controlCenter = window as ControlCenter;
+            if (controlCenter != null)
+                controlCenter.Dispatcher.BeginInvoke(new Action(() => EnsureMenuItem(controlCenter)));
         }
 
         protected override void OnWindowDestroyed(Window window)
         {
-            if (!(window is ControlCenter))
-                return;
+            if (ReferenceEquals(controlCenterWindow, window))
+                controlCenterWindow = null;
 
-            RemoveMenuItem();
+            if (window is ControlCenter)
+            {
+                connectionsMenuItem = null;
+                RemoveMenuItem();
+            }
         }
 
         private void ApplyDefaultSettings()
         {
+            isEnabled = true;
             debug = false;
             sendPushNotifications = true;
             showEntry = false;
@@ -202,6 +239,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             return new TradeMessengerAddOnSettings
             {
+                Enabled = isEnabled,
                 Debug = debug,
                 SendPushNotifications = sendPushNotifications,
                 ShowEntry = showEntry,
@@ -237,11 +275,24 @@ namespace NinjaTrader.NinjaScript.AddOns
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "Reconnect loop: {0} | Feed stalled: {1} | Connection issue: {2} | Accounts: {3} | Instruments: {4}",
-                monitoringActive ? (reconnectLoopActive ? "armed" : "idle") : "stopped",
+                !isEnabled ? "disabled" : monitoringActive ? (reconnectLoopActive ? "armed" : "idle") : "stopped",
                 AnyFeedCurrentlyStalled() ? "yes" : "no",
                 connectionIssueActive ? "yes" : "no",
                 subscribedAccountCount,
-                subscribedInstrumentCount);
+                subscribedInstrumentCount)
+                + string.Format(
+                    CultureInfo.InvariantCulture,
+                    " | Manual stall: {0}",
+                    manualFeedStallEnabled ? "on" : "off");
+        }
+
+        internal bool ToggleFeedStallSimulation()
+        {
+            manualFeedStallEnabled = !manualFeedStallEnabled;
+            LogToOutput(manualFeedStallEnabled
+                ? "🧪 Manual feed stall enabled. Incoming Last ticks will be ignored until disabled."
+                : "🧪 Manual feed stall disabled. Incoming Last ticks will be processed again.");
+            return manualFeedStallEnabled;
         }
 
         internal void ApplySettings(TradeMessengerAddOnSettings settings)
@@ -249,6 +300,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (settings == null)
                 return;
 
+            isEnabled = settings.Enabled;
             debug = settings.Debug;
             sendPushNotifications = settings.SendPushNotifications;
             showEntry = settings.ShowEntry;
@@ -307,6 +359,9 @@ namespace NinjaTrader.NinjaScript.AddOns
 
                 switch (key)
                 {
+                    case "Enabled":
+                        isEnabled = ParseBool(value, isEnabled);
+                        break;
                     case "Debug":
                         debug = ParseBool(value, debug);
                         break;
@@ -382,6 +437,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             string[] lines = new[]
             {
                 "# TradeMessengerAddOn settings",
+                "Enabled=true",
                 "Debug=false",
                 "SendPushNotifications=true",
                 "ShowEntry=false",
@@ -415,6 +471,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             string[] lines = new[]
             {
                 "# TradeMessengerAddOn settings",
+                "Enabled=" + settings.Enabled.ToString().ToLowerInvariant(),
                 "Debug=" + settings.Debug.ToString().ToLowerInvariant(),
                 "SendPushNotifications=" + settings.SendPushNotifications.ToString().ToLowerInvariant(),
                 "ShowEntry=" + settings.ShowEntry.ToString().ToLowerInvariant(),
@@ -444,7 +501,7 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void RefreshMonitoringState()
         {
-            if (!licenseValidated)
+            if (!licenseValidated || !isEnabled)
             {
                 StopMonitoring();
                 return;
@@ -490,13 +547,18 @@ namespace NinjaTrader.NinjaScript.AddOns
             strategyHeartbeats.Clear();
             strategyStalled.Clear();
             strategyStartupCount.Clear();
+            strategiesPendingRecovery.Clear();
             lastConnectionStatusByName.Clear();
             connectionIssueActive = false;
             reconnectInProgress = false;
             reconnectAttemptCount = 0;
             nextReconnectAttemptUtc = DateTime.MinValue;
+            nextStrategyRestoreAttemptUtc = DateTime.MinValue;
             lastReconnectFailure = string.Empty;
+            lastReconnectTargetName = string.Empty;
+            strategyRestorePending = false;
             lastExecutionEventTimeUtc = DateTime.MinValue;
+            manualFeedStallEnabled = false;
         }
 
         private void StartWatchdog()
@@ -1081,6 +1143,9 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (e == null || e.MarketDataType != MarketDataType.Last || e.Instrument == null)
                 return;
 
+            if (manualFeedStallEnabled)
+                return;
+
             string instrumentName = e.Instrument.FullName;
             lastTickTimeByInstrument[instrumentName] = DateTime.UtcNow;
 
@@ -1091,73 +1156,78 @@ namespace NinjaTrader.NinjaScript.AddOns
                 if (sendPushNotifications && dataFeedReporting)
                     SendPushNotification(DateTime.UtcNow, $"✅ Data feed resumed on {instrumentName}.");
                 if (!connectionIssueActive && !AnyFeedCurrentlyStalled())
+                {
+                    ScheduleStrategyRestore(DateTime.UtcNow);
                     StopReconnectLoop();
+                }
             }
         }
 
         private void WatchdogTimerElapsed(object sender, ElapsedEventArgs e)
         {
-            CheckConnectionStatuses(DateTime.UtcNow);
+            DateTime nowUtc = DateTime.UtcNow;
+            CheckConnectionStatuses(nowUtc);
 
             if (dataFeedReporting)
-                CheckFeedStalls(DateTime.UtcNow);
+                CheckFeedStalls(nowUtc);
 
             if (heartbeatReporting)
                 CheckHeartbeatFileMulti();
 
-            TryReconnectIfDue(DateTime.UtcNow);
+            TryReconnectIfDue(nowUtc);
+            TryRestoreStrategiesIfDue(nowUtc);
         }
 
         private void CheckConnectionStatuses(DateTime nowUtc)
         {
             bool anyConnectionIssue = false;
 
-            lock (Connection.Connections)
+            foreach (Connection connection in GetAllKnownConnections())
             {
-                foreach (Connection connection in Connection.Connections)
+                if (connection == null || !IsMatchingConnection(connection))
+                    continue;
+
+                SubscribeToConnectionAccounts(connection);
+
+                string connectionName = GetConnectionName(connection);
+                ConnectionStatus currentStatus = connection.Status;
+                ConnectionStatus previousStatus = lastConnectionStatusByName.ContainsKey(connectionName)
+                    ? lastConnectionStatusByName[connectionName]
+                    : currentStatus;
+
+                bool isDisconnected = currentStatus == ConnectionStatus.Disconnected || currentStatus == ConnectionStatus.ConnectionLost;
+                bool wasDisconnected = previousStatus == ConnectionStatus.Disconnected || previousStatus == ConnectionStatus.ConnectionLost;
+
+                if (isDisconnected)
                 {
-                    if (connection == null || !IsMatchingConnection(connection))
-                        continue;
+                    anyConnectionIssue = true;
 
-                    SubscribeToConnectionAccounts(connection);
-
-                    string connectionName = GetConnectionName(connection);
-                    ConnectionStatus currentStatus = connection.Status;
-                    ConnectionStatus previousStatus = lastConnectionStatusByName.ContainsKey(connectionName)
-                        ? lastConnectionStatusByName[connectionName]
-                        : currentStatus;
-
-                    bool isDisconnected = currentStatus == ConnectionStatus.Disconnected || currentStatus == ConnectionStatus.ConnectionLost;
-                    bool wasDisconnected = previousStatus == ConnectionStatus.Disconnected || previousStatus == ConnectionStatus.ConnectionLost;
-
-                    if (isDisconnected)
+                    if (!wasDisconnected)
                     {
-                        anyConnectionIssue = true;
-
-                        if (!wasDisconnected)
-                        {
-                            string message = string.Format(
-                                CultureInfo.InvariantCulture,
-                                "⚠️ Connection issue on {0}: status={1}, previous={2}.",
-                                connectionName,
-                                currentStatus,
-                                previousStatus);
-                            LogToOutput(message);
-                            if (sendPushNotifications)
-                                SendPushNotification(nowUtc, message);
-                        }
-
-                        StartReconnectLoop(nowUtc);
-                    }
-                    else if (currentStatus == ConnectionStatus.Connected && wasDisconnected)
-                    {
-                        LogToOutput($"✅ Connection restored on {connectionName}.");
+                        string message = string.Format(
+                            CultureInfo.InvariantCulture,
+                            "⚠️ Connection issue on {0}: status={1}, previous={2}.",
+                            connectionName,
+                            currentStatus,
+                            previousStatus);
+                        LogToOutput(message);
                         if (sendPushNotifications)
-                            SendPushNotification(nowUtc, $"✅ Connection restored on {connectionName}.");
+                            SendPushNotification(nowUtc, message);
                     }
 
-                    lastConnectionStatusByName[connectionName] = currentStatus;
+                    CaptureEnabledStrategiesForRecovery();
+                    StartReconnectLoop(nowUtc);
                 }
+                else if (currentStatus == ConnectionStatus.Connected && wasDisconnected)
+                {
+                    LogToOutput($"✅ Connection restored on {connectionName}.");
+                    if (sendPushNotifications)
+                        SendPushNotification(nowUtc, $"✅ Connection restored on {connectionName}.");
+
+                    ScheduleStrategyRestore(nowUtc);
+                }
+
+                lastConnectionStatusByName[connectionName] = currentStatus;
             }
 
             connectionIssueActive = anyConnectionIssue;
@@ -1182,6 +1252,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 LogToOutput(message);
                 if (sendPushNotifications)
                     SendPushNotification(nowUtc, message);
+                CaptureEnabledStrategiesForRecovery();
                 StartReconnectLoop(nowUtc);
             }
         }
@@ -1201,6 +1272,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 if (reconnectLoopActive)
                     return;
 
+                CaptureEnabledStrategiesForRecovery();
                 reconnectLoopActive = true;
                 reconnectInProgress = false;
                 reconnectAttemptCount = 0;
@@ -1221,6 +1293,42 @@ namespace NinjaTrader.NinjaScript.AddOns
                 nextReconnectAttemptUtc = DateTime.MinValue;
                 lastReconnectFailure = string.Empty;
             }
+        }
+
+        private void ScheduleStrategyRestore(DateTime nowUtc)
+        {
+            if (!autoReconnectEnabled || strategiesPendingRecovery.Count == 0)
+            {
+                LogToOutput($"⚠️ Strategy restore not scheduled. AutoReconnect={autoReconnectEnabled}, CapturedStrategies={strategiesPendingRecovery.Count}.");
+                return;
+            }
+
+            strategyRestorePending = true;
+            nextStrategyRestoreAttemptUtc = nowUtc.Add(StrategyRestoreStabilityDelay);
+            LogToOutput($"🕓 Strategy restore scheduled for {nextStrategyRestoreAttemptUtc:HH:mm:ss} after reconnect stabilization.");
+        }
+
+        private void TryRestoreStrategiesIfDue(DateTime nowUtc)
+        {
+            if (!autoReconnectEnabled || !strategyRestorePending || nowUtc < nextStrategyRestoreAttemptUtc)
+                return;
+
+            if (connectionIssueActive || AnyFeedCurrentlyStalled() || reconnectLoopActive)
+            {
+                LogToOutput($"🕓 Strategy restore waiting. ConnectionIssue={connectionIssueActive}, FeedStalled={AnyFeedCurrentlyStalled()}, ReconnectLoop={reconnectLoopActive}.");
+                return;
+            }
+
+            bool restoredAny = RestoreStrategiesAfterReconnect(out string details);
+            strategyRestorePending = false;
+            nextStrategyRestoreAttemptUtc = DateTime.MinValue;
+
+            if (restoredAny)
+                LogToOutput($"✅ Strategy re-enable completed: {details}");
+            else if (!string.IsNullOrWhiteSpace(details))
+                LogToOutput($"⚠️ Strategy re-enable skipped: {details}");
+
+            strategiesPendingRecovery.Clear();
         }
 
         private void TryReconnectIfDue(DateTime nowUtc)
@@ -1254,7 +1362,7 @@ namespace NinjaTrader.NinjaScript.AddOns
 
                 if (issued)
                 {
-                    LogToOutput($"🔁 Reconnect attempt #{reconnectAttemptCount} issued. Next retry in {delaySeconds}s if needed.");
+                    LogToOutput($"🔁 Reconnect attempt #{reconnectAttemptCount} issued: {details}. Next retry in {delaySeconds}s if needed.");
                 }
                 else if (!string.Equals(lastReconnectFailure, details, StringComparison.Ordinal))
                 {
@@ -1282,10 +1390,26 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             details = string.Empty;
 
+            if (TryResumePlaybackIfPaused(out details))
+                return true;
+
             List<Connection> connections = GetTargetConnections();
             if (connections.Count == 0)
             {
-                details = "No matching connections found.";
+                string fallbackConnectionName = ResolveReconnectTargetName();
+                if (!string.IsNullOrWhiteSpace(fallbackConnectionName))
+                {
+                    bool menuIssued = TryReconnectViaControlCenterMenu(fallbackConnectionName, out string menuDetails);
+                    details = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "No matching connections found. Fallback target={0}. Menu={1}. {2}",
+                        fallbackConnectionName,
+                        string.IsNullOrWhiteSpace(menuDetails) ? "none" : menuDetails,
+                        DescribeKnownConnections());
+                    return menuIssued;
+                }
+
+                details = "No matching connections found. " + DescribeKnownConnections();
                 return false;
             }
 
@@ -1296,21 +1420,48 @@ namespace NinjaTrader.NinjaScript.AddOns
             {
                 try
                 {
+                    string connectionName = GetConnectionName(connection);
+                    if (!string.IsNullOrWhiteSpace(connectionName))
+                        lastReconnectTargetName = connectionName;
                     bool connectIssued;
                     bool disconnectIssued = false;
+                    bool canConnect = HasParameterlessMethod(connection, "Connect");
+                    bool isPlaybackConnection = connectionName.IndexOf("Playback", StringComparison.OrdinalIgnoreCase) >= 0;
 
                     if (connection.Status == ConnectionStatus.Connected && AnyFeedCurrentlyStalled())
                     {
+                        if (isPlaybackConnection && !canConnect)
+                        {
+                            connectionResults.Add(string.Format(
+                                CultureInfo.InvariantCulture,
+                                "{0}(skip disconnect: playback has no connect path)",
+                                connectionName));
+                            continue;
+                        }
+
                         disconnectIssued = TryInvokeParameterless(connection, "Disconnect");
                         System.Threading.Thread.Sleep(300);
                     }
 
                     connectIssued = TryInvokeParameterless(connection, "Connect");
+                    if (!connectIssued)
+                    {
+                        bool reflectedIssued = TryReconnectViaReflectedMethods(connection, out string reflectedDetails);
+                        if (!string.IsNullOrWhiteSpace(reflectedDetails))
+                            connectionResults.Add(string.Format(CultureInfo.InvariantCulture, "{0}(Reflected={1})", connectionName, reflectedDetails));
+                        connectIssued = reflectedIssued;
+                    }
+                    if (!connectIssued)
+                    {
+                        connectIssued = TryReconnectViaControlCenterMenu(connectionName, out string menuDetails);
+                        if (!string.IsNullOrWhiteSpace(menuDetails))
+                            connectionResults.Add(string.Format(CultureInfo.InvariantCulture, "{0}(Menu={1})", connectionName, menuDetails));
+                    }
                     anyIssued |= disconnectIssued || connectIssued;
                     connectionResults.Add(string.Format(
                         CultureInfo.InvariantCulture,
                         "{0}(Disconnect={1}, Connect={2})",
-                        GetConnectionName(connection),
+                        connectionName,
                         disconnectIssued ? "yes" : "no",
                         connectIssued ? "yes" : "no"));
                 }
@@ -1324,23 +1475,323 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
             }
 
-            details = string.Join("; ", connectionResults);
+            details = string.Join("; ", connectionResults) + " | " + DescribeKnownConnections();
             return anyIssued;
+        }
+
+        private string ResolveReconnectTargetName()
+        {
+            if (!string.IsNullOrWhiteSpace(monitoredConnectionName))
+                return monitoredConnectionName;
+
+            if (!string.IsNullOrWhiteSpace(lastReconnectTargetName))
+                return lastReconnectTargetName;
+
+            if (lastConnectionStatusByName.Count == 1)
+                return lastConnectionStatusByName.Keys.FirstOrDefault() ?? string.Empty;
+
+            return string.Empty;
         }
 
         private List<Connection> GetTargetConnections()
         {
             List<Connection> connections = new List<Connection>();
+            foreach (Connection connection in GetAllKnownConnections())
+            {
+                if (connection != null && IsMatchingConnection(connection))
+                    connections.Add(connection);
+            }
+
+            return connections;
+        }
+
+        private IEnumerable<Connection> GetAllKnownConnections()
+        {
+            Dictionary<string, Connection> connections = new Dictionary<string, Connection>(StringComparer.OrdinalIgnoreCase);
+
             lock (Connection.Connections)
             {
                 foreach (Connection connection in Connection.Connections)
                 {
-                    if (connection != null && IsMatchingConnection(connection))
-                        connections.Add(connection);
+                    if (connection == null)
+                        continue;
+
+                    string key = BuildConnectionIdentity(connection);
+                    if (!connections.ContainsKey(key))
+                        connections[key] = connection;
                 }
             }
 
-            return connections;
+            Connection playbackConnection = GetSpecialConnection("PlaybackConnection");
+            if (playbackConnection != null)
+            {
+                string key = BuildConnectionIdentity(playbackConnection);
+                if (!connections.ContainsKey(key))
+                    connections[key] = playbackConnection;
+            }
+
+            return connections.Values;
+        }
+
+        private string DescribeKnownConnections()
+        {
+            List<string> descriptions = new List<string>();
+
+            try
+            {
+                int count = 0;
+                lock (Connection.Connections)
+                {
+                    foreach (Connection connection in Connection.Connections)
+                    {
+                        if (connection == null)
+                            continue;
+
+                        descriptions.Add(string.Format(
+                            CultureInfo.InvariantCulture,
+                            "Connections[{0}]={1}/{2}",
+                            count,
+                            GetConnectionName(connection),
+                            connection.Status));
+                        count++;
+                    }
+                }
+
+                if (count == 0)
+                    descriptions.Add("Connections=empty");
+            }
+            catch (Exception ex)
+            {
+                descriptions.Add("Connections[error]=" + ex.Message);
+            }
+
+            try
+            {
+                Connection playbackConnection = GetSpecialConnection("PlaybackConnection");
+                descriptions.Add(playbackConnection == null
+                    ? "PlaybackConnection=null"
+                    : string.Format(
+                        CultureInfo.InvariantCulture,
+                        "PlaybackConnection={0}/{1}",
+                        GetConnectionName(playbackConnection),
+                        playbackConnection.Status));
+            }
+            catch (Exception ex)
+            {
+                descriptions.Add("PlaybackConnection[error]=" + ex.Message);
+            }
+
+            try
+            {
+                descriptions.Add("PlaybackWindow=" + GetPlaybackWindowStateSafe());
+            }
+            catch (Exception ex)
+            {
+                descriptions.Add("PlaybackWindow[error]=" + ex.Message);
+            }
+
+            return descriptions.Count == 0 ? "No known connections." : string.Join(" | ", descriptions);
+        }
+
+        private Connection GetSpecialConnection(string propertyName)
+        {
+            if (string.IsNullOrWhiteSpace(propertyName))
+                return null;
+
+            try
+            {
+                Connection directConnection = GetStaticConnectionProperty(typeof(Connection), propertyName);
+                if (directConnection != null)
+                    return directConnection;
+
+                foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type[] types;
+                    try
+                    {
+                        types = assembly.GetTypes();
+                    }
+                    catch (ReflectionTypeLoadException ex)
+                    {
+                        types = ex.Types.Where(type => type != null).ToArray();
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    foreach (Type type in types)
+                    {
+                        Connection connection = GetStaticConnectionProperty(type, propertyName);
+                        if (connection != null)
+                            return connection;
+                    }
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Connection GetStaticConnectionProperty(Type type, string propertyName)
+        {
+            if (type == null)
+                return null;
+
+            PropertyInfo property = type.GetProperty(propertyName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property == null || !typeof(Connection).IsAssignableFrom(property.PropertyType))
+                return null;
+
+            try
+            {
+                return property.GetValue(null, null) as Connection;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string BuildConnectionIdentity(Connection connection)
+        {
+            if (connection == null)
+                return string.Empty;
+
+            string name = GetConnectionName(connection);
+            if (!string.IsNullOrWhiteSpace(name))
+                return name;
+
+            return connection.GetHashCode().ToString(CultureInfo.InvariantCulture);
+        }
+
+        private bool TryResumePlaybackIfPaused(out string details)
+        {
+            details = string.Empty;
+            if (Application.Current == null || Application.Current.Dispatcher == null)
+                return false;
+
+            try
+            {
+                string localDetails = string.Empty;
+                bool resumed = Application.Current.Dispatcher.Invoke(() =>
+                {
+                    foreach (Window window in Application.Current.Windows)
+                    {
+                        if (window == null || window.GetType().Name.IndexOf("PlaybackControlCenter", StringComparison.OrdinalIgnoreCase) < 0)
+                            continue;
+
+                        bool? isPaused = GetNullableBoolean(window, "IsPaused")
+                            ?? GetNullableBoolean(GetPropertyValue(window, "DataContext"), "IsPaused");
+                        if (isPaused != true)
+                            continue;
+
+                        if (TryInvokeParameterless(window, "Play")
+                            || TryInvokeParameterless(window, "Resume")
+                            || TryInvokeParameterless(window, "OnPlay")
+                            || TrySetBooleanProperty(window, "IsPaused", false)
+                            || TryInvokePlaybackButton(window))
+                        {
+                            localDetails = "Playback resumed.";
+                            return true;
+                        }
+
+                        localDetails = "Playback was paused, but resume command could not be invoked.";
+                        return false;
+                    }
+
+                    localDetails = "Playback resume not used. " + GetPlaybackWindowStateSafe();
+                    return false;
+                });
+                details = localDetails;
+                return resumed;
+            }
+            catch (Exception ex)
+            {
+                details = "Playback resume error: " + ex.Message;
+                return false;
+            }
+        }
+
+        private bool TryInvokePlaybackButton(DependencyObject root)
+        {
+            if (root == null)
+                return false;
+
+            Button button = FindNamedDescendant<Button>(root, "btnPlay");
+            if (button != null)
+            {
+                button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                return true;
+            }
+
+            return false;
+        }
+
+        private string DescribePlaybackWindowState()
+        {
+            if (Application.Current == null)
+                return "Application.Current=null";
+
+            List<string> states = new List<string>();
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window == null || window.GetType().Name.IndexOf("PlaybackControlCenter", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                bool? isPaused = GetNullableBoolean(window, "IsPaused")
+                    ?? GetNullableBoolean(GetPropertyValue(window, "DataContext"), "IsPaused");
+                states.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}(IsPaused={1})",
+                    window.GetType().Name,
+                    isPaused.HasValue ? isPaused.Value.ToString() : "unknown"));
+            }
+
+            return states.Count == 0 ? "not found" : string.Join("; ", states);
+        }
+
+        private string GetPlaybackWindowStateSafe()
+        {
+            if (Application.Current == null || Application.Current.Dispatcher == null)
+                return "Application.Current.Dispatcher=null";
+
+            if (Application.Current.Dispatcher.CheckAccess())
+                return DescribePlaybackWindowState();
+
+            return Application.Current.Dispatcher.Invoke(() => DescribePlaybackWindowState());
+        }
+
+        private T FindNamedDescendant<T>(DependencyObject root, string expectedName) where T : FrameworkElement
+        {
+            if (root == null)
+                return null;
+
+            int childCount;
+            try
+            {
+                childCount = VisualTreeHelper.GetChildrenCount(root);
+            }
+            catch
+            {
+                return null;
+            }
+
+            for (int i = 0; i < childCount; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                T typedChild = child as T;
+                if (typedChild != null && string.Equals(typedChild.Name, expectedName, StringComparison.OrdinalIgnoreCase))
+                    return typedChild;
+
+                T nested = FindNamedDescendant<T>(child, expectedName);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
         }
 
         private bool IsMatchingConnection(Connection connection)
@@ -1399,6 +1850,1256 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             method.Invoke(target, null);
             return true;
+        }
+
+        private bool HasParameterlessMethod(object target, string methodName)
+        {
+            if (target == null || string.IsNullOrEmpty(methodName))
+                return false;
+
+            MethodInfo method = target.GetType().GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                Type.EmptyTypes,
+                null);
+
+            return method != null;
+        }
+
+        private bool TryReconnectViaReflectedMethods(object target, out string details)
+        {
+            details = string.Empty;
+            if (target == null)
+                return false;
+
+            string[] candidates = { "Connect", "Reconnect", "ConnectNow", "Start", "Open", "Resume", "Enable", "OnConnect" };
+            List<string> available = GetParameterlessMethodNames(target, candidates).ToList();
+
+            foreach (string candidate in candidates)
+            {
+                if (!HasParameterlessMethod(target, candidate))
+                    continue;
+
+                try
+                {
+                    if (TryInvokeParameterless(target, candidate))
+                    {
+                        details = string.Format(
+                            CultureInfo.InvariantCulture,
+                            "invoked {0}; available={1}",
+                            candidate,
+                            available.Count == 0 ? "none" : string.Join(",", available));
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    details = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0} threw {1}; available={2}",
+                        candidate,
+                        ex.Message,
+                        available.Count == 0 ? "none" : string.Join(",", available));
+                    return false;
+                }
+            }
+
+            details = "no reconnect method; available=" + (available.Count == 0 ? "none" : string.Join(",", available));
+            return false;
+        }
+
+        private IEnumerable<string> GetParameterlessMethodNames(object target, IEnumerable<string> candidateNames)
+        {
+            if (target == null || candidateNames == null)
+                yield break;
+
+            foreach (string candidateName in candidateNames)
+            {
+                if (HasParameterlessMethod(target, candidateName))
+                    yield return candidateName;
+            }
+        }
+
+        private bool TryReconnectViaControlCenterMenu(string connectionName, out string details)
+        {
+            details = string.Empty;
+            if (string.IsNullOrWhiteSpace(connectionName))
+            {
+                details = "dispatcher unavailable";
+                return false;
+            }
+
+            try
+            {
+                if (TryReconnectViaCachedConnectionsMenu(connectionName, out string cachedMenuDetails))
+                {
+                    details = "CachedMenu=" + cachedMenuDetails;
+                    return true;
+                }
+
+                if (TryReconnectViaKnownMenuTree(connectionName, out string knownMenuDetails))
+                {
+                    details = "KnownMenu=" + knownMenuDetails;
+                    return true;
+                }
+
+                if (TryReconnectViaGuiReflection(connectionName, out string reflectionDetails))
+                {
+                    details = "GuiReflection=" + reflectionDetails;
+                    return true;
+                }
+
+                System.Windows.Threading.Dispatcher dispatcher = controlCenterWindow != null && controlCenterWindow.Dispatcher != null
+                    ? controlCenterWindow.Dispatcher
+                    : Application.Current != null ? Application.Current.Dispatcher : null;
+                if (dispatcher == null)
+                {
+                    details = "dispatcher unavailable";
+                    return false;
+                }
+
+                string localDetails = string.Empty;
+                bool reconnected = dispatcher.Invoke(() =>
+                {
+                    List<string> attempts = new List<string>();
+                    attempts.Add("Windows=" + DescribeApplicationWindows());
+
+                    foreach (Window window in GetCandidateControlCenterWindows())
+                    {
+                        if (!LooksLikeControlCenterWindow(window))
+                            continue;
+
+                        attempts.Add("ControlCenter=found");
+                        NTMenuItem connectionsMenu = FindTopLevelMenuItem(window, "connectionsMenuItem", "Connections");
+                        if (connectionsMenu == null)
+                            connectionsMenu = FindTopLevelMenuItem(window, "mnuConnections", "Connections");
+                        if (connectionsMenu == null)
+                        {
+                            attempts.Add("ConnectionsMenu=missing");
+                            continue;
+                        }
+
+                        List<string> menuHeaders = new List<string>();
+                        CollectMenuHeaders(connectionsMenu, menuHeaders, 0);
+                        attempts.Add("ConnectionsMenuItems=" + string.Join(",", menuHeaders.Take(12).ToArray()));
+
+                        NTMenuItem connectionMenuItem = FindMenuItemRecursive(connectionsMenu, connectionName);
+                        if (connectionMenuItem == null)
+                        {
+                            attempts.Add("TargetMenuItem=missing");
+                            continue;
+                        }
+
+                        if (connectionMenuItem.Dispatcher != null && !connectionMenuItem.Dispatcher.CheckAccess())
+                        {
+                            connectionMenuItem.Dispatcher.Invoke(() => connectionMenuItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)));
+                        }
+                        else
+                        {
+                            connectionMenuItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                        }
+
+                        attempts.Add("TargetMenuItem=clicked:" + GetHeaderText(connectionMenuItem.Header));
+                        localDetails = string.Join(" | ", attempts);
+                        return true;
+                    }
+
+                    if (attempts.Count == 0)
+                        attempts.Add("ControlCenter=missing");
+                    localDetails = string.Join(" | ", attempts);
+                    return false;
+                });
+                details = localDetails;
+                return reconnected;
+            }
+            catch (Exception ex)
+            {
+                details = ex.Message;
+                LogToOutput($"⚠️ Control Center menu reconnect failed for {connectionName}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryReconnectViaCachedConnectionsMenu(string connectionName, out string details)
+        {
+            details = string.Empty;
+            if (connectionsMenuItem == null || string.IsNullOrWhiteSpace(connectionName))
+            {
+                details = "connections menu unavailable";
+                return false;
+            }
+
+            try
+            {
+                System.Windows.Threading.Dispatcher dispatcher = connectionsMenuItem.Dispatcher;
+                if (dispatcher == null)
+                {
+                    details = "connections menu dispatcher unavailable";
+                    return false;
+                }
+
+                string localDetails = string.Empty;
+                bool clicked = dispatcher.Invoke(() =>
+                {
+                    EnsureWindowFocused(controlCenterWindow);
+                    EnsureMenuExpanded(connectionsMenuItem);
+                    NTMenuItem exactItem = FindExactMenuItemRecursive(connectionsMenuItem, connectionName);
+                    if (exactItem == null)
+                    {
+                        List<string> headers = new List<string>();
+                        CollectMenuHeaders(connectionsMenuItem, headers, 0);
+                        localDetails = "target missing; headers=" + string.Join(",", headers.Take(20).ToArray());
+                        return false;
+                    }
+
+                    exactItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                    localDetails = "clicked:" + GetHeaderText(exactItem.Header);
+                    return true;
+                });
+                details = localDetails;
+                return clicked;
+            }
+            catch (Exception ex)
+            {
+                details = ex.Message;
+                return false;
+            }
+        }
+
+        private void EnsureMenuExpanded(NTMenuItem menuItem)
+        {
+            if (menuItem == null)
+                return;
+
+            try
+            {
+                if (!menuItem.IsSubmenuOpen)
+                    menuItem.IsSubmenuOpen = true;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                menuItem.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
+            }
+            catch
+            {
+            }
+        }
+
+        private void EnsureWindowFocused(Window window)
+        {
+            if (window == null)
+                return;
+
+            try
+            {
+                if (window.WindowState == WindowState.Minimized)
+                    window.WindowState = WindowState.Normal;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                window.Show();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                window.Activate();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                window.Focus();
+            }
+            catch
+            {
+            }
+        }
+
+        private bool TryReconnectViaKnownMenuTree(string connectionName, out string details)
+        {
+            details = string.Empty;
+            if (string.IsNullOrWhiteSpace(connectionName))
+                return false;
+
+            try
+            {
+                ItemsControl rootMenu = GetRootMenuContainer();
+                if (rootMenu == null)
+                {
+                    details = "root menu missing";
+                    return false;
+                }
+
+                List<string> headers = new List<string>();
+                CollectMenuHeaders(rootMenu, headers, 0);
+
+                NTMenuItem connectionsMenu = FindMenuItemRecursive(rootMenu, "Connections");
+                if (connectionsMenu == null)
+                {
+                    details = "connections menu missing; root headers=" + string.Join(",", headers.Take(12).ToArray());
+                    return false;
+                }
+
+                NTMenuItem targetItem = FindMenuItemRecursive(connectionsMenu, connectionName);
+                if (targetItem == null)
+                {
+                    List<string> connectionHeaders = new List<string>();
+                    CollectMenuHeaders(connectionsMenu, connectionHeaders, 0);
+                    details = "target missing; connections headers=" + string.Join(",", connectionHeaders.Take(20).ToArray());
+                    return false;
+                }
+
+                targetItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                details = "clicked:" + GetHeaderText(targetItem.Header);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                details = ex.Message;
+                return false;
+            }
+        }
+
+        private ItemsControl GetRootMenuContainer()
+        {
+            if (newMenuItem == null)
+                return null;
+
+            DependencyObject current = newMenuItem;
+            ItemsControl lastItemsControl = newMenuItem;
+
+            while (current != null)
+            {
+                ItemsControl itemsControl = current as ItemsControl;
+                if (itemsControl != null)
+                    lastItemsControl = itemsControl;
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            return lastItemsControl;
+        }
+
+        private bool LooksLikeControlCenterWindow(Window window)
+        {
+            if (window == null)
+                return false;
+
+            string typeName = window.GetType().Name ?? string.Empty;
+            string fullTypeName = window.GetType().FullName ?? string.Empty;
+            string title = window.Title ?? string.Empty;
+            return typeName.IndexOf("ControlCenter", StringComparison.OrdinalIgnoreCase) >= 0
+                || fullTypeName.IndexOf("ControlCenter", StringComparison.OrdinalIgnoreCase) >= 0
+                || title.IndexOf("Control Center", StringComparison.OrdinalIgnoreCase) >= 0
+                || title.IndexOf("NinjaTrader", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool TryReconnectViaGuiReflection(string connectionName, out string details)
+        {
+            details = string.Empty;
+            if (string.IsNullOrWhiteSpace(connectionName))
+                return false;
+
+            try
+            {
+                System.Windows.Threading.Dispatcher dispatcher = controlCenterWindow != null && controlCenterWindow.Dispatcher != null
+                    ? controlCenterWindow.Dispatcher
+                    : Application.Current != null ? Application.Current.Dispatcher : null;
+                if (dispatcher == null)
+                {
+                    details = "dispatcher unavailable";
+                    return false;
+                }
+
+                string localDetails = string.Empty;
+                bool result = dispatcher.Invoke(() =>
+                {
+                    HashSet<int> visited = new HashSet<int>();
+                    List<string> traces = new List<string>();
+
+                    foreach (object root in EnumerateGuiReflectionRoots())
+                    {
+                        NTMenuItem menuItem = FindConnectionMenuItemByReflection(root, connectionName, visited, 0);
+                        if (menuItem == null)
+                            continue;
+
+                        menuItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                        traces.Add("clicked:" + GetHeaderText(menuItem.Header));
+                        localDetails = string.Join(" | ", traces);
+                        return true;
+                    }
+
+                    List<string> rootNames = EnumerateGuiReflectionRoots()
+                        .Take(10)
+                        .Select(root => root == null ? "null" : root.GetType().FullName)
+                        .ToList();
+                    traces.Add("roots=" + (rootNames.Count == 0 ? "none" : string.Join(",", rootNames)));
+                    localDetails = string.Join(" | ", traces);
+                    return false;
+                });
+                details = localDetails;
+                return result;
+            }
+            catch (Exception ex)
+            {
+                details = ex.Message;
+                return false;
+            }
+        }
+
+        private IEnumerable<object> EnumerateGuiReflectionRoots()
+        {
+            HashSet<string> yielded = new HashSet<string>(StringComparer.Ordinal);
+
+            if (controlCenterWindow != null)
+            {
+                yielded.Add(controlCenterWindow.GetType().FullName + "@window");
+                yield return controlCenterWindow;
+            }
+
+            if (newMenuItem != null && yielded.Add(newMenuItem.GetType().FullName + "@newMenu"))
+                yield return newMenuItem;
+
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                string assemblyName = assembly.GetName().Name ?? string.Empty;
+                if (assemblyName.IndexOf("NinjaTrader.Gui", StringComparison.OrdinalIgnoreCase) < 0
+                    && assemblyName.IndexOf("NinjaTrader.Core", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                Type[] types;
+                try
+                {
+                    types = assembly.GetTypes();
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    types = ex.Types.Where(type => type != null).ToArray();
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (Type type in types)
+                {
+                    foreach (PropertyInfo property in type.GetProperties(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
+                    {
+                        if (!property.CanRead || property.GetIndexParameters().Length > 0)
+                            continue;
+
+                        if (!LooksLikeGuiRootProperty(type, property))
+                            continue;
+
+                        object value;
+                        try
+                        {
+                            value = property.GetValue(null, null);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        if (value == null)
+                            continue;
+
+                        string key = type.FullName + "." + property.Name;
+                        if (yielded.Add(key))
+                            yield return value;
+                    }
+
+                    foreach (FieldInfo field in type.GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
+                    {
+                        if (!LooksLikeGuiRootField(type, field))
+                            continue;
+
+                        object value;
+                        try
+                        {
+                            value = field.GetValue(null);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        if (value == null)
+                            continue;
+
+                        string key = type.FullName + "." + field.Name;
+                        if (yielded.Add(key))
+                            yield return value;
+                    }
+                }
+            }
+        }
+
+        private bool LooksLikeGuiRootProperty(Type declaringType, PropertyInfo property)
+        {
+            string propertyName = property.Name ?? string.Empty;
+            string typeName = declaringType != null ? declaringType.FullName ?? string.Empty : string.Empty;
+            string propertyTypeName = property.PropertyType != null ? property.PropertyType.FullName ?? string.Empty : string.Empty;
+
+            return propertyName.IndexOf("CcConnections", StringComparison.OrdinalIgnoreCase) >= 0
+                || propertyName.IndexOf("ControlCenterCommands", StringComparison.OrdinalIgnoreCase) >= 0
+                || propertyName.IndexOf("Connections", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("ControlCenterCommands", StringComparison.OrdinalIgnoreCase) >= 0
+                || propertyTypeName.IndexOf("ControlCenterCommands", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeof(ItemsControl).IsAssignableFrom(property.PropertyType)
+                || typeof(DependencyObject).IsAssignableFrom(property.PropertyType);
+        }
+
+        private bool LooksLikeGuiRootField(Type declaringType, FieldInfo field)
+        {
+            string fieldName = field.Name ?? string.Empty;
+            string typeName = declaringType != null ? declaringType.FullName ?? string.Empty : string.Empty;
+            string fieldTypeName = field.FieldType != null ? field.FieldType.FullName ?? string.Empty : string.Empty;
+
+            return fieldName.IndexOf("CcConnections", StringComparison.OrdinalIgnoreCase) >= 0
+                || fieldName.IndexOf("ControlCenterCommands", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("ControlCenterCommands", StringComparison.OrdinalIgnoreCase) >= 0
+                || fieldTypeName.IndexOf("ControlCenterCommands", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeof(ItemsControl).IsAssignableFrom(field.FieldType)
+                || typeof(DependencyObject).IsAssignableFrom(field.FieldType);
+        }
+
+        private NTMenuItem FindConnectionMenuItemByReflection(object root, string connectionName, HashSet<int> visited, int depth)
+        {
+            if (root == null || string.IsNullOrWhiteSpace(connectionName) || depth > 5)
+                return null;
+
+            Type type = root.GetType();
+            if (IsSimpleType(type))
+                return null;
+
+            int objectId = RuntimeHelpers.GetHashCode(root);
+            if (!visited.Add(objectId))
+                return null;
+
+            NTMenuItem menuItem = root as NTMenuItem;
+            if (menuItem != null)
+            {
+                string header = GetHeaderText(menuItem.Header);
+                if (string.Equals(header, connectionName, StringComparison.OrdinalIgnoreCase)
+                    || NormalizeMenuHeader(header) == NormalizeMenuHeader(connectionName))
+                    return menuItem;
+            }
+
+            ItemsControl itemsControl = root as ItemsControl;
+            if (itemsControl != null)
+            {
+                foreach (object item in itemsControl.Items)
+                {
+                    NTMenuItem nested = FindConnectionMenuItemByReflection(item, connectionName, visited, depth + 1);
+                    if (nested != null)
+                        return nested;
+                }
+            }
+
+            if (root is IEnumerable enumerable && !(root is string))
+            {
+                int count = 0;
+                foreach (object item in enumerable)
+                {
+                    NTMenuItem nested = FindConnectionMenuItemByReflection(item, connectionName, visited, depth + 1);
+                    if (nested != null)
+                        return nested;
+
+                    if (++count >= 100)
+                        break;
+                }
+            }
+
+            foreach (PropertyInfo property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length > 0)
+                    continue;
+
+                if (!ShouldInspectGuiProperty(property))
+                    continue;
+
+                object value;
+                try
+                {
+                    value = property.GetValue(root, null);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                NTMenuItem nested = FindConnectionMenuItemByReflection(value, connectionName, visited, depth + 1);
+                if (nested != null)
+                    return nested;
+            }
+
+            foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (!ShouldInspectGuiField(field))
+                    continue;
+
+                object value;
+                try
+                {
+                    value = field.GetValue(root);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                NTMenuItem nested = FindConnectionMenuItemByReflection(value, connectionName, visited, depth + 1);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
+        }
+
+        private bool ShouldInspectGuiProperty(PropertyInfo property)
+        {
+            if (property == null)
+                return false;
+
+            string name = property.Name ?? string.Empty;
+            string typeName = property.PropertyType != null ? property.PropertyType.FullName ?? string.Empty : string.Empty;
+            return name.IndexOf("Connection", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Command", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Item", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeof(ItemsControl).IsAssignableFrom(property.PropertyType)
+                || typeof(DependencyObject).IsAssignableFrom(property.PropertyType)
+                || typeName.IndexOf("Connection", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool ShouldInspectGuiField(FieldInfo field)
+        {
+            if (field == null)
+                return false;
+
+            string name = field.Name ?? string.Empty;
+            string typeName = field.FieldType != null ? field.FieldType.FullName ?? string.Empty : string.Empty;
+            return name.IndexOf("Connection", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Command", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Item", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeof(ItemsControl).IsAssignableFrom(field.FieldType)
+                || typeof(DependencyObject).IsAssignableFrom(field.FieldType)
+                || typeName.IndexOf("Connection", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private IEnumerable<Window> GetCandidateControlCenterWindows()
+        {
+            HashSet<IntPtr> yieldedHandles = new HashSet<IntPtr>();
+
+            if (controlCenterWindow != null)
+            {
+                IntPtr cachedHandle = new System.Windows.Interop.WindowInteropHelper(controlCenterWindow).Handle;
+                yieldedHandles.Add(cachedHandle);
+                yield return controlCenterWindow;
+            }
+
+            if (Application.Current == null)
+                yield break;
+
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window == null)
+                    continue;
+
+                IntPtr handle = IntPtr.Zero;
+                try
+                {
+                    handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                }
+                catch
+                {
+                }
+
+                if (handle != IntPtr.Zero && yieldedHandles.Contains(handle))
+                    continue;
+
+                if (handle != IntPtr.Zero)
+                    yieldedHandles.Add(handle);
+
+                yield return window;
+            }
+        }
+
+        private string DescribeApplicationWindows()
+        {
+            if (Application.Current == null)
+                return "Application.Current=null";
+
+            List<string> descriptions = new List<string>();
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window == null)
+                    continue;
+
+                string typeName = window.GetType().Name ?? "UnknownType";
+                string title = window.Title ?? string.Empty;
+                descriptions.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}[{1}]",
+                    typeName,
+                    string.IsNullOrWhiteSpace(title) ? "no-title" : title));
+            }
+
+            return descriptions.Count == 0 ? "none" : string.Join(",", descriptions);
+        }
+
+        private void CaptureEnabledStrategiesForRecovery()
+        {
+            if (!autoReconnectEnabled || strategiesPendingRecovery.Count > 0 || Application.Current == null || Application.Current.Dispatcher == null)
+                return;
+
+            try
+            {
+                List<StrategyUiEntry> snapshot = GetStrategyEntriesSnapshot();
+                LogStrategyEntriesSnapshot("capture", snapshot);
+                foreach (StrategyUiEntry entry in snapshot)
+                {
+                    if (entry == null || entry.IsEnabled != true || string.IsNullOrWhiteSpace(entry.Key))
+                        continue;
+
+                    if (strategiesPendingRecovery.Any(existing => string.Equals(existing.Key, entry.Key, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    strategiesPendingRecovery.Add(new StrategyRecoveryEntry
+                    {
+                        Key = entry.Key,
+                        DisplayName = entry.DisplayName
+                    });
+                }
+
+                if (strategiesPendingRecovery.Count > 0)
+                    LogToOutput($"📝 Captured {strategiesPendingRecovery.Count} enabled strategies for recovery after reconnect.");
+                else
+                    LogToOutput("⚠️ Strategy capture found no enabled strategies to recover.");
+            }
+            catch (Exception ex)
+            {
+                LogToOutput($"⚠️ Unable to capture enabled strategies for recovery: {ex.Message}");
+            }
+        }
+
+        private bool RestoreStrategiesAfterReconnect(out string details)
+        {
+            details = string.Empty;
+            if (strategiesPendingRecovery.Count == 0)
+            {
+                details = "No saved enabled strategies.";
+                return false;
+            }
+
+            if (Application.Current == null || Application.Current.Dispatcher == null)
+            {
+                details = "Application dispatcher unavailable.";
+                return false;
+            }
+
+            try
+            {
+                string localDetails = string.Empty;
+                bool restored = Application.Current.Dispatcher.Invoke(() =>
+                {
+                    List<StrategyUiEntry> uiEntries = EnumerateStrategyEntries().ToList();
+                    LogStrategyEntriesSnapshot("restore", uiEntries);
+                    if (uiEntries.Count == 0)
+                    {
+                        localDetails = "Strategy grid entries could not be located.";
+                        return false;
+                    }
+
+                    int enabledCount = 0;
+                    List<string> outcome = new List<string>();
+
+                    foreach (StrategyRecoveryEntry pending in strategiesPendingRecovery)
+                    {
+                        StrategyUiEntry match = uiEntries.FirstOrDefault(entry => string.Equals(entry.Key, pending.Key, StringComparison.OrdinalIgnoreCase));
+                        if (match == null)
+                        {
+                            outcome.Add($"{pending.DisplayName ?? pending.Key}(missing)");
+                            continue;
+                        }
+
+                        if (match.IsEnabled == true)
+                        {
+                            outcome.Add($"{match.DisplayName ?? match.Key}(already enabled)");
+                            continue;
+                        }
+
+                        if (EnableStrategyEntry(match))
+                        {
+                            enabledCount++;
+                            outcome.Add($"{match.DisplayName ?? match.Key}(enabled)");
+                        }
+                        else
+                        {
+                            outcome.Add($"{match.DisplayName ?? match.Key}(failed)");
+                        }
+                    }
+
+                    localDetails = string.Join("; ", outcome);
+                    return enabledCount > 0;
+                });
+                details = localDetails;
+                return restored;
+            }
+            catch (Exception ex)
+            {
+                details = ex.Message;
+                return false;
+            }
+        }
+
+        private List<StrategyUiEntry> GetStrategyEntriesSnapshot()
+        {
+            return Application.Current.Dispatcher.Invoke(() =>
+            {
+                return EnumerateStrategyEntries().ToList();
+            });
+        }
+
+        private void LogStrategyEntriesSnapshot(string stage, List<StrategyUiEntry> entries)
+        {
+            if (entries == null || entries.Count == 0)
+            {
+                LogToOutput($"⚠️ Strategy snapshot ({stage}) found no strategy entries.");
+                return;
+            }
+
+            foreach (StrategyUiEntry entry in entries)
+            {
+                if (entry == null)
+                    continue;
+
+                LogToOutput(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "🧭 Strategy snapshot ({0}): Key={1} | Name={2} | Enabled={3}",
+                    stage,
+                    entry.Key ?? string.Empty,
+                    entry.DisplayName ?? string.Empty,
+                    entry.IsEnabled.HasValue ? entry.IsEnabled.Value.ToString() : "unknown"));
+            }
+        }
+
+        private bool EnableStrategyEntry(StrategyUiEntry entry)
+        {
+            if (entry == null)
+                return false;
+
+            if (TrySetBooleanProperty(entry.SourceObject, "Enabled", true)
+                || TrySetBooleanProperty(entry.SourceObject, "IsEnabled", true))
+                return true;
+
+            object commandParameter = entry.EnableParameter ?? entry.SourceObject;
+            if (TryExecuteCommand(entry.EnableCommand, commandParameter))
+                return true;
+
+            foreach (string propertyName in new[] { "EnableStrategyCommand", "EnableDisableSingleStrategyCommand", "CommandEnableStrategy", "EnableCommand" })
+            {
+                object command = GetPropertyValue(entry.SourceObject, propertyName);
+                if (TryExecuteCommand(command, commandParameter))
+                    return true;
+            }
+
+            return TryInvokeMethod(entry.SourceObject, "Enable", commandParameter)
+                || TryInvokeMethod(entry.SourceObject, "SetEnabled", true)
+                || TryInvokeMethod(entry.SourceObject, "SetIsEnabled", true);
+        }
+
+        private IEnumerable<StrategyUiEntry> EnumerateStrategyEntries()
+        {
+            List<StrategyUiEntry> results = new List<StrategyUiEntry>();
+            HashSet<int> visited = new HashSet<int>();
+
+            if (controlCenterWindow != null)
+            {
+                CollectStrategyEntriesFromElement(controlCenterWindow, results, visited);
+                CollectStrategyEntriesFromObject(GetPropertyValue(controlCenterWindow, "DataContext"), results, visited, 0);
+            }
+
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window == null)
+                    continue;
+
+                CollectStrategyEntriesFromElement(window, results, visited);
+                CollectStrategyEntriesFromObject(GetPropertyValue(window, "DataContext"), results, visited, 0);
+            }
+
+            Dictionary<string, StrategyUiEntry> deduped = new Dictionary<string, StrategyUiEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (StrategyUiEntry entry in results)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.Key))
+                    continue;
+
+                if (!deduped.ContainsKey(entry.Key))
+                    deduped[entry.Key] = entry;
+            }
+
+            return deduped.Values;
+        }
+
+        private void CollectStrategyEntriesFromElement(DependencyObject element, List<StrategyUiEntry> results, HashSet<int> visited)
+        {
+            if (element == null)
+                return;
+
+            CollectStrategyEntriesFromObject(element, results, visited, 0);
+
+            int childCount;
+            try
+            {
+                childCount = VisualTreeHelper.GetChildrenCount(element);
+            }
+            catch
+            {
+                return;
+            }
+
+            for (int i = 0; i < childCount; i++)
+                CollectStrategyEntriesFromElement(VisualTreeHelper.GetChild(element, i), results, visited);
+        }
+
+        private void CollectStrategyEntriesFromObject(object candidate, List<StrategyUiEntry> results, HashSet<int> visited, int depth)
+        {
+            if (candidate == null || depth > 4 || IsSimpleType(candidate.GetType()))
+                return;
+
+            int objectId = RuntimeHelpers.GetHashCode(candidate);
+            if (!visited.Add(objectId))
+                return;
+
+            StrategyUiEntry entry = TryBuildStrategyUiEntry(candidate);
+            if (entry != null)
+                results.Add(entry);
+
+            if (candidate is IEnumerable enumerable && !(candidate is string))
+            {
+                int count = 0;
+                foreach (object item in enumerable)
+                {
+                    CollectStrategyEntriesFromObject(item, results, visited, depth + 1);
+                    if (++count >= 200)
+                        break;
+                }
+
+                return;
+            }
+
+            foreach (PropertyInfo property in candidate.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length > 0)
+                    continue;
+
+                string propertyName = property.Name ?? string.Empty;
+                if (!ShouldInspectProperty(propertyName))
+                    continue;
+
+                object value;
+                try
+                {
+                    value = property.GetValue(candidate, null);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                CollectStrategyEntriesFromObject(value, results, visited, depth + 1);
+            }
+        }
+
+        private StrategyUiEntry TryBuildStrategyUiEntry(object candidate)
+        {
+            if (candidate == null)
+                return null;
+
+            object strategyObject = GetPropertyValue(candidate, "Strategy") ?? candidate;
+            bool? isEnabled = GetNullableBoolean(strategyObject, "Enabled")
+                ?? GetNullableBoolean(strategyObject, "IsEnabled")
+                ?? GetNullableBoolean(candidate, "Enabled")
+                ?? GetNullableBoolean(candidate, "IsEnabled");
+
+            string displayName = BuildStrategyDisplayName(candidate, strategyObject);
+            string key = BuildStrategyKey(candidate, strategyObject, displayName);
+
+            object enableCommand = GetPropertyValue(candidate, "EnableStrategyCommand")
+                ?? GetPropertyValue(candidate, "EnableDisableSingleStrategyCommand")
+                ?? GetPropertyValue(candidate, "CommandEnableStrategy")
+                ?? GetPropertyValue(strategyObject, "EnableStrategyCommand");
+
+            object enableParameter = GetPropertyValue(candidate, "EnableParameter")
+                ?? GetPropertyValue(candidate, "CommandParameter")
+                ?? GetPropertyValue(candidate, "Strategy")
+                ?? candidate;
+
+            bool looksLikeStrategy = candidate.GetType().Name.IndexOf("Strategy", StringComparison.OrdinalIgnoreCase) >= 0
+                || strategyObject.GetType().Name.IndexOf("Strategy", StringComparison.OrdinalIgnoreCase) >= 0
+                || !string.IsNullOrWhiteSpace(displayName);
+
+            if (!looksLikeStrategy || isEnabled == null || string.IsNullOrWhiteSpace(key))
+                return null;
+
+            return new StrategyUiEntry
+            {
+                Key = key,
+                DisplayName = displayName,
+                IsEnabled = isEnabled,
+                EnableCommand = enableCommand,
+                EnableParameter = enableParameter,
+                SourceObject = candidate
+            };
+        }
+
+        private string BuildStrategyDisplayName(object candidate, object strategyObject)
+        {
+            string name = FirstNonEmpty(
+                GetStringValue(strategyObject, "DisplayName"),
+                GetStringValue(strategyObject, "Name"),
+                GetStringValue(candidate, "DisplayName"),
+                GetStringValue(candidate, "Name"),
+                GetStringValue(candidate, "StrategyName"));
+
+            string account = GetNestedDisplayString(candidate, strategyObject, "Account", "AccountName", "DisplayAccountName");
+            string instrument = GetNestedDisplayString(candidate, strategyObject, "Instrument", "InstrumentName", "DisplayInstrumentName");
+
+            List<string> parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(name))
+                parts.Add(name);
+            if (!string.IsNullOrWhiteSpace(account))
+                parts.Add(account);
+            if (!string.IsNullOrWhiteSpace(instrument))
+                parts.Add(instrument);
+
+            return parts.Count == 0 ? string.Empty : string.Join(" | ", parts);
+        }
+
+        private string BuildStrategyKey(object candidate, object strategyObject, string displayName)
+        {
+            string strategyId = FirstNonEmpty(
+                GetStringValue(strategyObject, "Id"),
+                GetStringValue(strategyObject, "StrategyId"),
+                GetStringValue(candidate, "Id"),
+                GetStringValue(candidate, "StrategyId"));
+
+            if (!string.IsNullOrWhiteSpace(strategyId))
+                return strategyId;
+
+            string name = FirstNonEmpty(
+                GetStringValue(strategyObject, "DisplayName"),
+                GetStringValue(strategyObject, "Name"),
+                GetStringValue(candidate, "DisplayName"),
+                GetStringValue(candidate, "Name"),
+                GetStringValue(candidate, "StrategyName"));
+            string account = GetNestedDisplayString(candidate, strategyObject, "Account", "AccountName", "DisplayAccountName");
+            string instrument = GetNestedDisplayString(candidate, strategyObject, "Instrument", "InstrumentName", "DisplayInstrumentName");
+
+            string composite = string.Join("|", new[] { name, account, instrument }.Where(part => !string.IsNullOrWhiteSpace(part)));
+            return !string.IsNullOrWhiteSpace(composite) ? composite : displayName;
+        }
+
+        private string GetNestedDisplayString(object first, object second, params string[] names)
+        {
+            foreach (string name in names)
+            {
+                string direct = FirstNonEmpty(GetStringValue(first, name), GetStringValue(second, name));
+                if (!string.IsNullOrWhiteSpace(direct))
+                    return direct;
+            }
+
+            object nested = GetPropertyValue(first, "Account")
+                ?? GetPropertyValue(second, "Account")
+                ?? GetPropertyValue(first, "Instrument")
+                ?? GetPropertyValue(second, "Instrument");
+
+            if (nested == null)
+                return string.Empty;
+
+            return FirstNonEmpty(
+                GetStringValue(nested, "DisplayName"),
+                GetStringValue(nested, "Name"),
+                nested.ToString());
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            foreach (string value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    return value.Trim();
+            }
+
+            return string.Empty;
+        }
+
+        private static bool ShouldInspectProperty(string propertyName)
+        {
+            if (string.IsNullOrWhiteSpace(propertyName))
+                return false;
+
+            string lower = propertyName.ToLowerInvariant();
+            return lower.Contains("strategy")
+                || lower.Contains("data")
+                || lower.Contains("context")
+                || lower.Contains("item")
+                || lower.Contains("entry")
+                || lower.Contains("row")
+                || lower.Contains("view")
+                || lower.Contains("content")
+                || lower.Contains("child")
+                || lower.Contains("selected")
+                || lower.Contains("tab");
+        }
+
+        private static bool IsSimpleType(Type type)
+        {
+            return type.IsPrimitive
+                || type.IsEnum
+                || type == typeof(string)
+                || type == typeof(decimal)
+                || type == typeof(DateTime)
+                || type == typeof(TimeSpan);
+        }
+
+        private static object GetPropertyValue(object target, string propertyName)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(propertyName))
+                return null;
+
+            PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property == null || !property.CanRead || property.GetIndexParameters().Length > 0)
+                return null;
+
+            try
+            {
+                return property.GetValue(target, null);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string GetStringValue(object target, string propertyName)
+        {
+            object value = GetPropertyValue(target, propertyName);
+            return value == null ? string.Empty : value.ToString();
+        }
+
+        private static bool? GetNullableBoolean(object target, string propertyName)
+        {
+            object value = GetPropertyValue(target, propertyName);
+            if (value is bool booleanValue)
+                return booleanValue;
+
+            if (value != null && bool.TryParse(value.ToString(), out bool parsed))
+                return parsed;
+
+            return null;
+        }
+
+        private static bool TrySetBooleanProperty(object target, string propertyName, bool value)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(propertyName))
+                return false;
+
+            PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property == null || !property.CanWrite || property.PropertyType != typeof(bool))
+                return false;
+
+            try
+            {
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryExecuteCommand(object commandObject, object parameter)
+        {
+            if (commandObject is ICommand command)
+            {
+                if (!command.CanExecute(parameter))
+                    return false;
+
+                command.Execute(parameter);
+                return true;
+            }
+
+            return TryInvokeMethod(commandObject, "Execute", parameter) || TryInvokeMethod(commandObject, "Execute", null);
+        }
+
+        private static bool TryInvokeMethod(object target, string methodName, object argument)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(methodName))
+                return false;
+
+            MethodInfo[] methods = target.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Where(method => string.Equals(method.Name, methodName, StringComparison.Ordinal))
+                .ToArray();
+
+            foreach (MethodInfo method in methods)
+            {
+                ParameterInfo[] parameters = method.GetParameters();
+                try
+                {
+                    if (parameters.Length == 0 && argument == null)
+                    {
+                        method.Invoke(target, null);
+                        return true;
+                    }
+
+                    if (parameters.Length == 1)
+                    {
+                        object value = argument;
+                        if (value == null && parameters[0].ParameterType.IsValueType && Nullable.GetUnderlyingType(parameters[0].ParameterType) == null)
+                            continue;
+
+                        if (value != null && !parameters[0].ParameterType.IsInstanceOfType(value))
+                        {
+                            if (parameters[0].ParameterType == typeof(bool) && value is bool)
+                            {
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                        }
+
+                        method.Invoke(target, new[] { value });
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
         }
 
         private void CheckHeartbeatFileMulti()
@@ -1587,6 +3288,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (newMenuItem == null)
                 return;
 
+            if (connectionsMenuItem == null)
+                connectionsMenuItem = FindTopLevelMenuItem(controlCenter, "connectionsMenuItem", "Connections");
+            if (connectionsMenuItem == null)
+                connectionsMenuItem = FindTopLevelMenuItem(controlCenter, "mnuConnections", "Connections");
+
             if (autoEdgeMenuItem == null)
             {
                 autoEdgeMenuItem = FindChildMenuItem(newMenuItem, "AutoEdge");
@@ -1654,6 +3360,78 @@ namespace NinjaTrader.NinjaScript.AddOns
             return null;
         }
 
+        private NTMenuItem FindMenuItemRecursive(ItemsControl parent, string expectedHeader)
+        {
+            if (parent == null || string.IsNullOrWhiteSpace(expectedHeader))
+                return null;
+
+            NTMenuItem partialMatch = null;
+            foreach (object item in parent.Items)
+            {
+                NTMenuItem menuItem = item as NTMenuItem;
+                if (menuItem == null)
+                    continue;
+
+                string header = GetHeaderText(menuItem.Header);
+                if (string.Equals(header, expectedHeader, StringComparison.OrdinalIgnoreCase)
+                    || NormalizeMenuHeader(header) == NormalizeMenuHeader(expectedHeader))
+                    return menuItem;
+
+                NTMenuItem nested = FindMenuItemRecursive(menuItem, expectedHeader);
+                if (nested != null)
+                    return nested;
+
+                if (partialMatch == null && IsSafePartialMenuMatch(header, expectedHeader))
+                    partialMatch = menuItem;
+            }
+
+            return partialMatch;
+        }
+
+        private NTMenuItem FindExactMenuItemRecursive(ItemsControl parent, string expectedHeader)
+        {
+            if (parent == null || string.IsNullOrWhiteSpace(expectedHeader))
+                return null;
+
+            string normalizedExpected = NormalizeMenuHeader(expectedHeader);
+            foreach (object item in parent.Items)
+            {
+                NTMenuItem menuItem = item as NTMenuItem;
+                if (menuItem == null)
+                    continue;
+
+                string header = GetHeaderText(menuItem.Header);
+                if (string.Equals(header, expectedHeader, StringComparison.OrdinalIgnoreCase)
+                    || NormalizeMenuHeader(header) == normalizedExpected)
+                    return menuItem;
+
+                NTMenuItem nested = FindExactMenuItemRecursive(menuItem, expectedHeader);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
+        }
+
+        private void CollectMenuHeaders(ItemsControl parent, List<string> headers, int depth)
+        {
+            if (parent == null || headers == null || depth > 2)
+                return;
+
+            foreach (object item in parent.Items)
+            {
+                NTMenuItem menuItem = item as NTMenuItem;
+                if (menuItem == null)
+                    continue;
+
+                string header = GetHeaderText(menuItem.Header);
+                if (!string.IsNullOrWhiteSpace(header))
+                    headers.Add(header);
+
+                CollectMenuHeaders(menuItem, headers, depth + 1);
+            }
+        }
+
         private string GetHeaderText(object header)
         {
             if (header == null)
@@ -1664,6 +3442,37 @@ namespace NinjaTrader.NinjaScript.AddOns
                 return textBlock.Text ?? string.Empty;
 
             return header.ToString() ?? string.Empty;
+        }
+
+        private string NormalizeMenuHeader(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            StringBuilder normalized = new StringBuilder(value.Length);
+            foreach (char ch in value)
+            {
+                if (char.IsLetterOrDigit(ch))
+                    normalized.Append(char.ToLowerInvariant(ch));
+            }
+
+            return normalized.ToString();
+        }
+
+        private bool IsSafePartialMenuMatch(string actualHeader, string expectedHeader)
+        {
+            if (string.IsNullOrWhiteSpace(actualHeader) || string.IsNullOrWhiteSpace(expectedHeader))
+                return false;
+
+            string normalizedActual = NormalizeMenuHeader(actualHeader);
+            string normalizedExpected = NormalizeMenuHeader(expectedHeader);
+            if (normalizedActual.Length == 0 || normalizedExpected.Length == 0)
+                return false;
+
+            if (!normalizedActual.StartsWith(normalizedExpected, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return normalizedActual.Length <= normalizedExpected.Length + 2;
         }
 
         private void OnLauncherMenuItemClick(object sender, RoutedEventArgs e)
@@ -1747,6 +3556,7 @@ namespace NinjaTrader.NinjaScript.AddOns
 
     public sealed class TradeMessengerAddOnSettings
     {
+        public bool Enabled { get; set; }
         public bool Debug { get; set; }
         public bool SendPushNotifications { get; set; }
         public bool ShowEntry { get; set; }
@@ -1776,6 +3586,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private static readonly Brush TitleTextBrush = new SolidColorBrush(Color.FromRgb(0xC4, 0xC4, 0xC4));
         private static readonly Brush DescriptionTextBrush = new SolidColorBrush(Color.FromRgb(0x98, 0x98, 0x98));
 
+        private CheckBox enabledCheckBox;
         private CheckBox debugCheckBox;
         private CheckBox pushNotificationsCheckBox;
         private CheckBox showEntryCheckBox;
@@ -1800,6 +3611,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private ComboBox accountPickerComboBox;
         private TextBox monitoredInstrumentsTextBox;
         private TextBlock statusTextBlock;
+        private Button simulateFeedStallButton;
 
         public TradeMessengerAddOnWindow()
         {
@@ -1814,6 +3626,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (settings == null)
                 return;
 
+            enabledCheckBox.IsChecked = settings.Enabled;
             debugCheckBox.IsChecked = settings.Debug;
             pushNotificationsCheckBox.IsChecked = settings.SendPushNotifications;
             showEntryCheckBox.IsChecked = settings.ShowEntry;
@@ -1837,6 +3650,10 @@ namespace NinjaTrader.NinjaScript.AddOns
             monitoredAccountTextBox.Text = settings.MonitoredAccountName ?? string.Empty;
             monitoredInstrumentsTextBox.Text = settings.MonitoredInstrumentsCsv ?? string.Empty;
             statusTextBlock.Text = statusText ?? string.Empty;
+            if (simulateFeedStallButton != null && TradeMessengerAddOn.Instance != null)
+                simulateFeedStallButton.Content = TradeMessengerAddOn.Instance.GetStatusSnapshot().Contains("Manual stall: on")
+                    ? "Manual Stall: On"
+                    : "Manual Stall: Off";
             RefreshAccountPickerOptions();
         }
 
@@ -1896,6 +3713,10 @@ namespace NinjaTrader.NinjaScript.AddOns
             saveButton.Click += OnSaveClick;
             buttons.Children.Add(saveButton);
 
+            simulateFeedStallButton = new Button { Content = "Manual Stall: Off", MinWidth = 150, Margin = new Thickness(0, 0, 8, 0) };
+            simulateFeedStallButton.Click += OnSimulateFeedStallClick;
+            buttons.Children.Add(simulateFeedStallButton);
+
             Button closeButton = new Button { Content = "Close", MinWidth = 90 };
             closeButton.Click += (_, __) => Close();
             buttons.Children.Add(closeButton);
@@ -1910,6 +3731,9 @@ namespace NinjaTrader.NinjaScript.AddOns
         private UIElement BuildSettingsPanel()
         {
             StackPanel stack = new StackPanel();
+            stack.Children.Add(BuildSection(
+                "General",
+                out enabledCheckBox, "Enable Trade Messenger", "Master kill switch. When disabled, monitoring, reconnect, alerts, and recovery are all stopped."));
             stack.Children.Add(BuildSection(
                 "Notifications",
                 out pushNotificationsCheckBox, "Send Push Notifications", "Master switch for sending alerts to NinjaTrader, Telegram, and Discord."));
@@ -1931,21 +3755,21 @@ namespace NinjaTrader.NinjaScript.AddOns
                 out showExitCheckBox, "Send Exit Messages", "Send alerts when a filled order closes or reduces a position."));
 
             stack.Children.Add(BuildMonitoringSection());
-            stack.Children.Add(BuildHiddenElement(BuildSection(
+            stack.Children.Add(BuildSection(
                 "Recovery",
-                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected.")));
-            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
+                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected. This also controls strategy re-enable after reconnect."));
+            stack.Children.Add(BuildLabeledTextBox(
                 "Reconnect Initial Delay Seconds",
                 "Delay before the first reconnect attempt after a problem is detected. Minimum 1.",
-                out reconnectInitialDelayTextBox)));
-            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
+                out reconnectInitialDelayTextBox));
+            stack.Children.Add(BuildLabeledTextBox(
                 "Reconnect Max Delay Seconds",
                 "Maximum backoff delay between reconnect attempts. Must be at least the initial delay.",
-                out reconnectMaxDelayTextBox)));
-            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
+                out reconnectMaxDelayTextBox));
+            stack.Children.Add(BuildLabeledTextBox(
                 "Reconnect Max Attempts (0 = unlimited)",
                 "Maximum reconnect tries before stopping. Use 0 to keep retrying indefinitely.",
-                out reconnectMaxAttemptsTextBox)));
+                out reconnectMaxAttemptsTextBox));
 
             stack.Children.Add(BuildSectionHeader("Filters"));
             stack.Children.Add(BuildLabeledTextBox("Monitored Connection Name", "Exact NinjaTrader connection name to monitor, for example `Rithmic`. Leave blank to include all connections. This is optional if account filtering alone is enough.", out monitoredConnectionTextBox));
@@ -2228,6 +4052,7 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             TradeMessengerAddOnSettings settings = new TradeMessengerAddOnSettings
             {
+                Enabled = enabledCheckBox.IsChecked == true,
                 Debug = debugCheckBox.IsChecked == true,
                 SendPushNotifications = pushNotificationsCheckBox.IsChecked == true,
                 ShowEntry = showEntryCheckBox.IsChecked == true,
@@ -2254,6 +4079,18 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             TradeMessengerAddOn.Instance.ApplySettings(settings);
             statusTextBlock.Text = "Settings saved. " + TradeMessengerAddOn.Instance.GetStatusSnapshot();
+        }
+
+        private void OnSimulateFeedStallClick(object sender, RoutedEventArgs e)
+        {
+            if (TradeMessengerAddOn.Instance == null)
+                return;
+
+            bool enabled = TradeMessengerAddOn.Instance.ToggleFeedStallSimulation();
+            if (simulateFeedStallButton != null)
+                simulateFeedStallButton.Content = enabled ? "Manual Stall: On" : "Manual Stall: Off";
+            statusTextBlock.Text = (enabled ? "Manual feed stall enabled. " : "Manual feed stall disabled. ")
+                + TradeMessengerAddOn.Instance.GetStatusSnapshot();
         }
 
         private static int ParseIntOrDefault(string value, int fallback)
