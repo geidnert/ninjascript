@@ -8,6 +8,9 @@
 - [ ] Entry path blocks in skip/news/no-trades-after windows
 - [ ] Entry and exit signal names are prefixed with the strategy name
 - [ ] Protective stops/targets use the active prefixed entry signal
+- [ ] Optional `RequireEntryConfirmation` property exists
+- [ ] Entry confirmation helper exists (for example `ShowEntryConfirmation`)
+- [ ] Confirmation check runs before each new entry submission path
 - [ ] Transition to blocked window cancels orders
 - [ ] Transition to blocked window flattens open position
 - [ ] `HeartbeatStrategyName` constant exists

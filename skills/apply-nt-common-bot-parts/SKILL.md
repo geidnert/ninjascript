@@ -26,6 +26,7 @@ Use this skill when integrating a new strategy file from external developers and
 - skip/news gating methods
 - cancel/flatten helpers
 - signal naming helpers/constants
+- entry confirmation property/helper
 - strategy lifecycle hooks for startup/shutdown
 - heartbeat reporter wiring
 - timeframe/instrument validation guards
@@ -37,6 +38,7 @@ Use this skill when integrating a new strategy file from external developers and
 - entry gating checks
 - session boundary guards
 - strategy-name-prefixed signal constants/helpers for entries and exits
+- optional entry confirmation toggle and popup helper using the `Duo.cs` pattern
 - heartbeat reporting using `StrategyHeartbeatReporter`
 - primary timeframe validation (`DataLoaded` validation + `OnBarUpdate` early-return guard + invalid-configuration cancel/flatten)
 - primary instrument validation (`DataLoaded` validation + `OnBarUpdate` early-return guard + `NQ`/`MNQ` allow-list + invalid-configuration cancel/flatten)

@@ -83,6 +83,13 @@ Reason tags used by convention:
 - Exit signal builders should preserve the strategy prefix (for example `Duo` + reason).
 - `Duo.cs` is the default reference for this convention when applying the skill.
 
+### Entry Confirmation
+- Strategies should support an optional `RequireEntryConfirmation` toggle.
+- When enabled, show a Yes/No popup before each new long/short entry submission.
+- Apply confirmation to market, limit, and equivalent delayed entry placements (for example FVG-triggered limit submissions).
+- Use a shared helper patterned after `Duo.cs` (`ShowEntryConfirmation(string orderType, double price, int quantity)`).
+- If the user declines, do not submit the entry order and leave the strategy state safe for future entry attempts.
+
 ### Heartbeat Reporting
 - Strategies should report liveness through `StrategyHeartbeatReporter`.
 - Add a strategy-level `HeartbeatStrategyName` constant matching the strategy identity used in alerts/logging.
@@ -150,6 +157,7 @@ Reason tags used by convention:
 - Contracts/News/Session value colors are consistent.
 - Entry/exit signal names are strategy-prefixed.
 - Stops/targets/exits reference the active prefixed entry signal.
+- Entry confirmation toggle/helper exists when the strategy family uses interactive confirmations.
 - Heartbeat reporter is instantiated in `State.DataLoaded`.
 - Heartbeat reporter is started in `State.Realtime`.
 - Heartbeat reporter is disposed in `State.Terminated`.
