@@ -56,15 +56,18 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             public string Key { get; set; }
             public string DisplayName { get; set; }
+            public string StrategyName { get; set; }
         }
 
         private sealed class StrategyUiEntry
         {
             public string Key { get; set; }
             public string DisplayName { get; set; }
+            public string StrategyName { get; set; }
             public bool? IsEnabled { get; set; }
             public object EnableCommand { get; set; }
             public object EnableParameter { get; set; }
+            public object PreferredCommandSource { get; set; }
             public object SourceObject { get; set; }
         }
 
@@ -127,6 +130,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private bool licenseFailureShown;
         private Window controlCenterWindow;
         private NTMenuItem connectionsMenuItem;
+        private object strategiesGridRoot;
         private NTMenuItem newMenuItem;
         private NTMenuItem autoEdgeMenuItem;
         private NTMenuItem launcherMenuItem;
@@ -205,6 +209,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (window is ControlCenter)
             {
                 connectionsMenuItem = null;
+                strategiesGridRoot = null;
                 RemoveMenuItem();
             }
         }
@@ -222,9 +227,9 @@ namespace NinjaTrader.NinjaScript.AddOns
             botToken = string.Empty;
             chatId = string.Empty;
             dataFeedReporting = true;
-            watchdogDataTimeoutSeconds = 60;
+            watchdogDataTimeoutSeconds = 10;
             heartbeatReporting = true;
-            heartbeatTimeoutSeconds = 60;
+            heartbeatTimeoutSeconds = 10;
             runHeadlessWhenWindowClosed = true;
             autoReconnectEnabled = true;
             reconnectInitialDelaySeconds = 10;
@@ -289,9 +294,43 @@ namespace NinjaTrader.NinjaScript.AddOns
         internal bool ToggleFeedStallSimulation()
         {
             manualFeedStallEnabled = !manualFeedStallEnabled;
-            LogToOutput(manualFeedStallEnabled
-                ? "🧪 Manual feed stall enabled. Incoming Last ticks will be ignored until disabled."
-                : "🧪 Manual feed stall disabled. Incoming Last ticks will be processed again.");
+            DateTime nowUtc = DateTime.UtcNow;
+
+            if (manualFeedStallEnabled)
+            {
+                LogToOutput("🧪 Manual feed stall enabled. Incoming Last ticks will be ignored until disabled.");
+                foreach (string instrumentName in lastTickTimeByInstrument.Keys.ToList())
+                {
+                    feedStalledByInstrument[instrumentName] = true;
+                    LogToOutput($"⚠️ Manual feed stall active on {instrumentName}.");
+                }
+
+                RememberReconnectTargetFromCurrentConnections();
+                CaptureEnabledStrategiesForRecovery();
+                StartReconnectLoop(nowUtc);
+            }
+            else
+            {
+                LogToOutput("🧪 Manual feed stall disabled. Incoming Last ticks will be processed again.");
+                foreach (string instrumentName in feedStalledByInstrument.Keys.ToList())
+                {
+                    if (!feedStalledByInstrument[instrumentName])
+                        continue;
+
+                    feedStalledByInstrument[instrumentName] = false;
+                    lastTickTimeByInstrument[instrumentName] = nowUtc;
+                    LogToOutput($"✅ Data feed resumed on {instrumentName} (manual release).");
+                    if (sendPushNotifications && dataFeedReporting)
+                        SendPushNotification(nowUtc, $"✅ Data feed resumed on {instrumentName} (manual release).");
+                }
+
+                if (!connectionIssueActive && !AnyFeedCurrentlyStalled())
+                {
+                    ScheduleStrategyRestore(nowUtc);
+                    StopReconnectLoop();
+                }
+            }
+
             return manualFeedStallEnabled;
         }
 
@@ -448,10 +487,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 "BotToken=",
                 "ChatId=",
                 "DataFeedReporting=true",
-                "WatchdogDataTimeoutSeconds=60",
+                "WatchdogDataTimeoutSeconds=10",
                 "HeartbeatReporting=true",
                 "HeartbeatFilePath=" + heartbeatFilePath,
-                "HeartbeatTimeoutSeconds=60",
+                "HeartbeatTimeoutSeconds=10",
                 "RunHeadlessWhenWindowClosed=true",
                 "AutoReconnectEnabled=true",
                 "ReconnectInitialDelaySeconds=10",
@@ -1201,6 +1240,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 if (isDisconnected)
                 {
                     anyConnectionIssue = true;
+                    if (!string.IsNullOrWhiteSpace(connectionName))
+                        lastReconnectTargetName = connectionName;
 
                     if (!wasDisconnected)
                     {
@@ -1252,6 +1293,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 LogToOutput(message);
                 if (sendPushNotifications)
                     SendPushNotification(nowUtc, message);
+                RememberReconnectTargetFromCurrentConnections();
                 CaptureEnabledStrategiesForRecovery();
                 StartReconnectLoop(nowUtc);
             }
@@ -1484,13 +1526,44 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (!string.IsNullOrWhiteSpace(monitoredConnectionName))
                 return monitoredConnectionName;
 
-            if (!string.IsNullOrWhiteSpace(lastReconnectTargetName))
+            if (!string.IsNullOrWhiteSpace(lastReconnectTargetName) && IsKnownReconnectTarget(lastReconnectTargetName))
                 return lastReconnectTargetName;
 
             if (lastConnectionStatusByName.Count == 1)
                 return lastConnectionStatusByName.Keys.FirstOrDefault() ?? string.Empty;
 
             return string.Empty;
+        }
+
+        private void RememberReconnectTargetFromCurrentConnections()
+        {
+            if (!string.IsNullOrWhiteSpace(monitoredConnectionName))
+            {
+                lastReconnectTargetName = monitoredConnectionName;
+                return;
+            }
+
+            List<string> connectedNames = GetAllKnownConnections()
+                .Where(connection => connection != null && IsMatchingConnection(connection))
+                .Select(GetConnectionName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (connectedNames.Count == 1)
+                lastReconnectTargetName = connectedNames[0];
+        }
+
+        private bool IsKnownReconnectTarget(string connectionName)
+        {
+            if (string.IsNullOrWhiteSpace(connectionName))
+                return false;
+
+            if (lastConnectionStatusByName.Keys.Any(name => string.Equals(name, connectionName, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            return GetAllKnownConnections().Any(connection =>
+                string.Equals(GetConnectionName(connection), connectionName, StringComparison.OrdinalIgnoreCase));
         }
 
         private List<Connection> GetTargetConnections()
@@ -2573,27 +2646,47 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             try
             {
-                List<StrategyUiEntry> snapshot = GetStrategyEntriesSnapshot();
-                LogStrategyEntriesSnapshot("capture", snapshot);
-                foreach (StrategyUiEntry entry in snapshot)
+                List<StrategyRecoveryEntry> heartbeatEntries = GetHeartbeatRecoveryEntries();
+                if (heartbeatEntries.Count > 0)
                 {
-                    if (entry == null || entry.IsEnabled != true || string.IsNullOrWhiteSpace(entry.Key))
-                        continue;
-
-                    if (strategiesPendingRecovery.Any(existing => string.Equals(existing.Key, entry.Key, StringComparison.OrdinalIgnoreCase)))
-                        continue;
-
-                    strategiesPendingRecovery.Add(new StrategyRecoveryEntry
+                    foreach (StrategyRecoveryEntry entry in heartbeatEntries)
                     {
-                        Key = entry.Key,
-                        DisplayName = entry.DisplayName
-                    });
-                }
+                        if (entry == null || string.IsNullOrWhiteSpace(entry.Key))
+                            continue;
 
-                if (strategiesPendingRecovery.Count > 0)
-                    LogToOutput($"📝 Captured {strategiesPendingRecovery.Count} enabled strategies for recovery after reconnect.");
+                        if (strategiesPendingRecovery.Any(existing => string.Equals(existing.Key, entry.Key, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        strategiesPendingRecovery.Add(entry);
+                    }
+
+                    LogToOutput($"📝 Captured {strategiesPendingRecovery.Count} active strategies from heartbeat state for recovery after reconnect.");
+                }
                 else
-                    LogToOutput("⚠️ Strategy capture found no enabled strategies to recover.");
+                {
+                    List<StrategyUiEntry> snapshot = GetStrategyEntriesSnapshot();
+                    LogStrategyEntriesSnapshot("capture", snapshot);
+                    foreach (StrategyUiEntry entry in snapshot)
+                    {
+                        if (entry == null || entry.IsEnabled != true || string.IsNullOrWhiteSpace(entry.Key))
+                            continue;
+
+                        if (strategiesPendingRecovery.Any(existing => string.Equals(existing.Key, entry.Key, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        strategiesPendingRecovery.Add(new StrategyRecoveryEntry
+                        {
+                            Key = entry.Key,
+                            DisplayName = entry.DisplayName,
+                            StrategyName = entry.StrategyName
+                        });
+                    }
+
+                    if (strategiesPendingRecovery.Count > 0)
+                        LogToOutput($"📝 Captured {strategiesPendingRecovery.Count} enabled strategies for recovery after reconnect.");
+                    else
+                        LogToOutput("⚠️ Strategy capture found no enabled strategies to recover.");
+                }
             }
             catch (Exception ex)
             {
@@ -2610,7 +2703,16 @@ namespace NinjaTrader.NinjaScript.AddOns
                 return false;
             }
 
-            if (Application.Current == null || Application.Current.Dispatcher == null)
+            string reconnectTarget = ResolveReconnectTargetName();
+            if (!string.IsNullOrWhiteSpace(reconnectTarget)
+                && reconnectTarget.IndexOf("Playback", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                details = "Playback strategy auto-restore is disabled.";
+                return false;
+            }
+
+            System.Windows.Threading.Dispatcher dispatcher = Application.Current != null ? Application.Current.Dispatcher : null;
+            if (dispatcher == null)
             {
                 details = "Application dispatcher unavailable.";
                 return false;
@@ -2619,7 +2721,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             try
             {
                 string localDetails = string.Empty;
-                bool restored = Application.Current.Dispatcher.Invoke(() =>
+                bool restored = dispatcher.Invoke(() =>
                 {
                     List<StrategyUiEntry> uiEntries = EnumerateStrategyEntries().ToList();
                     LogStrategyEntriesSnapshot("restore", uiEntries);
@@ -2634,27 +2736,41 @@ namespace NinjaTrader.NinjaScript.AddOns
 
                     foreach (StrategyRecoveryEntry pending in strategiesPendingRecovery)
                     {
-                        StrategyUiEntry match = uiEntries.FirstOrDefault(entry => string.Equals(entry.Key, pending.Key, StringComparison.OrdinalIgnoreCase));
-                        if (match == null)
+                        try
                         {
-                            outcome.Add($"{pending.DisplayName ?? pending.Key}(missing)");
-                            continue;
-                        }
+                            StrategyUiEntry match = uiEntries.FirstOrDefault(entry => string.Equals(entry.Key, pending.Key, StringComparison.OrdinalIgnoreCase));
+                            if (match == null && !string.IsNullOrWhiteSpace(pending.StrategyName))
+                            {
+                                match = uiEntries.FirstOrDefault(entry =>
+                                    string.Equals(entry.StrategyName, pending.StrategyName, StringComparison.OrdinalIgnoreCase)
+                                    || (!string.IsNullOrWhiteSpace(entry.DisplayName) && entry.DisplayName.IndexOf(pending.StrategyName, StringComparison.OrdinalIgnoreCase) >= 0)
+                                    || (!string.IsNullOrWhiteSpace(entry.Key) && entry.Key.IndexOf(pending.StrategyName, StringComparison.OrdinalIgnoreCase) >= 0));
+                            }
+                            if (match == null)
+                            {
+                                outcome.Add($"{pending.DisplayName ?? pending.Key}(missing)");
+                                continue;
+                            }
 
-                        if (match.IsEnabled == true)
-                        {
-                            outcome.Add($"{match.DisplayName ?? match.Key}(already enabled)");
-                            continue;
-                        }
+                            if (match.IsEnabled == true)
+                            {
+                                outcome.Add($"{match.DisplayName ?? match.Key}(already enabled)");
+                                continue;
+                            }
 
-                        if (EnableStrategyEntry(match))
-                        {
-                            enabledCount++;
-                            outcome.Add($"{match.DisplayName ?? match.Key}(enabled)");
+                            if (EnableStrategyEntry(match, out string enableDetails))
+                            {
+                                enabledCount++;
+                                outcome.Add($"{match.DisplayName ?? match.Key}(enabled:{enableDetails})");
+                            }
+                            else
+                            {
+                                outcome.Add($"{match.DisplayName ?? match.Key}(failed:{enableDetails})");
+                            }
                         }
-                        else
+                        catch (Exception entryEx)
                         {
-                            outcome.Add($"{match.DisplayName ?? match.Key}(failed)");
+                            outcome.Add($"{pending.DisplayName ?? pending.Key}(error:{entryEx.Message})");
                         }
                     }
 
@@ -2673,16 +2789,38 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private List<StrategyUiEntry> GetStrategyEntriesSnapshot()
         {
-            return Application.Current.Dispatcher.Invoke(() =>
+            System.Windows.Threading.Dispatcher dispatcher = GetStrategyUiDispatcher();
+            if (dispatcher == null)
+                return new List<StrategyUiEntry>();
+
+            return dispatcher.Invoke(() =>
             {
                 return EnumerateStrategyEntries().ToList();
             });
         }
 
+        private System.Windows.Threading.Dispatcher GetStrategyUiDispatcher()
+        {
+            if (strategiesGridRoot is System.Windows.Threading.DispatcherObject dispatcherObject
+                && dispatcherObject.Dispatcher != null)
+                return dispatcherObject.Dispatcher;
+
+            if (connectionsMenuItem != null && connectionsMenuItem.Dispatcher != null)
+                return connectionsMenuItem.Dispatcher;
+
+            if (Application.Current != null)
+                return Application.Current.Dispatcher;
+
+            return null;
+        }
+
+
+
         private void LogStrategyEntriesSnapshot(string stage, List<StrategyUiEntry> entries)
         {
             if (entries == null || entries.Count == 0)
             {
+                LogStrategiesGridDiagnostics(stage);
                 LogToOutput($"⚠️ Strategy snapshot ({stage}) found no strategy entries.");
                 return;
             }
@@ -2697,40 +2835,317 @@ namespace NinjaTrader.NinjaScript.AddOns
                     "🧭 Strategy snapshot ({0}): Key={1} | Name={2} | Enabled={3}",
                     stage,
                     entry.Key ?? string.Empty,
-                    entry.DisplayName ?? string.Empty,
+                    entry.DisplayName ?? entry.StrategyName ?? string.Empty,
                     entry.IsEnabled.HasValue ? entry.IsEnabled.Value.ToString() : "unknown"));
             }
         }
 
-        private bool EnableStrategyEntry(StrategyUiEntry entry)
+        private List<StrategyRecoveryEntry> GetHeartbeatRecoveryEntries()
         {
+            List<StrategyRecoveryEntry> entries = new List<StrategyRecoveryEntry>();
+            DateTime now = DateTime.Now;
+            double maxAgeSeconds = Math.Max(heartbeatTimeoutSeconds * 3.0, 30.0);
+
+            foreach (KeyValuePair<string, DateTime> pair in strategyHeartbeats)
+            {
+                string strategyName = pair.Key;
+                if (string.IsNullOrWhiteSpace(strategyName))
+                    continue;
+
+                double ageSeconds = (now - pair.Value).TotalSeconds;
+                if (ageSeconds < 0)
+                    ageSeconds = 0;
+
+                if (ageSeconds > maxAgeSeconds)
+                    continue;
+
+                entries.Add(new StrategyRecoveryEntry
+                {
+                    Key = strategyName,
+                    DisplayName = strategyName,
+                    StrategyName = strategyName
+                });
+            }
+
+            return entries;
+        }
+
+        private void LogStrategiesGridDiagnostics(string stage)
+        {
+            if (strategiesGridRoot == null)
+            {
+                LogToOutput($"⚠️ Strategy grid diagnostics ({stage}): strategiesGridRoot=null");
+                return;
+            }
+
+            try
+            {
+                string rootType = strategiesGridRoot.GetType().FullName ?? "unknown";
+                object dataContext = GetPropertyValue(strategiesGridRoot, "DataContext");
+                object itemsSource = GetPropertyValue(strategiesGridRoot, "ItemsSource");
+                object items = GetPropertyValue(strategiesGridRoot, "Items");
+                object gridProperties = GetFieldValue(strategiesGridRoot, "properties");
+
+                LogToOutput($"🧪 Strategy grid diagnostics ({stage}): RootType={rootType}");
+                LogToOutput($"🧪 Strategy grid diagnostics ({stage}): DataContextType={(dataContext == null ? "null" : dataContext.GetType().FullName)}");
+                LogToOutput($"🧪 Strategy grid diagnostics ({stage}): ItemsSourceType={(itemsSource == null ? "null" : itemsSource.GetType().FullName)}");
+                LogToOutput($"🧪 Strategy grid diagnostics ({stage}): ItemsType={(items == null ? "null" : items.GetType().FullName)}");
+                LogToOutput($"🧪 Strategy grid diagnostics ({stage}): GridPropertiesType={(gridProperties == null ? "null" : gridProperties.GetType().FullName)}");
+
+                LogEnumerableSample(stage, "ItemsSource", itemsSource);
+                LogEnumerableSample(stage, "Items", items);
+                LogPropertyCandidates(stage, "GridDataContext", dataContext);
+                LogPropertyCandidates(stage, "GridProperties", gridProperties);
+                LogEnumerableSample(stage, "GridProperties.Strategies", GetPropertyValue(gridProperties, "Strategies"));
+                LogEnumerableSample(stage, "GridProperties.AvailableStrategies", GetPropertyValue(gridProperties, "AvailableStrategies"));
+                LogEnumerableSample(stage, "GridProperties.CachedStrategies", GetPropertyValue(gridProperties, "CachedStrategies"));
+                LogPrivateMemberCandidates(stage, gridProperties);
+                LogPrivateMemberCandidates(stage, strategiesGridRoot);
+            }
+            catch (Exception ex)
+            {
+                LogToOutput($"⚠️ Strategy grid diagnostics ({stage}) failed: {ex.Message}");
+            }
+        }
+
+        private void LogEnumerableSample(string stage, string label, object enumerableCandidate)
+        {
+            IEnumerable enumerable = enumerableCandidate as IEnumerable;
+            if (enumerable == null || enumerableCandidate is string)
+                return;
+
+            int count = 0;
+            foreach (object item in enumerable)
+            {
+                if (item == null)
+                {
+                    LogToOutput($"🧪 Strategy grid diagnostics ({stage}): {label}[{count}]=null");
+                }
+                else
+                {
+                    LogToOutput($"🧪 Strategy grid diagnostics ({stage}): {label}[{count}]Type={item.GetType().FullName}");
+                    LogPropertyCandidates(stage, label + "[" + count.ToString(CultureInfo.InvariantCulture) + "]", item);
+                }
+
+                count++;
+                if (count >= 3)
+                    break;
+            }
+
+            if (count == 0)
+                LogToOutput($"🧪 Strategy grid diagnostics ({stage}): {label}=empty");
+        }
+
+        private void LogPropertyCandidates(string stage, string label, object candidate)
+        {
+            if (candidate == null)
+                return;
+
+            string[] propertyNames =
+            {
+                "Strategy", "Strategies", "AvailableStrategies", "ItemsSource", "Name", "DisplayName",
+                "Enabled", "IsEnabled", "EnableStrategyCommand", "EnableDisableSingleStrategyCommand",
+                "CommandEnableStrategy", "CommandParameter", "Account", "Instrument"
+            };
+
+            foreach (string propertyName in propertyNames)
+            {
+                object value = GetPropertyValue(candidate, propertyName);
+                if (value == null)
+                    continue;
+
+                string valueType = value.GetType().FullName ?? "unknown";
+                string valueText = value is string || value.GetType().IsPrimitive || value is bool
+                    ? value.ToString()
+                    : valueType;
+                LogToOutput($"🧪 Strategy grid diagnostics ({stage}): {label}.{propertyName}={valueText}");
+            }
+        }
+
+        private void LogPrivateMemberCandidates(string stage, object candidate)
+        {
+            if (candidate == null)
+                return;
+
+            Type type = candidate.GetType();
+            BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+            int logged = 0;
+
+            foreach (FieldInfo field in type.GetFields(flags))
+            {
+                if (!LooksLikeStrategyDataMember(field.Name, field.FieldType))
+                    continue;
+
+                object value;
+                try
+                {
+                    value = field.GetValue(candidate);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                LogCandidateMember(stage, "Field", field.Name, value);
+                if (++logged >= 12)
+                    break;
+            }
+
+            if (logged < 12)
+            {
+                foreach (PropertyInfo property in type.GetProperties(flags))
+                {
+                    if (!property.CanRead || property.GetIndexParameters().Length > 0)
+                        continue;
+
+                    if (!LooksLikeStrategyDataMember(property.Name, property.PropertyType))
+                        continue;
+
+                    object value;
+                    try
+                    {
+                        value = property.GetValue(candidate, null);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    LogCandidateMember(stage, "Property", property.Name, value);
+                    if (++logged >= 12)
+                        break;
+                }
+            }
+        }
+
+        private bool LooksLikeStrategyDataMember(string memberName, Type memberType)
+        {
+            string name = memberName ?? string.Empty;
+            string typeName = memberType != null ? memberType.FullName ?? string.Empty : string.Empty;
+
+            return name.IndexOf("data", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("item", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("source", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("view", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("record", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("row", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("strategy", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("collection", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("enumerable", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("view", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("record", StringComparison.OrdinalIgnoreCase) >= 0
+                || typeName.IndexOf("grid", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void LogCandidateMember(string stage, string memberKind, string memberName, object value)
+        {
+            string valueType = value == null ? "null" : value.GetType().FullName ?? "unknown";
+            LogToOutput($"🧪 Strategy grid diagnostics ({stage}): {memberKind}.{memberName}={valueType}");
+
+            if (value == null || value is string)
+                return;
+
+            IEnumerable enumerable = value as IEnumerable;
+            if (enumerable != null)
+            {
+                int count = 0;
+                foreach (object item in enumerable)
+                {
+                    if (item == null)
+                    {
+                        LogToOutput($"🧪 Strategy grid diagnostics ({stage}): {memberKind}.{memberName}[{count}]=null");
+                    }
+                    else
+                    {
+                        LogToOutput($"🧪 Strategy grid diagnostics ({stage}): {memberKind}.{memberName}[{count}]Type={item.GetType().FullName}");
+                        LogPropertyCandidates(stage, memberKind + "." + memberName + "[" + count.ToString(CultureInfo.InvariantCulture) + "]", item);
+                    }
+
+                    if (++count >= 3)
+                        break;
+                }
+
+                if (count == 0)
+                    LogToOutput($"🧪 Strategy grid diagnostics ({stage}): {memberKind}.{memberName}=empty");
+            }
+            else
+            {
+                LogPropertyCandidates(stage, memberKind + "." + memberName, value);
+            }
+        }
+
+        private bool EnableStrategyEntry(StrategyUiEntry entry, out string details)
+        {
+            details = "none";
             if (entry == null)
                 return false;
 
             if (TrySetBooleanProperty(entry.SourceObject, "Enabled", true)
                 || TrySetBooleanProperty(entry.SourceObject, "IsEnabled", true))
-                return true;
-
-            object commandParameter = entry.EnableParameter ?? entry.SourceObject;
-            if (TryExecuteCommand(entry.EnableCommand, commandParameter))
-                return true;
-
-            foreach (string propertyName in new[] { "EnableStrategyCommand", "EnableDisableSingleStrategyCommand", "CommandEnableStrategy", "EnableCommand" })
             {
-                object command = GetPropertyValue(entry.SourceObject, propertyName);
-                if (TryExecuteCommand(command, commandParameter))
-                    return true;
+                details = "set property";
+                return true;
             }
 
-            return TryInvokeMethod(entry.SourceObject, "Enable", commandParameter)
-                || TryInvokeMethod(entry.SourceObject, "SetEnabled", true)
-                || TryInvokeMethod(entry.SourceObject, "SetIsEnabled", true);
+            object commandParameter = entry.EnableParameter ?? entry.SourceObject;
+            if (!ReferenceEquals(commandParameter, entry.SourceObject)
+                && (TrySetBooleanProperty(commandParameter, "Enabled", true)
+                    || TrySetBooleanProperty(commandParameter, "IsEnabled", true)))
+            {
+                details = "set parameter property";
+                return true;
+            }
+
+            details = "no enable path";
+            return false;
+        }
+
+        private IEnumerable<object> EnumerateStrategyCommandSources(StrategyUiEntry entry)
+        {
+            if (entry == null)
+                yield break;
+
+            HashSet<int> yielded = new HashSet<int>();
+            foreach (object candidate in new[]
+            {
+                entry.PreferredCommandSource,
+                entry.SourceObject,
+                GetFieldValue(strategiesGridRoot, "properties"),
+                strategiesGridRoot,
+                GetPropertyValue(controlCenterWindow, "DataContext"),
+                controlCenterWindow
+            })
+            {
+                if (candidate == null)
+                    continue;
+
+                int id = RuntimeHelpers.GetHashCode(candidate);
+                if (!yielded.Add(id))
+                    continue;
+
+                yield return candidate;
+            }
         }
 
         private IEnumerable<StrategyUiEntry> EnumerateStrategyEntries()
         {
             List<StrategyUiEntry> results = new List<StrategyUiEntry>();
             HashSet<int> visited = new HashSet<int>();
+
+            if (strategiesGridRoot != null)
+            {
+                object gridProperties = GetFieldValue(strategiesGridRoot, "properties");
+                if (strategiesGridRoot is DependencyObject strategyElement)
+                    CollectStrategyEntriesFromElement(strategyElement, results, visited);
+                CollectStrategyEntriesFromObject(strategiesGridRoot, results, visited, 0);
+                CollectStrategyEntriesFromObject(GetPropertyValue(strategiesGridRoot, "DataContext"), results, visited, 0);
+                CollectStrategyEntriesFromObject(GetPropertyValue(strategiesGridRoot, "Strategies"), results, visited, 0);
+                CollectStrategyEntriesFromObject(GetPropertyValue(strategiesGridRoot, "AvailableStrategies"), results, visited, 0);
+                CollectStrategyEntriesFromObject(gridProperties, results, visited, 0);
+                CollectStrategyEntriesFromObject(GetPropertyValue(gridProperties, "Strategies"), results, visited, 0);
+                CollectStrategyEntriesFromObject(GetPropertyValue(gridProperties, "AvailableStrategies"), results, visited, 0);
+                CollectStrategyEntriesFromObject(GetPropertyValue(gridProperties, "CachedStrategies"), results, visited, 0);
+            }
 
             if (controlCenterWindow != null)
             {
@@ -2758,6 +3173,42 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
 
             return deduped.Values;
+        }
+
+        private FrameworkElement FindDescendantByTypeName(DependencyObject root, string typeNameFragment)
+        {
+            if (root == null || string.IsNullOrWhiteSpace(typeNameFragment))
+                return null;
+
+            int childCount;
+            try
+            {
+                childCount = VisualTreeHelper.GetChildrenCount(root);
+            }
+            catch
+            {
+                return null;
+            }
+
+            for (int i = 0; i < childCount; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                FrameworkElement element = child as FrameworkElement;
+                if (element != null)
+                {
+                    string fullTypeName = element.GetType().FullName ?? string.Empty;
+                    string shortTypeName = element.GetType().Name ?? string.Empty;
+                    if (fullTypeName.IndexOf(typeNameFragment, StringComparison.OrdinalIgnoreCase) >= 0
+                        || shortTypeName.IndexOf(typeNameFragment, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return element;
+                }
+
+                FrameworkElement nested = FindDescendantByTypeName(child, typeNameFragment);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
         }
 
         private void CollectStrategyEntriesFromElement(DependencyObject element, List<StrategyUiEntry> results, HashSet<int> visited)
@@ -2828,6 +3279,56 @@ namespace NinjaTrader.NinjaScript.AddOns
 
                 CollectStrategyEntriesFromObject(value, results, visited, depth + 1);
             }
+
+            if (depth <= 2)
+                CollectStrategyEntriesFromPrivateMembers(candidate, results, visited, depth);
+        }
+
+        private void CollectStrategyEntriesFromPrivateMembers(object candidate, List<StrategyUiEntry> results, HashSet<int> visited, int depth)
+        {
+            if (candidate == null)
+                return;
+
+            BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+            foreach (FieldInfo field in candidate.GetType().GetFields(flags))
+            {
+                if (!ShouldInspectMember(field.Name, field.FieldType))
+                    continue;
+
+                object value;
+                try
+                {
+                    value = field.GetValue(candidate);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                CollectStrategyEntriesFromObject(value, results, visited, depth + 1);
+            }
+
+            foreach (PropertyInfo property in candidate.GetType().GetProperties(flags))
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length > 0)
+                    continue;
+
+                if (!ShouldInspectMember(property.Name, property.PropertyType))
+                    continue;
+
+                object value;
+                try
+                {
+                    value = property.GetValue(candidate, null);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                CollectStrategyEntriesFromObject(value, results, visited, depth + 1);
+            }
         }
 
         private StrategyUiEntry TryBuildStrategyUiEntry(object candidate)
@@ -2842,6 +3343,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                 ?? GetNullableBoolean(candidate, "IsEnabled");
 
             string displayName = BuildStrategyDisplayName(candidate, strategyObject);
+            string strategyName = FirstNonEmpty(
+                GetStringValue(strategyObject, "DisplayName"),
+                GetStringValue(strategyObject, "Name"),
+                GetStringValue(candidate, "DisplayName"),
+                GetStringValue(candidate, "Name"),
+                GetStringValue(candidate, "StrategyName"));
             string key = BuildStrategyKey(candidate, strategyObject, displayName);
 
             object enableCommand = GetPropertyValue(candidate, "EnableStrategyCommand")
@@ -2865,9 +3372,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             {
                 Key = key,
                 DisplayName = displayName,
+                StrategyName = strategyName,
                 IsEnabled = isEnabled,
                 EnableCommand = enableCommand,
                 EnableParameter = enableParameter,
+                PreferredCommandSource = GetFieldValue(strategiesGridRoot, "properties") ?? strategiesGridRoot,
                 SourceObject = candidate
             };
         }
@@ -2960,6 +3469,7 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             string lower = propertyName.ToLowerInvariant();
             return lower.Contains("strategy")
+                || lower.Contains("propert")
                 || lower.Contains("data")
                 || lower.Contains("context")
                 || lower.Contains("item")
@@ -2970,6 +3480,33 @@ namespace NinjaTrader.NinjaScript.AddOns
                 || lower.Contains("child")
                 || lower.Contains("selected")
                 || lower.Contains("tab");
+        }
+
+        private static bool ShouldInspectMember(string memberName, Type memberType)
+        {
+            if (string.IsNullOrWhiteSpace(memberName) && memberType == null)
+                return false;
+
+            string lower = (memberName ?? string.Empty).ToLowerInvariant();
+            string typeName = memberType != null ? (memberType.FullName ?? string.Empty).ToLowerInvariant() : string.Empty;
+
+            return lower.Contains("strategy")
+                || lower.Contains("propert")
+                || lower.Contains("data")
+                || lower.Contains("context")
+                || lower.Contains("item")
+                || lower.Contains("entry")
+                || lower.Contains("row")
+                || lower.Contains("record")
+                || lower.Contains("source")
+                || lower.Contains("view")
+                || lower.Contains("grid")
+                || typeName.Contains("strategy")
+                || typeName.Contains("collection")
+                || typeName.Contains("enumerable")
+                || typeName.Contains("record")
+                || typeName.Contains("view")
+                || typeName.Contains("grid");
         }
 
         private static bool IsSimpleType(Type type)
@@ -2994,6 +3531,25 @@ namespace NinjaTrader.NinjaScript.AddOns
             try
             {
                 return property.GetValue(target, null);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static object GetFieldValue(object target, string fieldName)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(fieldName))
+                return null;
+
+            FieldInfo field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field == null)
+                return null;
+
+            try
+            {
+                return field.GetValue(target);
             }
             catch
             {
@@ -3030,6 +3586,38 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             try
             {
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TrySetReferenceProperty(object target, string propertyName, object value)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(propertyName))
+                return false;
+
+            PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property == null || !property.CanWrite || property.GetIndexParameters().Length > 0)
+                return false;
+
+            try
+            {
+                if (value == null)
+                {
+                    if (property.PropertyType.IsValueType && Nullable.GetUnderlyingType(property.PropertyType) == null)
+                        return false;
+
+                    property.SetValue(target, null, null);
+                    return true;
+                }
+
+                if (!property.PropertyType.IsInstanceOfType(value))
+                    return false;
+
                 property.SetValue(target, value, null);
                 return true;
             }
@@ -3292,6 +3880,15 @@ namespace NinjaTrader.NinjaScript.AddOns
                 connectionsMenuItem = FindTopLevelMenuItem(controlCenter, "connectionsMenuItem", "Connections");
             if (connectionsMenuItem == null)
                 connectionsMenuItem = FindTopLevelMenuItem(controlCenter, "mnuConnections", "Connections");
+
+            if (strategiesGridRoot == null)
+            {
+                strategiesGridRoot = FindNamedDescendant<FrameworkElement>(controlCenter, "grdStrategies")
+                    ?? (object)FindNamedDescendant<FrameworkElement>(controlCenter, "gridStrategies")
+                    ?? FindDescendantByTypeName(controlCenter, "StrategiesGrid");
+                if (strategiesGridRoot != null)
+                    LogToOutput($"🧩 Cached strategies grid root: {strategiesGridRoot.GetType().FullName}");
+            }
 
             if (autoEdgeMenuItem == null)
             {
@@ -3757,7 +4354,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             stack.Children.Add(BuildMonitoringSection());
             stack.Children.Add(BuildSection(
                 "Recovery",
-                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected. This also controls strategy re-enable after reconnect."));
+                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected. This also controls recovery after reconnect."));
             stack.Children.Add(BuildLabeledTextBox(
                 "Reconnect Initial Delay Seconds",
                 "Delay before the first reconnect attempt after a problem is detected. Minimum 1.",
@@ -3788,10 +4385,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 out dataFeedReportingCheckBox,
                 "Data Feed Reporting",
                 "Watch the instruments below and report when market data stops updating."));
-            panel.Children.Add(BuildHiddenElement(BuildIndentedContent(BuildLabeledTextBox(
+            panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(
                 "Watchdog Timeout Seconds",
                 "How long an instrument can go without a `Last` tick before it is treated as stalled. Minimum 1.",
-                out watchdogTimeoutTextBox))));
+                out watchdogTimeoutTextBox)));
             panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(
                 "Monitored Instruments CSV",
                 "Comma-separated instrument names to watch for feed stalls, for example `ES 06-26,NQ 06-26`.",
@@ -4063,10 +4660,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 BotToken = botTokenTextBox.Text,
                 ChatId = chatIdTextBox.Text,
                 DataFeedReporting = dataFeedReportingCheckBox.IsChecked == true,
-                WatchdogDataTimeoutSeconds = ParseIntOrDefault(watchdogTimeoutTextBox.Text, 60),
+                WatchdogDataTimeoutSeconds = ParseIntOrDefault(watchdogTimeoutTextBox.Text, 10),
                 HeartbeatReporting = heartbeatReportingCheckBox.IsChecked == true,
                 HeartbeatFilePath = heartbeatFilePathTextBox.Text,
-                HeartbeatTimeoutSeconds = ParseIntOrDefault(heartbeatTimeoutTextBox.Text, 60),
+                HeartbeatTimeoutSeconds = ParseIntOrDefault(heartbeatTimeoutTextBox.Text, 10),
                 RunHeadlessWhenWindowClosed = runHeadlessCheckBox.IsChecked == true,
                 AutoReconnectEnabled = autoReconnectCheckBox.IsChecked == true,
                 ReconnectInitialDelaySeconds = ParseIntOrDefault(reconnectInitialDelayTextBox.Text, 10),
