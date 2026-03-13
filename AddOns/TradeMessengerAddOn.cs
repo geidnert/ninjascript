@@ -4358,7 +4358,7 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             simulateFeedStallButton = new Button { Content = "Manual Stall: Off", MinWidth = 150, Margin = new Thickness(0, 0, 8, 0) };
             simulateFeedStallButton.Click += OnSimulateFeedStallClick;
-            buttons.Children.Add(simulateFeedStallButton);
+            buttons.Children.Add(BuildHiddenElement(simulateFeedStallButton));
 
             Button closeButton = new Button { Content = "Close", MinWidth = 90 };
             closeButton.Click += (_, __) => Close();
