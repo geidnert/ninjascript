@@ -162,8 +162,10 @@ namespace NinjaTrader.NinjaScript.AddOns
             else if (State == State.Active)
             {
                 Instance = this;
+                LogToOutput($"🚀 TradeMessenger OnStateChange Active. LicenseValidated={licenseValidated}");
                 if (!licenseValidated)
                 {
+                    LogToOutput($"⚠️ TradeMessenger license invalid: {licenseFailureMessage}");
                     StopMonitoring();
                     RemoveMenuItem();
                     ShowLicenseFailureMessage();
@@ -189,6 +191,8 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             if (!licenseValidated)
                 return;
+
+            LogToOutput($"🪟 OnWindowCreated: type={window?.GetType().FullName}, title={window?.Title}");
 
             if (LooksLikeControlCenterWindow(window))
             {
@@ -227,11 +231,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             botToken = string.Empty;
             chatId = string.Empty;
             dataFeedReporting = true;
-            watchdogDataTimeoutSeconds = 10;
+            watchdogDataTimeoutSeconds = 60;
             heartbeatReporting = true;
-            heartbeatTimeoutSeconds = 10;
+            heartbeatTimeoutSeconds = 60;
             runHeadlessWhenWindowClosed = true;
-            autoReconnectEnabled = true;
+            autoReconnectEnabled = false;
             reconnectInitialDelaySeconds = 10;
             reconnectMaxDelaySeconds = 120;
             reconnectMaxAttempts = 0;
@@ -487,12 +491,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                 "BotToken=",
                 "ChatId=",
                 "DataFeedReporting=true",
-                "WatchdogDataTimeoutSeconds=10",
+                "WatchdogDataTimeoutSeconds=60",
                 "HeartbeatReporting=true",
                 "HeartbeatFilePath=" + heartbeatFilePath,
-                "HeartbeatTimeoutSeconds=10",
+                "HeartbeatTimeoutSeconds=60",
                 "RunHeadlessWhenWindowClosed=true",
-                "AutoReconnectEnabled=true",
+                "AutoReconnectEnabled=false",
                 "ReconnectInitialDelaySeconds=10",
                 "ReconnectMaxDelaySeconds=120",
                 "ReconnectMaxAttempts=0",
@@ -3841,8 +3845,36 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void LogToOutput(string message)
         {
+            if (string.IsNullOrWhiteSpace(message))
+                return;
+
             if (debug)
-                NinjaTrader.Code.Output.Process(message, PrintTo.OutputTab2);
+            {
+                try
+                {
+                    NinjaTrader.Code.Output.Process(message, PrintTo.OutputTab2);
+                }
+                catch
+                {
+                }
+            }
+
+            if (message.StartsWith("🚀 TradeMessenger", StringComparison.Ordinal)
+                || message.StartsWith("🪟 OnWindowCreated", StringComparison.Ordinal)
+                || message.StartsWith("🧭 EnsureMenuItem", StringComparison.Ordinal)
+                || message.StartsWith("⚠️ EnsureMenuItem", StringComparison.Ordinal)
+                || message.StartsWith("✅ EnsureMenuItem", StringComparison.Ordinal)
+                || message.StartsWith("ℹ️ EnsureMenuItem", StringComparison.Ordinal)
+                || message.StartsWith("⚠️ TradeMessenger license invalid", StringComparison.Ordinal))
+            {
+                try
+                {
+                    Log(message, LogLevel.Information);
+                }
+                catch
+                {
+                }
+            }
         }
 
         private static bool ParseBool(string value, bool fallback)
@@ -3865,14 +3897,22 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void EnsureMenuItem(ControlCenter controlCenter)
         {
+            LogToOutput("🧭 EnsureMenuItem called.");
             if (!licenseValidated)
+            {
+                LogToOutput("⚠️ EnsureMenuItem aborted: license invalid.");
                 return;
+            }
 
             if (launcherMenuItem != null)
+            {
+                LogToOutput("ℹ️ EnsureMenuItem skipped: launcherMenuItem already exists.");
                 return;
+            }
 
             if (newMenuItem == null)
                 newMenuItem = FindTopLevelMenuItem(controlCenter, "newMenuItem", "New");
+            LogToOutput(newMenuItem == null ? "⚠️ EnsureMenuItem: New menu not found." : "✅ EnsureMenuItem: New menu found.");
             if (newMenuItem == null)
                 return;
 
@@ -3895,12 +3935,17 @@ namespace NinjaTrader.NinjaScript.AddOns
                 autoEdgeMenuItem = FindChildMenuItem(newMenuItem, "AutoEdge");
                 if (autoEdgeMenuItem == null)
                 {
+                    LogToOutput("ℹ️ EnsureMenuItem: AutoEdge submenu not found, creating it.");
                     autoEdgeMenuItem = new NTMenuItem
                     {
                         Header = "AutoEdge",
                         Style = Application.Current.TryFindResource("MainMenuItem") as Style
                     };
                     newMenuItem.Items.Add(autoEdgeMenuItem);
+                }
+                else
+                {
+                    LogToOutput("✅ EnsureMenuItem: AutoEdge submenu found.");
                 }
             }
 
@@ -3911,6 +3956,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             };
             launcherMenuItem.Click += OnLauncherMenuItemClick;
             autoEdgeMenuItem.Items.Add(launcherMenuItem);
+            LogToOutput("✅ EnsureMenuItem: Trade Messenger menu item added under New -> AutoEdge.");
         }
 
         private NTMenuItem FindTopLevelMenuItem(DependencyObject parent, string expectedName, string expectedHeader)
@@ -4239,7 +4285,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             heartbeatFilePathTextBox.Text = settings.HeartbeatFilePath ?? string.Empty;
             heartbeatTimeoutTextBox.Text = settings.HeartbeatTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
             runHeadlessCheckBox.IsChecked = settings.RunHeadlessWhenWindowClosed;
-            autoReconnectCheckBox.IsChecked = settings.AutoReconnectEnabled;
+            autoReconnectCheckBox.IsChecked = false;
             reconnectInitialDelayTextBox.Text = settings.ReconnectInitialDelaySeconds.ToString(CultureInfo.InvariantCulture);
             reconnectMaxDelayTextBox.Text = settings.ReconnectMaxDelaySeconds.ToString(CultureInfo.InvariantCulture);
             reconnectMaxAttemptsTextBox.Text = settings.ReconnectMaxAttempts.ToString(CultureInfo.InvariantCulture);
@@ -4352,21 +4398,21 @@ namespace NinjaTrader.NinjaScript.AddOns
                 out showExitCheckBox, "Send Exit Messages", "Send alerts when a filled order closes or reduces a position."));
 
             stack.Children.Add(BuildMonitoringSection());
-            stack.Children.Add(BuildSection(
+            stack.Children.Add(BuildHiddenElement(BuildSection(
                 "Recovery",
-                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected. This also controls recovery after reconnect."));
-            stack.Children.Add(BuildLabeledTextBox(
+                out autoReconnectCheckBox, "Auto Reconnect", "Automatically retry the selected connection when a disconnect or feed stall is detected. This also controls recovery after reconnect.")));
+            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
                 "Reconnect Initial Delay Seconds",
                 "Delay before the first reconnect attempt after a problem is detected. Minimum 1.",
-                out reconnectInitialDelayTextBox));
-            stack.Children.Add(BuildLabeledTextBox(
+                out reconnectInitialDelayTextBox)));
+            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
                 "Reconnect Max Delay Seconds",
                 "Maximum backoff delay between reconnect attempts. Must be at least the initial delay.",
-                out reconnectMaxDelayTextBox));
-            stack.Children.Add(BuildLabeledTextBox(
+                out reconnectMaxDelayTextBox)));
+            stack.Children.Add(BuildHiddenElement(BuildLabeledTextBox(
                 "Reconnect Max Attempts (0 = unlimited)",
                 "Maximum reconnect tries before stopping. Use 0 to keep retrying indefinitely.",
-                out reconnectMaxAttemptsTextBox));
+                out reconnectMaxAttemptsTextBox)));
 
             stack.Children.Add(BuildSectionHeader("Filters"));
             stack.Children.Add(BuildLabeledTextBox("Monitored Connection Name", "Exact NinjaTrader connection name to monitor, for example `Rithmic`. Leave blank to include all connections. This is optional if account filtering alone is enough.", out monitoredConnectionTextBox));
@@ -4385,10 +4431,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 out dataFeedReportingCheckBox,
                 "Data Feed Reporting",
                 "Watch the instruments below and report when market data stops updating."));
-            panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(
+            panel.Children.Add(BuildHiddenElement(BuildIndentedContent(BuildLabeledTextBox(
                 "Watchdog Timeout Seconds",
                 "How long an instrument can go without a `Last` tick before it is treated as stalled. Minimum 1.",
-                out watchdogTimeoutTextBox)));
+                out watchdogTimeoutTextBox))));
             panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(
                 "Monitored Instruments CSV",
                 "Comma-separated instrument names to watch for feed stalls, for example `ES 06-26,NQ 06-26`.",
@@ -4660,12 +4706,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                 BotToken = botTokenTextBox.Text,
                 ChatId = chatIdTextBox.Text,
                 DataFeedReporting = dataFeedReportingCheckBox.IsChecked == true,
-                WatchdogDataTimeoutSeconds = ParseIntOrDefault(watchdogTimeoutTextBox.Text, 10),
+                WatchdogDataTimeoutSeconds = ParseIntOrDefault(watchdogTimeoutTextBox.Text, 60),
                 HeartbeatReporting = heartbeatReportingCheckBox.IsChecked == true,
                 HeartbeatFilePath = heartbeatFilePathTextBox.Text,
-                HeartbeatTimeoutSeconds = ParseIntOrDefault(heartbeatTimeoutTextBox.Text, 10),
+                HeartbeatTimeoutSeconds = ParseIntOrDefault(heartbeatTimeoutTextBox.Text, 60),
                 RunHeadlessWhenWindowClosed = runHeadlessCheckBox.IsChecked == true,
-                AutoReconnectEnabled = autoReconnectCheckBox.IsChecked == true,
+                AutoReconnectEnabled = false,
                 ReconnectInitialDelaySeconds = ParseIntOrDefault(reconnectInitialDelayTextBox.Text, 10),
                 ReconnectMaxDelaySeconds = ParseIntOrDefault(reconnectMaxDelayTextBox.Text, 120),
                 ReconnectMaxAttempts = ParseIntOrDefault(reconnectMaxAttemptsTextBox.Text, 0),
