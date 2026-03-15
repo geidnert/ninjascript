@@ -58,6 +58,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string HeartbeatStrategyName = "EVE";
         private const string LongEntrySignal = StrategySignalPrefix + "Long";
         private const string ShortEntrySignal = StrategySignalPrefix + "Short";
+        private const int RealtimeTemplateResetTicks = 4000;
 
         public enum WebhookProvider
         {
@@ -540,9 +541,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ── A. Daily reset ────────────────────────────────────────────────
             if (Time[0].Date != _lastResetDate)
             {
+                if (_lastResetDate != DateTime.MinValue)
+                    CancelPendingEntriesForSessionBoundary("Session reset");
                 _lastResetDate = Time[0].Date;
                 ResetSession();
             }
+
+            if (State == State.Realtime && Position.MarketPosition == MarketPosition.Flat)
+                ResetManagedProtectiveTemplatesForRealtime();
 
             // ── B. Apply pending OCO brackets ─────────────────────────────────
             if (_applyLongOCO)
@@ -682,6 +688,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ── E. Trading permission gate (per direction) ────────────────────
             var noNewTime = new TimeSpan(NoNewTradesHour, NoNewTradesMin, 0);
             bool isLastBarOfSession = IsLastBarOfSession();
+            if (isLastBarOfSession)
+                CancelPendingEntriesForSessionBoundary("Session end");
             bool canTradeLong  = _longORValid
                               && !inSkipWindow
                               && !inNewsSkipWindow
@@ -1179,7 +1187,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _pendingLongSL = sl;
                     _pendingLongTP = _longTarget;
                 }
-                _applyLongOCO  = true;
+                if (State == State.Realtime)
+                    _applyLongOCO = !TryApplyPendingProtectiveOrders(
+                        LongEntrySignal,
+                        MarketPosition.Long,
+                        price,
+                        ref _pendingLongSL,
+                        ref _pendingLongTP,
+                        "Long");
+                else
+                    _applyLongOCO = true;
 
                 DateTime slT1 = time;
                 DateTime slT2 = _orDate.Add(new TimeSpan(SessionEndHour, SessionEndMin, 0));
@@ -1216,7 +1233,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _pendingShortSL = sl;
                     _pendingShortTP = _shortTarget;
                 }
-                _applyShortOCO  = true;
+                if (State == State.Realtime)
+                    _applyShortOCO = !TryApplyPendingProtectiveOrders(
+                        ShortEntrySignal,
+                        MarketPosition.Short,
+                        price,
+                        ref _pendingShortSL,
+                        ref _pendingShortTP,
+                        "Short");
+                else
+                    _applyShortOCO = true;
 
                 DateTime slT1 = time;
                 DateTime slT2 = _orDate.Add(new TimeSpan(SessionEndHour, SessionEndMin, 0));
@@ -2018,6 +2044,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             _shortEntryArmed = false;
             _longFVGPending = false;
             _shortFVGPending = false;
+        }
+
+        private void CancelPendingEntriesForSessionBoundary(string reason)
+        {
+            bool hadPendingEntries =
+                _longEntryArmed ||
+                _shortEntryArmed ||
+                _longFVGPending ||
+                _shortFVGPending ||
+                _longLimitOrder != null ||
+                _shortLimitOrder != null;
+
+            if (!hadPendingEntries)
+                return;
+
+            TryCancelOrder(_longLimitOrder);
+            TryCancelOrder(_shortLimitOrder);
+
+            _longLimitOrder = null;
+            _shortLimitOrder = null;
+            _longEntryArmed = false;
+            _shortEntryArmed = false;
+            _longFVGPending = false;
+            _shortFVGPending = false;
+
+            LogDebug(Time[0] + " | " + reason + ": canceled carryover working entries.");
+        }
+
+        private void ResetManagedProtectiveTemplatesForRealtime()
+        {
+            SetStopLoss(LongEntrySignal, CalculationMode.Ticks, RealtimeTemplateResetTicks, false);
+            SetProfitTarget(LongEntrySignal, CalculationMode.Ticks, RealtimeTemplateResetTicks);
+            SetStopLoss(ShortEntrySignal, CalculationMode.Ticks, RealtimeTemplateResetTicks, false);
+            SetProfitTarget(ShortEntrySignal, CalculationMode.Ticks, RealtimeTemplateResetTicks);
         }
 
         private void ValidateRequiredPrimaryTimeframe(int requiredSeconds)
