@@ -438,6 +438,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseNewsSkip                     = true;
                 NewsBlockMinutes                = 1;
                 FlattenOnBlockedWindowTransition = true;
+                DebugLogging                    = true;
                 UseWebhooks                     = false;
                 WebhookProviderType             = WebhookProvider.TradersPost;
                 WebhookUrl                      = string.Empty;
@@ -2818,6 +2819,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool FlattenOnBlockedWindowTransition { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Debug Logging", Order = 6, GroupName = "00. General")]
+        public bool DebugLogging { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Use Webhooks", Description = "Enable outbound order webhooks.", Order = 0, GroupName = "52. Webhooks")]
         public bool UseWebhooks { get; set; }
 
@@ -4484,18 +4490,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ADX Drawdown From Peak", Order = 8, GroupName = "51. As: Short: Early Exit Filters")]
         public double AsShortAdxDrawdownFromPeak { get; set; }
 
+        public enum MAMode { SMA, EMA, Both }
+        public enum MichalEntryMode { Market, LimitOffset, LimitRetracement }
+        public enum MichalTPMode { FixedTicks, SwingPoint, CandleMultiple }
+        public enum BEMode2 { FixedTicks, CandlePercent }
+        public enum WebhookProvider { TradersPost, ProjectX }
 
         #endregion
     }
-
-
-    #region Enums
-
-    public enum MAMode { SMA, EMA, Both }
-    public enum MichalEntryMode { Market, LimitOffset, LimitRetracement }
-    public enum MichalTPMode { FixedTicks, SwingPoint, CandleMultiple }
-    public enum BEMode2 { FixedTicks, CandlePercent }
-    public enum WebhookProvider { TradersPost, ProjectX }
-
-    #endregion
 }
