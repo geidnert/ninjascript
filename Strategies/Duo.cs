@@ -3680,19 +3680,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 5)]
         public bool RequireEntryConfirmation { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "13. Risk", Order = 6)]
-        public bool EnableFlipBreakEven { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "13. Risk", Order = 6)]
+        internal bool EnableFlipBreakEven { get; set; }
 
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "13. Risk", Order = 7)]
-        public double FlipBreakEvenTriggerPoints { get; set; }
+        // [NinjaScriptProperty]
+        // [Range(0.0, double.MaxValue)]
+        // [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "13. Risk", Order = 7)]
+        internal double FlipBreakEvenTriggerPoints { get; set; }
 
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "13. Risk", Order = 8)]
-        public double FlipTakeProfitPoints { get; set; }
+        // [NinjaScriptProperty]
+        // [Range(0.0, double.MaxValue)]
+        // [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "13. Risk", Order = 8)]
+        internal double FlipTakeProfitPoints { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 9)]
