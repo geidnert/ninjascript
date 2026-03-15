@@ -918,13 +918,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (GetLongEntryMethod())
             {
                 case NQOREntryMethod105.MarketOnTrigger:
-                    if (!PrepareLongProtectiveTemplate(Close[0], "Long market"))
-                        return;
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], GetLongContracts()))
                     {
                         LogDebug(Time[0] + " | Long entry confirmation declined.");
                         return;
                     }
+                    _pendingLongSL = CalcLongSL(Close[0]);
+                    _pendingLongTP = _longTarget;
+                    _applyLongOCO  = true;
                     EnterLong(GetLongContracts(), LongEntrySignal);
                     _longEntryArmed = true;
                     LogDebug(Time[0] + " | Long MARKET order submitted  [B" + _longActiveBucket + "]");
@@ -936,8 +937,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double limitPx  = _longTarget - retDist;
 
                     if (!CanPlaceLongLimitSafely(limitPx, "Long re-arm"))
-                        return;
-                    if (!PrepareLongProtectiveTemplate(limitPx, "Long retracement"))
                         return;
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", limitPx, GetLongContracts()))
                     {
@@ -982,13 +981,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (GetShortEntryMethod())
             {
                 case NQOREntryMethod105.MarketOnTrigger:
-                    if (!PrepareShortProtectiveTemplate(Close[0], "Short market"))
-                        return;
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], GetShortContracts()))
                     {
                         LogDebug(Time[0] + " | Short entry confirmation declined.");
                         return;
                     }
+                    _pendingShortSL = CalcShortSL(Close[0]);
+                    _pendingShortTP = _shortTarget;
+                    _applyShortOCO  = true;
                     EnterShort(GetShortContracts(), ShortEntrySignal);
                     _shortEntryArmed = true;
                     LogDebug(Time[0] + " | Short MARKET order submitted  [B" + _shortActiveBucket + "]");
@@ -1000,8 +1000,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double limitPx   = _shortTarget + retDist;
 
                     if (!CanPlaceShortLimitSafely(limitPx, "Short re-arm"))
-                        return;
-                    if (!PrepareShortProtectiveTemplate(limitPx, "Short retracement"))
                         return;
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", limitPx, GetShortContracts()))
                     {
@@ -1034,8 +1032,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px       = LongFVGEntryPrice(_longFVGBot, _longFVGTop, _longFVGMid);
             if (!CanPlaceLongLimitSafely(px, "Long FVG"))
                 return;
-            if (!PrepareLongProtectiveTemplate(px, "Long FVG"))
-                return;
             if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", px, GetLongContracts()))
             {
                 LogDebug(Time[0] + " | Long entry confirmation declined.");
@@ -1053,8 +1049,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px        = ShortFVGEntryPrice(_shortFVGBot, _shortFVGTop, _shortFVGMid);
             if (!CanPlaceShortLimitSafely(px, "Short FVG"))
                 return;
-            if (!PrepareShortProtectiveTemplate(px, "Short FVG"))
-                return;
             if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", px, GetShortContracts()))
             {
                 LogDebug(Time[0] + " | Short entry confirmation declined.");
@@ -1071,9 +1065,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // already on the wrong side, which can cause immediate unintended fills/rejections.
         private bool CanPlaceLongLimitSafely(double limitPrice, string context)
         {
-            if (Close[0] <= limitPrice)
+            double referencePrice = GetCurrentAsk();
+            if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
+                referencePrice = Close[0];
+
+            if (referencePrice <= limitPrice)
             {
-                LogDebug(Time[0] + " | " + context + " skipped – price " + Close[0]
+                LogDebug(Time[0] + " | " + context + " skipped – price " + referencePrice
                       + " already <= limit " + limitPrice
                       + "  [B" + _longActiveBucket + "]");
                 return false;
@@ -1084,9 +1082,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool CanPlaceShortLimitSafely(double limitPrice, string context)
         {
-            if (Close[0] >= limitPrice)
+            double referencePrice = GetCurrentBid();
+            if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
+                referencePrice = Close[0];
+
+            if (referencePrice >= limitPrice)
             {
-                LogDebug(Time[0] + " | " + context + " skipped – price " + Close[0]
+                LogDebug(Time[0] + " | " + context + " skipped – price " + referencePrice
                       + " already >= limit " + limitPrice
                       + "  [B" + _shortActiveBucket + "]");
                 return false;
@@ -1281,44 +1283,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (DebugLogging)
                 Print(message);
-        }
-
-        private bool PrepareLongProtectiveTemplate(double plannedEntryPrice, string context)
-        {
-            double sl = CalcLongSL(plannedEntryPrice);
-            double tp = _longTarget;
-            int targetTicks = Math.Max(0, PriceToTicks(Math.Abs(tp - plannedEntryPrice)));
-            if (!TrySanitizeProtectivePrices(MarketPosition.Long, plannedEntryPrice, sl, targetTicks, out sl, out tp))
-            {
-                LogDebug(Time[0] + " | " + context + " template sanitize failed. entry=" + plannedEntryPrice + " SL=" + sl + " TP=" + tp);
-                return false;
-            }
-
-            _pendingLongSL = sl;
-            _pendingLongTP = tp;
-            SetStopLoss(LongEntrySignal, CalculationMode.Price, _pendingLongSL, false);
-            if (targetTicks > 0)
-                SetProfitTarget(LongEntrySignal, CalculationMode.Price, _pendingLongTP);
-            return true;
-        }
-
-        private bool PrepareShortProtectiveTemplate(double plannedEntryPrice, string context)
-        {
-            double sl = CalcShortSL(plannedEntryPrice);
-            double tp = _shortTarget;
-            int targetTicks = Math.Max(0, PriceToTicks(Math.Abs(tp - plannedEntryPrice)));
-            if (!TrySanitizeProtectivePrices(MarketPosition.Short, plannedEntryPrice, sl, targetTicks, out sl, out tp))
-            {
-                LogDebug(Time[0] + " | " + context + " template sanitize failed. entry=" + plannedEntryPrice + " SL=" + sl + " TP=" + tp);
-                return false;
-            }
-
-            _pendingShortSL = sl;
-            _pendingShortTP = tp;
-            SetStopLoss(ShortEntrySignal, CalculationMode.Price, _pendingShortSL, false);
-            if (targetTicks > 0)
-                SetProfitTarget(ShortEntrySignal, CalculationMode.Price, _pendingShortTP);
-            return true;
         }
 
         private bool TryApplyPendingProtectiveOrders(string entrySignal, MarketPosition direction, double fillPrice, ref double pendingStop, ref double pendingTarget, string label)
