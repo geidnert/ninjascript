@@ -19,37 +19,46 @@ using NinjaTrader.NinjaScript.DrawingTools;
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
-    public enum NQOREntryMethod105
+    public class EVE : Strategy
     {
-        [Description("i)  Market order on trigger")]   MarketOnTrigger  = 0,
-        [Description("ii) Retracement limit order")]   RetracementLimit = 1,
-        [Description("iii) FVG limit order")]          FVGLimit         = 2
-    }
+        public EVE()
+        {
+            VendorLicense(1236);
+        }
+        
+        public enum NQOREntryMethod105
+        {
+            [Description("i)  Market order on trigger")]   MarketOnTrigger  = 0,
+            [Description("ii) Retracement limit order")]   RetracementLimit = 1,
+            [Description("iii) FVG limit order")]          FVGLimit         = 2
+        }
 
-    public enum NQORFVGEntry105
-    {
-        [Description("Top of FVG (first touch)")]  Top    = 0,
-        [Description("Midpoint of FVG")]           Mid    = 1,
-        [Description("Bottom of FVG (deepest)")]   Bottom = 2
-    }
+        public enum NQORFVGEntry105
+        {
+            [Description("Top of FVG (first touch)")]  Top    = 0,
+            [Description("Midpoint of FVG")]           Mid    = 1,
+            [Description("Bottom of FVG (deepest)")]   Bottom = 2
+        }
 
-    public enum NQORStopMethod105
-    {
-        [Description("i)   Fixed points")]     FixedPoints  = 0,
-        [Description("ii)  % of range")]       PercentRange = 1,
-        [Description("iii) Last swing point")] SwingPoint   = 2,
-        [Description("iv)  FVG candle")]       FVGCandle    = 3
-    }
+        public enum NQORStopMethod105
+        {
+            [Description("i)   Fixed points")]     FixedPoints  = 0,
+            [Description("ii)  % of range")]       PercentRange = 1,
+            [Description("iii) Last swing point")] SwingPoint   = 2,
+            [Description("iv)  FVG candle")]       FVGCandle    = 3
+        }
 
-    public enum NQORBEMethod105
-    {
-        [Description("Fixed points from entry")] FixedPoints = 0,
-        [Description("% of OR range")]           PercentOR   = 1
-    }
+        public enum NQORBEMethod105
+        {
+            [Description("Fixed points from entry")] FixedPoints = 0,
+            [Description("% of OR range")]           PercentOR   = 1
+        }
 
-    // =========================================================================
-    public class EVETesting : Strategy
-    {
+        private const string StrategySignalPrefix = "EVE";
+        private const string HeartbeatStrategyName = "EVE";
+        private const string LongEntrySignal = StrategySignalPrefix + "Long";
+        private const string ShortEntrySignal = StrategySignalPrefix + "Short";
+
         public enum WebhookProvider
         {
             TradersPost,
@@ -116,6 +125,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
         private int?     projectXLastOrderId;
         private string   projectXLastOrderContractId;
+        private StrategyHeartbeatReporter heartbeatReporter;
         private DateTime _lastResetDate = DateTime.MinValue;
         private int      _drawSeq;
         // ── Win / Loss – alternating state (shared) ───────────────────────────
@@ -266,9 +276,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Name        = "EVETesting";
-                Description = "EVETesting – Based on EVETesting-1008. Adds EnableTargetCancel toggle: when OFF, Section K is skipped entirely and limit orders sit until filled, session end, or skip window. Tests hypothesis that cancel/re-arm cycle adds no value.";
-                Description = "EVETesting v8 – v6: Re-arm logic hardened. v7: Per-bucket Max SL cap (all methods except Fixed).";
+                Name        = "EVE";
+                Description = "EVE public version.";
+                Description = "EVE public version.";
                 Calculate   = Calculate.OnBarClose;
 
                 EntriesPerDirection = 10;
@@ -293,11 +303,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CommonContracts   = 5;
                 AlternatingEnabled  = false;
                 ReEntryEnabled      = true;
-                EnableTargetCancel  = true;   // ON = original 1008 behaviour; OFF = orders sit until filled
+                EnableTargetCancel  = true;   // ON = AGGRESSIVE MODE by default; OFF = CALM MODE
+                RequireEntryConfirmation = false;
+                DebugLogging = false;
+                ShowORLines = false;
                 UseSkipTime = true;
                 CloseAtSkipStart = false;
                 CloseAtNewsStart = false;
-                UseNewsSkip = false;
+                UseNewsSkip = true;
                 NewsBlockMinutes = 1;
                 WebhookUrl = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
@@ -473,6 +486,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 ValidateRequiredPrimaryTimeframe(30);
                 ValidateRequiredPrimaryInstrument();
+                heartbeatReporter = new StrategyHeartbeatReporter(
+                    HeartbeatStrategyName,
+                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
                 projectXSessionToken = null;
                 projectXTokenAcquiredUtc = Core.Globals.MinDate;
                 projectXLastOrderId = null;
@@ -485,8 +501,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortB3SwingInd = Swing(ShortB3SwingStrength);
                 EnsureNewsDatesInitialized();
             }
+            else if (State == State.Realtime)
+            {
+                if (heartbeatReporter != null)
+                    heartbeatReporter.Start();
+            }
             else if (State == State.Terminated)
             {
+                if (heartbeatReporter != null)
+                {
+                    heartbeatReporter.Dispose();
+                    heartbeatReporter = null;
+                }
                 DisposeInfoBoxOverlay();
             }
         }
@@ -502,9 +528,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 CancelPendingEntriesForInvalidConfiguration();
                 if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong("InvalidConfigurationL", "LongEntry");
+                    ExitLong(BuildExitSignalName("InvalidConfigurationL"), GetOpenLongEntrySignal());
                 else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort("InvalidConfigurationS", "ShortEntry");
+                    ExitShort(BuildExitSignalName("InvalidConfigurationS"), GetOpenShortEntrySignal());
                 return;
             }
 
@@ -521,29 +547,49 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ── B. Apply pending OCO brackets ─────────────────────────────────
             if (_applyLongOCO)
             {
-                SetStopLoss("LongEntry",  CalculationMode.Price, _pendingLongSL,  false);
-                SetProfitTarget("LongEntry",  CalculationMode.Price, _pendingLongTP);
+                TryApplyPendingProtectiveOrders(
+                    LongEntrySignal,
+                    MarketPosition.Long,
+                    _longEntryPrice > 0 ? _longEntryPrice : Close[0],
+                    ref _pendingLongSL,
+                    ref _pendingLongTP,
+                    "Long");
                 _applyLongOCO = false;
             }
             if (_applyShortOCO)
             {
-                SetStopLoss("ShortEntry", CalculationMode.Price, _pendingShortSL, false);
-                SetProfitTarget("ShortEntry", CalculationMode.Price, _pendingShortTP);
+                TryApplyPendingProtectiveOrders(
+                    ShortEntrySignal,
+                    MarketPosition.Short,
+                    _shortEntryPrice > 0 ? _shortEntryPrice : Close[0],
+                    ref _pendingShortSL,
+                    ref _pendingShortTP,
+                    "Short");
                 _applyShortOCO = false;
             }
 
             // ── B2. Apply pending Break-Even SL updates ───────────────────────
             if (_applyLongBE)
             {
-                SetStopLoss("LongEntry", CalculationMode.Price, _pendingLongBESL, false);
+                TryApplyPendingBreakEvenStop(
+                    LongEntrySignal,
+                    MarketPosition.Long,
+                    _longEntryPrice,
+                    ref _pendingLongBESL,
+                    "Long");
                 _applyLongBE = false;
-                Print(Time[0] + " | ✦ Long SL moved to BE @ " + _pendingLongBESL);
+                LogDebug(Time[0] + " | ✦ Long SL moved to BE @ " + _pendingLongBESL);
             }
             if (_applyShortBE)
             {
-                SetStopLoss("ShortEntry", CalculationMode.Price, _pendingShortBESL, false);
+                TryApplyPendingBreakEvenStop(
+                    ShortEntrySignal,
+                    MarketPosition.Short,
+                    _shortEntryPrice,
+                    ref _pendingShortBESL,
+                    "Short");
                 _applyShortBE = false;
-                Print(Time[0] + " | ✦ Short SL moved to BE @ " + _pendingShortBESL);
+                LogDebug(Time[0] + " | ✦ Short SL moved to BE @ " + _pendingShortBESL);
             }
 
             // ── C. Force flatten at configured time ───────────────────────────
@@ -601,15 +647,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!_longORValid && !_shortORValid)
                     {
-                        Print(Time[0] + " | OR size " + range + " pts – no matching bucket for either direction. Session skipped.");
+                        LogDebug(Time[0] + " | OR size " + range + " pts – no matching bucket for either direction. Session skipped.");
                         _forceFlatDone = true;
                         return;
                     }
 
                     if (!_longORValid)
-                        Print(Time[0] + " | OR size " + range + " pts – no matching Long bucket. Long side skipped.");
+                        LogDebug(Time[0] + " | OR size " + range + " pts – no matching Long bucket. Long side skipped.");
                     if (!_shortORValid)
-                        Print(Time[0] + " | OR size " + range + " pts – no matching Short bucket. Short side skipped.");
+                        LogDebug(Time[0] + " | OR size " + range + " pts – no matching Short bucket. Short side skipped.");
 
                     // ── Compute levels using the active bucket's parameters ────
                     if (_longORValid)
@@ -625,7 +671,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     DrawSessionLines();
 
-                    Print(Time[0] + " | ═══ OR captured ═══"
+                    LogDebug(Time[0] + " | ═══ OR captured ═══"
                           + "  H=" + _orHigh + "  L=" + _orLow + "  Range=" + _orRange
                           + (_longORValid  ? " | Long  Bucket=" + _longActiveBucket  + "  Target=" + _longTarget  + "  Trigger=" + _longTrigger  : " | Long  skipped")
                           + (_shortORValid ? " | Short Bucket=" + _shortActiveBucket + "  Target=" + _shortTarget + "  Trigger=" + _shortTrigger : " | Short skipped"));
@@ -635,9 +681,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // ── E. Trading permission gate (per direction) ────────────────────
             var noNewTime = new TimeSpan(NoNewTradesHour, NoNewTradesMin, 0);
+            bool isLastBarOfSession = IsLastBarOfSession();
             bool canTradeLong  = _longORValid
                               && !inSkipWindow
                               && !inNewsSkipWindow
+                              && !isLastBarOfSession
                               && tod < noNewTime
                               && _longTradesToday     < GetLongMaxTradesPerDay()
                               && _longProfitableToday < GetLongMaxProfitableTrades()
@@ -646,6 +694,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool canTradeShort = _shortORValid
                               && !inSkipWindow
                               && !inNewsSkipWindow
+                              && !isLastBarOfSession
                               && tod < noNewTime
                               && _shortTradesToday     < GetShortMaxTradesPerDay()
                               && _shortProfitableToday < GetShortMaxProfitableTrades()
@@ -745,7 +794,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _longTriggerHit = true;
                 if (inSkipWindow)
                     _longTriggerHitDuringSkip = true;
-                Print(Time[0] + " | Long trigger crossed @ " + _longTrigger + "  [Bucket " + _longActiveBucket + "]");
+                LogDebug(Time[0] + " | Long trigger crossed @ " + _longTrigger + "  [Bucket " + _longActiveBucket + "]");
                 if (canTradeLong && !_longInTrade && !_shortInTrade)
                     TryArmLong();
             }
@@ -755,7 +804,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortTriggerHit = true;
                 if (inSkipWindow)
                     _shortTriggerHitDuringSkip = true;
-                Print(Time[0] + " | Short trigger crossed @ " + _shortTrigger + "  [Bucket " + _shortActiveBucket + "]");
+                LogDebug(Time[0] + " | Short trigger crossed @ " + _shortTrigger + "  [Bucket " + _shortActiveBucket + "]");
                 if (canTradeShort && !_shortInTrade && !_longInTrade)
                     TryArmShort();
             }
@@ -789,17 +838,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (Close[0] > _orHigh)
                 {
-                    Print(Time[0] + " | Long re-arm condition met – price closed above OR High ("
+                    LogDebug(Time[0] + " | Long re-arm condition met – price closed above OR High ("
                           + _orHigh + ")  [B" + _longActiveBucket + "] – attempting arm...");
                     TryArmLong();
                     if (_longEntryArmed)
                     {
                         _longRearmNeeded = false;
-                        Print(Time[0] + " | Long re-arm SUCCESS  [B" + _longActiveBucket + "]");
+                        LogDebug(Time[0] + " | Long re-arm SUCCESS  [B" + _longActiveBucket + "]");
                     }
                     else
                     {
-                        Print(Time[0] + " | Long re-arm deferred – TryArmLong blocked (price guard)  [B" + _longActiveBucket + "]");
+                        LogDebug(Time[0] + " | Long re-arm deferred – TryArmLong blocked (price guard)  [B" + _longActiveBucket + "]");
                     }
                 }
             }
@@ -807,17 +856,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (Close[0] < _orLow)
                 {
-                    Print(Time[0] + " | Short re-arm condition met – price closed below OR Low ("
+                    LogDebug(Time[0] + " | Short re-arm condition met – price closed below OR Low ("
                           + _orLow + ")  [B" + _shortActiveBucket + "] – attempting arm...");
                     TryArmShort();
                     if (_shortEntryArmed)
                     {
                         _shortRearmNeeded = false;
-                        Print(Time[0] + " | Short re-arm SUCCESS  [B" + _shortActiveBucket + "]");
+                        LogDebug(Time[0] + " | Short re-arm SUCCESS  [B" + _shortActiveBucket + "]");
                     }
                     else
                     {
-                        Print(Time[0] + " | Short re-arm deferred – TryArmShort blocked (price guard)  [B" + _shortActiveBucket + "]");
+                        LogDebug(Time[0] + " | Short re-arm deferred – TryArmShort blocked (price guard)  [B" + _shortActiveBucket + "]");
                     }
                 }
             }
@@ -833,7 +882,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _longEntryArmed = false;
                     _longFVGPending = false;
                     _longTriggerHit = false;
-                    Print(Time[0] + " | Long limit cancelled – target already reached");
+                    LogDebug(Time[0] + " | Long limit cancelled – target already reached");
                 }
                 if (_shortEntryArmed && _shortLimitOrder != null && Low[0] <= _shortTarget)
                 {
@@ -841,7 +890,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     _shortEntryArmed = false;
                     _shortFVGPending = false;
                     _shortTriggerHit = false;
-                    Print(Time[0] + " | Short limit cancelled – target already reached");
+                    LogDebug(Time[0] + " | Short limit cancelled – target already reached");
                 }
             }
 
@@ -854,25 +903,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void TryArmLong()
         {
             if (_longEntryArmed)                                      return;
+            if (IsLastBarOfSession())                                 return;
             if (_longTradesToday     >= GetLongMaxTradesPerDay())      return;
             if (_longProfitableToday >= GetLongMaxProfitableTrades())  return;
             if (_longLosingToday     >= GetLongMaxLosingTrades())      return;
 
             if (AlternatingEnabled && _lastWinDirection == 1)
             {
-                Print(Time[0] + " | Long blocked – alternating rule (last win was Long)");
+                LogDebug(Time[0] + " | Long blocked – alternating rule (last win was Long)");
                 return;
             }
 
             switch (GetLongEntryMethod())
             {
                 case NQOREntryMethod105.MarketOnTrigger:
-                    _pendingLongSL = CalcLongSL(Close[0]);
-                    _pendingLongTP = _longTarget;
-                    _applyLongOCO  = true;
-                    EnterLong(GetLongContracts(), "LongEntry");
+                    if (!PrepareLongProtectiveTemplate(Close[0], "Long market"))
+                        return;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], GetLongContracts()))
+                    {
+                        LogDebug(Time[0] + " | Long entry confirmation declined.");
+                        return;
+                    }
+                    EnterLong(GetLongContracts(), LongEntrySignal);
                     _longEntryArmed = true;
-                    Print(Time[0] + " | Long MARKET order submitted  [B" + _longActiveBucket + "]");
+                    LogDebug(Time[0] + " | Long MARKET order submitted  [B" + _longActiveBucket + "]");
                     break;
 
                 case NQOREntryMethod105.RetracementLimit:
@@ -882,10 +936,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!CanPlaceLongLimitSafely(limitPx, "Long re-arm"))
                         return;
+                    if (!PrepareLongProtectiveTemplate(limitPx, "Long retracement"))
+                        return;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", limitPx, GetLongContracts()))
+                    {
+                        LogDebug(Time[0] + " | Long entry confirmation declined.");
+                        return;
+                    }
 
-                    _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), limitPx, "LongEntry");
+                    _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), limitPx, LongEntrySignal);
                     _longEntryArmed = true;
-                    Print(Time[0] + " | Long RETRACEMENT limit @ " + limitPx
+                    LogDebug(Time[0] + " | Long RETRACEMENT limit @ " + limitPx
                           + "  (" + GetLongRetracePct() + "% of " + (_longTarget - _orHigh) + " pts)"
                           + "  [B" + _longActiveBucket + "]");
                     break;
@@ -897,7 +958,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     else
                     {
                         _longFVGPending = true;
-                        Print(Time[0] + " | Long FVG armed – scanning for FVG...  [B" + _longActiveBucket + "]");
+                        LogDebug(Time[0] + " | Long FVG armed – scanning for FVG...  [B" + _longActiveBucket + "]");
                     }
                     break;
             }
@@ -906,25 +967,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void TryArmShort()
         {
             if (_shortEntryArmed)                                       return;
+            if (IsLastBarOfSession())                                   return;
             if (_shortTradesToday     >= GetShortMaxTradesPerDay())      return;
             if (_shortProfitableToday >= GetShortMaxProfitableTrades())  return;
             if (_shortLosingToday     >= GetShortMaxLosingTrades())      return;
 
             if (AlternatingEnabled && _lastWinDirection == 2)
             {
-                Print(Time[0] + " | Short blocked – alternating rule (last win was Short)");
+                LogDebug(Time[0] + " | Short blocked – alternating rule (last win was Short)");
                 return;
             }
 
             switch (GetShortEntryMethod())
             {
                 case NQOREntryMethod105.MarketOnTrigger:
-                    _pendingShortSL = CalcShortSL(Close[0]);
-                    _pendingShortTP = _shortTarget;
-                    _applyShortOCO  = true;
-                    EnterShort(GetShortContracts(), "ShortEntry");
+                    if (!PrepareShortProtectiveTemplate(Close[0], "Short market"))
+                        return;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], GetShortContracts()))
+                    {
+                        LogDebug(Time[0] + " | Short entry confirmation declined.");
+                        return;
+                    }
+                    EnterShort(GetShortContracts(), ShortEntrySignal);
                     _shortEntryArmed = true;
-                    Print(Time[0] + " | Short MARKET order submitted  [B" + _shortActiveBucket + "]");
+                    LogDebug(Time[0] + " | Short MARKET order submitted  [B" + _shortActiveBucket + "]");
                     break;
 
                 case NQOREntryMethod105.RetracementLimit:
@@ -934,10 +1000,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                     if (!CanPlaceShortLimitSafely(limitPx, "Short re-arm"))
                         return;
+                    if (!PrepareShortProtectiveTemplate(limitPx, "Short retracement"))
+                        return;
+                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", limitPx, GetShortContracts()))
+                    {
+                        LogDebug(Time[0] + " | Short entry confirmation declined.");
+                        return;
+                    }
 
-                    _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), limitPx, "ShortEntry");
+                    _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), limitPx, ShortEntrySignal);
                     _shortEntryArmed = true;
-                    Print(Time[0] + " | Short RETRACEMENT limit @ " + limitPx
+                    LogDebug(Time[0] + " | Short RETRACEMENT limit @ " + limitPx
                           + "  (" + GetShortRetracePct() + "% of " + (_orLow - _shortTarget) + " pts)"
                           + "  [B" + _shortActiveBucket + "]");
                     break;
@@ -949,7 +1022,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     else
                     {
                         _shortFVGPending = true;
-                        Print(Time[0] + " | Short FVG armed – scanning for FVG...  [B" + _shortActiveBucket + "]");
+                        LogDebug(Time[0] + " | Short FVG armed – scanning for FVG...  [B" + _shortActiveBucket + "]");
                     }
                     break;
             }
@@ -960,9 +1033,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px       = LongFVGEntryPrice(_longFVGBot, _longFVGTop, _longFVGMid);
             if (!CanPlaceLongLimitSafely(px, "Long FVG"))
                 return;
-            _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), px, "LongEntry");
+            if (!PrepareLongProtectiveTemplate(px, "Long FVG"))
+                return;
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", px, GetLongContracts()))
+            {
+                LogDebug(Time[0] + " | Long entry confirmation declined.");
+                return;
+            }
+            _longLimitOrder = EnterLongLimit(0, true, GetLongContracts(), px, LongEntrySignal);
             _longEntryArmed = true;
-            Print(Time[0] + " | Long FVG LIMIT @ " + px
+            LogDebug(Time[0] + " | Long FVG LIMIT @ " + px
                   + "  (gap: " + _longFVGBot + "–" + _longFVGTop + ")"
                   + "  [B" + _longActiveBucket + "]");
         }
@@ -972,9 +1052,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double px        = ShortFVGEntryPrice(_shortFVGBot, _shortFVGTop, _shortFVGMid);
             if (!CanPlaceShortLimitSafely(px, "Short FVG"))
                 return;
-            _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), px, "ShortEntry");
+            if (!PrepareShortProtectiveTemplate(px, "Short FVG"))
+                return;
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", px, GetShortContracts()))
+            {
+                LogDebug(Time[0] + " | Short entry confirmation declined.");
+                return;
+            }
+            _shortLimitOrder = EnterShortLimit(0, true, GetShortContracts(), px, ShortEntrySignal);
             _shortEntryArmed = true;
-            Print(Time[0] + " | Short FVG LIMIT @ " + px
+            LogDebug(Time[0] + " | Short FVG LIMIT @ " + px
                   + "  (gap: " + _shortFVGBot + "–" + _shortFVGTop + ")"
                   + "  [B" + _shortActiveBucket + "]");
         }
@@ -985,7 +1072,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (Close[0] <= limitPrice)
             {
-                Print(Time[0] + " | " + context + " skipped – price " + Close[0]
+                LogDebug(Time[0] + " | " + context + " skipped – price " + Close[0]
                       + " already <= limit " + limitPrice
                       + "  [B" + _longActiveBucket + "]");
                 return false;
@@ -998,7 +1085,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (Close[0] >= limitPrice)
             {
-                Print(Time[0] + " | " + context + " skipped – price " + Close[0]
+                LogDebug(Time[0] + " | " + context + " skipped – price " + Close[0]
                       + " already >= limit " + limitPrice
                       + "  [B" + _shortActiveBucket + "]");
                 return false;
@@ -1038,7 +1125,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (order == null)
                 return;
 
-            if (order.Name == "LongEntry")
+            if (IsLongEntryOrderName(order.Name))
             {
                 _longLimitOrder = order;
                 if (state == OrderState.Cancelled || state == OrderState.Rejected)
@@ -1048,7 +1135,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     SendWebhook("cancel");
                 }
             }
-            if (order.Name == "ShortEntry")
+            if (IsShortEntryOrderName(order.Name))
             {
                 _shortLimitOrder = order;
                 if (state == OrderState.Cancelled || state == OrderState.Rejected)
@@ -1068,7 +1155,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int executionQty = Math.Max(1, qty);
 
             // ── Long entry filled ─────────────────────────────────────────────
-            if (orderName == "LongEntry")
+            if (IsLongEntryOrderName(orderName))
             {
                 _longInTrade    = true;
                 _longEntryArmed = false;
@@ -1078,8 +1165,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _longTradesToday++;
 
                 double sl = CalcLongSL(price);
-                _pendingLongSL = sl;
-                _pendingLongTP = _longTarget;
+                double tp = _longTarget;
+                int targetTicks = Math.Max(0, PriceToTicks(Math.Abs(tp - price)));
+                if (TrySanitizeProtectivePrices(MarketPosition.Long, price, sl, targetTicks, out sl, out tp))
+                {
+                    _pendingLongSL = sl;
+                    _pendingLongTP = tp;
+                }
+                else
+                {
+                    _pendingLongSL = sl;
+                    _pendingLongTP = _longTarget;
+                }
                 _applyLongOCO  = true;
 
                 DateTime slT1 = time;
@@ -1087,15 +1184,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Draw.Line(this, "LongSL_" + (++_drawSeq), false,
                           slT1, sl, slT2, sl, Brushes.Red, DashStyleHelper.Dash, 2);
 
-                SendWebhook("buy", price, _longTarget, sl, exec.Order.OrderType == OrderType.Market, executionQty);
+                SendWebhook("buy", price, _pendingLongTP, sl, exec.Order.OrderType == OrderType.Market, executionQty);
 
-                Print(time + " | ► LONG FILLED @ " + price
-                      + "  SL=" + sl + "  TP=" + _longTarget
+                LogDebug(time + " | ► LONG FILLED @ " + price
+                      + "  SL=" + sl + "  TP=" + _pendingLongTP
                       + "  [B" + _longActiveBucket + "  trade " + _longTradesToday + "/" + GetLongMaxTradesPerDay() + "]");
             }
 
             // ── Short entry filled ────────────────────────────────────────────
-            else if (orderName == "ShortEntry")
+            else if (IsShortEntryOrderName(orderName))
             {
                 _shortInTrade    = true;
                 _shortEntryArmed = false;
@@ -1105,8 +1202,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 _shortTradesToday++;
 
                 double sl = CalcShortSL(price);
-                _pendingShortSL = sl;
-                _pendingShortTP = _shortTarget;
+                double tp = _shortTarget;
+                int targetTicks = Math.Max(0, PriceToTicks(Math.Abs(tp - price)));
+                if (TrySanitizeProtectivePrices(MarketPosition.Short, price, sl, targetTicks, out sl, out tp))
+                {
+                    _pendingShortSL = sl;
+                    _pendingShortTP = tp;
+                }
+                else
+                {
+                    _pendingShortSL = sl;
+                    _pendingShortTP = _shortTarget;
+                }
                 _applyShortOCO  = true;
 
                 DateTime slT1 = time;
@@ -1114,10 +1221,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Draw.Line(this, "ShortSL_" + (++_drawSeq), false,
                           slT1, sl, slT2, sl, Brushes.Red, DashStyleHelper.Dash, 2);
 
-                SendWebhook("sell", price, _shortTarget, sl, exec.Order.OrderType == OrderType.Market, executionQty);
+                SendWebhook("sell", price, _pendingShortTP, sl, exec.Order.OrderType == OrderType.Market, executionQty);
 
-                Print(time + " | ► SHORT FILLED @ " + price
-                      + "  SL=" + sl + "  TP=" + _shortTarget
+                LogDebug(time + " | ► SHORT FILLED @ " + price
+                      + "  SL=" + sl + "  TP=" + _pendingShortTP
                       + "  [B" + _shortActiveBucket + "  trade " + _shortTradesToday + "/" + GetShortMaxTradesPerDay() + "]");
             }
 
@@ -1141,8 +1248,263 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (string.IsNullOrWhiteSpace(orderName))
                 return false;
 
-            return orderName.Equals("LongEntry", StringComparison.OrdinalIgnoreCase)
-                || orderName.Equals("ShortEntry", StringComparison.OrdinalIgnoreCase);
+            return IsLongEntryOrderName(orderName) || IsShortEntryOrderName(orderName);
+        }
+
+        private bool IsLongEntryOrderName(string orderName)
+        {
+            return string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal);
+        }
+
+        private bool IsShortEntryOrderName(string orderName)
+        {
+            return string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal);
+        }
+
+        private string GetOpenLongEntrySignal()
+        {
+            return LongEntrySignal;
+        }
+
+        private string GetOpenShortEntrySignal()
+        {
+            return ShortEntrySignal;
+        }
+
+        private string BuildExitSignalName(string reason)
+        {
+            return StrategySignalPrefix + reason;
+        }
+
+        private void LogDebug(string message)
+        {
+            if (DebugLogging)
+                Print(message);
+        }
+
+        private bool PrepareLongProtectiveTemplate(double plannedEntryPrice, string context)
+        {
+            double sl = CalcLongSL(plannedEntryPrice);
+            double tp = _longTarget;
+            int targetTicks = Math.Max(0, PriceToTicks(Math.Abs(tp - plannedEntryPrice)));
+            if (!TrySanitizeProtectivePrices(MarketPosition.Long, plannedEntryPrice, sl, targetTicks, out sl, out tp))
+            {
+                LogDebug(Time[0] + " | " + context + " template sanitize failed. entry=" + plannedEntryPrice + " SL=" + sl + " TP=" + tp);
+                return false;
+            }
+
+            _pendingLongSL = sl;
+            _pendingLongTP = tp;
+            SetStopLoss(LongEntrySignal, CalculationMode.Price, _pendingLongSL, false);
+            if (targetTicks > 0)
+                SetProfitTarget(LongEntrySignal, CalculationMode.Price, _pendingLongTP);
+            return true;
+        }
+
+        private bool PrepareShortProtectiveTemplate(double plannedEntryPrice, string context)
+        {
+            double sl = CalcShortSL(plannedEntryPrice);
+            double tp = _shortTarget;
+            int targetTicks = Math.Max(0, PriceToTicks(Math.Abs(tp - plannedEntryPrice)));
+            if (!TrySanitizeProtectivePrices(MarketPosition.Short, plannedEntryPrice, sl, targetTicks, out sl, out tp))
+            {
+                LogDebug(Time[0] + " | " + context + " template sanitize failed. entry=" + plannedEntryPrice + " SL=" + sl + " TP=" + tp);
+                return false;
+            }
+
+            _pendingShortSL = sl;
+            _pendingShortTP = tp;
+            SetStopLoss(ShortEntrySignal, CalculationMode.Price, _pendingShortSL, false);
+            if (targetTicks > 0)
+                SetProfitTarget(ShortEntrySignal, CalculationMode.Price, _pendingShortTP);
+            return true;
+        }
+
+        private bool TryApplyPendingProtectiveOrders(string entrySignal, MarketPosition direction, double fillPrice, ref double pendingStop, ref double pendingTarget, string label)
+        {
+            int targetTicks = pendingTarget > 0 && fillPrice > 0
+                ? Math.Max(0, PriceToTicks(Math.Abs(pendingTarget - fillPrice)))
+                : 0;
+
+            double stopPrice;
+            double targetPrice;
+            if (!TrySanitizeProtectivePrices(direction, fillPrice, pendingStop, targetTicks, out stopPrice, out targetPrice))
+            {
+                LogDebug(Time[0] + " | " + label + " protective order sanitize failed. SL=" + pendingStop + " TP=" + pendingTarget + " fill=" + fillPrice);
+                return false;
+            }
+
+            if (Math.Abs(stopPrice - pendingStop) >= TickSize || (targetTicks > 0 && Math.Abs(targetPrice - pendingTarget) >= TickSize))
+            {
+                LogDebug(Time[0] + " | " + label + " protective orders adjusted to live market. SL " + pendingStop + " -> " + stopPrice
+                      + (targetTicks > 0 ? " | TP " + pendingTarget + " -> " + targetPrice : string.Empty));
+            }
+
+            pendingStop = stopPrice;
+            if (targetTicks > 0)
+                pendingTarget = targetPrice;
+
+            SetStopLoss(entrySignal, CalculationMode.Price, pendingStop, false);
+            if (targetTicks > 0)
+                SetProfitTarget(entrySignal, CalculationMode.Price, pendingTarget);
+
+            return true;
+        }
+
+        private bool TryApplyPendingBreakEvenStop(string entrySignal, MarketPosition direction, double fillPrice, ref double pendingStop, string label)
+        {
+            double stopPrice = pendingStop;
+            if (!TryFinalSanitizeStopForLiveMarket(direction, fillPrice, ref stopPrice))
+            {
+                LogDebug(Time[0] + " | " + label + " BE sanitize failed. SL=" + pendingStop + " fill=" + fillPrice);
+                return false;
+            }
+
+            if (Math.Abs(stopPrice - pendingStop) >= TickSize)
+                LogDebug(Time[0] + " | " + label + " BE adjusted to live market. SL " + pendingStop + " -> " + stopPrice);
+
+            pendingStop = stopPrice;
+            SetStopLoss(entrySignal, CalculationMode.Price, pendingStop, false);
+            return true;
+        }
+
+        private bool TrySanitizeStopPriceForCurrentMarket(MarketPosition positionDirection, double rawStopPrice, out double stopPrice)
+        {
+            stopPrice = 0;
+            if (rawStopPrice <= 0 || TickSize <= 0)
+                return false;
+
+            double minTick = TickSize;
+            double referencePrice = GetReferencePriceForStop(positionDirection);
+            if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
+                referencePrice = Close[0];
+
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(rawStopPrice);
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= referencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(referencePrice - minTick);
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                if (stopPrice <= referencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(referencePrice + minTick);
+            }
+            else
+            {
+                return false;
+            }
+
+            return stopPrice > 0 && !double.IsNaN(stopPrice) && !double.IsInfinity(stopPrice);
+        }
+
+        private double GetReferencePriceForStop(MarketPosition positionDirection)
+        {
+            if (positionDirection == MarketPosition.Long)
+            {
+                double bid = GetCurrentBid();
+                if (bid > 0)
+                    return bid;
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                double ask = GetCurrentAsk();
+                if (ask > 0)
+                    return ask;
+            }
+
+            return Close[0];
+        }
+
+        private bool TrySanitizeProtectivePrices(MarketPosition positionDirection, double fillPrice, double rawStopPrice, int rawTargetTicks, out double stopPrice, out double targetPrice)
+        {
+            stopPrice = 0;
+            targetPrice = 0;
+
+            if (fillPrice <= 0 || TickSize <= 0)
+                return false;
+
+            if (!TrySanitizeStopPriceForCurrentMarket(positionDirection, rawStopPrice, out stopPrice))
+                return false;
+
+            double marketPrice = Close[0];
+            double stopReferencePrice = GetReferencePriceForStop(positionDirection);
+            if (stopReferencePrice <= 0 || double.IsNaN(stopReferencePrice) || double.IsInfinity(stopReferencePrice))
+                stopReferencePrice = marketPrice;
+            double minTick = TickSize;
+            int targetTicks = Math.Max(0, rawTargetTicks);
+
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - minTick);
+                if (stopPrice >= stopReferencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, stopReferencePrice - minTick));
+
+                if (targetTicks > 0)
+                {
+                    targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + (targetTicks * TickSize));
+                    if (targetPrice <= fillPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + minTick);
+                    if (targetPrice <= marketPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, marketPrice + minTick));
+                }
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                if (stopPrice <= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice + minTick);
+                if (stopPrice <= stopReferencePrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, stopReferencePrice + minTick));
+
+                if (targetTicks > 0)
+                {
+                    targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - (targetTicks * TickSize));
+                    if (targetPrice >= fillPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice - minTick);
+                    if (targetPrice >= marketPrice)
+                        targetPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, marketPrice - minTick));
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryFinalSanitizeStopForLiveMarket(MarketPosition positionDirection, double fillPrice, ref double stopPrice)
+        {
+            if (positionDirection != MarketPosition.Long && positionDirection != MarketPosition.Short)
+                return false;
+
+            double minTick = TickSize;
+            if (minTick <= 0)
+                return false;
+
+            double reference = GetReferencePriceForStop(positionDirection);
+            if (reference <= 0 || double.IsNaN(reference) || double.IsInfinity(reference))
+                reference = Close[0];
+
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+
+            if (positionDirection == MarketPosition.Long)
+            {
+                if (stopPrice >= reference)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(reference - minTick);
+                if (stopPrice >= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Min(fillPrice - minTick, stopPrice));
+            }
+            else
+            {
+                if (stopPrice <= reference)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(reference + minTick);
+                if (stopPrice <= fillPrice)
+                    stopPrice = Instrument.MasterInstrument.RoundToTickSize(Math.Max(fillPrice + minTick, stopPrice));
+            }
+
+            return stopPrice > 0 && !double.IsNaN(stopPrice) && !double.IsInfinity(stopPrice);
         }
 
         protected override void OnPositionUpdate(Position pos, double avgPx,
@@ -1165,18 +1527,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (isScratch)
                 {
-                    Print(Time[0] + " | Long closed – SCRATCH (BE stop)");
+                    LogDebug(Time[0] + " | Long closed – SCRATCH (BE stop)");
                 }
                 else if (pnl > 0)
                 {
                     _longProfitableToday++;
                     _lastWinDirection = 1;
-                    Print(Time[0] + " | Long closed – WIN  (#" + _longProfitableToday + " profitable today)");
+                    LogDebug(Time[0] + " | Long closed – WIN  (#" + _longProfitableToday + " profitable today)");
                 }
                 else
                 {
                     _longLosingToday++;
-                    Print(Time[0] + " | Long closed – LOSS (#" + _longLosingToday + " losses today)");
+                    LogDebug(Time[0] + " | Long closed – LOSS (#" + _longLosingToday + " losses today)");
                 }
 
                 _longBEMoved    = false;
@@ -1193,9 +1555,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 _longRearmNeeded = canRearm;
                 if (isScratch)
-                    Print(Time[0] + " | Long re-arm blocked – BE scratch, no re-entry");
+                    LogDebug(Time[0] + " | Long re-arm blocked – BE scratch, no re-entry");
                 else
-                    Print(Time[0] + " | Long re-arm=" + _longRearmNeeded);
+                    LogDebug(Time[0] + " | Long re-arm=" + _longRearmNeeded);
             }
 
             // ── Short closed ──────────────────────────────────────────────────
@@ -1213,18 +1575,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (isScratch)
                 {
-                    Print(Time[0] + " | Short closed – SCRATCH (BE stop)");
+                    LogDebug(Time[0] + " | Short closed – SCRATCH (BE stop)");
                 }
                 else if (pnl > 0)
                 {
                     _shortProfitableToday++;
                     _lastWinDirection = 2;
-                    Print(Time[0] + " | Short closed – WIN  (#" + _shortProfitableToday + " profitable today)");
+                    LogDebug(Time[0] + " | Short closed – WIN  (#" + _shortProfitableToday + " profitable today)");
                 }
                 else
                 {
                     _shortLosingToday++;
-                    Print(Time[0] + " | Short closed – LOSS (#" + _shortLosingToday + " losses today)");
+                    LogDebug(Time[0] + " | Short closed – LOSS (#" + _shortLosingToday + " losses today)");
                 }
 
                 _shortBEMoved    = false;
@@ -1241,9 +1603,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 _shortRearmNeeded = canRearm;
                 if (isScratch)
-                    Print(Time[0] + " | Short re-arm blocked – BE scratch, no re-entry");
+                    LogDebug(Time[0] + " | Short re-arm blocked – BE scratch, no re-entry");
                 else
-                    Print(Time[0] + " | Short re-arm=" + _shortRearmNeeded);
+                    LogDebug(Time[0] + " | Short re-arm=" + _shortRearmNeeded);
             }
         }
 
@@ -1285,7 +1647,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double maxSL = fillPrice - GetLongMaxSLPts();
             if (sl < maxSL)
             {
-                Print("CalcLongSL | SL capped from " + sl + " to " + maxSL
+                LogDebug("CalcLongSL | SL capped from " + sl + " to " + maxSL
                       + " (MaxSLPts=" + GetLongMaxSLPts() + ")  [B" + _longActiveBucket + "]");
                 sl = maxSL;
             }
@@ -1326,7 +1688,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double maxSL = fillPrice + GetShortMaxSLPts();
             if (sl > maxSL)
             {
-                Print("CalcShortSL | SL capped from " + sl + " to " + maxSL
+                LogDebug("CalcShortSL | SL capped from " + sl + " to " + maxSL
                       + " (MaxSLPts=" + GetShortMaxSLPts() + ")  [B" + _shortActiveBucket + "]");
                 sl = maxSL;
             }
@@ -1504,8 +1866,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime t1 = _orDate.Add(new TimeSpan(9, 30, 0));
             DateTime t2 = _orDate.Add(new TimeSpan(SessionEndHour, SessionEndMin, 0));
 
-            Draw.Line(this, "OR_H", false, t1, _orHigh, t2, _orHigh, Brushes.Magenta,    DashStyleHelper.Solid, 2);
-            Draw.Line(this, "OR_L", false, t1, _orLow,  t2, _orLow,  Brushes.Magenta,    DashStyleHelper.Solid, 2);
+            if (ShowORLines)
+            {
+                Draw.Line(this, "OR_H", false, t1, _orHigh, t2, _orHigh, Brushes.Magenta,    DashStyleHelper.Solid, 2);
+                Draw.Line(this, "OR_L", false, t1, _orLow,  t2, _orLow,  Brushes.Magenta,    DashStyleHelper.Solid, 2);
+            }
+            else
+            {
+                RemoveDrawObject("OR_H");
+                RemoveDrawObject("OR_L");
+            }
 
             if (_longORValid)
             {
@@ -1529,11 +1899,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TryCancelOrder(_shortLimitOrder);
 
             if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong("ForceFlatL", "LongEntry");
+                ExitLong(BuildExitSignalName("ForceFlatL"), GetOpenLongEntrySignal());
             else if (Position.MarketPosition == MarketPosition.Short)
-                ExitShort("ForceFlatS", "ShortEntry");
+                ExitShort(BuildExitSignalName("ForceFlatS"), GetOpenShortEntrySignal());
 
-            Print(Time[0] + " | ★ Force flatten executed.");
+            LogDebug(Time[0] + " | ★ Force flatten executed.");
         }
 
         private void TryCancelOrder(Order o)
@@ -1589,6 +1959,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return false;
         }
 
+        private bool IsLastBarOfSession()
+        {
+            return Bars != null && Bars.IsLastBarOfSession;
+        }
+
         private void HandleSkipWindowTransition(bool inSkipWindowNow)
         {
             if (!_wasInSkipWindow && inSkipWindowNow)
@@ -1610,12 +1985,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (CloseAtSkipStart)
                 {
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("SkipWindowL", "LongEntry");
+                        ExitLong(BuildExitSignalName("SkipWindowL"), GetOpenLongEntrySignal());
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("SkipWindowS", "ShortEntry");
+                        ExitShort(BuildExitSignalName("SkipWindowS"), GetOpenShortEntrySignal());
                 }
 
-                Print(Time[0] + " | Entered skip window: canceled working entries."
+                LogDebug(Time[0] + " | Entered skip window: canceled working entries."
                       + (CloseAtSkipStart ? " Open position flattened." : " CloseAtSkipStart disabled."));
             }
             else if (_wasInSkipWindow && !inSkipWindowNow)
@@ -1643,12 +2018,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (CloseAtNewsStart)
                 {
                     if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong("NewsSkipL", "LongEntry");
+                        ExitLong(BuildExitSignalName("NewsSkipL"), GetOpenLongEntrySignal());
                     else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort("NewsSkipS", "ShortEntry");
+                        ExitShort(BuildExitSignalName("NewsSkipS"), GetOpenShortEntrySignal());
                 }
 
-                Print(Time[0] + " | Entered news skip window: canceled working entries."
+                LogDebug(Time[0] + " | Entered news skip window: canceled working entries."
                       + (CloseAtNewsStart ? " Open position flattened." : " CloseAtNewsStart disabled."));
             }
 
@@ -1698,7 +2073,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Name,
                 requiredSeconds,
                 actualTimeframe);
-            Print(string.Format(CultureInfo.InvariantCulture, "{0} | {1}", Name, message));
+            LogDebug(string.Format(CultureInfo.InvariantCulture, "{0} | {1}", Name, message));
             ShowTimeframeValidationPopup(message);
         }
 
@@ -1725,7 +2100,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             catch (Exception ex)
             {
-                Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show timeframe popup: {1}", Name, ex.Message));
+                LogDebug(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show timeframe popup: {1}", Name, ex.Message));
             }
         }
 
@@ -1745,7 +2120,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 "{0} must run on NQ or MNQ. Current instrument is {1}. Trading is disabled until instrument is corrected.",
                 Name,
                 actualInstrument);
-            Print(string.Format(CultureInfo.InvariantCulture, "{0} | {1}", Name, message));
+            LogDebug(string.Format(CultureInfo.InvariantCulture, "{0} | {1}", Name, message));
             ShowInstrumentValidationPopup(message);
         }
 
@@ -1772,8 +2147,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             catch (Exception ex)
             {
-                Print(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show instrument popup: {1}", Name, ex.Message));
+                LogDebug(string.Format(CultureInfo.InvariantCulture, "{0} | Failed to show instrument popup: {1}", Name, ex.Message));
             }
+        }
+
+        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
+        {
+            bool result = false;
+            if (System.Windows.Application.Current == null)
+                return false;
+
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                () =>
+                {
+                    string message = string.Format(CultureInfo.InvariantCulture, "Confirm {0} entry\nPrice: {1}\nQty: {2}", orderType, price, quantity);
+                    MessageBoxResult response = System.Windows.MessageBox.Show(
+                        message,
+                        "Entry Confirmation",
+                        System.Windows.MessageBoxButton.YesNo,
+                        System.Windows.MessageBoxImage.Question);
+                    result = response == System.Windows.MessageBoxResult.Yes;
+                });
+
+            return result;
         }
 
         // =====================================================================
@@ -2112,6 +2508,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool IsTradeArmedForInfo()
         {
             if (!_orSet || _forceFlatDone || Position.MarketPosition != MarketPosition.Flat)
+                return false;
+            if (IsLastBarOfSession())
                 return false;
             if (IsInSkipWindow(Time[0]))
                 return false;
@@ -2572,18 +2970,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(9, 17)]
         [Display(Name = "No New Trades After – Hour (EST)",
                  GroupName = "01 - Common: Time Filters", Order = 1)]
         public int NoNewTradesHour { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "No New Trades After – Minute",
                  GroupName = "01 - Common: Time Filters", Order = 2)]
         public int NoNewTradesMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 23)]
         [Display(Name = "Skip Start – Hour (EST)",
                  Description = "Set start/end both to 00:00 to disable skip window.",
@@ -2591,36 +2992,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int SkipStartHour { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Skip Start – Minute",
                  GroupName = "01 - Common: Time Filters", Order = 4)]
         public int SkipStartMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 23)]
         [Display(Name = "Skip End – Hour (EST)",
                  GroupName = "01 - Common: Time Filters", Order = 5)]
         public int SkipEndHour { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Skip End – Minute",
                  GroupName = "01 - Common: Time Filters", Order = 6)]
         public int SkipEndMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(9, 18)]
         [Display(Name = "Force Flatten – Hour (EST)",
                  GroupName = "01 - Common: Time Filters", Order = 7)]
         public int ForceFlatHour { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Force Flatten – Minute",
                  GroupName = "01 - Common: Time Filters", Order = 8)]
         public int ForceFlatMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(9, 23)]
         [Display(Name = "Session Lines End – Hour (EST)",
                  Description = "Visual end time of OR / Target / Trigger lines",
@@ -2628,6 +3035,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int SessionEndHour { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Session Lines End – Minute",
                  GroupName = "01 - Common: Time Filters", Order = 10)]
@@ -2645,91 +3053,124 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int CommonContracts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Alternating Direction",
                  Description = "After a WIN on either side, only allow the opposite direction next",
                  GroupName = "02 - Common: Session Filters", Order = 1)]
         public bool AlternatingEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Re-Entry After Loss",
                  Description = "After a genuine stop-loss, re-arm once price closes back through OR (Short: Close < OR Low | Long: Close > OR High). BE scratches never re-arm.",
                  GroupName = "02 - Common: Session Filters", Order = 2)]
         public bool ReEntryEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Target Cancel",
-                 Description = "Fix2: When ON (default), limit orders are cancelled if price reaches the target before entry fills – identical to 1008 behaviour. When OFF, Section K is skipped entirely: orders sit until filled, session end, or skip window. Turn OFF to test whether the cancel/re-arm cycle adds any value.",
+        [Browsable(false)]
+        [Display(Name = "AGGRESSIVE MODE",
+                 Description = "Enabled = AGGRESSIVE MODE: cancel limit orders if price reaches target before entry fills. Disabled = CALM MODE: skip Section K and let orders sit until filled, session end, or skip window.",
                  GroupName = "02 - Common: Session Filters", Order = 3)]
         public bool EnableTargetCancel { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Confirmation",
+                 Description = "Show a Yes/No confirmation popup before each new long/short entry.",
+                 GroupName = "02 - Common: Session Filters", Order = 4)]
+        public bool RequireEntryConfirmation { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Debug Logging",
+                 Description = "Enable diagnostic output to the NinjaScript Output window.",
+                 GroupName = "02 - Common: Session Filters", Order = 5)]
+        public bool DebugLogging { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Show OR Lines",
+                 Description = "Draw OR high/low chart lines.",
+                 GroupName = "02 - Common: Session Filters", Order = 6)]
+        public bool ShowORLines { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Skip Time",
                  Description = "Enable skip time entry blocking between Skip Start and Skip End.",
-                 GroupName = "02 - Common: Session Filters", Order = 3)]
+                 GroupName = "02 - Common: Session Filters", Order = 7)]
         public bool UseSkipTime { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Close At Skip Start",
                  Description = "If true, flatten open position when skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 4)]
+                 GroupName = "02 - Common: Session Filters", Order = 8)]
         public bool CloseAtSkipStart { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Close At News Start",
                  Description = "If true, flatten open position when news skip window begins.",
-                 GroupName = "02 - Common: Session Filters", Order = 5)]
+                 GroupName = "02 - Common: Session Filters", Order = 9)]
         public bool CloseAtNewsStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip",
                  Description = "Infobox news rows: show listed 14:00 news events for the current week.",
-                 GroupName = "02 - Common: Session Filters", Order = 5)]
+                 GroupName = "02 - Common: Session Filters", Order = 10)]
         public bool UseNewsSkip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 60)]
         [Display(Name = "News Block Minutes",
                  Description = "Used for news row fade timing in infobox.",
-                 GroupName = "02 - Common: Session Filters", Order = 6)]
+                 GroupName = "02 - Common: Session Filters", Order = 11)]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TradersPost Webhook URL",
                  Description = "HTTP endpoint for order webhooks. Leave empty to disable TradersPost webhooks.",
                  GroupName = "02 - Common: Session Filters", Order = 15)]
         public string WebhookUrl { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Webhook Provider",
                  Description = "Select webhook target: TradersPost or ProjectX.",
                  GroupName = "02 - Common: Session Filters", Order = 16)]
         public WebhookProvider WebhookProviderType { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX API Base URL",
                  Description = "ProjectX gateway base URL.",
                  GroupName = "02 - Common: Session Filters", Order = 17)]
         public string ProjectXApiBaseUrl { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Username",
                  Description = "ProjectX login username.",
                  GroupName = "02 - Common: Session Filters", Order = 18)]
         public string ProjectXUsername { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX API Key",
                  Description = "ProjectX login key.",
                  GroupName = "02 - Common: Session Filters", Order = 19)]
         public string ProjectXApiKey { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Account ID",
                  Description = "ProjectX account id used for order routing.",
                  GroupName = "02 - Common: Session Filters", Order = 20)]
         public string ProjectXAccountId { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Contract ID",
                  Description = "ProjectX contract id (for example CON.F.US.DA6.M25).",
                  GroupName = "02 - Common: Session Filters", Order = 21)]
@@ -2740,24 +3181,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enabled",
                  Description = "Enable long trades when OR falls within Bucket 1 size range",
                  GroupName = "03 - Long B1: Opening Range", Order = 1)]
         public bool LongB1Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Min OR Size (pts)",
                  GroupName = "03 - Long B1: Opening Range", Order = 2)]
         public double LongB1MinORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max OR Size (pts)",
                  GroupName = "03 - Long B1: Opening Range", Order = 3)]
         public double LongB1MaxORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.5, 20.0)]
         [Display(Name = "OR Multiplier",
                  Description = "Long Target = OR High + Multiplier × OR Range",
@@ -2765,6 +3210,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB1ORMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Trigger Offset (pts)",
                  Description = "Distance from Long Target to Long Trigger line",
@@ -2775,26 +3221,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         //  GROUP 04  –  LONG BUCKET 1 : TRADE MANAGEMENT
         // ════════════════════════════════════════════════════════════════════
 
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 100)]
         [Display(Name = "Contracts",
                  GroupName = "04 - Long B1: Trade Management", Order = 1)]
         public int LongB1Contracts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Trades Per Day",
                  GroupName = "04 - Long B1: Trade Management", Order = 2)]
         public int LongB1MaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Profitable Trades / Session",
                  GroupName = "04 - Long B1: Trade Management", Order = 3)]
         public int LongB1MaxProfitableTrades { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Losing Trades / Session",
                  GroupName = "04 - Long B1: Trade Management", Order = 4)]
@@ -2805,11 +3254,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Entry Method",
                  GroupName = "05 - Long B1: Entry Method", Order = 1)]
         public NQOREntryMethod105 LongB1EntryMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "Retracement % (method ii)",
                  Description = "Long limit = Target minus X% of (Target - OR High)",
@@ -2817,12 +3268,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB1RetracePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Min FVG Size pts (method iii)",
                  GroupName = "05 - Long B1: Entry Method", Order = 3)]
         public double LongB1MinFVGSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "FVG Entry Point (method iii)",
                  GroupName = "05 - Long B1: Entry Method", Order = 4)]
         public NQORFVGEntry105 LongB1FVGEntry { get; set; }
@@ -2832,17 +3285,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Stop Loss Method",
                  GroupName = "06 - Long B1: Stop Loss", Order = 1)]
         public NQORStopMethod105 LongB1StopMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Fixed SL Points (method i)",
                  GroupName = "06 - Long B1: Stop Loss", Order = 2)]
         public double LongB1FixedSLPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "SL % of Range (method ii)",
                  Description = "Long SL = Entry - X% × (Target - OR High)",
@@ -2850,12 +3306,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB1SLRangePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Swing Strength (method iii)",
                  GroupName = "06 - Long B1: Stop Loss", Order = 4)]
         public int LongB1SwingStrength { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max SL Points (cap)",
                  Description = "Maximum SL distance in points from entry. Applies to all methods except Fixed. Set high to effectively disable.",
@@ -2867,28 +3325,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Break-Even Enabled",
                  GroupName = "07 - Long B1: Break-Even", Order = 1)]
         public bool LongB1BEEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "BE Trigger Method",
                  GroupName = "07 - Long B1: Break-Even", Order = 2)]
         public NQORBEMethod105 LongB1BEMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "BE Trigger – Fixed Pts",
                  GroupName = "07 - Long B1: Break-Even", Order = 3)]
         public double LongB1BETriggerPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "BE Trigger – % of OR Range",
                  GroupName = "07 - Long B1: Break-Even", Order = 4)]
         public double LongB1BETriggerPct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.0, 100.0)]
         [Display(Name = "BE Offset Pts",
                  Description = "Long SL placed this many pts ABOVE entry at BE",
@@ -2900,24 +3363,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enabled",
                  Description = "Enable long trades when OR falls within Bucket 2 size range",
                  GroupName = "08 - Long B2: Opening Range", Order = 1)]
         public bool LongB2Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Min OR Size (pts)",
                  GroupName = "08 - Long B2: Opening Range", Order = 2)]
         public double LongB2MinORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max OR Size (pts)",
                  GroupName = "08 - Long B2: Opening Range", Order = 3)]
         public double LongB2MaxORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.5, 20.0)]
         [Display(Name = "OR Multiplier",
                  Description = "Long Target = OR High + Multiplier × OR Range",
@@ -2925,6 +3392,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB2ORMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Trigger Offset (pts)",
                  GroupName = "08 - Long B2: Opening Range", Order = 5)]
@@ -2934,26 +3402,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         //  GROUP 09  –  LONG BUCKET 2 : TRADE MANAGEMENT
         // ════════════════════════════════════════════════════════════════════
 
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 100)]
         [Display(Name = "Contracts",
                  GroupName = "09 - Long B2: Trade Management", Order = 1)]
         public int LongB2Contracts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Trades Per Day",
                  GroupName = "09 - Long B2: Trade Management", Order = 2)]
         public int LongB2MaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Profitable Trades / Session",
                  GroupName = "09 - Long B2: Trade Management", Order = 3)]
         public int LongB2MaxProfitableTrades { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Losing Trades / Session",
                  GroupName = "09 - Long B2: Trade Management", Order = 4)]
@@ -2964,11 +3435,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Entry Method",
                  GroupName = "10 - Long B2: Entry Method", Order = 1)]
         public NQOREntryMethod105 LongB2EntryMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "Retracement % (method ii)",
                  Description = "Long limit = Target minus X% of (Target - OR High)",
@@ -2976,12 +3449,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB2RetracePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Min FVG Size pts (method iii)",
                  GroupName = "10 - Long B2: Entry Method", Order = 3)]
         public double LongB2MinFVGSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "FVG Entry Point (method iii)",
                  GroupName = "10 - Long B2: Entry Method", Order = 4)]
         public NQORFVGEntry105 LongB2FVGEntry { get; set; }
@@ -2991,17 +3466,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Stop Loss Method",
                  GroupName = "11 - Long B2: Stop Loss", Order = 1)]
         public NQORStopMethod105 LongB2StopMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Fixed SL Points (method i)",
                  GroupName = "11 - Long B2: Stop Loss", Order = 2)]
         public double LongB2FixedSLPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "SL % of Range (method ii)",
                  Description = "Long SL = Entry - X% × (Target - OR High)",
@@ -3009,12 +3487,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB2SLRangePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Swing Strength (method iii)",
                  GroupName = "11 - Long B2: Stop Loss", Order = 4)]
         public int LongB2SwingStrength { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max SL Points (cap)",
                  Description = "Maximum SL distance in points from entry. Applies to all methods except Fixed. Set high to effectively disable.",
@@ -3026,28 +3506,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Break-Even Enabled",
                  GroupName = "12 - Long B2: Break-Even", Order = 1)]
         public bool LongB2BEEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "BE Trigger Method",
                  GroupName = "12 - Long B2: Break-Even", Order = 2)]
         public NQORBEMethod105 LongB2BEMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "BE Trigger – Fixed Pts",
                  GroupName = "12 - Long B2: Break-Even", Order = 3)]
         public double LongB2BETriggerPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "BE Trigger – % of OR Range",
                  GroupName = "12 - Long B2: Break-Even", Order = 4)]
         public double LongB2BETriggerPct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.0, 100.0)]
         [Display(Name = "BE Offset Pts",
                  Description = "Long SL placed this many pts ABOVE entry at BE",
@@ -3059,24 +3544,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enabled",
                  Description = "Enable long trades when OR falls within Bucket 3 size range",
                  GroupName = "13 - Long B3: Opening Range", Order = 1)]
         public bool LongB3Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Min OR Size (pts)",
                  GroupName = "13 - Long B3: Opening Range", Order = 2)]
         public double LongB3MinORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max OR Size (pts)",
                  GroupName = "13 - Long B3: Opening Range", Order = 3)]
         public double LongB3MaxORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.5, 20.0)]
         [Display(Name = "OR Multiplier",
                  Description = "Long Target = OR High + Multiplier × OR Range",
@@ -3084,6 +3573,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB3ORMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Trigger Offset (pts)",
                  GroupName = "13 - Long B3: Opening Range", Order = 5)]
@@ -3093,26 +3583,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         //  GROUP 14  –  LONG BUCKET 3 : TRADE MANAGEMENT
         // ════════════════════════════════════════════════════════════════════
 
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 100)]
         [Display(Name = "Contracts",
                  GroupName = "14 - Long B3: Trade Management", Order = 1)]
         public int LongB3Contracts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Trades Per Day",
                  GroupName = "14 - Long B3: Trade Management", Order = 2)]
         public int LongB3MaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Profitable Trades / Session",
                  GroupName = "14 - Long B3: Trade Management", Order = 3)]
         public int LongB3MaxProfitableTrades { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Losing Trades / Session",
                  GroupName = "14 - Long B3: Trade Management", Order = 4)]
@@ -3123,11 +3616,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Entry Method",
                  GroupName = "15 - Long B3: Entry Method", Order = 1)]
         public NQOREntryMethod105 LongB3EntryMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "Retracement % (method ii)",
                  Description = "Long limit = Target minus X% of (Target - OR High)",
@@ -3135,12 +3630,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB3RetracePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Min FVG Size pts (method iii)",
                  GroupName = "15 - Long B3: Entry Method", Order = 3)]
         public double LongB3MinFVGSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "FVG Entry Point (method iii)",
                  GroupName = "15 - Long B3: Entry Method", Order = 4)]
         public NQORFVGEntry105 LongB3FVGEntry { get; set; }
@@ -3150,17 +3647,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Stop Loss Method",
                  GroupName = "16 - Long B3: Stop Loss", Order = 1)]
         public NQORStopMethod105 LongB3StopMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Fixed SL Points (method i)",
                  GroupName = "16 - Long B3: Stop Loss", Order = 2)]
         public double LongB3FixedSLPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "SL % of Range (method ii)",
                  Description = "Long SL = Entry - X% × (Target - OR High)",
@@ -3168,12 +3668,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LongB3SLRangePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Swing Strength (method iii)",
                  GroupName = "16 - Long B3: Stop Loss", Order = 4)]
         public int LongB3SwingStrength { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max SL Points (cap)",
                  Description = "Maximum SL distance in points from entry. Applies to all methods except Fixed. Set high to effectively disable.",
@@ -3185,28 +3687,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Break-Even Enabled",
                  GroupName = "17 - Long B3: Break-Even", Order = 1)]
         public bool LongB3BEEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "BE Trigger Method",
                  GroupName = "17 - Long B3: Break-Even", Order = 2)]
         public NQORBEMethod105 LongB3BEMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "BE Trigger – Fixed Pts",
                  GroupName = "17 - Long B3: Break-Even", Order = 3)]
         public double LongB3BETriggerPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "BE Trigger – % of OR Range",
                  GroupName = "17 - Long B3: Break-Even", Order = 4)]
         public double LongB3BETriggerPct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.0, 100.0)]
         [Display(Name = "BE Offset Pts",
                  Description = "Long SL placed this many pts ABOVE entry at BE",
@@ -3218,24 +3725,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enabled",
                  Description = "Enable short trades when OR falls within Bucket 1 size range",
                  GroupName = "18 - Short B1: Opening Range", Order = 1)]
         public bool ShortB1Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Min OR Size (pts)",
                  GroupName = "18 - Short B1: Opening Range", Order = 2)]
         public double ShortB1MinORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max OR Size (pts)",
                  GroupName = "18 - Short B1: Opening Range", Order = 3)]
         public double ShortB1MaxORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.5, 20.0)]
         [Display(Name = "OR Multiplier",
                  Description = "Short Target = OR Low - Multiplier × OR Range",
@@ -3243,6 +3754,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB1ORMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Trigger Offset (pts)",
                  Description = "Distance from Short Target to Short Trigger line",
@@ -3253,26 +3765,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         //  GROUP 19  –  SHORT BUCKET 1 : TRADE MANAGEMENT
         // ════════════════════════════════════════════════════════════════════
 
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 100)]
         [Display(Name = "Contracts",
                  GroupName = "19 - Short B1: Trade Management", Order = 1)]
         public int ShortB1Contracts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Trades Per Day",
                  GroupName = "19 - Short B1: Trade Management", Order = 2)]
         public int ShortB1MaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Profitable Trades / Session",
                  GroupName = "19 - Short B1: Trade Management", Order = 3)]
         public int ShortB1MaxProfitableTrades { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Losing Trades / Session",
                  GroupName = "19 - Short B1: Trade Management", Order = 4)]
@@ -3283,11 +3798,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Entry Method",
                  GroupName = "20 - Short B1: Entry Method", Order = 1)]
         public NQOREntryMethod105 ShortB1EntryMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "Retracement % (method ii)",
                  Description = "Short limit = Target plus X% of (OR Low - Target)",
@@ -3295,12 +3812,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB1RetracePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Min FVG Size pts (method iii)",
                  GroupName = "20 - Short B1: Entry Method", Order = 3)]
         public double ShortB1MinFVGSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "FVG Entry Point (method iii)",
                  GroupName = "20 - Short B1: Entry Method", Order = 4)]
         public NQORFVGEntry105 ShortB1FVGEntry { get; set; }
@@ -3310,17 +3829,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Stop Loss Method",
                  GroupName = "21 - Short B1: Stop Loss", Order = 1)]
         public NQORStopMethod105 ShortB1StopMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Fixed SL Points (method i)",
                  GroupName = "21 - Short B1: Stop Loss", Order = 2)]
         public double ShortB1FixedSLPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "SL % of Range (method ii)",
                  Description = "Short SL = Entry + X% × (OR Low - Target)",
@@ -3328,12 +3850,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB1SLRangePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Swing Strength (method iii)",
                  GroupName = "21 - Short B1: Stop Loss", Order = 4)]
         public int ShortB1SwingStrength { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max SL Points (cap)",
                  Description = "Maximum SL distance in points from entry. Applies to all methods except Fixed. Set high to effectively disable.",
@@ -3345,28 +3869,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Break-Even Enabled",
                  GroupName = "22 - Short B1: Break-Even", Order = 1)]
         public bool ShortB1BEEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "BE Trigger Method",
                  GroupName = "22 - Short B1: Break-Even", Order = 2)]
         public NQORBEMethod105 ShortB1BEMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "BE Trigger – Fixed Pts",
                  GroupName = "22 - Short B1: Break-Even", Order = 3)]
         public double ShortB1BETriggerPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "BE Trigger – % of OR Range",
                  GroupName = "22 - Short B1: Break-Even", Order = 4)]
         public double ShortB1BETriggerPct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.0, 100.0)]
         [Display(Name = "BE Offset Pts",
                  Description = "Short SL placed this many pts BELOW entry at BE",
@@ -3378,24 +3907,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enabled",
                  Description = "Enable short trades when OR falls within Bucket 2 size range",
                  GroupName = "23 - Short B2: Opening Range", Order = 1)]
         public bool ShortB2Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Min OR Size (pts)",
                  GroupName = "23 - Short B2: Opening Range", Order = 2)]
         public double ShortB2MinORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max OR Size (pts)",
                  GroupName = "23 - Short B2: Opening Range", Order = 3)]
         public double ShortB2MaxORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.5, 20.0)]
         [Display(Name = "OR Multiplier",
                  Description = "Short Target = OR Low - Multiplier × OR Range",
@@ -3403,6 +3936,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB2ORMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Trigger Offset (pts)",
                  GroupName = "23 - Short B2: Opening Range", Order = 5)]
@@ -3412,26 +3946,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         //  GROUP 24  –  SHORT BUCKET 2 : TRADE MANAGEMENT
         // ════════════════════════════════════════════════════════════════════
 
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 100)]
         [Display(Name = "Contracts",
                  GroupName = "24 - Short B2: Trade Management", Order = 1)]
         public int ShortB2Contracts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Trades Per Day",
                  GroupName = "24 - Short B2: Trade Management", Order = 2)]
         public int ShortB2MaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Profitable Trades / Session",
                  GroupName = "24 - Short B2: Trade Management", Order = 3)]
         public int ShortB2MaxProfitableTrades { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Losing Trades / Session",
                  GroupName = "24 - Short B2: Trade Management", Order = 4)]
@@ -3442,11 +3979,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Entry Method",
                  GroupName = "25 - Short B2: Entry Method", Order = 1)]
         public NQOREntryMethod105 ShortB2EntryMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "Retracement % (method ii)",
                  Description = "Short limit = Target plus X% of (OR Low - Target)",
@@ -3454,12 +3993,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB2RetracePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Min FVG Size pts (method iii)",
                  GroupName = "25 - Short B2: Entry Method", Order = 3)]
         public double ShortB2MinFVGSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "FVG Entry Point (method iii)",
                  GroupName = "25 - Short B2: Entry Method", Order = 4)]
         public NQORFVGEntry105 ShortB2FVGEntry { get; set; }
@@ -3469,17 +4010,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Stop Loss Method",
                  GroupName = "26 - Short B2: Stop Loss", Order = 1)]
         public NQORStopMethod105 ShortB2StopMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Fixed SL Points (method i)",
                  GroupName = "26 - Short B2: Stop Loss", Order = 2)]
         public double ShortB2FixedSLPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "SL % of Range (method ii)",
                  Description = "Short SL = Entry + X% × (OR Low - Target)",
@@ -3487,12 +4031,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB2SLRangePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Swing Strength (method iii)",
                  GroupName = "26 - Short B2: Stop Loss", Order = 4)]
         public int ShortB2SwingStrength { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max SL Points (cap)",
                  Description = "Maximum SL distance in points from entry. Applies to all methods except Fixed. Set high to effectively disable.",
@@ -3504,28 +4050,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Break-Even Enabled",
                  GroupName = "27 - Short B2: Break-Even", Order = 1)]
         public bool ShortB2BEEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "BE Trigger Method",
                  GroupName = "27 - Short B2: Break-Even", Order = 2)]
         public NQORBEMethod105 ShortB2BEMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "BE Trigger – Fixed Pts",
                  GroupName = "27 - Short B2: Break-Even", Order = 3)]
         public double ShortB2BETriggerPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "BE Trigger – % of OR Range",
                  GroupName = "27 - Short B2: Break-Even", Order = 4)]
         public double ShortB2BETriggerPct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.0, 100.0)]
         [Display(Name = "BE Offset Pts",
                  Description = "Short SL placed this many pts BELOW entry at BE",
@@ -3537,24 +4088,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enabled",
                  Description = "Enable short trades when OR falls within Bucket 3 size range",
                  GroupName = "28 - Short B3: Opening Range", Order = 1)]
         public bool ShortB3Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Min OR Size (pts)",
                  GroupName = "28 - Short B3: Opening Range", Order = 2)]
         public double ShortB3MinORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max OR Size (pts)",
                  GroupName = "28 - Short B3: Opening Range", Order = 3)]
         public double ShortB3MaxORSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.5, 20.0)]
         [Display(Name = "OR Multiplier",
                  Description = "Short Target = OR Low - Multiplier × OR Range",
@@ -3562,6 +4117,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB3ORMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Trigger Offset (pts)",
                  GroupName = "28 - Short B3: Opening Range", Order = 5)]
@@ -3571,26 +4127,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         //  GROUP 29  –  SHORT BUCKET 3 : TRADE MANAGEMENT
         // ════════════════════════════════════════════════════════════════════
 
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 100)]
         [Display(Name = "Contracts",
                  GroupName = "29 - Short B3: Trade Management", Order = 1)]
         public int ShortB3Contracts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Trades Per Day",
                  GroupName = "29 - Short B3: Trade Management", Order = 2)]
         public int ShortB3MaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Profitable Trades / Session",
                  GroupName = "29 - Short B3: Trade Management", Order = 3)]
         public int ShortB3MaxProfitableTrades { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Max Losing Trades / Session",
                  GroupName = "29 - Short B3: Trade Management", Order = 4)]
@@ -3601,11 +4160,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Entry Method",
                  GroupName = "30 - Short B3: Entry Method", Order = 1)]
         public NQOREntryMethod105 ShortB3EntryMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "Retracement % (method ii)",
                  Description = "Short limit = Target plus X% of (OR Low - Target)",
@@ -3613,12 +4174,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB3RetracePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "Min FVG Size pts (method iii)",
                  GroupName = "30 - Short B3: Entry Method", Order = 3)]
         public double ShortB3MinFVGSize { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "FVG Entry Point (method iii)",
                  GroupName = "30 - Short B3: Entry Method", Order = 4)]
         public NQORFVGEntry105 ShortB3FVGEntry { get; set; }
@@ -3628,17 +4191,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Stop Loss Method",
                  GroupName = "31 - Short B3: Stop Loss", Order = 1)]
         public NQORStopMethod105 ShortB3StopMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "Fixed SL Points (method i)",
                  GroupName = "31 - Short B3: Stop Loss", Order = 2)]
         public double ShortB3FixedSLPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 99.0)]
         [Display(Name = "SL % of Range (method ii)",
                  Description = "Short SL = Entry + X% × (OR Low - Target)",
@@ -3646,12 +4212,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double ShortB3SLRangePct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 20)]
         [Display(Name = "Swing Strength (method iii)",
                  GroupName = "31 - Short B3: Stop Loss", Order = 4)]
         public int ShortB3SwingStrength { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 5000.0)]
         [Display(Name = "Max SL Points (cap)",
                  Description = "Maximum SL distance in points from entry. Applies to all methods except Fixed. Set high to effectively disable.",
@@ -3663,28 +4231,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ════════════════════════════════════════════════════════════════════
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Break-Even Enabled",
                  GroupName = "32 - Short B3: Break-Even", Order = 1)]
         public bool ShortB3BEEnabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "BE Trigger Method",
                  GroupName = "32 - Short B3: Break-Even", Order = 2)]
         public NQORBEMethod105 ShortB3BEMethod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 2000.0)]
         [Display(Name = "BE Trigger – Fixed Pts",
                  GroupName = "32 - Short B3: Break-Even", Order = 3)]
         public double ShortB3BETriggerPts { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1.0, 500.0)]
         [Display(Name = "BE Trigger – % of OR Range",
                  GroupName = "32 - Short B3: Break-Even", Order = 4)]
         public double ShortB3BETriggerPct { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.0, 100.0)]
         [Display(Name = "BE Offset Pts",
                  Description = "Short SL placed this many pts BELOW entry at BE",
