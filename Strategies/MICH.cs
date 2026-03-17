@@ -2218,6 +2218,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return slPrice;
         }
 
+        private double GetReferencePriceForProtectiveStop(MarketPosition positionDirection)
+        {
+            if (positionDirection == MarketPosition.Long)
+            {
+                double bid = GetCurrentBid();
+                if (bid > 0)
+                    return bid;
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                double ask = GetCurrentAsk();
+                if (ask > 0)
+                    return ask;
+            }
+
+            return Close[0];
+        }
+
+        private bool CanAmendProtectiveStopForCurrentMarket(MarketPosition positionDirection, double proposedStopPrice)
+        {
+            if (State != State.Realtime)
+                return true;
+
+            if (double.IsNaN(proposedStopPrice) || double.IsInfinity(proposedStopPrice) || proposedStopPrice <= 0)
+                return false;
+
+            double referencePrice = GetReferencePriceForProtectiveStop(positionDirection);
+            if (double.IsNaN(referencePrice) || double.IsInfinity(referencePrice) || referencePrice <= 0)
+                return true;
+
+            if (positionDirection == MarketPosition.Long)
+                return proposedStopPrice < referencePrice;
+            if (positionDirection == MarketPosition.Short)
+                return proposedStopPrice > referencePrice;
+
+            return true;
+        }
+
         private void ManageBreakeven()
         {
             int sid = activeSessionId;
@@ -2239,7 +2277,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (tradeDirection == 1)
                 {
                     double bePrice = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice + offsetTicks * TickSize);
-                    if (bePrice > originalStopPrice && bePrice < Close[0])
+                    if (bePrice > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, bePrice))
                     {
                         ExitLongStopMarket(0, true, contracts, bePrice, BuildExitSignalName("SL"), LongEntrySignal);
                         originalStopPrice = bePrice;
@@ -2249,7 +2287,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else
                 {
                     double bePrice = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice - offsetTicks * TickSize);
-                    if (bePrice < originalStopPrice && bePrice > Close[0])
+                    if (bePrice < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, bePrice))
                     {
                         ExitShortStopMarket(0, true, contracts, bePrice, BuildExitSignalName("SL"), ShortEntrySignal);
                         originalStopPrice = bePrice;
@@ -2270,14 +2308,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 double newStop = GetLongLowerMAForTrail(sid) - trailOffsetTicks * TickSize;
                 newStop = Instrument.MasterInstrument.RoundToTickSize(newStop);
-                if (newStop > originalStopPrice && newStop < Close[0])
+                if (newStop > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newStop))
                     ExitLongStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), LongEntrySignal);
             }
             else if (tradeDirection == -1 && Position.MarketPosition == MarketPosition.Short)
             {
                 double newStop = GetShortUpperMAForTrail(sid) + trailOffsetTicks * TickSize;
                 newStop = Instrument.MasterInstrument.RoundToTickSize(newStop);
-                if (newStop < originalStopPrice && newStop > Close[0])
+                if (newStop < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newStop))
                     ExitShortStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), ShortEntrySignal);
             }
         }
@@ -2295,13 +2333,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (tradeDirection == 1 && Position.MarketPosition == MarketPosition.Long && entryBarBullish)
             {
                 double newSl = Instrument.MasterInstrument.RoundToTickSize(Low[1] - slExtraTicks * TickSize);
-                if (newSl > originalStopPrice && newSl < Close[0])
+                if (newSl > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newSl))
                 { ExitLongStopMarket(0, true, contracts, newSl, BuildExitSignalName("SL"), LongEntrySignal); originalStopPrice = newSl; }
             }
             else if (tradeDirection == -1 && Position.MarketPosition == MarketPosition.Short && entryBarBearish)
             {
                 double newSl = Instrument.MasterInstrument.RoundToTickSize(High[1] + slExtraTicks * TickSize);
-                if (newSl < originalStopPrice && newSl > Close[0])
+                if (newSl < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newSl))
                 { ExitShortStopMarket(0, true, contracts, newSl, BuildExitSignalName("SL"), ShortEntrySignal); originalStopPrice = newSl; }
             }
         }
@@ -2317,13 +2355,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (tradeDirection == 1 && Position.MarketPosition == MarketPosition.Long)
             {
                 double newStop = Instrument.MasterInstrument.RoundToTickSize(Low[trailCandleOffset] - slExtraTicks * TickSize);
-                if (newStop > originalStopPrice && newStop < Close[0])
+                if (newStop > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newStop))
                     ExitLongStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), LongEntrySignal);
             }
             else if (tradeDirection == -1 && Position.MarketPosition == MarketPosition.Short)
             {
                 double newStop = Instrument.MasterInstrument.RoundToTickSize(High[trailCandleOffset] + slExtraTicks * TickSize);
-                if (newStop < originalStopPrice && newStop > Close[0])
+                if (newStop < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newStop))
                     ExitShortStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), ShortEntrySignal);
             }
         }
@@ -2376,7 +2414,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (priceOffsetTrailActive)
                 {
                     double newStop = Instrument.MasterInstrument.RoundToTickSize(Close[0] - priceOffsetTrailDistance);
-                    if (newStop > originalStopPrice && newStop < Close[0])
+                    if (newStop > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newStop))
                         ExitLongStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), LongEntrySignal);
                 }
             }
@@ -2392,7 +2430,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (priceOffsetTrailActive)
                 {
                     double newStop = Instrument.MasterInstrument.RoundToTickSize(Close[0] + priceOffsetTrailDistance);
-                    if (newStop < originalStopPrice && newStop > Close[0])
+                    if (newStop < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newStop))
                         ExitShortStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), ShortEntrySignal);
                 }
             }
@@ -2867,7 +2905,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enable New York Session", Order = 1, GroupName = "01. Ny: Session")]
         public bool NyEnable { get; set; }
 
@@ -3527,7 +3564,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enable Europe Session", Order = 1, GroupName = "18. Eu: Session")]
         public bool EuEnable { get; set; }
 
@@ -4187,7 +4223,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Enable Asia Session", Order = 1, GroupName = "35. As: Session")]
         public bool AsEnable { get; set; }
 
