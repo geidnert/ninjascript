@@ -43,6 +43,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ShortOnly
         }
 
+        public enum TakeProfitStopMode
+        {
+            PercentMove,
+            WickTrail
+        }
+
         // Commercial (closed list) option: uncomment these converters and the [TypeConverter(...)] lines
         // on the momentum properties to switch back from free input to dropdown presets.
         // private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
@@ -173,6 +179,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool pendingLongEntryIsFlip;
         private bool pendingShortEntryIsFlip;
         private bool flipBreakEvenActivated;
+        private bool takeProfitStopTriggered;
+        private double initialStopPrice;
+        private double currentStopPrice;
         private bool adxDdRiskModeApplied;
         private bool isConfiguredTimeframeValid = true;
         private bool isConfiguredInstrumentValid = true;
@@ -497,6 +506,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EnableFlipBreakEven = false;
                 FlipBreakEvenTriggerPoints = 0.0;
                 FlipTakeProfitPoints = 0.0;
+                TakeProfitPercentTriggerPercent = 82.0;
+                TakeProfitPercentStopMode = TakeProfitStopMode.PercentMove;
+                TakeProfitPercentStopMovePercent = 32.0;
                 EnableAdxDdRiskMode = false;
                 AdxDdRiskModeStopLossPoints = 0.0;
                 AdxDdRiskModeTakeProfitPoints = 0.0;
@@ -551,6 +563,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentTradePeakAdx = 0.0;
                 trackedAdxPeakPosition = MarketPosition.Flat;
                 flipBreakEvenActivated = false;
+                takeProfitStopTriggered = false;
+                initialStopPrice = 0.0;
+                currentStopPrice = 0.0;
                 adxDdRiskModeApplied = false;
                 projectXSessionToken = null;
                 projectXTokenAcquiredUtc = Core.Globals.MinDate;
@@ -681,6 +696,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (Position.MarketPosition == MarketPosition.Long)
             {
                 TryApplyFlipBreakEvenStop();
+                TryManageTakeProfitTriggeredStop();
 
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
@@ -792,6 +808,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (Position.MarketPosition == MarketPosition.Short)
             {
                 TryApplyFlipBreakEvenStop();
+                TryManageTakeProfitTriggeredStop();
 
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
@@ -1141,6 +1158,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 pendingLongEntryIsFlip = false;
                 pendingShortEntryIsFlip = false;
                 flipBreakEvenActivated = false;
+                takeProfitStopTriggered = false;
+                initialStopPrice = marketPosition == MarketPosition.Long
+                    ? pendingLongStopForWebhook
+                    : marketPosition == MarketPosition.Short
+                        ? pendingShortStopForWebhook
+                        : 0.0;
+                initialStopPrice = Instrument.MasterInstrument.RoundToTickSize(initialStopPrice);
+                if (initialStopPrice <= 0.0 && tradeLineSlPrice > 0.0)
+                    initialStopPrice = Instrument.MasterInstrument.RoundToTickSize(tradeLineSlPrice);
+                currentStopPrice = initialStopPrice;
                 adxDdRiskModeApplied = false;
                 SessionSlot entrySession = activeSession != SessionSlot.None
                     ? activeSession
@@ -1163,6 +1190,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentPositionEntrySignal = string.Empty;
                 currentPositionIsFlipEntry = false;
                 flipBreakEvenActivated = false;
+                takeProfitStopTriggered = false;
+                initialStopPrice = 0.0;
+                currentStopPrice = 0.0;
                 adxDdRiskModeApplied = false;
             }
             else if (marketPosition == MarketPosition.Flat)
@@ -1170,6 +1200,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentPositionEntrySignal = string.Empty;
                 currentPositionIsFlipEntry = false;
                 flipBreakEvenActivated = false;
+                takeProfitStopTriggered = false;
+                initialStopPrice = 0.0;
+                currentStopPrice = 0.0;
                 adxDdRiskModeApplied = false;
             }
 
@@ -1225,11 +1258,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return IsShortEntryOrderName(currentPositionEntrySignal) ? currentPositionEntrySignal : ShortEntrySignal;
         }
 
-        private bool IsFlipEntrySignal(string signal)
-        {
-            return currentPositionIsFlipEntry;
-        }
-
         private string BuildExitSignalName(string reason)
         {
             return "Duo" + reason;
@@ -1240,22 +1268,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!EnableFlipBreakEven || FlipBreakEvenTriggerPoints <= 0.0 || flipBreakEvenActivated)
                 return;
 
-            if (!IsFlipEntrySignal(currentPositionEntrySignal))
+            if (!currentPositionIsFlipEntry || Position.MarketPosition == MarketPosition.Flat)
                 return;
 
             double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
             string entrySignal = Position.MarketPosition == MarketPosition.Long
                 ? GetOpenLongEntrySignal()
                 : GetOpenShortEntrySignal();
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
-                if (Close[0] < averagePrice + FlipBreakEvenTriggerPoints)
+                if (closePrice < averagePrice + FlipBreakEvenTriggerPoints)
                     return;
             }
             else if (Position.MarketPosition == MarketPosition.Short)
             {
-                if (Close[0] > averagePrice - FlipBreakEvenTriggerPoints)
+                if (closePrice > averagePrice - FlipBreakEvenTriggerPoints)
                     return;
             }
             else
@@ -1263,14 +1292,151 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            SetStopLoss(entrySignal, CalculationMode.Price, averagePrice, false);
+            bool stopValid = IsManagedStopPriceValid(averagePrice, closePrice);
+            bool stopApplied = stopValid && ApplyManagedStop(entrySignal, averagePrice);
             flipBreakEvenActivated = true;
+
             LogDebug(string.Format(
-                "Flip BE armed | signal={0} triggerPts={1:0.00} avg={2:0.00} close={3:0.00}",
+                "Flip BE armed | signal={0} triggerPts={1:0.00} stop={2:0.00} close={3:0.00} stopValid={4} stopApplied={5}",
                 entrySignal,
                 FlipBreakEvenTriggerPoints,
                 averagePrice,
-                Close[0]));
+                closePrice,
+                stopValid,
+                stopApplied));
+        }
+
+        private void TryManageTakeProfitTriggeredStop()
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            double activePositionTakeProfitPoints = GetActivePositionTakeProfitPoints();
+            if (TakeProfitPercentTriggerPercent <= 0.0 || activePositionTakeProfitPoints <= 0.0)
+                return;
+
+            double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
+            string entrySignal = Position.MarketPosition == MarketPosition.Long
+                ? GetOpenLongEntrySignal()
+                : GetOpenShortEntrySignal();
+            double triggerPoints = activePositionTakeProfitPoints * (TakeProfitPercentTriggerPercent / 100.0);
+
+            if (!takeProfitStopTriggered)
+            {
+                bool triggerReached = Position.MarketPosition == MarketPosition.Long
+                    ? closePrice >= averagePrice + triggerPoints
+                    : closePrice <= averagePrice - triggerPoints;
+                if (!triggerReached)
+                    return;
+
+                takeProfitStopTriggered = true;
+                LogDebug(string.Format(
+                    "TP stop trigger armed | signal={0} mode={1} triggerPct={2:0.##} triggerPts={3:0.00} avg={4:0.00} close={5:0.00} tpPts={6:0.00}",
+                    entrySignal,
+                    TakeProfitPercentStopMode,
+                    TakeProfitPercentTriggerPercent,
+                    triggerPoints,
+                    averagePrice,
+                    closePrice,
+                    activePositionTakeProfitPoints));
+            }
+
+            if (TakeProfitPercentStopMode == TakeProfitStopMode.WickTrail)
+            {
+                TryApplyTakeProfitWickTrailStop(entrySignal, closePrice);
+                return;
+            }
+
+            double stopMovePoints = activePositionTakeProfitPoints * (TakeProfitPercentStopMovePercent / 100.0);
+            double stopPrice = Position.MarketPosition == MarketPosition.Long
+                ? averagePrice + stopMovePoints
+                : averagePrice - stopMovePoints;
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+
+            if (!IsManagedStopPriceValid(stopPrice, closePrice))
+                return;
+
+            bool stopApplied = ApplyManagedStop(entrySignal, stopPrice);
+            if (stopApplied)
+            {
+                LogDebug(string.Format(
+                    "TP percent stop moved | signal={0} triggerPct={1:0.##} stopPct={2:0.##} stop={3:0.00} avg={4:0.00} close={5:0.00}",
+                    entrySignal,
+                    TakeProfitPercentTriggerPercent,
+                    TakeProfitPercentStopMovePercent,
+                    stopPrice,
+                    averagePrice,
+                    closePrice));
+            }
+        }
+
+        private void TryApplyTakeProfitWickTrailStop(string entrySignal, double closePrice)
+        {
+            double stopPrice = Position.MarketPosition == MarketPosition.Long ? Low[0] : High[0];
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+
+            if (!IsManagedStopPriceValid(stopPrice, closePrice))
+                return;
+
+            bool stopApplied = ApplyManagedStop(entrySignal, stopPrice);
+            if (stopApplied)
+            {
+                LogDebug(string.Format(
+                    "TP wick trail moved | signal={0} stop={1:0.00} close={2:0.00} wickBar={3}",
+                    entrySignal,
+                    stopPrice,
+                    closePrice,
+                    Time[0]));
+            }
+        }
+
+        private bool ApplyManagedStop(string entrySignal, double stopPrice)
+        {
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+            if (!ShouldTightenManagedStop(stopPrice))
+                return false;
+
+            SetStopLoss(entrySignal, CalculationMode.Price, stopPrice, false);
+            currentStopPrice = stopPrice;
+            UpdateTradeLineStopPrice(stopPrice);
+            return true;
+        }
+
+        private bool ShouldTightenManagedStop(double stopPrice)
+        {
+            if (Position.MarketPosition == MarketPosition.Long)
+                return currentStopPrice <= 0.0 || stopPrice > currentStopPrice + TickSize * 0.5;
+
+            if (Position.MarketPosition == MarketPosition.Short)
+                return currentStopPrice <= 0.0 || stopPrice < currentStopPrice - TickSize * 0.5;
+
+            return false;
+        }
+
+        private bool IsManagedStopPriceValid(double stopPrice, double closePrice)
+        {
+            if (Position.MarketPosition == MarketPosition.Long)
+                return stopPrice <= closePrice - TickSize;
+
+            if (Position.MarketPosition == MarketPosition.Short)
+                return stopPrice >= closePrice + TickSize;
+
+            return false;
+        }
+
+        private bool HasManagedStopTightened()
+        {
+            if (Position.MarketPosition == MarketPosition.Flat || initialStopPrice <= 0.0 || currentStopPrice <= 0.0)
+                return false;
+
+            if (Position.MarketPosition == MarketPosition.Long)
+                return currentStopPrice > initialStopPrice + TickSize * 0.5;
+
+            if (Position.MarketPosition == MarketPosition.Short)
+                return currentStopPrice < initialStopPrice - TickSize * 0.5;
+
+            return false;
         }
 
         private double GetEffectiveFlipTakeProfitPoints()
@@ -1282,6 +1448,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (adxDdRiskModeApplied && AdxDdRiskModeTakeProfitPoints > 0.0)
                 return AdxDdRiskModeTakeProfitPoints;
+
+            if (currentPositionIsFlipEntry)
+                return GetEffectiveFlipTakeProfitPoints();
 
             return activeTakeProfitPoints;
         }
@@ -1303,7 +1472,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool slSkippedInvalid = false;
             bool tpSkippedInvalid = false;
 
-            if (AdxDdRiskModeStopLossPoints > 0.0 && !flipBreakEvenActivated)
+            if (AdxDdRiskModeStopLossPoints > 0.0 && !HasManagedStopTightened())
             {
                 double stopPrice = Position.MarketPosition == MarketPosition.Long
                     ? averagePrice - AdxDdRiskModeStopLossPoints
@@ -1316,8 +1485,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (stopValid)
                 {
-                    SetStopLoss(entrySignal, CalculationMode.Price, stopPrice, false);
-                    slApplied = true;
+                    slApplied = ApplyManagedStop(entrySignal, stopPrice);
                 }
                 else
                 {
@@ -1353,7 +1521,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             adxDdRiskModeApplied = true;
 
             LogDebug(string.Format(
-                "ADX DD risk mode armed | side={0} adx={1:0.00} peak={2:0.00} drawdown={3:0.00} threshold={4:0.00} close={5:0.00} slPts={6:0.00} slApplied={7} slSkippedInvalid={8} tpPts={9:0.00} tpApplied={10} tpSkippedInvalid={11} beActive={12}",
+                "ADX DD risk mode armed | side={0} adx={1:0.00} peak={2:0.00} drawdown={3:0.00} threshold={4:0.00} close={5:0.00} slPts={6:0.00} slApplied={7} slSkippedInvalid={8} tpPts={9:0.00} tpApplied={10} tpSkippedInvalid={11} stopTightened={12}",
                 Position.MarketPosition,
                 adxValue,
                 currentTradePeakAdx,
@@ -1366,7 +1534,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AdxDdRiskModeTakeProfitPoints,
                 tpApplied,
                 tpSkippedInvalid,
-                flipBreakEvenActivated));
+                HasManagedStopTightened()));
         }
 
         private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
@@ -1455,6 +1623,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             tradeLineEntryPrice = 0.0;
             tradeLineTpPrice = 0.0;
             tradeLineSlPrice = 0.0;
+        }
+
+        private void UpdateTradeLineStopPrice(double stopPrice)
+        {
+            if (!tradeLinesActive)
+                return;
+
+            tradeLineSlPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+            UpdateTradeLines();
         }
 
         private void DrawTradeLinesAtBarsAgo(int startBarsAgo, int endBarsAgo)
@@ -3817,21 +3994,35 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double FlipTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 9)]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "13. Risk", Order = 9)]
+        public double TakeProfitPercentTriggerPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or start trailing at the wick of each completed 5-minute candle.", GroupName = "13. Risk", Order = 10)]
+        public TakeProfitStopMode TakeProfitPercentStopMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "13. Risk", Order = 11)]
+        public double TakeProfitPercentStopMovePercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 12)]
         public bool RequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "13. Risk", Order = 10)]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "13. Risk", Order = 13)]
         public bool EnableAdxDdRiskMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "13. Risk", Order = 11)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "13. Risk", Order = 14)]
         public double AdxDdRiskModeStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "13. Risk", Order = 12)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "13. Risk", Order = 15)]
         public double AdxDdRiskModeTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
