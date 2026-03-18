@@ -43,6 +43,14 @@ namespace NinjaTrader.NinjaScript.AddOns
             public double AverageEntryPrice { get; set; }
         }
 
+        private sealed class TrackedStrategyPosition
+        {
+            public string AccountName { get; set; }
+            public string InstrumentName { get; set; }
+            public string BotName { get; set; }
+            public double SignedQuantity { get; set; }
+        }
+
         private sealed class ExecutionMessageResult
         {
             public bool IsEntryNotification { get; set; }
@@ -79,13 +87,17 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly Dictionary<string, bool> feedStalledByInstrument = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, ConnectionStatus> lastConnectionStatusByName = new Dictionary<string, ConnectionStatus>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, TrackedPositionState> trackedPositionsByKey = new Dictionary<string, TrackedPositionState>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTime> missingProtectionFirstSeenUtcByKey = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, DateTime> recentExecutionKeys = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, DateTime> recentMessages = new Dictionary<string, DateTime>(StringComparer.Ordinal);
         private readonly List<MarketDataSubscription> marketDataSubscriptions = new List<MarketDataSubscription>();
+        private readonly HashSet<string> missingProtectionAlertedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> missingProtectionFlattenAttemptedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> subscribedAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<StrategyRecoveryEntry> strategiesPendingRecovery = new List<StrategyRecoveryEntry>();
         private static readonly TimeSpan ExecutionDeduplicationWindow = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan MessageDeduplicationWindow = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan MissingProtectionGracePeriod = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan StrategyRestoreStabilityDelay = TimeSpan.FromSeconds(15);
         private Timer watchdogTimer;
         private string configFilePath;
@@ -102,6 +114,8 @@ namespace NinjaTrader.NinjaScript.AddOns
         private string chatId;
         private bool dataFeedReporting;
         private int watchdogDataTimeoutSeconds;
+        private bool warnMissingProtection;
+        private bool autoFlattenUnprotectedPositions;
         private bool heartbeatReporting;
         private int heartbeatTimeoutSeconds;
         private bool runHeadlessWhenWindowClosed;
@@ -232,6 +246,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             chatId = string.Empty;
             dataFeedReporting = true;
             watchdogDataTimeoutSeconds = 60;
+            warnMissingProtection = true;
+            autoFlattenUnprotectedPositions = false;
             heartbeatReporting = true;
             heartbeatTimeoutSeconds = 60;
             runHeadlessWhenWindowClosed = true;
@@ -260,6 +276,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 ChatId = chatId,
                 DataFeedReporting = dataFeedReporting,
                 WatchdogDataTimeoutSeconds = watchdogDataTimeoutSeconds,
+                WarnMissingProtection = warnMissingProtection,
+                AutoFlattenUnprotectedPositions = autoFlattenUnprotectedPositions,
                 HeartbeatReporting = heartbeatReporting,
                 HeartbeatFilePath = heartbeatFilePath,
                 HeartbeatTimeoutSeconds = heartbeatTimeoutSeconds,
@@ -355,6 +373,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             chatId = settings.ChatId ?? string.Empty;
             dataFeedReporting = settings.DataFeedReporting;
             watchdogDataTimeoutSeconds = Math.Max(1, settings.WatchdogDataTimeoutSeconds);
+            warnMissingProtection = settings.WarnMissingProtection;
+            autoFlattenUnprotectedPositions = settings.WarnMissingProtection && settings.AutoFlattenUnprotectedPositions;
             heartbeatReporting = settings.HeartbeatReporting;
             heartbeatFilePath = string.IsNullOrWhiteSpace(settings.HeartbeatFilePath)
                 ? Path.Combine(Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv")
@@ -438,6 +458,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                     case "WatchdogDataTimeoutSeconds":
                         watchdogDataTimeoutSeconds = ParseInt(value, watchdogDataTimeoutSeconds);
                         break;
+                    case "WarnMissingProtection":
+                        warnMissingProtection = ParseBool(value, warnMissingProtection);
+                        break;
+                    case "AutoFlattenUnprotectedPositions":
+                        autoFlattenUnprotectedPositions = ParseBool(value, autoFlattenUnprotectedPositions);
+                        break;
                     case "HeartbeatReporting":
                         heartbeatReporting = ParseBool(value, heartbeatReporting);
                         break;
@@ -492,6 +518,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 "ChatId=",
                 "DataFeedReporting=true",
                 "WatchdogDataTimeoutSeconds=60",
+                "WarnMissingProtection=true",
+                "AutoFlattenUnprotectedPositions=false",
                 "HeartbeatReporting=true",
                 "HeartbeatFilePath=" + heartbeatFilePath,
                 "HeartbeatTimeoutSeconds=60",
@@ -526,6 +554,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 "ChatId=" + settings.ChatId,
                 "DataFeedReporting=" + settings.DataFeedReporting.ToString().ToLowerInvariant(),
                 "WatchdogDataTimeoutSeconds=" + settings.WatchdogDataTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
+                "WarnMissingProtection=" + settings.WarnMissingProtection.ToString().ToLowerInvariant(),
+                "AutoFlattenUnprotectedPositions=" + settings.AutoFlattenUnprotectedPositions.ToString().ToLowerInvariant(),
                 "HeartbeatReporting=" + settings.HeartbeatReporting.ToString().ToLowerInvariant(),
                 "HeartbeatFilePath=" + settings.HeartbeatFilePath,
                 "HeartbeatTimeoutSeconds=" + settings.HeartbeatTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
@@ -580,6 +610,15 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             lock (trackedPositionsByKey)
                 trackedPositionsByKey.Clear();
+
+            lock (missingProtectionFirstSeenUtcByKey)
+                missingProtectionFirstSeenUtcByKey.Clear();
+
+            lock (missingProtectionAlertedKeys)
+                missingProtectionAlertedKeys.Clear();
+
+            lock (missingProtectionFlattenAttemptedKeys)
+                missingProtectionFlattenAttemptedKeys.Clear();
 
             lock (recentExecutionKeys)
                 recentExecutionKeys.Clear();
@@ -791,6 +830,15 @@ namespace NinjaTrader.NinjaScript.AddOns
             {
                 lock (trackedPositionsByKey)
                     trackedPositionsByKey.Clear();
+
+                lock (missingProtectionFirstSeenUtcByKey)
+                    missingProtectionFirstSeenUtcByKey.Clear();
+
+                lock (missingProtectionAlertedKeys)
+                    missingProtectionAlertedKeys.Clear();
+
+                lock (missingProtectionFlattenAttemptedKeys)
+                    missingProtectionFlattenAttemptedKeys.Clear();
 
                 lock (recentExecutionKeys)
                     recentExecutionKeys.Clear();
@@ -1214,6 +1262,9 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (dataFeedReporting)
                 CheckFeedStalls(nowUtc);
 
+            if (warnMissingProtection)
+                CheckOpenPositionsForMissingProtection(nowUtc);
+
             if (heartbeatReporting)
                 CheckHeartbeatFileMulti();
 
@@ -1306,6 +1357,373 @@ namespace NinjaTrader.NinjaScript.AddOns
         private bool AnyFeedCurrentlyStalled()
         {
             return feedStalledByInstrument.Values.Any(stalled => stalled);
+        }
+
+        private void CheckOpenPositionsForMissingProtection(DateTime nowUtc)
+        {
+            Dictionary<string, Account> matchingAccounts = new Dictionary<string, Account>(StringComparer.OrdinalIgnoreCase);
+            lock (Account.All)
+            {
+                foreach (Account account in Account.All)
+                {
+                    if (account == null || !IsMatchingAccount(account))
+                        continue;
+
+                    if (!matchingAccounts.ContainsKey(account.Name))
+                        matchingAccounts[account.Name] = account;
+                }
+            }
+
+            List<TrackedStrategyPosition> trackedPositions = GetTrackedStrategyPositionsSnapshot()
+                .Where(position => matchingAccounts.ContainsKey(position.AccountName))
+                .Where(position => IsMatchingInstrumentName(position.InstrumentName))
+                .ToList();
+
+            HashSet<string> activeProtectionKeys = new HashSet<string>(trackedPositions.Select(position => BuildProtectionKey(position.AccountName, position.InstrumentName, position.BotName)), StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, int> activeStrategyCountsByScope = trackedPositions
+                .GroupBy(position => BuildProtectionScopeKey(position.AccountName, position.InstrumentName), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+            foreach (TrackedStrategyPosition trackedPosition in trackedPositions)
+            {
+                Account account;
+                if (!matchingAccounts.TryGetValue(trackedPosition.AccountName, out account))
+                    continue;
+
+                try
+                {
+                    CheckTrackedStrategyProtection(account, trackedPosition, nowUtc, activeStrategyCountsByScope);
+                }
+                catch (Exception ex)
+                {
+                    string displayBot = string.IsNullOrWhiteSpace(trackedPosition.BotName) ? "Unknown" : trackedPosition.BotName;
+                    LogToOutput($"Protection watchdog error on {account.Name} | {trackedPosition.InstrumentName} | {displayBot}: {ex.Message}");
+                }
+            }
+
+            lock (missingProtectionFirstSeenUtcByKey)
+            {
+                foreach (string staleKey in missingProtectionFirstSeenUtcByKey.Keys.Where(key => !activeProtectionKeys.Contains(key)).ToList())
+                    missingProtectionFirstSeenUtcByKey.Remove(staleKey);
+            }
+
+            lock (missingProtectionAlertedKeys)
+            {
+                foreach (string staleKey in missingProtectionAlertedKeys.Where(key => !activeProtectionKeys.Contains(key)).ToList())
+                    missingProtectionAlertedKeys.Remove(staleKey);
+            }
+
+            lock (missingProtectionFlattenAttemptedKeys)
+            {
+                foreach (string staleKey in missingProtectionFlattenAttemptedKeys.Where(key => !activeProtectionKeys.Contains(key)).ToList())
+                    missingProtectionFlattenAttemptedKeys.Remove(staleKey);
+            }
+        }
+
+        private void CheckTrackedStrategyProtection(Account account, TrackedStrategyPosition trackedPosition, DateTime nowUtc, Dictionary<string, int> activeStrategyCountsByScope)
+        {
+            if (account == null || trackedPosition == null)
+                return;
+
+            bool hasStop;
+            bool hasTarget;
+            EvaluateProtectionOrders(account, trackedPosition, out hasStop, out hasTarget);
+
+            string protectionKey = BuildProtectionKey(trackedPosition.AccountName, trackedPosition.InstrumentName, trackedPosition.BotName);
+            if (hasStop && hasTarget)
+            {
+                lock (missingProtectionFirstSeenUtcByKey)
+                    missingProtectionFirstSeenUtcByKey.Remove(protectionKey);
+
+                lock (missingProtectionAlertedKeys)
+                    missingProtectionAlertedKeys.Remove(protectionKey);
+
+                lock (missingProtectionFlattenAttemptedKeys)
+                    missingProtectionFlattenAttemptedKeys.Remove(protectionKey);
+
+                return;
+            }
+
+            DateTime firstSeenUtc;
+            lock (missingProtectionFirstSeenUtcByKey)
+            {
+                if (!missingProtectionFirstSeenUtcByKey.TryGetValue(protectionKey, out firstSeenUtc))
+                {
+                    missingProtectionFirstSeenUtcByKey[protectionKey] = nowUtc;
+                    return;
+                }
+            }
+
+            if (nowUtc - firstSeenUtc < MissingProtectionGracePeriod)
+                return;
+
+            bool flattenBlockedBySharedScope = false;
+            string scopeKey = BuildProtectionScopeKey(trackedPosition.AccountName, trackedPosition.InstrumentName);
+            int activeStrategyCount;
+            if (activeStrategyCountsByScope.TryGetValue(scopeKey, out activeStrategyCount))
+                flattenBlockedBySharedScope = activeStrategyCount > 1;
+
+            bool shouldSendWarning;
+            lock (missingProtectionAlertedKeys)
+            {
+                shouldSendWarning = missingProtectionAlertedKeys.Add(protectionKey);
+            }
+
+            string missingText = !hasStop && !hasTarget
+                ? "TP and SL"
+                : (!hasStop ? "SL" : "TP");
+            string sideText = trackedPosition.SignedQuantity > 0 ? "Long" : "Short";
+            string displayBot = string.IsNullOrWhiteSpace(trackedPosition.BotName) ? "Unknown strategy" : trackedPosition.BotName;
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "⚠️ {0} | {1} | {2}\n{3} position is active but missing {4}{5}.",
+                account.Name,
+                trackedPosition.InstrumentName,
+                displayBot,
+                sideText,
+                missingText,
+                flattenBlockedBySharedScope && autoFlattenUnprotectedPositions
+                    ? " | Auto-flatten skipped because multiple strategies are active on this account/instrument"
+                    : string.Empty);
+
+            if (shouldSendWarning && !IsDuplicateMessage(message))
+            {
+                LogToOutput(message);
+                if (sendPushNotifications)
+                    SendPushNotification(nowUtc, message);
+            }
+
+            if (autoFlattenUnprotectedPositions && !flattenBlockedBySharedScope)
+                TryFlattenUnprotectedPosition(account, trackedPosition, nowUtc, protectionKey, missingText);
+        }
+
+        private void EvaluateProtectionOrders(Account account, TrackedStrategyPosition trackedPosition, out bool hasStop, out bool hasTarget)
+        {
+            hasStop = false;
+            hasTarget = false;
+
+            if (account == null || trackedPosition == null || string.IsNullOrWhiteSpace(trackedPosition.InstrumentName))
+                return;
+
+            Order[] orders;
+            try
+            {
+                orders = account.Orders.Cast<Order>().Where(order => order != null).ToArray();
+            }
+            catch
+            {
+                return;
+            }
+
+            foreach (Order order in orders)
+            {
+                if (order == null || order.Instrument == null)
+                    continue;
+
+                if (!string.Equals(order.Instrument.FullName, trackedPosition.InstrumentName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!string.Equals(ResolveBotName(order), trackedPosition.BotName ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!IsActiveProtectionOrder(order, trackedPosition.SignedQuantity))
+                    continue;
+
+                if (IsStopLikeOrder(order))
+                    hasStop = true;
+                else if (IsTargetLikeOrder(order))
+                    hasTarget = true;
+
+                if (hasStop && hasTarget)
+                    return;
+            }
+        }
+
+        private static bool IsActiveProtectionOrder(Order order, double signedQuantity)
+        {
+            if (order == null)
+                return false;
+
+            if (signedQuantity > 0 && order.OrderAction != OrderAction.Sell)
+                return false;
+
+            if (signedQuantity < 0
+                && order.OrderAction != OrderAction.Buy
+                && order.OrderAction != OrderAction.BuyToCover)
+                return false;
+
+            return order.OrderState == OrderState.Accepted
+                || order.OrderState == OrderState.Working
+                || order.OrderState == OrderState.PartFilled
+                || order.OrderState == OrderState.TriggerPending;
+        }
+
+        private static bool IsStopLikeOrder(Order order)
+        {
+            if (order == null)
+                return false;
+
+            if (order.OrderType == OrderType.StopMarket || order.OrderType == OrderType.StopLimit)
+                return true;
+
+            string hint = ((order.Name ?? string.Empty) + " " + (order.FromEntrySignal ?? string.Empty)).ToLowerInvariant();
+            return hint.Contains(" stop")
+                || hint.StartsWith("stop")
+                || hint.Contains("sl");
+        }
+
+        private static bool IsTargetLikeOrder(Order order)
+        {
+            if (order == null)
+                return false;
+
+            if (order.OrderType == OrderType.Limit)
+                return true;
+
+            string hint = ((order.Name ?? string.Empty) + " " + (order.FromEntrySignal ?? string.Empty)).ToLowerInvariant();
+            return hint.Contains("target")
+                || hint.Contains("tp");
+        }
+
+        private static string BuildProtectionScopeKey(string accountName, string instrumentName)
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}|{1}",
+                accountName ?? string.Empty,
+                instrumentName ?? string.Empty);
+        }
+
+        private static string BuildProtectionKey(string accountName, string instrumentName, string botName)
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}|{1}|{2}",
+                accountName ?? string.Empty,
+                instrumentName ?? string.Empty,
+                botName ?? string.Empty);
+        }
+
+        private List<TrackedStrategyPosition> GetTrackedStrategyPositionsSnapshot()
+        {
+            List<TrackedStrategyPosition> result = new List<TrackedStrategyPosition>();
+
+            lock (trackedPositionsByKey)
+            {
+                foreach (KeyValuePair<string, TrackedPositionState> item in trackedPositionsByKey)
+                {
+                    if (item.Value == null || Math.Abs(item.Value.SignedQuantity) < 0.0000001)
+                        continue;
+
+                    string accountName;
+                    string instrumentName;
+                    string botName;
+                    if (!TryParseTrackedPositionKey(item.Key, out accountName, out instrumentName, out botName))
+                        continue;
+
+                    result.Add(new TrackedStrategyPosition
+                    {
+                        AccountName = accountName,
+                        InstrumentName = instrumentName,
+                        BotName = botName,
+                        SignedQuantity = item.Value.SignedQuantity
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        private static bool TryParseTrackedPositionKey(string key, out string accountName, out string instrumentName, out string botName)
+        {
+            accountName = string.Empty;
+            instrumentName = string.Empty;
+            botName = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(key))
+                return false;
+
+            string[] parts = key.Split(new[] { '|' }, 3);
+            if (parts.Length < 3)
+                return false;
+
+            accountName = parts[0];
+            instrumentName = parts[1];
+            botName = parts[2];
+            return true;
+        }
+
+        private static string ResolveBotName(Order order)
+        {
+            if (order == null)
+                return string.Empty;
+
+            string fromEntrySignal = order.FromEntrySignal ?? string.Empty;
+            string botName = ExtractBotName(fromEntrySignal);
+            if (!string.IsNullOrWhiteSpace(botName))
+                return botName;
+
+            return ExtractBotName(order.Name ?? string.Empty);
+        }
+
+        private void TryFlattenUnprotectedPosition(Account account, TrackedStrategyPosition trackedPosition, DateTime nowUtc, string protectionKey, string missingText)
+        {
+            if (account == null || trackedPosition == null || string.IsNullOrWhiteSpace(trackedPosition.InstrumentName))
+                return;
+
+            lock (missingProtectionFlattenAttemptedKeys)
+            {
+                if (!missingProtectionFlattenAttemptedKeys.Add(protectionKey))
+                    return;
+            }
+
+            string sideText = trackedPosition.SignedQuantity > 0 ? "Long" : "Short";
+            string displayBot = string.IsNullOrWhiteSpace(trackedPosition.BotName) ? "Unknown strategy" : trackedPosition.BotName;
+            Instrument instrument = Instrument.GetInstrument(trackedPosition.InstrumentName, true);
+            if (instrument == null)
+            {
+                string resolveMessage = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "⚠️ {0} | {1} | {2}\nFailed to flatten unprotected {3} position: instrument could not be resolved.",
+                    account.Name,
+                    trackedPosition.InstrumentName,
+                    displayBot,
+                    sideText);
+                LogToOutput(resolveMessage);
+                if (sendPushNotifications)
+                    SendPushNotification(nowUtc, resolveMessage);
+                return;
+            }
+
+            try
+            {
+                account.Flatten(new[] { instrument });
+                string message = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "🛑 {0} | {1} | {2}\nFlatten requested for unprotected {3} position (missing {4}).",
+                    account.Name,
+                    trackedPosition.InstrumentName,
+                    displayBot,
+                    sideText,
+                    missingText);
+                LogToOutput(message);
+                if (sendPushNotifications)
+                    SendPushNotification(nowUtc, message);
+            }
+            catch (Exception ex)
+            {
+                string message = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "⚠️ {0} | {1} | {2}\nFailed to flatten unprotected {3} position: {4}",
+                    account.Name,
+                    trackedPosition.InstrumentName,
+                    displayBot,
+                    sideText,
+                    ex.Message);
+                LogToOutput(message);
+                if (sendPushNotifications)
+                    SendPushNotification(nowUtc, message);
+            }
         }
 
         private void StartReconnectLoop(DateTime nowUtc)
@@ -1894,6 +2312,23 @@ namespace NinjaTrader.NinjaScript.AddOns
             {
                 if (string.Equals(account.Name, accountFilter, StringComparison.OrdinalIgnoreCase)
                     || string.Equals(account.DisplayName, accountFilter, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool IsMatchingInstrumentName(string instrumentName)
+        {
+            if (string.IsNullOrWhiteSpace(instrumentName))
+                return false;
+
+            if (string.IsNullOrWhiteSpace(monitoredInstrumentsCsv))
+                return true;
+
+            foreach (string instrumentFilter in ParseCsv(monitoredInstrumentsCsv))
+            {
+                if (string.Equals(instrumentName, instrumentFilter, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
 
@@ -4211,6 +4646,8 @@ namespace NinjaTrader.NinjaScript.AddOns
         public string ChatId { get; set; }
         public bool DataFeedReporting { get; set; }
         public int WatchdogDataTimeoutSeconds { get; set; }
+        public bool WarnMissingProtection { get; set; }
+        public bool AutoFlattenUnprotectedPositions { get; set; }
         public bool HeartbeatReporting { get; set; }
         public string HeartbeatFilePath { get; set; }
         public int HeartbeatTimeoutSeconds { get; set; }
@@ -4240,6 +4677,8 @@ namespace NinjaTrader.NinjaScript.AddOns
         private TextBox botTokenTextBox;
         private TextBox chatIdTextBox;
         private CheckBox dataFeedReportingCheckBox;
+        private CheckBox warnMissingProtectionCheckBox;
+        private CheckBox autoFlattenUnprotectedPositionsCheckBox;
         private TextBox watchdogTimeoutTextBox;
         private CheckBox heartbeatReportingCheckBox;
         private TextBox heartbeatFilePathTextBox;
@@ -4280,6 +4719,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             botTokenTextBox.Text = settings.BotToken ?? string.Empty;
             chatIdTextBox.Text = settings.ChatId ?? string.Empty;
             dataFeedReportingCheckBox.IsChecked = settings.DataFeedReporting;
+            warnMissingProtectionCheckBox.IsChecked = settings.WarnMissingProtection;
+            autoFlattenUnprotectedPositionsCheckBox.IsChecked = settings.AutoFlattenUnprotectedPositions;
             watchdogTimeoutTextBox.Text = settings.WatchdogDataTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
             heartbeatReportingCheckBox.IsChecked = settings.HeartbeatReporting;
             heartbeatFilePathTextBox.Text = settings.HeartbeatFilePath ?? string.Empty;
@@ -4431,6 +4872,14 @@ namespace NinjaTrader.NinjaScript.AddOns
                 out dataFeedReportingCheckBox,
                 "Data Feed Reporting",
                 "Watch the instruments below and report when market data stops updating."));
+            panel.Children.Add(BuildCheckBoxWithDescription(
+                out warnMissingProtectionCheckBox,
+                "Warn On Missing TP/SL",
+                "Warn if a monitored account has an open position but no working stop-loss or profit-target order for that instrument."));
+            panel.Children.Add(BuildIndentedContent(BuildCheckBoxWithDescription(
+                out autoFlattenUnprotectedPositionsCheckBox,
+                "Flatten Unprotected Positions",
+                "If a monitored open position stays without a working stop-loss or profit-target after the grace period, request an account flatten for that instrument and send an alert.")));
             panel.Children.Add(BuildHiddenElement(BuildIndentedContent(BuildLabeledTextBox(
                 "Watchdog Timeout Seconds",
                 "How long an instrument can go without a `Last` tick before it is treated as stalled. Minimum 1.",
@@ -4706,6 +5155,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 BotToken = botTokenTextBox.Text,
                 ChatId = chatIdTextBox.Text,
                 DataFeedReporting = dataFeedReportingCheckBox.IsChecked == true,
+                WarnMissingProtection = warnMissingProtectionCheckBox.IsChecked == true,
+                AutoFlattenUnprotectedPositions = warnMissingProtectionCheckBox.IsChecked == true && autoFlattenUnprotectedPositionsCheckBox.IsChecked == true,
                 WatchdogDataTimeoutSeconds = ParseIntOrDefault(watchdogTimeoutTextBox.Text, 60),
                 HeartbeatReporting = heartbeatReportingCheckBox.IsChecked == true,
                 HeartbeatFilePath = heartbeatFilePathTextBox.Text,
