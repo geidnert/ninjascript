@@ -147,6 +147,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool entryBarSlApplied;
         private MarketPosition prevMarketPosition;
         private Order entryOrder;
+        private Order stopOrder;
+        private Order targetOrder;
+        private bool forceFlattenInProgress;
+        private bool forceFlattenOrderSubmitted;
+        private string forceFlattenReason;
         private double tradePeakAdx;
 
         // ── Time-window transition tracking ──
@@ -1240,6 +1245,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // ─── Blocked window transitions ───
             HandleTimeWindowTransitions();
 
+            if (forceFlattenInProgress)
+            {
+                if (Position.MarketPosition == MarketPosition.Flat)
+                {
+                    if (hasActivePosition)
+                        HandlePositionClosed();
+                    else
+                    {
+                        forceFlattenInProgress = false;
+                        forceFlattenOrderSubmitted = false;
+                        forceFlattenReason = null;
+                    }
+                }
+                else
+                {
+                    TrySubmitForceFlattenExit();
+                }
+                prevMarketPosition = Position.MarketPosition;
+                return;
+            }
+
             // ─── Forced Close (check active session) ───
             if (activeSessionId > 0 && Position.MarketPosition != MarketPosition.Flat && IsInSessionForcedClose(activeSessionId))
             {
@@ -1355,6 +1381,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             priceOffsetTrailDistance     = 0;
             entryBarSlApplied           = false;
             entryOrder                  = null;
+            stopOrder                   = null;
+            targetOrder                 = null;
+            forceFlattenInProgress      = false;
+            forceFlattenOrderSubmitted  = false;
+            forceFlattenReason          = null;
             tradePeakAdx                = 0.0;
 
             CheckSessionLimitsInternal(sid);
@@ -1405,15 +1436,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     if (tpPrice <= tradeEntryPrice) tpPrice = tradeEntryPrice + SD_TakeProfitTicks(sid, 1) * TickSize;
                     if (slPrice >= tradeEntryPrice) slPrice = tradeEntryPrice - 4 * TickSize;
-                    ExitLongLimit(0, true, contracts, tpPrice, BuildExitSignalName("TP"), entryName);
-                    ExitLongStopMarket(0, true, contracts, slPrice, BuildExitSignalName("SL"), entryName);
+                    targetOrder = ExitLongLimit(0, true, contracts, tpPrice, BuildExitSignalName("TP"), entryName);
+                    stopOrder = ExitLongStopMarket(0, true, contracts, slPrice, BuildExitSignalName("SL"), entryName);
                 }
                 else
                 {
                     if (tpPrice >= tradeEntryPrice) tpPrice = tradeEntryPrice - SD_TakeProfitTicks(sid, -1) * TickSize;
                     if (slPrice <= tradeEntryPrice) slPrice = tradeEntryPrice + 4 * TickSize;
-                    ExitShortLimit(0, true, contracts, tpPrice, BuildExitSignalName("TP"), entryName);
-                    ExitShortStopMarket(0, true, contracts, slPrice, BuildExitSignalName("SL"), entryName);
+                    targetOrder = ExitShortLimit(0, true, contracts, tpPrice, BuildExitSignalName("TP"), entryName);
+                    stopOrder = ExitShortStopMarket(0, true, contracts, slPrice, BuildExitSignalName("SL"), entryName);
                 }
 
                 originalStopPrice = slPrice;
@@ -1430,6 +1461,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled, double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string nativeError)
         {
+            string targetSignalName = BuildExitSignalName("TP");
+            string stopSignalName = BuildExitSignalName("SL");
+
+            if (order.Name == targetSignalName)
+            {
+                if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected || orderState == OrderState.Filled)
+                    targetOrder = null;
+                else
+                    targetOrder = order;
+            }
+            else if (order.Name == stopSignalName)
+            {
+                if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected || orderState == OrderState.Filled)
+                    stopOrder = null;
+                else
+                    stopOrder = order;
+            }
+
             if (entryOrder != null && order == entryOrder
                 && (orderState == OrderState.Cancelled || orderState == OrderState.Rejected))
             {
@@ -1438,6 +1487,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 hasActivePosition = false;
                 Print(string.Format("{0} | Entry {1}: {2}", time, orderState, nativeError));
             }
+
+            if (forceFlattenInProgress
+                && Position.MarketPosition != MarketPosition.Flat
+                && (orderState == OrderState.Cancelled || orderState == OrderState.Rejected))
+                TrySubmitForceFlattenExit();
         }
 
         #endregion
@@ -2243,9 +2297,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool CanAmendProtectiveStopForCurrentMarket(MarketPosition positionDirection, double proposedStopPrice)
         {
-            if (State != State.Realtime)
-                return true;
-
             if (double.IsNaN(proposedStopPrice) || double.IsInfinity(proposedStopPrice) || proposedStopPrice <= 0)
                 return false;
 
@@ -2570,13 +2621,67 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             catch { }
         }
 
+        private bool IsOrderCancelable(Order order)
+        {
+            if (order == null) return false;
+            return order.OrderState == OrderState.Working
+                || order.OrderState == OrderState.Accepted
+                || order.OrderState == OrderState.Submitted
+                || order.OrderState == OrderState.PartFilled;
+        }
+
+        private void CancelWorkingProtectionOrders()
+        {
+            try
+            {
+                if (IsOrderCancelable(targetOrder))
+                    CancelOrder(targetOrder);
+            }
+            catch { }
+
+            try
+            {
+                if (IsOrderCancelable(stopOrder))
+                    CancelOrder(stopOrder);
+            }
+            catch { }
+        }
+
+        private void TrySubmitForceFlattenExit()
+        {
+            if (!forceFlattenInProgress || forceFlattenOrderSubmitted) return;
+            if (Position.MarketPosition == MarketPosition.Flat) return;
+            if (IsOrderCancelable(targetOrder) || IsOrderCancelable(stopOrder)) return;
+
+            forceFlattenOrderSubmitted = true;
+            string reason = string.IsNullOrWhiteSpace(forceFlattenReason) ? "ForcedExit" : forceFlattenReason;
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                ExitLong(Math.Max(1, Position.Quantity), BuildExitSignalName("ForcedExit"), LongEntrySignal);
+                Print(string.Format("{0} | {1}: Close LONG", Time[0], reason));
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                ExitShort(Math.Max(1, Position.Quantity), BuildExitSignalName("ForcedExit"), ShortEntrySignal);
+                Print(string.Format("{0} | {1}: Close SHORT", Time[0], reason));
+            }
+        }
+
         private void FlattenAndCancel(string reason)
         {
             CancelWorkingEntryOrder();
-            if (Position.MarketPosition == MarketPosition.Long)
-            { ExitLong(Math.Max(1, Position.Quantity), BuildExitSignalName("ForcedExit"), LongEntrySignal); Print(string.Format("{0} | {1}: Close LONG", Time[0], reason)); }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            { ExitShort(Math.Max(1, Position.Quantity), BuildExitSignalName("ForcedExit"), ShortEntrySignal); Print(string.Format("{0} | {1}: Close SHORT", Time[0], reason)); }
+            if (Position.MarketPosition == MarketPosition.Flat) return;
+
+            if (!forceFlattenInProgress)
+            {
+                forceFlattenInProgress = true;
+                forceFlattenOrderSubmitted = false;
+                forceFlattenReason = reason;
+            }
+
+            CancelWorkingProtectionOrders();
+            TrySubmitForceFlattenExit();
         }
 
         #endregion
