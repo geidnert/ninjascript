@@ -1,6 +1,6 @@
 ---
 name: apply-nt-common-bot-parts
-description: Apply standardized non-strategy-specific modules to NinjaTrader strategies (session/skip/news windows, transition safety cancel+flatten logic, startup timeframe/instrument validation, canonical infobox order, optional webhooks, and branding) using docs/bot-common-parts-spec.md as source of truth.
+description: Apply standardized non-strategy-specific modules to NinjaTrader strategies (session/skip/news windows, transition safety cancel+flatten logic, startup timeframe/instrument validation, max-account-balance guard, canonical infobox order, optional webhooks with ticker override/null-safety, and branding) using docs/bot-common-parts-spec.md as source of truth.
 ---
 
 # Apply NT Common Bot Parts
@@ -25,6 +25,7 @@ Use this skill when integrating a new strategy file from external developers and
 - session window methods
 - skip/news gating methods
 - cancel/flatten helpers
+- max account balance guard / net liquidation helper / limit-hit latch
 - signal naming helpers/constants
 - entry confirmation property/helper
 - strategy lifecycle hooks for startup/shutdown
@@ -32,11 +33,13 @@ Use this skill when integrating a new strategy file from external developers and
 - timeframe/instrument validation guards
 - infobox builder and renderer
 - webhook plumbing and properties
+- visible webhook URL/ticker override inputs and hidden ProjectX inputs
 
 2. Apply missing core parts first:
 - drawing windows and transition safety hooks
 - entry gating checks
 - session boundary guards
+- max account balance guard using net liquidation (with cash+unrealized fallback when needed)
 - strategy-name-prefixed signal constants/helpers for entries and exits
 - optional entry confirmation toggle and popup helper using the `Duo.cs` pattern
 - heartbeat reporting using `StrategyHeartbeatReporter`
@@ -75,7 +78,14 @@ Use this skill when integrating a new strategy file from external developers and
 - Route symbol-only values to a symbol font (`Segoe UI Symbol`) when needed.
 - In WPF/NinjaTrader, prefer applying value brush to emoji runs for deterministic non-white rendering when color emoji layers are not reliable.
 
-8. If module includes `webhooks`, apply provider and event mapping.
+8. If module includes `webhooks`, apply provider and event mapping plus input/default rules:
+- visible `WebhookUrl`
+- visible optional `WebhookTickerOverride`
+- hidden/internal ProjectX settings unless the user explicitly asks to expose them
+- TradersPost uses `WebhookTickerOverride.Trim()` when non-empty, otherwise `Instrument.MasterInstrument.Name`
+- ProjectX continues to use its contract/account inputs; do not repurpose the ticker override for ProjectX
+- initialize webhook string inputs to `string.Empty`
+- prefer null-safe webhook string getters/setters or equivalent normalization so older workspaces/templates do not surface null values in the NinjaScript grid
 
 9. If module includes `branding`, apply header/footer text color only.
 

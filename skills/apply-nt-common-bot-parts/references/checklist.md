@@ -11,6 +11,10 @@
 - [ ] Optional `RequireEntryConfirmation` property exists
 - [ ] Entry confirmation helper exists (for example `ShowEntryConfirmation`)
 - [ ] Confirmation check runs before each new entry submission path
+- [ ] Visible `MaxAccountBalance` property exists and defaults to `0.0`
+- [ ] Account-balance guard uses `NetLiquidation` or explicit cash+unrealized fallback
+- [ ] Account-balance guard blocks new entries after hit
+- [ ] Account-balance guard flattens open position when threshold is reached intratrade
 - [ ] Transition to blocked window cancels orders
 - [ ] Transition to blocked window flattens open position
 - [ ] `HeartbeatStrategyName` constant exists
@@ -43,19 +47,25 @@
 
 ## Optional Webhooks
 - [ ] Provider selection exists
+- [ ] Visible `WebhookUrl` input exists
+- [ ] Visible optional `WebhookTickerOverride` input exists
+- [ ] ProjectX settings remain hidden/internal unless explicitly requested
 - [ ] Entry webhook events mapped
 - [ ] Exit webhook events mapped
 - [ ] Cancel webhook events mapped
+- [ ] TradersPost ticker uses override when present, otherwise chart instrument name
+- [ ] Webhook string inputs are initialized/null-safe (`string.Empty` or equivalent)
 - [ ] Missing-config safe no-op behavior
 
 ## Suggested Verification Greps
 ```bash
 rg -n "BuildInfoLines|RenderInfoBoxOverlay|EnsureInfoBoxOverlay" <target>
 rg -n "UseNewsSkip|NewsBlockMinutes|GetCurrentWeekNews|PassedNewsRowBrush" <target>
+rg -n "MaxAccountBalance|maxAccountLimitHit|accountBalanceLimitReached|NetLiquidation|GetUnrealizedProfitLoss" <target>
 rg -n "CancelAllOrders|ExitAllPositions|IsLastBarOfSession" <target>
 rg -n "HeartbeatStrategyName|heartbeatReporter|State == State.Realtime|State == State.Terminated" <target>
 rg -n "LongEntrySignal|ShortEntrySignal|BuildExitSignalName|GetOpenLongEntrySignal|GetOpenShortEntrySignal|SetStopLoss|SetProfitTarget" <target>
 rg -n "DrawSession|DrawSkip|DrawNews|NoTradesAfter" <target>
 rg -n "ValidateRequiredPrimaryTimeframe|isConfiguredTimeframeValid|ValidateRequiredPrimaryInstrument|isConfiguredInstrumentValid|InvalidConfiguration|timeframePopupShown|instrumentPopupShown" <target>
-rg -n "Webhook|ProjectX|TradersPost|SendWebhook" <target>
+rg -n "WebhookUrl|WebhookTickerOverride|Webhook|ProjectX|TradersPost|SendWebhook" <target>
 ```

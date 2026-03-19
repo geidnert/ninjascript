@@ -16,6 +16,11 @@ Use this when external strategy files use different naming conventions.
 - `ValidateRequiredPrimaryInstrument()` may be named `ValidateInstrument`, `ValidateChartInstrument`, `EnsurePrimaryInstrument`
 - `isConfiguredTimeframeValid` may be named `isTimeframeValid`, `timeframeValid`, `allowTradingForTimeframe`
 - `isConfiguredInstrumentValid` may be named `isInstrumentValid`, `instrumentValid`, `allowTradingForInstrument`
+- `MaxAccountBalance` may be named `MaxBalance`, `MaxNetLiquidation`, `AccountBalanceTarget`
+- `maxAccountLimitHit` may be named `accountBalanceLimitReached`, `maxBalanceHit`, `balanceTargetReached`
+- `TryGetCurrentNetLiquidation` may be named `GetNetLiquidation`, `TryGetAccountBalance`, `GetCurrentAccountValue`
+- `WebhookUrl` may be named `TradersPostWebhookUrl`, `OrderWebhookUrl`
+- `WebhookTickerOverride` may be named `WebhookInstrumentOverride`, `TickerOverride`, `InstrumentOverride`, `TradersPostTicker`
 - `timeframePopupShown` may be named `timeframeWarningShown`, `invalidTimeframeNotified`
 - `instrumentPopupShown` may be named `instrumentWarningShown`, `invalidInstrumentNotified`
 
@@ -35,6 +40,13 @@ For instrument safety equivalence, preserve this behavior even if names differ:
 - invalid instrument path cancels/flattens exposure
 - user is warned once via popup/log
 
+For account-balance-guard equivalence, preserve this behavior even if names differ:
+- visible strategy input exists and defaults to disabled
+- net liquidation includes unrealized PnL for threshold checks
+- threshold hit blocks future entries
+- threshold hit while in position flattens exposure immediately
+- blocked state latches for the running strategy instance unless explicitly reset/disabled
+
 For heartbeat equivalence, preserve this behavior even if names differ:
 - reporter instance is created in `State.DataLoaded`
 - reporter starts in `State.Realtime`
@@ -45,6 +57,13 @@ For signal naming equivalence, preserve this behavior even if names differ:
 - entry signals are strategy-prefixed
 - exit signal builders preserve the strategy prefix
 - stops/targets/exits bind to the active prefixed entry signal
+
+For webhook input equivalence, preserve this behavior even if names differ:
+- visible TradersPost URL input exists
+- visible optional ticker/instrument override input exists
+- TradersPost uses override when present, otherwise chart instrument name
+- ProjectX settings stay hidden/internal unless explicitly requested
+- webhook string properties are initialized/null-safe so old workspaces do not surface null grid errors
 
 ## Infobox Rows
 When applying this skill, keep only common infobox rows:
