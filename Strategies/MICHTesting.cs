@@ -406,6 +406,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool isConfiguredInstrumentValid = true;
         private bool timeframePopupShown;
         private bool instrumentPopupShown;
+        private bool maxAccountLimitHit;
         private StrategyHeartbeatReporter heartbeatReporter;
         private string projectXSessionToken;
         private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
@@ -444,9 +445,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewsBlockMinutes                = 1;
                 FlattenOnBlockedWindowTransition = true;
                 DebugLogging                    = true;
+                MaxAccountBalance               = 0.0;
                 UseWebhooks                     = false;
                 WebhookProviderType             = WebhookProvider.TradersPost;
                 WebhookUrl                      = string.Empty;
+                WebhookTickerOverride           = string.Empty;
                 ProjectXApiBaseUrl              = "https://gateway-api-demo.s2f.projectx.com";
                 ProjectXUsername                = string.Empty;
                 ProjectXApiKey                  = string.Empty;
@@ -1262,6 +1265,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     TrySubmitForceFlattenExit();
                 }
+                prevMarketPosition = Position.MarketPosition;
+                return;
+            }
+
+            if (IsAccountBalanceBlocked())
+            {
                 prevMarketPosition = Position.MarketPosition;
                 return;
             }
@@ -2686,6 +2695,57 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TrySubmitForceFlattenExit();
         }
 
+        private bool IsAccountBalanceBlocked()
+        {
+            if (MaxAccountBalance <= 0.0)
+                return false;
+
+            double balance;
+            if (!TryGetCurrentNetLiquidation(out balance))
+                return false;
+
+            if (balance >= MaxAccountBalance && !maxAccountLimitHit)
+            {
+                maxAccountLimitHit = true;
+                if (DebugLogging)
+                    Print(string.Format(CultureInfo.InvariantCulture,
+                        "Max account balance reached | netLiq={0:0.00} target={1:0.00}",
+                        balance,
+                        MaxAccountBalance));
+            }
+
+            if (!maxAccountLimitHit)
+                return false;
+
+            FlattenAndCancel("MaxBalance");
+            return true;
+        }
+
+        private bool TryGetCurrentNetLiquidation(out double netLiquidation)
+        {
+            netLiquidation = 0.0;
+            if (Account == null)
+                return false;
+
+            try
+            {
+                netLiquidation = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                if (netLiquidation > 0.0)
+                    return true;
+
+                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                double unrealized = Position.MarketPosition != MarketPosition.Flat
+                    ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                    : 0.0;
+                netLiquidation = realizedCash + unrealized;
+                return realizedCash > 0.0 || Position.MarketPosition != MarketPosition.Flat;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         #endregion
 
 
@@ -2967,6 +3027,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Debug Logging", Order = 6, GroupName = "00. General")]
         public bool DebugLogging { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Account Balance", Description = "When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.", Order = 7, GroupName = "00. General")]
+        public double MaxAccountBalance { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use Webhooks", Description = "Enable outbound order webhooks.", Order = 0, GroupName = "52. Webhooks")]

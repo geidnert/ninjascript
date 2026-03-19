@@ -447,6 +447,7 @@ USE ON 1-MINUTE CHART.";
                 NewsBlockMinutes = 1;
 
                 WebhookUrl = string.Empty;
+                WebhookTickerOverride = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
                 ProjectXApiBaseUrl = "https://gateway-api-demo.s2f.projectx.com";
                 ProjectXUsername = string.Empty;
@@ -1403,7 +1404,7 @@ USE ON 1-MINUTE CHART.";
                 orderPlaced = false; entryBar = -1; entryOrderBar = -1; entryOrder = null;
                 currentSignalName = string.Empty;
                 entryPrice = 0; limitEntryPrice = 0; lastFilledEntryPrice = 0;
-                beTriggerActive = false; maxAccountLimitHit = false;
+                beTriggerActive = false;
                 wasInNoTradesAfterWindow = false; wasInSkipWindow = false; wasInNewsSkipWindow = false;
                 tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
                 sessionRealizedPnL = 0; sessionProfitLimitHit = false; sessionLossLimitHit = false;
@@ -1535,9 +1536,38 @@ USE ON 1-MINUTE CHART.";
         
         private bool ShouldAccountBalanceExit()
         {
-            if (MaxAccountBalance <= 0) return false;
-            double bal = Account.Get(AccountItem.CashValue, Currency.UsDollar);
-            if (bal >= MaxAccountBalance && !maxAccountLimitHit) maxAccountLimitHit = true;
+            if (MaxAccountBalance <= 0)
+                return false;
+
+            double bal = 0.0;
+            try
+            {
+                if (Account != null)
+                {
+                    bal = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                    if (bal <= 0.0)
+                    {
+                        double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                        double unrealized = Position.MarketPosition != MarketPosition.Flat
+                            ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                            : 0.0;
+                        bal = realizedCash + unrealized;
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (bal >= MaxAccountBalance && !maxAccountLimitHit)
+            {
+                maxAccountLimitHit = true;
+                CancelAllOrders();
+                if (DebugMode)
+                    DebugPrint(string.Format(CultureInfo.InvariantCulture, "Max account balance reached | netLiq={0:0.00} target={1:0.00}", bal, MaxAccountBalance));
+            }
+
             return maxAccountLimitHit;
         }
         

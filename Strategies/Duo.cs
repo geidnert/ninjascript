@@ -112,6 +112,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Order shortEntryOrder;
         private int missingLongEntryOrderBars;
         private int missingShortEntryOrderBars;
+        private string webhookUrl = string.Empty;
+        private string webhookTickerOverride = string.Empty;
         private double asiaAdxMinSlopePoints;
         private double newYorkAdxMinSlopePoints;
         private StrategyHeartbeatReporter heartbeatReporter;
@@ -489,6 +491,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewsBlockMinutes = 1;
 
                 WebhookUrl = string.Empty;
+                WebhookTickerOverride = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
                 ProjectXApiBaseUrl = "https://gateway-api-demo.s2f.projectx.com";
                 ProjectXUsername = string.Empty;
@@ -512,7 +515,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AdxDdRiskModeStopLossPoints = 0.0;
                 AdxDdRiskModeTakeProfitPoints = 0.0;
 
-                DebugLogging = false;
+                DebugLogging = true;
             }
             else if (State == State.DataLoaded)
             {
@@ -3264,6 +3267,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (MaxAccountBalance <= 0.0)
                 return false;
 
+            if (accountBalanceLimitReached)
+                return true;
+
             double balance;
             if (!TryGetCurrentCashValue(out balance))
                 return false;
@@ -3281,7 +3287,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else if (Position.MarketPosition == MarketPosition.Short)
                     ExitShort(BuildExitSignalName("MaxAccountBalance"), GetOpenShortEntrySignal());
 
-                LogDebug(string.Format("Account balance target reached | cash={0:0.00} target={1:0.00} trading paused.", balance, MaxAccountBalance));
+                LogDebug(string.Format("Account balance target reached | netLiq={0:0.00} target={1:0.00} trading paused.", balance, MaxAccountBalance));
             }
 
             return true;
@@ -3295,8 +3301,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             try
             {
-                cashValue = Account.Get(AccountItem.CashValue, Currency.UsDollar);
-                return cashValue > 0.0;
+                cashValue = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                if (cashValue > 0.0)
+                    return true;
+
+                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                double unrealized = Position.MarketPosition != MarketPosition.Flat
+                    ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                    : 0.0;
+                cashValue = realizedCash + unrealized;
+                return realizedCash > 0.0 || Position.MarketPosition != MarketPosition.Flat;
             }
             catch
             {
@@ -3915,11 +3929,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Display(Name = "TradersPost Webhook URL", Description = "HTTP endpoint for TradersPost order webhooks. Leave empty to disable TradersPost webhooks.", GroupName = "12. Webhooks", Order = 0)]
-        public string WebhookUrl { get; set; }
+        public string WebhookUrl
+        {
+            get { return webhookUrl ?? string.Empty; }
+            set { webhookUrl = value ?? string.Empty; }
+        }
 
         [NinjaScriptProperty]
         [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker/instrument name override. Leave empty to use the chart instrument automatically.", GroupName = "12. Webhooks", Order = 1)]
-        public string WebhookTickerOverride { get; set; }
+        public string WebhookTickerOverride
+        {
+            get { return webhookTickerOverride ?? string.Empty; }
+            set { webhookTickerOverride = value ?? string.Empty; }
+        }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Webhook Provider", Description = "Select webhook target: TradersPost or ProjectX.", GroupName = "12. Webhooks", Order = 1)]
@@ -3945,10 +3967,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [Display(Name = "ProjectX Contract ID", Description = "ProjectX contract id (for example CON.F.US.DA6.M25).", GroupName = "12. Webhooks", Order = 6)]
         internal string ProjectXContractId { get; set; }
 
-        // [NinjaScriptProperty]
-        // [Range(0.0, double.MaxValue)]
-        // [Display(Name = "Max Account Balance", Description = "When cash value reaches or exceeds this value, entries are blocked and position is flattened. 0 disables.", GroupName = "13. Risk", Order = 0)]
-        internal double MaxAccountBalance { get; set; }
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Account Balance", Description = "When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.", GroupName = "13. Risk", Order = 0)]
+        public double MaxAccountBalance { get; set; }
 
         // [NinjaScriptProperty]
         // [Range(0.0, double.MaxValue)]

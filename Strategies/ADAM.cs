@@ -82,6 +82,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool maxProfitLongReached = false;
         private bool maxProfitShortReached = false;
         private bool maxProfitTotalReached = false;
+        private bool maxAccountLimitHit;
+        private string webhookUrl = string.Empty;
+        private string webhookTickerOverride = string.Empty;
         private bool debugLogging = false;
         private bool isConfiguredTimeframeValid = true;
         private bool isConfiguredInstrumentValid = true;
@@ -283,12 +286,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Account Balance", Description = "When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.", Order = 13, GroupName = "1. Common Parameters")]
+        public double MaxAccountBalance { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "TradersPost Webhook URL", Description = "HTTP endpoint for order webhooks. Leave empty to disable TradersPost webhooks.", Order = 0, GroupName = "2. Webhooks")]
-        public string WebhookUrl { get; set; }
+        public string WebhookUrl
+        {
+            get { return webhookUrl ?? string.Empty; }
+            set { webhookUrl = value ?? string.Empty; }
+        }
 
         [NinjaScriptProperty]
         [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker/instrument name override. Leave empty to use the chart instrument automatically.", Order = 1, GroupName = "2. Webhooks")]
-        public string WebhookTickerOverride { get; set; }
+        public string WebhookTickerOverride
+        {
+            get { return webhookTickerOverride ?? string.Empty; }
+            set { webhookTickerOverride = value ?? string.Empty; }
+        }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -1096,6 +1112,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
                 RequireEntryConfirmation = false;
+                MaxAccountBalance = 0.0;
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
@@ -1319,6 +1336,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug("");
                 LogDebug(String.Format("========== SESSION RESET: {0} ==========", tradingDay.ToString("yyyy-MM-dd")));
                 ResetForNewSession(tradingDay);
+            }
+
+            if (ShouldAccountBalanceExit())
+            {
+                ExitAllPositions("MaxBalance");
+                return;
             }
 
             ExitIfSessionEnded();
@@ -1867,6 +1890,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         private bool CanTakeLong(TimeSpan currentTime)
         {
+            if (maxAccountLimitHit) return false;
             if (activeBucketL == 0) return false;
             if (IsLastBarOfSession()) return false;
             TimeSpan ws = new TimeSpan(9, 30 + activeL_TradeWindowStart, 30);
@@ -1879,6 +1903,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         private bool CanTakeShort(TimeSpan currentTime)
         {
+            if (maxAccountLimitHit) return false;
             if (activeBucketS == 0) return false;
             if (IsLastBarOfSession()) return false;
             TimeSpan ws = new TimeSpan(9, 30 + activeS_TradeWindowStart, 30);
@@ -1961,6 +1986,57 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ExitLong(BuildExitSignalName(reason), activeSignal);
             else if (Position.MarketPosition == MarketPosition.Short)
                 ExitShort(BuildExitSignalName(reason), activeSignal);
+        }
+
+        private bool ShouldAccountBalanceExit()
+        {
+            if (MaxAccountBalance <= 0.0)
+                return false;
+
+            if (maxAccountLimitHit)
+                return true;
+
+            double balance;
+            if (!TryGetCurrentNetLiquidation(out balance))
+                return false;
+
+            if (balance < MaxAccountBalance)
+                return false;
+
+            maxAccountLimitHit = true;
+            CancelAllOrders();
+            LogDebug(string.Format(CultureInfo.InvariantCulture, "Max account balance reached | netLiq={0:0.00} target={1:0.00}", balance, MaxAccountBalance));
+            return true;
+        }
+
+        private bool TryGetCurrentNetLiquidation(out double netLiquidation)
+        {
+            netLiquidation = 0.0;
+            if (Account == null)
+                return false;
+
+            try
+            {
+                netLiquidation = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                if (netLiquidation > 0.0)
+                    return true;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                double unrealized = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+                netLiquidation = realizedCash + unrealized;
+                return true;
+            }
+            catch
+            {
+                netLiquidation = 0.0;
+                return false;
+            }
         }
 
         #region Webhooks
