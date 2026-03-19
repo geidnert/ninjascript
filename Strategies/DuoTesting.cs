@@ -3363,7 +3363,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             try
             {
                 int orderQty = quantityOverride > 0 ? quantityOverride : Math.Max(1, activeContracts);
-                string ticker = Instrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN";
+                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
+                    ? WebhookTickerOverride.Trim()
+                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
                 string time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
                 string json = string.Empty;
                 string action = eventType.ToLowerInvariant();
@@ -3929,26 +3931,36 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public string WebhookUrl { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker/instrument name override. Leave empty to use the chart instrument automatically.", GroupName = "12. Webhooks", Order = 1)]
+        public string WebhookTickerOverride { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Webhook Provider", Description = "Select webhook target: TradersPost or ProjectX.", GroupName = "12. Webhooks", Order = 1)]
         public WebhookProvider WebhookProviderType { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX API Base URL", Description = "ProjectX gateway base URL.", GroupName = "12. Webhooks", Order = 2)]
         public string ProjectXApiBaseUrl { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Username", Description = "ProjectX login username.", GroupName = "12. Webhooks", Order = 3)]
         public string ProjectXUsername { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX API Key", Description = "ProjectX login key.", GroupName = "12. Webhooks", Order = 4)]
         public string ProjectXApiKey { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Account ID", Description = "ProjectX account id used for order routing.", GroupName = "12. Webhooks", Order = 5)]
         public string ProjectXAccountId { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Contract ID", Description = "ProjectX contract id (for example CON.F.US.DA6.M25).", GroupName = "12. Webhooks", Order = 6)]
         public string ProjectXContractId { get; set; }
 

@@ -2686,7 +2686,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             try
             {
                 int orderQty = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
-                string ticker = Instrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN";
+                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
+                    ? WebhookTickerOverride.Trim()
+                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
                 string json = string.Empty;
                 string action = (eventType ?? string.Empty).ToLowerInvariant();
@@ -3141,36 +3143,48 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public string WebhookUrl { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Webhook Ticker Override",
+                 Description = "Optional TradersPost ticker/instrument name override. Leave empty to use the chart instrument automatically.",
+                 GroupName = "02 - Common: Session Filters", Order = 16)]
+        public string WebhookTickerOverride { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Webhook Provider",
                  Description = "Select webhook target: TradersPost or ProjectX.",
                  GroupName = "02 - Common: Session Filters", Order = 16)]
         public WebhookProvider WebhookProviderType { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX API Base URL",
                  Description = "ProjectX gateway base URL.",
                  GroupName = "02 - Common: Session Filters", Order = 17)]
         public string ProjectXApiBaseUrl { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Username",
                  Description = "ProjectX login username.",
                  GroupName = "02 - Common: Session Filters", Order = 18)]
         public string ProjectXUsername { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX API Key",
                  Description = "ProjectX login key.",
                  GroupName = "02 - Common: Session Filters", Order = 19)]
         public string ProjectXApiKey { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Account ID",
                  Description = "ProjectX account id used for order routing.",
                  GroupName = "02 - Common: Session Filters", Order = 20)]
         public string ProjectXAccountId { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "ProjectX Contract ID",
                  Description = "ProjectX contract id (for example CON.F.US.DA6.M25).",
                  GroupName = "02 - Common: Session Filters", Order = 21)]

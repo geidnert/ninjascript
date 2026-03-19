@@ -2131,7 +2131,9 @@ USE ON 1-MINUTE CHART.";
             try
             {
                 int orderQty = quantityOverride > 0 ? quantityOverride : Math.Max(1, NumberOfContracts);
-                string ticker = Instrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN";
+                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
+                    ? WebhookTickerOverride.Trim()
+                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
                 string time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
                 string json = string.Empty;
                 string action = (eventType ?? string.Empty).ToLowerInvariant();
@@ -3584,6 +3586,10 @@ USE ON 1-MINUTE CHART.";
         [NinjaScriptProperty]
         [Display(Name = "TradersPost Webhook URL", Description = "HTTP endpoint for order webhooks. Leave empty to disable.", GroupName = "O. Webhooks", Order = 0)]
         public string WebhookUrl { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker/instrument name override. Leave empty to use the chart instrument automatically.", GroupName = "O. Webhooks", Order = 1)]
+        public string WebhookTickerOverride { get; set; }
 
         [Browsable(false)]
         [NinjaScriptProperty]

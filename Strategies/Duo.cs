@@ -3358,7 +3358,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             try
             {
                 int orderQty = quantityOverride > 0 ? quantityOverride : Math.Max(1, activeContracts);
-                string ticker = Instrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN";
+                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
+                    ? WebhookTickerOverride.Trim()
+                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
                 string time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
                 string json = string.Empty;
                 string action = eventType.ToLowerInvariant();
@@ -3914,6 +3916,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "TradersPost Webhook URL", Description = "HTTP endpoint for TradersPost order webhooks. Leave empty to disable TradersPost webhooks.", GroupName = "12. Webhooks", Order = 0)]
         public string WebhookUrl { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker/instrument name override. Leave empty to use the chart instrument automatically.", GroupName = "12. Webhooks", Order = 1)]
+        public string WebhookTickerOverride { get; set; }
 
         // [NinjaScriptProperty]
         // [Display(Name = "Webhook Provider", Description = "Select webhook target: TradersPost or ProjectX.", GroupName = "12. Webhooks", Order = 1)]
