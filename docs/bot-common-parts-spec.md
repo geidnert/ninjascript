@@ -90,6 +90,21 @@ Reason tags used by convention:
 - Use a shared helper patterned after `Duo.cs` (`ShowEntryConfirmation(string orderType, double price, int quantity)`).
 - If the user declines, do not submit the entry order and leave the strategy state safe for future entry attempts.
 
+### Account Balance Guard
+- Strategies should support a visible `MaxAccountBalance` input.
+- Default value is `0.0` (disabled).
+- Guard should use current net liquidation so unrealized PnL counts toward the threshold.
+- Preferred lookup:
+  `Account.Get(AccountItem.NetLiquidation, Currency.UsDollar)`
+- If `NetLiquidation` is unavailable or unreliable in the current context, fallback to:
+  `Account.Get(AccountItem.CashValue, Currency.UsDollar) + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])`
+- When threshold is reached or exceeded:
+  - block new entries,
+  - cancel working orders as appropriate,
+  - flatten any open position with a strategy-specific exit reason (for example `MaxBalance` or `MaxAccountBalance`),
+  - latch the blocked state for the lifetime of the running strategy instance unless the feature is explicitly disabled/reset.
+- If threshold is hit while in a trade via unrealized PnL, exit immediately and do not allow more trades afterward.
+
 ### Heartbeat Reporting
 - Strategies should report liveness through `StrategyHeartbeatReporter`.
 - Add a strategy-level `HeartbeatStrategyName` constant matching the strategy identity used in alerts/logging.
@@ -131,6 +146,15 @@ Reason tags used by convention:
 - TradersPost
 - ProjectX
 
+### TradersPost / ProjectX Input Rules
+- Expose a visible `WebhookUrl` input for TradersPost.
+- Expose a visible optional `WebhookTickerOverride` input.
+- Keep ProjectX settings hidden/internal unless the user explicitly asks to expose them.
+- Initialize `WebhookUrl` and `WebhookTickerOverride` to `string.Empty` in `State.SetDefaults`.
+- Prefer null-safe string property accessors or equivalent normalization so older workspaces/templates do not surface null string values in NinjaScript property grids.
+- For TradersPost payloads, use `WebhookTickerOverride.Trim()` when non-empty; otherwise use `Instrument.MasterInstrument.Name`.
+- ProjectX routing remains based on its own account/contract fields and should not be changed by the ticker override.
+
 ### Requirements
 - Provider selection enum/property.
 - Entry/exit/cancel webhook events.
@@ -158,6 +182,9 @@ Reason tags used by convention:
 - Entry/exit signal names are strategy-prefixed.
 - Stops/targets/exits reference the active prefixed entry signal.
 - Entry confirmation toggle/helper exists when the strategy family uses interactive confirmations.
+- Visible `MaxAccountBalance` input exists and defaults to disabled.
+- Account-balance guard uses `NetLiquidation` or explicit cash+unrealized fallback.
+- Account-balance guard blocks new entries and flattens open positions once threshold is hit.
 - Heartbeat reporter is instantiated in `State.DataLoaded`.
 - Heartbeat reporter is started in `State.Realtime`.
 - Heartbeat reporter is disposed in `State.Terminated`.
@@ -165,6 +192,11 @@ Reason tags used by convention:
 - Session-end and last-bar guards exist.
 - Primary instrument validator exists and is called in `State.DataLoaded`.
 - Invalid instrument blocks trading path and triggers cancel/flatten protection.
+- Visible `WebhookUrl` input exists when webhook module is applied.
+- Visible `WebhookTickerOverride` input exists when webhook module is applied.
+- TradersPost ticker/instrument uses override when present, otherwise chart instrument name.
+- ProjectX settings remain hidden/internal unless explicitly requested otherwise.
+- Webhook string inputs are initialized/null-safe and do not regress to property-grid null errors.
 
 ## Commit-Derived Baseline Notes
 From ORBOTesting history after baseline commit `cabe7871c1bf1642f43be3bb7f388d9da6930c85`, common parts were added/finalized in phases:
