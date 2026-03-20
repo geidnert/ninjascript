@@ -97,7 +97,6 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly List<StrategyRecoveryEntry> strategiesPendingRecovery = new List<StrategyRecoveryEntry>();
         private static readonly TimeSpan ExecutionDeduplicationWindow = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan MessageDeduplicationWindow = TimeSpan.FromSeconds(10);
-        private static readonly TimeSpan MissingProtectionGracePeriod = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan StrategyRestoreStabilityDelay = TimeSpan.FromSeconds(15);
         private Timer watchdogTimer;
         private string configFilePath;
@@ -115,6 +114,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private bool dataFeedReporting;
         private int watchdogDataTimeoutSeconds;
         private bool warnMissingProtection;
+        private int missingProtectionTimeoutSeconds;
         private bool autoFlattenUnprotectedPositions;
         private bool heartbeatReporting;
         private int heartbeatTimeoutSeconds;
@@ -247,6 +247,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             dataFeedReporting = true;
             watchdogDataTimeoutSeconds = 60;
             warnMissingProtection = true;
+            missingProtectionTimeoutSeconds = 10;
             autoFlattenUnprotectedPositions = false;
             heartbeatReporting = true;
             heartbeatTimeoutSeconds = 60;
@@ -277,6 +278,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 DataFeedReporting = dataFeedReporting,
                 WatchdogDataTimeoutSeconds = watchdogDataTimeoutSeconds,
                 WarnMissingProtection = warnMissingProtection,
+                MissingProtectionTimeoutSeconds = missingProtectionTimeoutSeconds,
                 AutoFlattenUnprotectedPositions = autoFlattenUnprotectedPositions,
                 HeartbeatReporting = heartbeatReporting,
                 HeartbeatFilePath = heartbeatFilePath,
@@ -374,6 +376,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             dataFeedReporting = settings.DataFeedReporting;
             watchdogDataTimeoutSeconds = Math.Max(1, settings.WatchdogDataTimeoutSeconds);
             warnMissingProtection = settings.WarnMissingProtection;
+            missingProtectionTimeoutSeconds = Math.Max(1, settings.MissingProtectionTimeoutSeconds);
             autoFlattenUnprotectedPositions = settings.WarnMissingProtection && settings.AutoFlattenUnprotectedPositions;
             heartbeatReporting = settings.HeartbeatReporting;
             heartbeatFilePath = string.IsNullOrWhiteSpace(settings.HeartbeatFilePath)
@@ -461,6 +464,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                     case "WarnMissingProtection":
                         warnMissingProtection = ParseBool(value, warnMissingProtection);
                         break;
+                    case "MissingProtectionTimeoutSeconds":
+                        missingProtectionTimeoutSeconds = ParseInt(value, missingProtectionTimeoutSeconds);
+                        break;
                     case "AutoFlattenUnprotectedPositions":
                         autoFlattenUnprotectedPositions = ParseBool(value, autoFlattenUnprotectedPositions);
                         break;
@@ -519,6 +525,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 "DataFeedReporting=true",
                 "WatchdogDataTimeoutSeconds=60",
                 "WarnMissingProtection=true",
+                "MissingProtectionTimeoutSeconds=10",
                 "AutoFlattenUnprotectedPositions=false",
                 "HeartbeatReporting=true",
                 "HeartbeatFilePath=" + heartbeatFilePath,
@@ -555,6 +562,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 "DataFeedReporting=" + settings.DataFeedReporting.ToString().ToLowerInvariant(),
                 "WatchdogDataTimeoutSeconds=" + settings.WatchdogDataTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
                 "WarnMissingProtection=" + settings.WarnMissingProtection.ToString().ToLowerInvariant(),
+                "MissingProtectionTimeoutSeconds=" + settings.MissingProtectionTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
                 "AutoFlattenUnprotectedPositions=" + settings.AutoFlattenUnprotectedPositions.ToString().ToLowerInvariant(),
                 "HeartbeatReporting=" + settings.HeartbeatReporting.ToString().ToLowerInvariant(),
                 "HeartbeatFilePath=" + settings.HeartbeatFilePath,
@@ -1454,7 +1462,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
             }
 
-            if (nowUtc - firstSeenUtc < MissingProtectionGracePeriod)
+            if (nowUtc - firstSeenUtc < TimeSpan.FromSeconds(missingProtectionTimeoutSeconds))
                 return;
 
             bool flattenBlockedBySharedScope = false;
@@ -4647,6 +4655,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         public bool DataFeedReporting { get; set; }
         public int WatchdogDataTimeoutSeconds { get; set; }
         public bool WarnMissingProtection { get; set; }
+        public int MissingProtectionTimeoutSeconds { get; set; }
         public bool AutoFlattenUnprotectedPositions { get; set; }
         public bool HeartbeatReporting { get; set; }
         public string HeartbeatFilePath { get; set; }
@@ -4678,6 +4687,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private TextBox chatIdTextBox;
         private CheckBox dataFeedReportingCheckBox;
         private CheckBox warnMissingProtectionCheckBox;
+        private TextBox missingProtectionTimeoutTextBox;
         private CheckBox autoFlattenUnprotectedPositionsCheckBox;
         private TextBox watchdogTimeoutTextBox;
         private CheckBox heartbeatReportingCheckBox;
@@ -4720,6 +4730,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             chatIdTextBox.Text = settings.ChatId ?? string.Empty;
             dataFeedReportingCheckBox.IsChecked = settings.DataFeedReporting;
             warnMissingProtectionCheckBox.IsChecked = settings.WarnMissingProtection;
+            missingProtectionTimeoutTextBox.Text = settings.MissingProtectionTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
             autoFlattenUnprotectedPositionsCheckBox.IsChecked = settings.AutoFlattenUnprotectedPositions;
             watchdogTimeoutTextBox.Text = settings.WatchdogDataTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
             heartbeatReportingCheckBox.IsChecked = settings.HeartbeatReporting;
@@ -4876,6 +4887,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 out warnMissingProtectionCheckBox,
                 "Warn On Missing TP/SL",
                 "Warn if a monitored account has an open position but no working stop-loss or profit-target order for that instrument."));
+            panel.Children.Add(BuildIndentedContent(BuildLabeledTextBox(
+                "Missing TP/SL Timeout Seconds",
+                "How long a monitored strategy position can stay without both TP and SL before warning and optional auto-flatten are triggered. Minimum 1.",
+                out missingProtectionTimeoutTextBox)));
             panel.Children.Add(BuildIndentedContent(BuildCheckBoxWithDescription(
                 out autoFlattenUnprotectedPositionsCheckBox,
                 "Flatten Unprotected Positions",
@@ -5156,6 +5171,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 ChatId = chatIdTextBox.Text,
                 DataFeedReporting = dataFeedReportingCheckBox.IsChecked == true,
                 WarnMissingProtection = warnMissingProtectionCheckBox.IsChecked == true,
+                MissingProtectionTimeoutSeconds = ParseIntOrDefault(missingProtectionTimeoutTextBox.Text, 10),
                 AutoFlattenUnprotectedPositions = warnMissingProtectionCheckBox.IsChecked == true && autoFlattenUnprotectedPositionsCheckBox.IsChecked == true,
                 WatchdogDataTimeoutSeconds = ParseIntOrDefault(watchdogTimeoutTextBox.Text, 60),
                 HeartbeatReporting = heartbeatReportingCheckBox.IsChecked == true,
