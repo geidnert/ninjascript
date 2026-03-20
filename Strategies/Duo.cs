@@ -447,17 +447,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaTradeDirection = SessionTradeDirection.Both;
-                AsiaFlipAdxThreshold = 21.8;
-                AsiaEmaMinSlopePointsPerBar = 0.5;
+                AsiaFlipAdxThreshold = 21.9;
+                AsiaEmaMinSlopePointsPerBar = 0.48;
                 AsiaMaxEntryDistanceFromEmaPoints = 0.0;
                 AsiaAdxPeriod = 14;
-                AsiaAdxThreshold = 20.2;
-                AsiaAdxMaxThreshold = 45.3;
-                AsiaAdxMinSlopePoints = 1.17;
-                AsiaAdxPeakDrawdownExitUnits = 13.1;
-                AsiaAdxAbsoluteExitLevel = 63.2;
-                AsiaStopPaddingPoints = 47;
-                AsiaExitCrossPoints = 3.5;
+                AsiaAdxThreshold = 21.15;
+                AsiaAdxMaxThreshold = 53.4;
+                AsiaAdxMinSlopePoints = 1.15;
+                AsiaAdxPeakDrawdownExitUnits = 16.6;
+                AsiaAdxAbsoluteExitLevel = 58.9;
+                AsiaStopPaddingPoints = 37.5;
+                AsiaExitCrossPoints = 3.75;
                 AsiaTakeProfitPoints = 93.75;
 
                 UseNewYorkSession = true;
@@ -468,18 +468,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
                 NewYorkTradeDirection = SessionTradeDirection.Both;
-                NewYorkFlipAdxThreshold = 16;
+                NewYorkFlipAdxThreshold = 18.65;
                 NewYorkEmaMinSlopePointsPerBar = 0.81;
                 NewYorkMaxEntryDistanceFromEmaPoints = 39.0;
                 NewYorkAdxPeriod = 14;
-                NewYorkAdxThreshold = 16;
-                NewYorkAdxMaxThreshold = 62.8;
+                NewYorkAdxThreshold = 16.2;
+                NewYorkAdxMaxThreshold = 61.0;
                 NewYorkAdxMinSlopePoints = 1.63;
                 NewYorkAdxPeakDrawdownExitUnits = 19.6;
-                NewYorkAdxAbsoluteExitLevel = 69.1;
-                NewYorkStopPaddingPoints = 44.25;
+                NewYorkAdxAbsoluteExitLevel = 69.2;
+                NewYorkStopPaddingPoints = 45.75;
                 NewYorkExitCrossPoints = 3.0;
-                NewYorkTakeProfitPoints = 123.75;
+                NewYorkTakeProfitPoints = 123.5;
 
                 CloseAtSessionEnd = false;
                 AsiaSessionBrush = Brushes.DarkCyan;
@@ -500,7 +500,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXAccountId = string.Empty;
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0.0;
-                HvSlPaddingPoints = 26.0;
+                HvSlPaddingPoints = 35.0;
                 HvSlStartTime = new TimeSpan(9, 30, 0);
                 HvSlEndTime = new TimeSpan(10, 05, 0);
                 EntryOffsetPoints = 0.0;
@@ -512,12 +512,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TakeProfitPercentTriggerPercent = 82.0;
                 TakeProfitPercentStopMode = TakeProfitStopMode.PercentMove;
                 TakeProfitPercentStopMovePercent = 32.0;
-                EnableAdxDdRiskMode = false;
-                AdxDdRiskModeStopLossPoints = 0.0;
-                AdxDdRiskModeTakeProfitPoints = 0.0;
-                HorizontalExitBars = 0;
+                EnableAdxDdRiskMode = true;
+                AdxDdRiskModeStopLossPoints = 32.0;
+                AdxDdRiskModeTakeProfitPoints = 48.0;
+                HorizontalExitBars = 61;
 
-                DebugLogging = true;
+                DebugLogging = false;
             }
             else if (State == State.DataLoaded)
             {
