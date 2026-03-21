@@ -101,6 +101,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             None,
             Asia,
+            London,
             NewYork
         }
 
@@ -117,10 +118,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string webhookUrl = string.Empty;
         private string webhookTickerOverride = string.Empty;
         private double asiaAdxMinSlopePoints;
+        private double londonAdxMinSlopePoints;
         private double newYorkAdxMinSlopePoints;
+        private TimeZoneInfo targetTimeZone;
+        private TimeZoneInfo londonTimeZone;
         private StrategyHeartbeatReporter heartbeatReporter;
 
         private bool asiaSessionClosed;
+        private bool londonSessionClosed;
         private bool newYorkSessionClosed;
 
         private bool sessionInitialized;
@@ -141,9 +146,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double tradeLineSlPrice;
 
         private EMA emaAsia;
+        private EMA emaLondon;
         private EMA emaNewYork;
         private EMA activeEma;
         private DM adxAsia;
+        private DM adxLondon;
         private DM adxNewYork;
         private DM activeAdx;
 
@@ -175,6 +182,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool accountBalanceLimitReached;
         private int accountBalanceLimitReachedBar = -1;
         private int asiaTradesThisSession;
+        private int londonTradesThisSession;
         private int newYorkTradesThisSession;
         private string currentPositionEntrySignal = string.Empty;
         private bool currentPositionIsFlipEntry;
@@ -461,6 +469,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaExitCrossPoints = 3.75;
                 AsiaTakeProfitPoints = 93.75;
 
+                UseLondonSession = false;
+                LondonSessionStart = new TimeSpan(1, 30, 0);
+                LondonSessionEnd = new TimeSpan(5, 30, 0);
+                AutoShiftLondon = true;
+                LondonEmaPeriod = 21;
+                LondonContracts = 1;
+                LondonTradeDirection = SessionTradeDirection.Both;
+                LondonFlipAdxThreshold = 20.0;
+                LondonEmaMinSlopePointsPerBar = 0.48;
+                LondonMaxEntryDistanceFromEmaPoints = 0.0;
+                LondonAdxPeriod = 14;
+                LondonAdxThreshold = 20.0;
+                LondonAdxMaxThreshold = 53.4;
+                LondonAdxMinSlopePoints = 1.15;
+                LondonAdxPeakDrawdownExitUnits = 16.6;
+                LondonAdxAbsoluteExitLevel = 58.9;
+                LondonStopPaddingPoints = 37.5;
+                LondonExitCrossPoints = 3.75;
+                LondonTakeProfitPoints = 93.75;
+
                 UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 35, 0);
                 NewYorkSessionEnd = new TimeSpan(13, 30, 0);
@@ -484,6 +512,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 CloseAtSessionEnd = false;
                 AsiaSessionBrush = Brushes.DarkCyan;
+                LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
                 ShowEmaOnChart = true;
                 ShowAdxOnChart = true;
@@ -526,21 +555,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ValidateRequiredPrimaryInstrument();
 
                 emaAsia = EMA(AsiaEmaPeriod);
+                emaLondon = EMA(LondonEmaPeriod);
                 emaNewYork = EMA(NewYorkEmaPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
+                adxLondon = DM(LondonAdxPeriod);
                 adxNewYork = DM(NewYorkAdxPeriod);
                 UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
+                UpdateAdxReferenceLines(adxLondon, LondonAdxThreshold, LondonAdxMaxThreshold);
                 UpdateAdxReferenceLines(adxNewYork, NewYorkAdxThreshold, NewYorkAdxMaxThreshold);
 
                 if (ShowEmaOnChart)
                 {
                     AddChartIndicator(emaAsia);
+                    AddChartIndicator(emaLondon);
                     AddChartIndicator(emaNewYork);
                 }
 
                 if (ShowAdxOnChart)
                 {
                     AddChartIndicator(adxAsia);
+                    AddChartIndicator(adxLondon);
                     AddChartIndicator(adxNewYork);
                 }
 
@@ -563,6 +597,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
                 UpdateAdxPlotVisibility();
+                targetTimeZone = null;
+                londonTimeZone = null;
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
                 currentTradePeakAdx = 0.0;
@@ -573,6 +609,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentStopPrice = 0.0;
                 adxDdRiskModeApplied = false;
                 currentPositionEntryBar = -1;
+                asiaSessionClosed = false;
+                londonSessionClosed = false;
+                newYorkSessionClosed = false;
                 projectXSessionToken = null;
                 projectXTokenAcquiredUtc = Core.Globals.MinDate;
                 projectXLastOrderId = null;
@@ -580,6 +619,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 accountBalanceLimitReached = false;
                 accountBalanceLimitReachedBar = -1;
                 asiaTradesThisSession = 0;
+                londonTradesThisSession = 0;
                 newYorkTradesThisSession = 0;
 
                 EnsureNewsDatesInitialized();
@@ -636,6 +676,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             UpdateInfo();
 
             ProcessSessionTransitions(SessionSlot.Asia);
+            ProcessSessionTransitions(SessionSlot.London);
             ProcessSessionTransitions(SessionSlot.NewYork);
             ReconcileTrackedEntryOrders();
 
@@ -1769,23 +1810,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TimeSpan now = time.TimeOfDay;
             TimeSpan asiaStart = TimeSpan.Zero;
             TimeSpan asiaEnd = TimeSpan.Zero;
+            TimeSpan londonStart = TimeSpan.Zero;
+            TimeSpan londonEnd = TimeSpan.Zero;
             TimeSpan nyStart = TimeSpan.Zero;
             TimeSpan nyEnd = TimeSpan.Zero;
 
             bool asiaConfigured = IsSessionConfigured(SessionSlot.Asia)
                 && TryGetSessionWindow(SessionSlot.Asia, time, out asiaStart, out asiaEnd);
+            bool londonConfigured = IsSessionConfigured(SessionSlot.London)
+                && TryGetSessionWindow(SessionSlot.London, time, out londonStart, out londonEnd);
             bool newYorkConfigured = IsSessionConfigured(SessionSlot.NewYork)
                 && TryGetSessionWindow(SessionSlot.NewYork, time, out nyStart, out nyEnd);
 
             if (asiaConfigured && IsTimeInRange(now, asiaStart, asiaEnd))
                 return SessionSlot.Asia;
+            if (londonConfigured && IsTimeInRange(now, londonStart, londonEnd))
+                return SessionSlot.London;
             if (newYorkConfigured && IsTimeInRange(now, nyStart, nyEnd))
                 return SessionSlot.NewYork;
 
-            if (!asiaConfigured && !newYorkConfigured)
+            if (!asiaConfigured && !londonConfigured && !newYorkConfigured)
                 return SessionSlot.None;
 
             DateTime nextAsiaStart = DateTime.MaxValue;
+            DateTime nextLondonStart = DateTime.MaxValue;
             DateTime nextNewYorkStart = DateTime.MaxValue;
 
             if (asiaConfigured)
@@ -1795,6 +1843,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     nextAsiaStart = nextAsiaStart.AddDays(1);
             }
 
+            if (londonConfigured)
+            {
+                nextLondonStart = time.Date + londonStart;
+                if (nextLondonStart <= time)
+                    nextLondonStart = nextLondonStart.AddDays(1);
+            }
+
             if (newYorkConfigured)
             {
                 nextNewYorkStart = time.Date + nyStart;
@@ -1802,8 +1857,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     nextNewYorkStart = nextNewYorkStart.AddDays(1);
             }
 
-            if (nextAsiaStart <= nextNewYorkStart)
+            if (nextAsiaStart <= nextLondonStart && nextAsiaStart <= nextNewYorkStart)
                 return SessionSlot.Asia;
+            if (nextLondonStart <= nextNewYorkStart)
+                return SessionSlot.London;
             return SessionSlot.NewYork;
         }
 
@@ -1811,6 +1868,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (IsSessionConfigured(SessionSlot.Asia))
                 return SessionSlot.Asia;
+            if (IsSessionConfigured(SessionSlot.London))
+                return SessionSlot.London;
             if (IsSessionConfigured(SessionSlot.NewYork))
                 return SessionSlot.NewYork;
             return SessionSlot.None;
@@ -1822,6 +1881,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case SessionSlot.Asia:
                     return UseAsiaSession && AsiaSessionStart != AsiaSessionEnd;
+                case SessionSlot.London:
+                    return UseLondonSession && LondonSessionStart != LondonSessionEnd;
                 case SessionSlot.NewYork:
                     return UseNewYorkSession && NewYorkSessionStart != NewYorkSessionEnd;
                 default:
@@ -1853,6 +1914,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeExitCrossPoints = AsiaExitCrossPoints;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
+                    break;
+
+                case SessionSlot.London:
+                    activeEma = emaLondon;
+                    activeAdx = adxLondon;
+                    activeEmaPeriod = LondonEmaPeriod;
+                    activeAdxPeriod = LondonAdxPeriod;
+                    activeAdxThreshold = LondonAdxThreshold;
+                    activeFlipAdxThreshold = LondonFlipAdxThreshold;
+                    activeAdxMaxThreshold = LondonAdxMaxThreshold;
+                    activeAdxMinSlopePoints = LondonAdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = LondonAdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = LondonAdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = LondonContracts;
+                    activeTradeDirection = LondonTradeDirection;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = LondonEmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = LondonMaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = LondonStopPaddingPoints;
+                    activeExitCrossPoints = LondonExitCrossPoints;
+                    activeTakeProfitPoints = LondonTakeProfitPoints;
                     break;
 
                 case SessionSlot.NewYork:
@@ -1905,29 +1988,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!ShowEmaOnChart)
             {
                 SetEmaVisible(emaAsia, false);
+                SetEmaVisible(emaLondon, false);
                 SetEmaVisible(emaNewYork, false);
                 return;
             }
 
-            bool showAsia = activeSession == SessionSlot.Asia;
-            bool showNewYork = activeSession == SessionSlot.NewYork;
-
-            // NinjaTrader may return shared indicator instances when periods match.
-            // If two session EMA fields point to the same instance, visibility must be
-            // resolved across all aliases before applying the brush.
-            bool visAsia = showAsia
-                || (ReferenceEquals(emaAsia, emaNewYork) && showNewYork);
-            bool visNewYork = showNewYork
-                || (ReferenceEquals(emaNewYork, emaAsia) && showAsia);
-
-            SetEmaVisible(emaAsia, visAsia);
-            SetEmaVisible(emaNewYork, visNewYork);
+            SetEmaVisible(emaAsia, ShouldShowEmaInstance(emaAsia));
+            SetEmaVisible(emaLondon, ShouldShowEmaInstance(emaLondon));
+            SetEmaVisible(emaNewYork, ShouldShowEmaInstance(emaNewYork));
         }
 
         private void UpdateAdxPlotVisibility()
         {
             SetAdxVisible(adxAsia, ShowAdxOnChart);
+            SetAdxVisible(adxLondon, ShowAdxOnChart);
             SetAdxVisible(adxNewYork, ShowAdxOnChart);
+        }
+
+        private bool ShouldShowEmaInstance(EMA ema)
+        {
+            if (ema == null)
+                return false;
+
+            return (activeSession == SessionSlot.Asia && ReferenceEquals(ema, emaAsia))
+                || (activeSession == SessionSlot.London && ReferenceEquals(ema, emaLondon))
+                || (activeSession == SessionSlot.NewYork && ReferenceEquals(ema, emaNewYork));
         }
 
         private void SetEmaVisible(EMA ema, bool visible)
@@ -1997,7 +2082,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private int GetMaxConfiguredEmaPeriod()
         {
-            return Math.Max(AsiaEmaPeriod, NewYorkEmaPeriod);
+            return Math.Max(AsiaEmaPeriod, Math.Max(LondonEmaPeriod, NewYorkEmaPeriod));
         }
 
         private void ProcessSessionTransitions(SessionSlot slot)
@@ -2038,6 +2123,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case SessionSlot.Asia:
                     return asiaTradesThisSession;
+                case SessionSlot.London:
+                    return londonTradesThisSession;
                 case SessionSlot.NewYork:
                     return newYorkTradesThisSession;
                 default:
@@ -2052,6 +2139,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case SessionSlot.Asia:
                     asiaTradesThisSession = normalized;
+                    break;
+                case SessionSlot.London:
+                    londonTradesThisSession = normalized;
                     break;
                 case SessionSlot.NewYork:
                     newYorkTradesThisSession = normalized;
@@ -2391,6 +2481,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     end = AsiaSessionEnd;
                     return true;
 
+                case SessionSlot.London:
+                    if (!UseLondonSession || LondonSessionStart == LondonSessionEnd)
+                        return false;
+                    start = LondonSessionStart;
+                    end = LondonSessionEnd;
+                    if (ShouldAutoShiftSession(slot))
+                    {
+                        TimeSpan shift = GetLondonSessionShiftForDate(referenceTime.Date);
+                        start = ShiftTime(start, shift);
+                        end = ShiftTime(end, shift);
+                    }
+                    return true;
+
                 case SessionSlot.NewYork:
                     if (!UseNewYorkSession || NewYorkSessionStart == NewYorkSessionEnd)
                         return false;
@@ -2401,6 +2504,88 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 default:
                     return false;
             }
+        }
+
+        private bool ShouldAutoShiftSession(SessionSlot slot)
+        {
+            return slot == SessionSlot.London && AutoShiftLondon;
+        }
+
+        private TimeSpan GetLondonSessionShiftForDate(DateTime date)
+        {
+            DateTime utcSample = new DateTime(date.Year, date.Month, date.Day, 12, 0, 0, DateTimeKind.Utc);
+            DateTime utcRef = new DateTime(date.Year, 1, 15, 12, 0, 0, DateTimeKind.Utc);
+
+            TimeZoneInfo londonTz = GetLondonTimeZone();
+            TimeZoneInfo sessionTz = GetTargetTimeZone();
+
+            TimeSpan baseline = londonTz.GetUtcOffset(utcRef) - sessionTz.GetUtcOffset(utcRef);
+            TimeSpan actual = londonTz.GetUtcOffset(utcSample) - sessionTz.GetUtcOffset(utcSample);
+            return baseline - actual;
+        }
+
+        private TimeSpan ShiftTime(TimeSpan baseTime, TimeSpan shift)
+        {
+            long ticks = (baseTime.Ticks + shift.Ticks) % TimeSpan.TicksPerDay;
+            if (ticks < 0)
+                ticks += TimeSpan.TicksPerDay;
+            return new TimeSpan(ticks);
+        }
+
+        private TimeZoneInfo GetTargetTimeZone()
+        {
+            if (targetTimeZone != null)
+                return targetTimeZone;
+
+            try
+            {
+                var bars = Bars;
+                if (bars != null)
+                {
+                    var timeZoneProp = bars.GetType().GetProperty(
+                        "TimeZoneInfo",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+                    if (timeZoneProp != null && typeof(TimeZoneInfo).IsAssignableFrom(timeZoneProp.PropertyType))
+                        targetTimeZone = (TimeZoneInfo)timeZoneProp.GetValue(bars, null);
+                }
+
+                if (targetTimeZone == null)
+                    targetTimeZone = Bars?.TradingHours?.TimeZoneInfo;
+            }
+            catch
+            {
+                targetTimeZone = null;
+            }
+
+            if (targetTimeZone == null)
+                targetTimeZone = TimeZoneInfo.Local;
+
+            return targetTimeZone;
+        }
+
+        private TimeZoneInfo GetLondonTimeZone()
+        {
+            if (londonTimeZone != null)
+                return londonTimeZone;
+
+            try
+            {
+                londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
+            }
+            catch
+            {
+                try
+                {
+                    londonTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/London");
+                }
+                catch
+                {
+                    londonTimeZone = TimeZoneInfo.Utc;
+                }
+            }
+
+            return londonTimeZone;
         }
 
         private bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
@@ -2433,6 +2618,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             DrawSessionBackground(SessionSlot.Asia, "Duo_Asia", AsiaSessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.London, "Duo_London", LondonSessionBrush ?? Brushes.LightSkyBlue);
             DrawSessionBackground(SessionSlot.NewYork, "Duo_NewYork", NewYorkSessionBrush ?? Brushes.LightSkyBlue);
             DrawNewYorkSkipWindow(Time[0]);
         }
@@ -2657,6 +2843,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case SessionSlot.Asia:
                     return asiaSessionClosed;
+                case SessionSlot.London:
+                    return londonSessionClosed;
                 case SessionSlot.NewYork:
                     return newYorkSessionClosed;
                 default:
@@ -2671,6 +2859,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case SessionSlot.Asia:
                     asiaSessionClosed = value;
                     break;
+                case SessionSlot.London:
+                    londonSessionClosed = value;
+                    break;
                 case SessionSlot.NewYork:
                     newYorkSessionClosed = value;
                     break;
@@ -2683,6 +2874,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case SessionSlot.Asia:
                     return "Asia";
+                case SessionSlot.London:
+                    return "London";
                 case SessionSlot.NewYork:
                     return "New York";
                 default:
@@ -3167,7 +3360,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private int GetMaxConfiguredAdxPeriod()
         {
-            return Math.Max(AsiaAdxPeriod, NewYorkAdxPeriod);
+            return Math.Max(AsiaAdxPeriod, Math.Max(LondonAdxPeriod, NewYorkAdxPeriod));
         }
 
         private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
@@ -3836,6 +4029,100 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double AsiaTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "London Session(1:30-5:30)", Description = "Enable trading logic during the London time window.", GroupName = "London", Order = 0)]
+        public bool UseLondonSession { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "London session start time in chart time zone.", GroupName = "London", Order = 1)]
+        public TimeSpan LondonSessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "London session end time in chart time zone.", GroupName = "London", Order = 2)]
+        public TimeSpan LondonSessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Auto Shift", Description = "Apply London DST auto-shift for this session window.", GroupName = "London", Order = 3)]
+        public bool AutoShiftLondon { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by London entry and exit logic.", GroupName = "London", Order = 4)]
+        public int LondonEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for London entries.", GroupName = "London", Order = 5)]
+        public int LondonContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether London can take long, short, or both directions.", GroupName = "London", Order = 6)]
+        public SessionTradeDirection LondonTradeDirection { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, London flips are allowed only when ADX is greater than or equal to this value.", GroupName = "London", Order = 7)]
+        public double LondonFlipAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "London", Order = 8)]
+        public double LondonEmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "London", Order = 9)]
+        public double LondonMaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the London trend filter.", GroupName = "London", Order = 10)]
+        public int LondonAdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. London entries are allowed only when ADX is greater than or equal to this value.", GroupName = "London", Order = 11)]
+        public double LondonAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. London entries are allowed only when ADX is less than or equal to this value.", GroupName = "London", Order = 12)]
+        public double LondonAdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "London", Order = 13)]
+        public double LondonAdxMinSlopePoints
+        {
+            get { return londonAdxMinSlopePoints; }
+            set { londonAdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "London", Order = 14)]
+        public double LondonAdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "London", Order = 15)]
+        public double LondonAdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "London", Order = 16)]
+        public double LondonStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London", Order = 17)]
+        public double LondonExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London", Order = 18)]
+        public double LondonTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "New York Session(9:35-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
         public bool UseNewYorkSession { get; set; }
 
@@ -3952,7 +4239,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [XmlIgnore]
-        [Display(Name = "New York Session Fill", Description = "Background color used to highlight New York session windows.", GroupName = "10. Sessions", Order = 2)]
+        [Display(Name = "London Session Fill", Description = "Background color used to highlight London session windows.", GroupName = "10. Sessions", Order = 2)]
+        public Brush LondonSessionBrush { get; set; }
+
+        [Browsable(false)]
+        public string LondonSessionBrushSerializable
+        {
+            get { return Serialize.BrushToString(LondonSessionBrush); }
+            set { LondonSessionBrush = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
+        [XmlIgnore]
+        [Display(Name = "New York Session Fill", Description = "Background color used to highlight New York session windows.", GroupName = "10. Sessions", Order = 3)]
         public Brush NewYorkSessionBrush { get; set; }
 
         [Browsable(false)]
@@ -3963,15 +4262,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Show EMA On Chart", Description = "Show/hide EMA indicators on chart.", GroupName = "10. Sessions", Order = 3)]
+        [Display(Name = "Show EMA On Chart", Description = "Show/hide EMA indicators on chart.", GroupName = "10. Sessions", Order = 4)]
         public bool ShowEmaOnChart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Show On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 4)]
+        [Display(Name = "ADX Show On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 5)]
         public bool ShowAdxOnChart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Show Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 5)]
+        [Display(Name = "ADX Show Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 6)]
         public bool ShowAdxThresholdLines { get; set; }
 
         [NinjaScriptProperty]
