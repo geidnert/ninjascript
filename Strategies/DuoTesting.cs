@@ -486,9 +486,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaStopPaddingPoints = 37.5;
                 AsiaExitCrossPoints = 3.75;
                 AsiaTakeProfitPoints = 93.75;
-                AsiaHvSlPaddingPoints = 35.0;
-                AsiaHvSlStartTime = new TimeSpan(9, 30, 0);
-                AsiaHvSlEndTime = new TimeSpan(10, 05, 0);
                 AsiaEntryOffsetPoints = 0.0;
                 AsiaEnableFlipBreakEven = false;
                 AsiaFlipBreakEvenTriggerPoints = 0.0;
@@ -522,9 +519,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonStopPaddingPoints = 37.5;
                 LondonExitCrossPoints = 3.75;
                 LondonTakeProfitPoints = 93.75;
-                LondonHvSlPaddingPoints = 35.0;
-                LondonHvSlStartTime = new TimeSpan(9, 30, 0);
-                LondonHvSlEndTime = new TimeSpan(10, 05, 0);
                 LondonEntryOffsetPoints = 0.0;
                 LondonEnableFlipBreakEven = false;
                 LondonFlipBreakEvenTriggerPoints = 0.0;
@@ -1978,9 +1972,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeExitCrossPoints = AsiaExitCrossPoints;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
-                    activeHvSlPaddingPoints = AsiaHvSlPaddingPoints;
-                    activeHvSlStartTime = AsiaHvSlStartTime;
-                    activeHvSlEndTime = AsiaHvSlEndTime;
+                    activeHvSlPaddingPoints = 0.0;
+                    activeHvSlStartTime = TimeSpan.Zero;
+                    activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = AsiaEntryOffsetPoints;
                     activeEnableFlipBreakEven = AsiaEnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = AsiaFlipBreakEvenTriggerPoints;
@@ -2016,9 +2010,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeExitCrossPoints = LondonExitCrossPoints;
                     activeTakeProfitPoints = LondonTakeProfitPoints;
-                    activeHvSlPaddingPoints = LondonHvSlPaddingPoints;
-                    activeHvSlStartTime = LondonHvSlStartTime;
-                    activeHvSlEndTime = LondonHvSlEndTime;
+                    activeHvSlPaddingPoints = 0.0;
+                    activeHvSlStartTime = TimeSpan.Zero;
+                    activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = LondonEntryOffsetPoints;
                     activeEnableFlipBreakEven = LondonEnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = LondonFlipBreakEvenTriggerPoints;
@@ -4171,19 +4165,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "HV SL Padding Points", Description = "High-volatility stop distance in points from EMA on the opposite side. 0 disables HV stop logic.", GroupName = "Asia", Order = 19)]
-        public double AsiaHvSlPaddingPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "Asia", Order = 20)]
-        public TimeSpan AsiaHvSlStartTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "Asia", Order = 21)]
-        public TimeSpan AsiaHvSlEndTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "Asia", Order = 22)]
         public double AsiaEntryOffsetPoints { get; set; }
 
@@ -4336,19 +4317,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London", Order = 18)]
         public double LondonTakeProfitPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "HV SL Padding Points", Description = "High-volatility stop distance in points from EMA on the opposite side. 0 disables HV stop logic.", GroupName = "London", Order = 19)]
-        public double LondonHvSlPaddingPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "London", Order = 20)]
-        public TimeSpan LondonHvSlStartTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "London", Order = 21)]
-        public TimeSpan LondonHvSlEndTime { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
