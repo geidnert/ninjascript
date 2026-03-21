@@ -490,48 +490,48 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEnableFlipBreakEven = false;
                 AsiaFlipBreakEvenTriggerPoints = 0.0;
                 AsiaFlipTakeProfitPoints = 0.0;
-                AsiaTakeProfitPercentTriggerPercent = 82.0;
+                AsiaTakeProfitPercentTriggerPercent = 78.0;
                 AsiaTakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 AsiaTakeProfitAtrTrailMultiplier = 2.0;
-                AsiaTakeProfitPercentStopMovePercent = 32.0;
+                AsiaTakeProfitPercentStopMovePercent = 4.0;
                 AsiaRequireMinAdxForFlips = true;
                 AsiaEnableAdxDdRiskMode = true;
-                AsiaAdxDdRiskModeStopLossPoints = 32.0;
-                AsiaAdxDdRiskModeTakeProfitPoints = 48.0;
+                AsiaAdxDdRiskModeStopLossPoints = 25.0;
+                AsiaAdxDdRiskModeTakeProfitPoints = 1.0;
                 AsiaHorizontalExitBars = 61;
 
-                UseLondonSession = false;
-                LondonSessionStart = new TimeSpan(1, 30, 0);
-                LondonSessionEnd = new TimeSpan(5, 30, 0);
+                UseLondonSession = true;
+                LondonSessionStart = new TimeSpan(2, 00, 0);
+                LondonSessionEnd = new TimeSpan(6, 30, 0);
                 AutoShiftLondon = true;
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonTradeDirection = SessionTradeDirection.Both;
-                LondonFlipAdxThreshold = 20.0;
-                LondonEmaMinSlopePointsPerBar = 0.48;
-                LondonMaxEntryDistanceFromEmaPoints = 0.0;
+                LondonFlipAdxThreshold = 0.0;
+                LondonEmaMinSlopePointsPerBar = 0.31;
+                LondonMaxEntryDistanceFromEmaPoints = 20.0;
                 LondonAdxPeriod = 14;
-                LondonAdxThreshold = 20.0;
-                LondonAdxMaxThreshold = 53.4;
-                LondonAdxMinSlopePoints = 1.15;
-                LondonAdxPeakDrawdownExitUnits = 16.6;
-                LondonAdxAbsoluteExitLevel = 58.9;
-                LondonStopPaddingPoints = 37.5;
-                LondonExitCrossPoints = 3.75;
-                LondonTakeProfitPoints = 93.75;
+                LondonAdxThreshold = 25.37;
+                LondonAdxMaxThreshold = 30.21;
+                LondonAdxMinSlopePoints = 1.0;
+                LondonAdxPeakDrawdownExitUnits = 7.08;
+                LondonAdxAbsoluteExitLevel = 51.2;
+                LondonStopPaddingPoints = 28.75;
+                LondonExitCrossPoints = 2.82;
+                LondonTakeProfitPoints = 93.0;
                 LondonEntryOffsetPoints = 0.0;
                 LondonEnableFlipBreakEven = false;
                 LondonFlipBreakEvenTriggerPoints = 0.0;
                 LondonFlipTakeProfitPoints = 0.0;
-                LondonTakeProfitPercentTriggerPercent = 82.0;
+                LondonTakeProfitPercentTriggerPercent = 71.0;
                 LondonTakeProfitStopMode = TakeProfitStopMode.PercentMove;
-                LondonTakeProfitAtrTrailMultiplier = 2.0;
-                LondonTakeProfitPercentStopMovePercent = 32.0;
+                LondonTakeProfitAtrTrailMultiplier = 0.0;
+                LondonTakeProfitPercentStopMovePercent = 9.0;
                 LondonRequireMinAdxForFlips = true;
                 LondonEnableAdxDdRiskMode = true;
-                LondonAdxDdRiskModeStopLossPoints = 32.0;
-                LondonAdxDdRiskModeTakeProfitPoints = 48.0;
-                LondonHorizontalExitBars = 61;
+                LondonAdxDdRiskModeStopLossPoints = 3.0;
+                LondonAdxDdRiskModeTakeProfitPoints = 52.0;
+                LondonHorizontalExitBars = 60;
 
                 UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 35, 0);
@@ -548,8 +548,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxThreshold = 16.2;
                 NewYorkAdxMaxThreshold = 61.0;
                 NewYorkAdxMinSlopePoints = 1.63;
-                NewYorkAdxPeakDrawdownExitUnits = 19.6;
-                NewYorkAdxAbsoluteExitLevel = 69.2;
+                NewYorkAdxPeakDrawdownExitUnits = 19.75;
+                NewYorkAdxAbsoluteExitLevel = 70.6;
                 NewYorkStopPaddingPoints = 45.75;
                 NewYorkExitCrossPoints = 3.0;
                 NewYorkTakeProfitPoints = 123.5;
@@ -560,15 +560,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEnableFlipBreakEven = false;
                 NewYorkFlipBreakEvenTriggerPoints = 0.0;
                 NewYorkFlipTakeProfitPoints = 0.0;
-                NewYorkTakeProfitPercentTriggerPercent = 82.0;
+                NewYorkTakeProfitPercentTriggerPercent = 93.0;
                 NewYorkTakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 NewYorkTakeProfitAtrTrailMultiplier = 2.0;
-                NewYorkTakeProfitPercentStopMovePercent = 32.0;
+                NewYorkTakeProfitPercentStopMovePercent = 83.0;
                 NewYorkRequireMinAdxForFlips = true;
                 NewYorkEnableAdxDdRiskMode = true;
-                NewYorkAdxDdRiskModeStopLossPoints = 32.0;
-                NewYorkAdxDdRiskModeTakeProfitPoints = 48.0;
-                NewYorkHorizontalExitBars = 61;
+                NewYorkAdxDdRiskModeStopLossPoints = 0.0;
+                NewYorkAdxDdRiskModeTakeProfitPoints = 72.0;
+                NewYorkHorizontalExitBars = 36;
 
                 CloseAtSessionEnd = false;
                 AsiaSessionBrush = Brushes.DarkCyan;
@@ -4225,7 +4225,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int AsiaHorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "London Session(1:30-5:30)", Description = "Enable trading logic during the London time window.", GroupName = "London", Order = 0)]
+        [Display(Name = "London Session(2:00-6:30)", Description = "Enable trading logic during the London time window.", GroupName = "London", Order = 0)]
         public bool UseLondonSession { get; set; }
 
         [NinjaScriptProperty]
