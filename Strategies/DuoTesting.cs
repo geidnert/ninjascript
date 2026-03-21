@@ -49,6 +49,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             WickTrail
         }
 
+        public enum TakeProfitTrailSource
+        {
+            Wick,
+            Body
+        }
+
         // Commercial (closed list) option: uncomment these converters and the [TypeConverter(...)] lines
         // on the momentum properties to switch back from free input to dropdown presets.
         // private sealed class AsiaAdxSlopeDropdownConverter : System.ComponentModel.DoubleConverter
@@ -513,6 +519,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TakeProfitPercentTriggerPercent = 82.0;
                 TakeProfitPercentStopMode = TakeProfitStopMode.PercentMove;
                 TakeProfitPercentStopMovePercent = 32.0;
+                TakeProfitPercentTrailSource = TakeProfitTrailSource.Wick;
+                TakeProfitPercentTrailCandleOffset = 1;
                 EnableAdxDdRiskMode = true;
                 AdxDdRiskModeStopLossPoints = 32.0;
                 AdxDdRiskModeTakeProfitPoints = 48.0;
@@ -1359,7 +1367,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (TakeProfitPercentStopMode == TakeProfitStopMode.WickTrail)
             {
-                TryApplyTakeProfitWickTrailStop(entrySignal, closePrice);
+                TryApplyTakeProfitCandleTrailStop(entrySignal, closePrice);
                 return;
             }
 
@@ -1386,9 +1394,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private void TryApplyTakeProfitWickTrailStop(string entrySignal, double closePrice)
+        private void TryApplyTakeProfitCandleTrailStop(string entrySignal, double closePrice)
         {
-            double stopPrice = Position.MarketPosition == MarketPosition.Long ? Low[0] : High[0];
+            int trailCandleOffset = Math.Max(1, Math.Min(2, TakeProfitPercentTrailCandleOffset));
+            int barsAgo = trailCandleOffset - 1;
+            if (CurrentBar < barsAgo)
+                return;
+
+            double stopPrice;
+            if (TakeProfitPercentTrailSource == TakeProfitTrailSource.Body)
+            {
+                stopPrice = Position.MarketPosition == MarketPosition.Long
+                    ? Math.Min(Open[barsAgo], Close[barsAgo])
+                    : Math.Max(Open[barsAgo], Close[barsAgo]);
+            }
+            else
+            {
+                stopPrice = Position.MarketPosition == MarketPosition.Long ? Low[barsAgo] : High[barsAgo];
+            }
+
             stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
 
             if (!IsManagedStopPriceValid(stopPrice, closePrice))
@@ -1398,11 +1422,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (stopApplied)
             {
                 LogDebug(string.Format(
-                    "TP wick trail moved | signal={0} stop={1:0.00} close={2:0.00} wickBar={3}",
+                    "TP candle trail moved | signal={0} source={1} candleOffset={2} stop={3:0.00} close={4:0.00} trailBar={5}",
                     entrySignal,
+                    TakeProfitPercentTrailSource,
+                    trailCandleOffset,
                     stopPrice,
                     closePrice,
-                    Time[0]));
+                    Time[barsAgo]));
             }
         }
 
@@ -4076,7 +4102,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or start trailing at the wick of each completed 5-minute candle.", GroupName = "13. Risk", Order = 10)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or start trailing using the selected TP % Trail Source and TP % Trail Candle Offset.", GroupName = "13. Risk", Order = 10)]
         public TakeProfitStopMode TakeProfitPercentStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -4085,26 +4111,35 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double TakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 12)]
+        [Display(Name = "TP % Trail Source", Description = "Only used when TP % Stop Mode is WickTrail. Wick = selected candle wick. Body = far stop-side edge of the selected candle body (long=min(open,close), short=max(open,close)).", GroupName = "13. Risk", Order = 12)]
+        public TakeProfitTrailSource TakeProfitPercentTrailSource { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 2)]
+        [Display(Name = "TP % Trail Candle Offset", Description = "Only used when TP % Stop Mode is WickTrail. 1 = most recently completed 5-minute candle. 2 = the prior completed 5-minute candle.", GroupName = "13. Risk", Order = 13)]
+        public int TakeProfitPercentTrailCandleOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "13. Risk", Order = 14)]
         public bool RequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "13. Risk", Order = 13)]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "13. Risk", Order = 15)]
         public bool EnableAdxDdRiskMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "13. Risk", Order = 14)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "13. Risk", Order = 16)]
         public double AdxDdRiskModeStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "13. Risk", Order = 15)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "13. Risk", Order = 17)]
         public double AdxDdRiskModeTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "13. Risk", Order = 16)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "13. Risk", Order = 18)]
         public int HorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
