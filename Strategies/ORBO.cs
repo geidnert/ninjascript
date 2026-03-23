@@ -253,9 +253,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description = @"ORBO2 Bot v1.01 - Opening Range Breakout with OR Size Buckets.
-4 Long buckets (L1-L4) and 4 Short buckets (S1-S4), each with independent parameters.
-USE ON 1-MINUTE CHART.";
+                Description = @"ORBO2";
                 
                 Name = "ORBO2";
                 Calculate = Calculate.OnBarClose;
@@ -1340,6 +1338,41 @@ USE ON 1-MINUTE CHART.";
             confirmationComplete = false; confirmationBarCount = 0;
             longBreakoutOccurred = false; shortBreakoutOccurred = false;
         }
+
+        private double GetReferencePriceForProtectiveStop(MarketPosition positionDirection)
+        {
+            if (positionDirection == MarketPosition.Long)
+            {
+                double bid = GetCurrentBid();
+                if (bid > 0)
+                    return bid;
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                double ask = GetCurrentAsk();
+                if (ask > 0)
+                    return ask;
+            }
+
+            return Close[0];
+        }
+
+        private bool CanAmendProtectiveStopForCurrentMarket(MarketPosition positionDirection, double proposedStopPrice)
+        {
+            if (double.IsNaN(proposedStopPrice) || double.IsInfinity(proposedStopPrice) || proposedStopPrice <= 0)
+                return false;
+
+            double referencePrice = GetReferencePriceForProtectiveStop(positionDirection);
+            if (double.IsNaN(referencePrice) || double.IsInfinity(referencePrice) || referencePrice <= 0)
+                return true;
+
+            if (positionDirection == MarketPosition.Long)
+                return proposedStopPrice < referencePrice;
+            if (positionDirection == MarketPosition.Short)
+                return proposedStopPrice > referencePrice;
+
+            return true;
+        }
         
         private void ManageTrailingStop()
         {
@@ -1441,6 +1474,13 @@ USE ON 1-MINUTE CHART.";
             bool shouldMove = isLong ? (newStop > trailStopPrice) : (newStop < trailStopPrice);
             if (shouldMove)
             {
+                if (!CanAmendProtectiveStopForCurrentMarket(Position.MarketPosition, newStop))
+                {
+                    if (DebugMode)
+                        DebugPrint($"TRAIL SKIPPED: proposed stop {newStop:F2} is on the wrong side of market for {Position.MarketPosition}.");
+                    return;
+                }
+
                 trailStopPrice = newStop;
                 SetStopLoss(currentSignalName, CalculationMode.Price, trailStopPrice, false);
                 if (DebugMode)
@@ -1466,7 +1506,6 @@ USE ON 1-MINUTE CHART.";
             
             if (profit >= threshold)
             {
-                beTriggerActive = true;
                 double beStop = Position.MarketPosition == MarketPosition.Long ? entryPrice + beOff * TickSize : entryPrice - beOff * TickSize;
                 
                 // If trailing was active, keep the tighter (more favorable) stop
@@ -1478,7 +1517,15 @@ USE ON 1-MINUTE CHART.";
                     else if (Position.MarketPosition == MarketPosition.Short && trailStopPrice < beStop)
                         beStop = trailStopPrice;
                 }
+
+                if (!CanAmendProtectiveStopForCurrentMarket(Position.MarketPosition, beStop))
+                {
+                    if (DebugMode)
+                        DebugPrint($"BREAKEVEN SKIPPED: proposed stop {beStop:F2} is on the wrong side of market for {Position.MarketPosition}.");
+                    return;
+                }
                 
+                beTriggerActive = true;
                 SetStopLoss(currentSignalName, CalculationMode.Price, beStop, false);
                 if (DebugMode) DebugPrint($"BREAKEVEN @ {profit:F2} pts | Stop: {beStop:F2} (trail active={beBp.UseTrailingStop})");
             }
