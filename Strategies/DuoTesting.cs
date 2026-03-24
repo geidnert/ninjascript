@@ -139,10 +139,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string tradeLineTagPrefix = string.Empty;
         private bool tradeLinesActive;
         private bool tradeLineHasTp;
+        private bool tradeLineHasTpTrigger;
         private int tradeLineSignalBar = -1;
         private int tradeLineExitBar = -1;
         private double tradeLineEntryPrice;
         private double tradeLineTpPrice;
+        private double tradeLineTpTriggerPrice;
         private double tradeLineSlPrice;
 
         private EMA emaAsia;
@@ -162,6 +164,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeEmaMinSlopePointsPerBar;
         private double activeMaxEntryDistanceFromEmaPoints;
         private double activeExitCrossPoints;
+        private double activeFlipEmaCrossPoints;
         private double activeTakeProfitPoints;
         private int activeAdxPeriod;
         private double activeAdxThreshold;
@@ -187,6 +190,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxDdRiskModeStopLossPoints;
         private double activeAdxDdRiskModeTakeProfitPoints;
         private int activeHorizontalExitBars;
+        private double activeMaxStopLossPoints;
 
         private double pendingLongStopForWebhook;
         private double pendingShortStopForWebhook;
@@ -485,6 +489,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxAbsoluteExitLevel = 58.9;
                 AsiaStopPaddingPoints = 37.5;
                 AsiaExitCrossPoints = 3.75;
+                AsiaFlipEmaCrossPoints = 0.0;
+                AsiaMaxStopLossPoints = 0.0;
                 AsiaTakeProfitPoints = 93.75;
                 AsiaEntryOffsetPoints = 0.0;
                 AsiaEnableFlipBreakEven = false;
@@ -518,6 +524,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonAdxAbsoluteExitLevel = 51.2;
                 LondonStopPaddingPoints = 28.75;
                 LondonExitCrossPoints = 2.82;
+                LondonFlipEmaCrossPoints = 0.0;
+                LondonMaxStopLossPoints = 0.0;
                 LondonTakeProfitPoints = 93.0;
                 LondonEntryOffsetPoints = 0.0;
                 LondonEnableFlipBreakEven = false;
@@ -552,6 +560,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxAbsoluteExitLevel = 70.6;
                 NewYorkStopPaddingPoints = 45.75;
                 NewYorkExitCrossPoints = 3.0;
+                NewYorkFlipEmaCrossPoints = 0.0;
+                NewYorkMaxStopLossPoints = 0.0;
                 NewYorkTakeProfitPoints = 123.5;
                 NewYorkHvSlPaddingPoints = 35.0;
                 NewYorkHvSlStartTime = new TimeSpan(9, 30, 0);
@@ -635,10 +645,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tradeLineTagPrefix = string.Empty;
                 tradeLinesActive = false;
                 tradeLineHasTp = false;
+                tradeLineHasTpTrigger = false;
                 tradeLineSignalBar = -1;
                 tradeLineExitBar = -1;
                 tradeLineEntryPrice = 0.0;
                 tradeLineTpPrice = 0.0;
+                tradeLineTpTriggerPrice = 0.0;
                 tradeLineSlPrice = 0.0;
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
@@ -675,13 +687,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 LogDebug(
                     string.Format(
-                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} ExitCross={5:0.##} EntryStop={6}",
+                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} ExitCross={5:0.##} FlipCross={6:0.##} EntryStop={7}",
                         FormatSessionLabel(activeSession),
                         activeEmaPeriod,
                         activeAdxPeriod,
                         activeAdxThreshold,
                         activeContracts,
                         activeExitCrossPoints,
+                        GetEffectiveFlipEmaCrossPoints(),
                         activeEntryStopMode));
             }
             else if (State == State.Realtime)
@@ -829,6 +842,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (Close[0] <= emaValue - activeExitCrossPoints)
                 {
+                    double effectiveFlipEmaCrossPoints = GetEffectiveFlipEmaCrossPoints();
                     if (DebugLogging && canTradeNow && !distancePasses && emaSlopeShortPass && bodyBelowPercent >= FlipBodyThresholdPercent)
                     {
                         LogDebug(string.Format(
@@ -843,15 +857,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeShortPass;
                     bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    double flipEntryPrice = GetEntryPriceForDirection(Close[0], false, 0.0);
+                    double flipStopPrice = BuildFlipShortStopPrice(flipEntryPrice, emaValue, Time[0]);
+                    double flipStopLossPoints = GetPlannedStopLossPoints(flipEntryPrice, flipStopPrice);
+                    bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
+                    bool flipCrossPass = Close[0] <= emaValue - effectiveFlipEmaCrossPoints;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
                         CancelOrderIfActive(shortEntryOrder, "FlipToShort");
 
                         bool useMarketEntry = true;
-                        double entryPrice = GetEntryPriceForDirection(Close[0], false, 0.0);
-                        double stopPrice = BuildFlipShortStopPrice(entryPrice, emaValue, Time[0]);
+                        double entryPrice = flipEntryPrice;
+                        double stopPrice = flipStopPrice;
                         int qty = GetEntryQuantity();
                         if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                         {
@@ -868,30 +887,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortFlipEntrySignal);
 
                         LogDebug(string.Format(
-                            "Flip LONG->SHORT | close={0:0.00} entry={1:0.00} type={2} ema={3:0.00} below%={4:0.0} stop={5:0.00} stopTicks={6} qty={7}",
+                            "Flip LONG->SHORT | close={0:0.00} entry={1:0.00} type={2} ema={3:0.00} below%={4:0.0} flipCrossPts={5:0.##} stop={6:0.00} stopTicks={7} qty={8}",
                             Close[0],
                             entryPrice,
                             useMarketEntry ? "market" : "limit",
                             emaValue,
                             bodyBelowPercent,
+                            effectiveFlipEmaCrossPoints,
                             stopPrice,
                             PriceToTicks(Math.Abs(entryPrice - stopPrice)),
                             qty));
                     }
                     else
                     {
+                        if (!flipMaxStopPass)
+                        {
+                            LogDebug(string.Format(
+                                "Flip blocked | reason=MaxSL side=Short slPts={0:0.00} maxSlPts={1:0.00} session={2}",
+                                flipStopLossPoints,
+                                activeMaxStopLossPoints,
+                                FormatSessionLabel(activeSession)));
+                        }
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} below%={6:0.0} minBody%={7:0.0}",
+                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} crossPass={6} maxStopPass={7} below%={8:0.0} minBody%={9:0.0} flipCrossPts={10:0.##} flipSlPts={11:0.00} maxSlPts={12:0.00}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
                                 flipDirectionPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
+                                flipCrossPass,
+                                flipMaxStopPass,
                                 bodyBelowPercent,
-                                FlipBodyThresholdPercent));
+                                FlipBodyThresholdPercent,
+                                effectiveFlipEmaCrossPoints,
+                                flipStopLossPoints,
+                                activeMaxStopLossPoints));
                         }
                         ExitLong(BuildExitSignalName("EmaExitLong"), GetOpenLongEntrySignal());
                         LogDebug(string.Format("Exit LONG | close={0:0.00} ema={1:0.00} below%={2:0.0}", Close[0], emaValue, bodyBelowPercent));
@@ -944,6 +977,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (Close[0] >= emaValue + activeExitCrossPoints)
                 {
+                    double effectiveFlipEmaCrossPoints = GetEffectiveFlipEmaCrossPoints();
                     if (DebugLogging && canTradeNow && !distancePasses && emaSlopeLongPass && bodyAbovePercent >= FlipBodyThresholdPercent)
                     {
                         LogDebug(string.Format(
@@ -958,15 +992,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeLongPass;
                     bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
-                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass;
+                    double flipEntryPrice = GetEntryPriceForDirection(Close[0], true, 0.0);
+                    double flipStopPrice = BuildFlipLongStopPrice(flipEntryPrice, emaValue, Time[0]);
+                    double flipStopLossPoints = GetPlannedStopLossPoints(flipEntryPrice, flipStopPrice);
+                    bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
+                    bool flipCrossPass = Close[0] >= emaValue + effectiveFlipEmaCrossPoints;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
                         CancelOrderIfActive(shortEntryOrder, "FlipToLong");
 
                         bool useMarketEntry = true;
-                        double entryPrice = GetEntryPriceForDirection(Close[0], true, 0.0);
-                        double stopPrice = BuildFlipLongStopPrice(entryPrice, emaValue, Time[0]);
+                        double entryPrice = flipEntryPrice;
+                        double stopPrice = flipStopPrice;
                         int qty = GetEntryQuantity();
                         if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                         {
@@ -983,30 +1022,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongFlipEntrySignal);
 
                         LogDebug(string.Format(
-                            "Flip SHORT->LONG | close={0:0.00} entry={1:0.00} type={2} ema={3:0.00} above%={4:0.0} stop={5:0.00} stopTicks={6} qty={7}",
+                            "Flip SHORT->LONG | close={0:0.00} entry={1:0.00} type={2} ema={3:0.00} above%={4:0.0} flipCrossPts={5:0.##} stop={6:0.00} stopTicks={7} qty={8}",
                             Close[0],
                             entryPrice,
                             useMarketEntry ? "market" : "limit",
                             emaValue,
                             bodyAbovePercent,
+                            effectiveFlipEmaCrossPoints,
                             stopPrice,
                             PriceToTicks(Math.Abs(entryPrice - stopPrice)),
                             qty));
                     }
                     else
                     {
+                        if (!flipMaxStopPass)
+                        {
+                            LogDebug(string.Format(
+                                "Flip blocked | reason=MaxSL side=Long slPts={0:0.00} maxSlPts={1:0.00} session={2}",
+                                flipStopLossPoints,
+                                activeMaxStopLossPoints,
+                                FormatSessionLabel(activeSession)));
+                        }
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} above%={6:0.0} minBody%={7:0.0}",
+                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} directionPass={2} distancePass={3} emaSlopePass={4} bodyPass={5} crossPass={6} maxStopPass={7} above%={8:0.0} minBody%={9:0.0} flipCrossPts={10:0.##} flipSlPts={11:0.00} maxSlPts={12:0.00}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
                                 flipDirectionPass,
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
+                                flipCrossPass,
+                                flipMaxStopPass,
                                 bodyAbovePercent,
-                                FlipBodyThresholdPercent));
+                                FlipBodyThresholdPercent,
+                                effectiveFlipEmaCrossPoints,
+                                flipStopLossPoints,
+                                activeMaxStopLossPoints));
                         }
                         ExitShort(BuildExitSignalName("EmaExitShort"), GetOpenShortEntrySignal());
                         LogDebug(string.Format("Exit SHORT | close={0:0.00} ema={1:0.00} above%={2:0.0}", Close[0], emaValue, bodyAbovePercent));
@@ -1085,6 +1138,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool useMarketEntry = activeEntryOffsetPoints <= 0.0;
                     double entryPrice = GetEntryPriceForDirection(Close[0], true, activeEntryOffsetPoints);
                     double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue, Time[0]);
+                    double stopLossPoints = GetPlannedStopLossPoints(entryPrice, stopPrice);
+                    if (!IsWithinMaxStopLossPoints(stopLossPoints))
+                    {
+                        LogDebug(string.Format(
+                            "Entry blocked | reason=MaxSL side=Long session={0} entry={1:0.00} stop={2:0.00} slPts={3:0.00} maxSlPts={4:0.00}",
+                            FormatSessionLabel(activeSession),
+                            entryPrice,
+                            stopPrice,
+                            stopLossPoints,
+                            activeMaxStopLossPoints));
+                        EndTradeAttempt("max-stop");
+                        return;
+                    }
                     int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                     {
@@ -1121,6 +1187,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool useMarketEntry = activeEntryOffsetPoints <= 0.0;
                     double entryPrice = GetEntryPriceForDirection(Close[0], false, activeEntryOffsetPoints);
                     double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue, Time[0]);
+                    double stopLossPoints = GetPlannedStopLossPoints(entryPrice, stopPrice);
+                    if (!IsWithinMaxStopLossPoints(stopLossPoints))
+                    {
+                        LogDebug(string.Format(
+                            "Entry blocked | reason=MaxSL side=Short session={0} entry={1:0.00} stop={2:0.00} slPts={3:0.00} maxSlPts={4:0.00}",
+                            FormatSessionLabel(activeSession),
+                            entryPrice,
+                            stopPrice,
+                            stopLossPoints,
+                            activeMaxStopLossPoints));
+                        EndTradeAttempt("max-stop");
+                        return;
+                    }
                     int qty = GetEntryQuantity();
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                     {
@@ -1336,6 +1415,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool IsEntryOrderName(string orderName)
         {
             return IsLongEntryOrderName(orderName) || IsShortEntryOrderName(orderName);
+        }
+
+        private double GetEffectiveFlipEmaCrossPoints()
+        {
+            return activeFlipEmaCrossPoints > 0.0
+                ? activeFlipEmaCrossPoints
+                : activeExitCrossPoints;
+        }
+
+        private double GetPlannedStopLossPoints(double entryPrice, double stopPrice)
+        {
+            return Instrument.MasterInstrument.RoundToTickSize(Math.Abs(entryPrice - stopPrice));
+        }
+
+        private bool IsWithinMaxStopLossPoints(double stopLossPoints)
+        {
+            return activeMaxStopLossPoints <= 0.0
+                || stopLossPoints <= activeMaxStopLossPoints + TickSize * 0.5;
         }
 
         private bool IsLongEntryOrderName(string orderName)
@@ -1655,6 +1752,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (targetTicks < 1)
                         targetTicks = 1;
                     SetProfitTarget(entrySignal, CalculationMode.Ticks, targetTicks);
+                    UpdateTradeLineTakeProfitPrice(targetPrice);
                     tpApplied = true;
                 }
                 else
@@ -1726,12 +1824,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             tradeLineTagPrefix = string.Format("Duo_TradeLine_{0}_{1}_", ++tradeLineTagCounter, CurrentBar);
             tradeLinesActive = true;
-            tradeLineHasTp = hasTakeProfit;
             tradeLineSignalBar = Math.Max(0, CurrentBar - 1);
             tradeLineExitBar = -1;
             tradeLineEntryPrice = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
             tradeLineSlPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
-            tradeLineTpPrice = hasTakeProfit ? Instrument.MasterInstrument.RoundToTickSize(takeProfitPrice) : 0.0;
+            SetTradeLineTakeProfitState(takeProfitPrice, hasTakeProfit);
 
             DrawTradeLinesAtBarsAgo(1, 0);
         }
@@ -1763,10 +1860,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void ClearTradeLineState()
         {
             tradeLineHasTp = false;
+            tradeLineHasTpTrigger = false;
             tradeLineSignalBar = -1;
             tradeLineExitBar = -1;
             tradeLineEntryPrice = 0.0;
             tradeLineTpPrice = 0.0;
+            tradeLineTpTriggerPrice = 0.0;
             tradeLineSlPrice = 0.0;
         }
 
@@ -1777,6 +1876,36 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             tradeLineSlPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
             UpdateTradeLines();
+        }
+
+        private void UpdateTradeLineTakeProfitPrice(double takeProfitPrice)
+        {
+            if (!tradeLinesActive)
+                return;
+
+            SetTradeLineTakeProfitState(takeProfitPrice, takeProfitPrice > 0.0);
+            UpdateTradeLines();
+        }
+
+        private void SetTradeLineTakeProfitState(double takeProfitPrice, bool hasTakeProfit)
+        {
+            tradeLineHasTp = hasTakeProfit;
+            tradeLineTpPrice = hasTakeProfit
+                ? Instrument.MasterInstrument.RoundToTickSize(takeProfitPrice)
+                : 0.0;
+            tradeLineHasTpTrigger = false;
+            tradeLineTpTriggerPrice = 0.0;
+
+            if (!hasTakeProfit || activeTakeProfitPercentTriggerPercent <= 0.0)
+                return;
+
+            double tpDistance = tradeLineTpPrice - tradeLineEntryPrice;
+            if (Math.Abs(tpDistance) < TickSize * 0.5)
+                return;
+
+            double triggerPrice = tradeLineEntryPrice + tpDistance * (activeTakeProfitPercentTriggerPercent / 100.0);
+            tradeLineTpTriggerPrice = Instrument.MasterInstrument.RoundToTickSize(triggerPrice);
+            tradeLineHasTpTrigger = true;
         }
 
         private void DrawTradeLinesAtBarsAgo(int startBarsAgo, int endBarsAgo)
@@ -1800,6 +1929,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     startBarsAgo, tradeLineTpPrice,
                     endBarsAgo, tradeLineTpPrice,
                     Brushes.LimeGreen, DashStyleHelper.Solid, 2);
+            }
+
+            if (tradeLineHasTpTrigger)
+            {
+                Draw.Line(this, tradeLineTagPrefix + "TPTrigger", false,
+                    startBarsAgo, tradeLineTpTriggerPrice,
+                    endBarsAgo, tradeLineTpTriggerPrice,
+                    Brushes.LimeGreen, DashStyleHelper.Dot, 2);
             }
         }
 
@@ -1971,6 +2108,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeMaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeExitCrossPoints = AsiaExitCrossPoints;
+                    activeFlipEmaCrossPoints = AsiaFlipEmaCrossPoints;
+                    activeMaxStopLossPoints = AsiaMaxStopLossPoints;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
                     activeHvSlPaddingPoints = 0.0;
                     activeHvSlStartTime = TimeSpan.Zero;
@@ -2009,6 +2148,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeMaxEntryDistanceFromEmaPoints = LondonMaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeExitCrossPoints = LondonExitCrossPoints;
+                    activeFlipEmaCrossPoints = LondonFlipEmaCrossPoints;
+                    activeMaxStopLossPoints = LondonMaxStopLossPoints;
                     activeTakeProfitPoints = LondonTakeProfitPoints;
                     activeHvSlPaddingPoints = 0.0;
                     activeHvSlStartTime = TimeSpan.Zero;
@@ -2047,6 +2188,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeMaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeExitCrossPoints = NewYorkExitCrossPoints;
+                    activeFlipEmaCrossPoints = NewYorkFlipEmaCrossPoints;
+                    activeMaxStopLossPoints = NewYorkMaxStopLossPoints;
                     activeTakeProfitPoints = NewYorkTakeProfitPoints;
                     activeHvSlPaddingPoints = NewYorkHvSlPaddingPoints;
                     activeHvSlStartTime = NewYorkHvSlStartTime;
@@ -2084,6 +2227,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeMaxEntryDistanceFromEmaPoints = 0.0;
                     activeStopPaddingPoints = 0.0;
                     activeExitCrossPoints = 0.0;
+                    activeFlipEmaCrossPoints = 0.0;
+                    activeMaxStopLossPoints = 0.0;
                     activeTakeProfitPoints = 0.0;
                     activeHvSlPaddingPoints = 0.0;
                     activeHvSlStartTime = TimeSpan.Zero;
@@ -3015,7 +3160,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} exitCross={14:0.##} entryStop={15} slPad={16:0.##} hvSlPad={17:0.##} hvWindow={18:hh\\:mm}-{19:hh\\:mm} entryOffset={20:0.##} flipBe={21}/{22:0.##} flipTp={23:0.##} tpPct={24:0.##} mode={25} atrMult={26:0.##} stopPct={27:0.##} adxFlipMin={28} adxDdRiskMode={29} adxDdRiskSlPts={30:0.##} adxDdRiskTpPts={31:0.##} horizontal={32}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} exitCross={14:0.##} flipCross={15:0.##} entryStop={16} slPad={17:0.##} hvSlPad={18:0.##} hvWindow={19:hh\\:mm}-{20:hh\\:mm} entryOffset={21:0.##} flipBe={22}/{23:0.##} flipTp={24:0.##} tpPct={25:0.##} mode={26} atrMult={27:0.##} stopPct={28:0.##} adxFlipMin={29} adxDdRiskMode={30} adxDdRiskSlPts={31:0.##} adxDdRiskTpPts={32:0.##} horizontal={33}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -3031,6 +3176,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeTakeProfitPoints,
                 activeContracts,
                 activeExitCrossPoints,
+                GetEffectiveFlipEmaCrossPoints(),
                 activeEntryStopMode,
                 activeStopPaddingPoints,
                 activeHvSlPaddingPoints,
@@ -3096,7 +3242,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (!DebugLogging)
                 return;
-
             if (Bars == null || CurrentBar < 0)
             {
                 Print(string.Format("Duo | {0}", message));
@@ -4183,46 +4328,56 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double AsiaFlipTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "Asia", Order = 26)]
+        public double AsiaFlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Asia", Order = 26)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Asia", Order = 27)]
         public double AsiaTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia", Order = 27)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia", Order = 28)]
         public TakeProfitStopMode AsiaTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "Asia", Order = 28)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "Asia", Order = 29)]
         public double AsiaTakeProfitAtrTrailMultiplier { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Asia", Order = 29)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Asia", Order = 30)]
         public double AsiaTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "Asia", Order = 30)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "Asia", Order = 31)]
         public bool AsiaRequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "Asia", Order = 31)]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "Asia", Order = 32)]
         public bool AsiaEnableAdxDdRiskMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "Asia", Order = 32)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "Asia", Order = 33)]
         public double AsiaAdxDdRiskModeStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "Asia", Order = 33)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "Asia", Order = 34)]
         public double AsiaAdxDdRiskModeTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "Asia", Order = 34)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "Asia", Order = 35)]
         public int AsiaHorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia", Order = 36)]
+        public double AsiaMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "London Session(2:00-6:30)", Description = "Enable trading logic during the London time window.", GroupName = "London", Order = 0)]
@@ -4338,46 +4493,56 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LondonFlipTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "London", Order = 26)]
+        public double LondonFlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "London", Order = 26)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "London", Order = 27)]
         public double LondonTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London", Order = 27)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London", Order = 28)]
         public TakeProfitStopMode LondonTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "London", Order = 28)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "London", Order = 29)]
         public double LondonTakeProfitAtrTrailMultiplier { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "London", Order = 29)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "London", Order = 30)]
         public double LondonTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "London", Order = 30)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "London", Order = 31)]
         public bool LondonRequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "London", Order = 31)]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "London", Order = 32)]
         public bool LondonEnableAdxDdRiskMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "London", Order = 32)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "London", Order = 33)]
         public double LondonAdxDdRiskModeStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "London", Order = 33)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "London", Order = 34)]
         public double LondonAdxDdRiskModeTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "London", Order = 34)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "London", Order = 35)]
         public int LondonHorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London", Order = 36)]
+        public double LondonMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "New York Session(9:35-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
@@ -4511,46 +4676,56 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NewYorkFlipTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "New York", Order = 27)]
+        public double NewYorkFlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "New York", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "New York", Order = 28)]
         public double NewYorkTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York", Order = 29)]
         public TakeProfitStopMode NewYorkTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "New York", Order = 29)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "New York", Order = 30)]
         public double NewYorkTakeProfitAtrTrailMultiplier { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "New York", Order = 30)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "New York", Order = 31)]
         public double NewYorkTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "New York", Order = 31)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "New York", Order = 32)]
         public bool NewYorkRequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "New York", Order = 32)]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "New York", Order = 33)]
         public bool NewYorkEnableAdxDdRiskMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "New York", Order = 33)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "New York", Order = 34)]
         public double NewYorkAdxDdRiskModeStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "New York", Order = 34)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "New York", Order = 35)]
         public double NewYorkAdxDdRiskModeTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "New York", Order = 35)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "New York", Order = 36)]
         public int NewYorkHorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York", Order = 37)]
+        public double NewYorkMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Session End", Description = "If true, flatten positions and cancel entries at each configured session end.", GroupName = "10. Sessions", Order = 0)]
