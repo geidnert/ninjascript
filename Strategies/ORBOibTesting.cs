@@ -1337,6 +1337,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             confirmationComplete = false; confirmationBarCount = 0;
             longBreakoutOccurred = false; shortBreakoutOccurred = false;
         }
+
+        private double GetReferencePriceForProtectiveStop(MarketPosition positionDirection)
+        {
+            if (positionDirection == MarketPosition.Long)
+            {
+                double bid = GetCurrentBid();
+                if (bid > 0)
+                    return bid;
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                double ask = GetCurrentAsk();
+                if (ask > 0)
+                    return ask;
+            }
+
+            return Close[0];
+        }
+
+        private bool CanAmendProtectiveStopForCurrentMarket(MarketPosition positionDirection, double proposedStopPrice)
+        {
+            if (double.IsNaN(proposedStopPrice) || double.IsInfinity(proposedStopPrice) || proposedStopPrice <= 0)
+                return false;
+
+            double referencePrice = GetReferencePriceForProtectiveStop(positionDirection);
+            if (double.IsNaN(referencePrice) || double.IsInfinity(referencePrice) || referencePrice <= 0)
+                return true;
+
+            if (positionDirection == MarketPosition.Long)
+                return proposedStopPrice < referencePrice;
+            if (positionDirection == MarketPosition.Short)
+                return proposedStopPrice > referencePrice;
+
+            return true;
+        }
         
         private void ManageTrailingStop()
         {
@@ -1438,6 +1473,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool shouldMove = isLong ? (newStop > trailStopPrice) : (newStop < trailStopPrice);
             if (shouldMove)
             {
+                if (!CanAmendProtectiveStopForCurrentMarket(Position.MarketPosition, newStop))
+                {
+                    if (DebugMode)
+                        DebugPrint($"TRAIL SKIPPED: proposed stop {newStop:F2} is on the wrong side of market for {Position.MarketPosition}.");
+                    return;
+                }
+
                 trailStopPrice = newStop;
                 SetStopLoss(currentSignalName, CalculationMode.Price, trailStopPrice, false);
                 if (DebugMode)
@@ -1474,6 +1516,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         beStop = trailStopPrice;
                     else if (Position.MarketPosition == MarketPosition.Short && trailStopPrice < beStop)
                         beStop = trailStopPrice;
+                }
+
+                if (!CanAmendProtectiveStopForCurrentMarket(Position.MarketPosition, beStop))
+                {
+                    if (DebugMode)
+                        DebugPrint($"BREAKEVEN SKIPPED: proposed stop {beStop:F2} is on the wrong side of market for {Position.MarketPosition}.");
+                    return;
                 }
                 
                 SetStopLoss(currentSignalName, CalculationMode.Price, beStop, false);
