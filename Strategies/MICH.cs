@@ -144,6 +144,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool opposingBarBenchmarkSet;
         private bool priceOffsetTrailActive;
         private double priceOffsetTrailDistance;
+        // ── R-Multiple trail state ──
+        private double rMultipleSlSize;       // Captured initial SL distance at entry
+        private double rMultipleBestPrice;    // High watermark (long) / Low watermark (short)
+        private bool   rMultipleActivated;    // True once profit >= ActivationPct of SL size
+        private bool   rMultipleLocked;       // True once profit >= LockPct of SL size
         private bool entryBarSlApplied;
         private MarketPosition prevMarketPosition;
         private Order entryOrder;
@@ -463,10 +468,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyEnable                                       = true;
                 NyTradeWindowStart                                = DateTime.Parse("09:42", System.Globalization.CultureInfo.InvariantCulture);
                 NySkipTimeStart                                   = DateTime.Parse("11:45", System.Globalization.CultureInfo.InvariantCulture);
-                NySkipTimeEnd                                     = DateTime.Parse("13:05", System.Globalization.CultureInfo.InvariantCulture);
+                NySkipTimeEnd                                     = DateTime.Parse("01:05 PM", System.Globalization.CultureInfo.InvariantCulture);
                 NyNoNewTradesAfter                                = DateTime.Parse("15:00", System.Globalization.CultureInfo.InvariantCulture);
                 NyForcedCloseTime                                 = DateTime.Parse("15:50", System.Globalization.CultureInfo.InvariantCulture);
-                NyMaxTradesPerSession                             = 4;
+                NyMaxTradesPerSession                             = 3;
                 NyMaxWinsPerSession                               = 0;
                 NyMaxLossesPerSession                             = 2;
                 NyMaxSessionProfitTicks                           = 1075;
@@ -484,26 +489,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyLongTakeProfitTicks                             = 310;
                 NyLongMaxTakeProfitTicks                          = 1179;
                 NyLongSwingStrength                               = 1;
-                NyLongCandleMultiplier                            = 4.3;
-                NyLongSlExtraTicks                                = 42;
-                NyLongTrailOffsetTicks                            = 41;
-                NyLongTrailDelayBars                              = 2;
-                NyLongMaxSlTicks                                  = 331;
+                NyLongCandleMultiplier                            = 4.07;
+                NyLongSlExtraTicks                                = 41;
+                NyLongTrailOffsetTicks                            = 34;
+                NyLongTrailDelayBars                              = 4;
+                NyLongMaxSlTicks                                  = 330;
                 NyLongMaxSlToTpRatio                              = 0.47;
                 NyLongUsePriorCandleSl                            = true;
                 NyLongSlAtMa                                      = false;
                 NyLongMoveSlToEntryBar                            = false;
                 NyLongTrailCandleOffset                           = 19;
-                NyLongEnableBreakeven                             = true;
+                NyLongEnableBreakeven                             = false;
                 NyLongBreakevenMode                               = BEMode2.FixedTicks;
                 NyLongBreakevenTriggerTicks                       = 381;
                 NyLongBreakevenCandlePct                          = 50.0;
                 NyLongBreakevenOffsetTicks                        = 3;
-                NyLongMaxBarsInTrade                              = 39;
+                NyLongMaxBarsInTrade                              = 24;
                 NyLongEnableOpposingBarExit                       = false;
                 NyLongEnableEngulfingExit                         = false;
                 NyLongEnablePriceOffsetTrail                      = true;
-                NyLongPriceOffsetReductionTicks                   = 35;
+                NyLongPriceOffsetReductionTicks                   = 20;
+                NyLongEnableRMultipleTrail                        = false;
+                NyLongRMultipleActivationPct                      = 31.0;
+                NyLongRMultipleTrailPct                           = 2.0;
+                NyLongRMultipleLockPct                            = 0.0;
                 NyLongRequireDirectionFlip                        = true;
                 NyLongAllowSameDirectionAfterLoss                 = true;
                 NyLongMaxDistanceFromSmaTicks                     = 0;
@@ -513,9 +522,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyLongWmaPeriod                                   = 145;
                 NyLongMaxSignalCandleTicks                        = 0;
                 NyLongMinBodyPct                                  = 60.0;
-                NyLongTrendConfirmBars                            = 13;
-                NyLongEnableAdxFilter                             = false;
-                NyLongAdxPeriod                                   = 11;
+                NyLongTrendConfirmBars                            = 12;
+                NyLongEnableAdxFilter                             = true;
+                NyLongAdxPeriod                                   = 12;
                 NyLongAdxMinLevel                                 = 15;
                 NyLongUseEmaEarlyExit                             = false;
                 NyLongEmaEarlyExitPeriod                          = 50;
@@ -525,7 +534,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyLongAdxEarlyExitMin                             = 15.0;
                 NyLongUseAdxDrawdownExit                          = true;
                 NyLongAdxDrawdownFromPeak                         = 15.0;
-                NyShortMaPeriod                                   = 43;
+                NyShortMaPeriod                                   = 37;
                 NyShortEmaPeriod                                  = 100;
                 NyShortMaType                                     = MAMode.SMA;
                 NyShortEntryMode                                  = MichalEntryMode.Market;
@@ -535,7 +544,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyShortTakeProfitTicks                            = 310;
                 NyShortMaxTakeProfitTicks                         = 1179;
                 NyShortSwingStrength                              = 1;
-                NyShortCandleMultiplier                           = 4.16;
+                NyShortCandleMultiplier                           = 4.3;
                 NyShortSlExtraTicks                               = 42;
                 NyShortTrailOffsetTicks                           = 42;
                 NyShortTrailDelayBars                             = 1;
@@ -547,7 +556,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyShortTrailCandleOffset                          = 19;
                 NyShortEnableBreakeven                            = true;
                 NyShortBreakevenMode                              = BEMode2.FixedTicks;
-                NyShortBreakevenTriggerTicks                      = 357;
+                NyShortBreakevenTriggerTicks                      = 355;
                 NyShortBreakevenCandlePct                         = 50.0;
                 NyShortBreakevenOffsetTicks                       = 3;
                 NyShortMaxBarsInTrade                             = 22;
@@ -555,21 +564,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyShortEnableEngulfingExit                        = false;
                 NyShortEnablePriceOffsetTrail                     = false;
                 NyShortPriceOffsetReductionTicks                  = 0;
+                NyShortEnableRMultipleTrail                       = false;
+                NyShortRMultipleActivationPct                     = 27.0;
+                NyShortRMultipleTrailPct                          = 20.0;
+                NyShortRMultipleLockPct                           = 0.0;
                 NyShortRequireDirectionFlip                       = true;
                 NyShortAllowSameDirectionAfterLoss                = true;
                 NyShortMaxDistanceFromSmaTicks                    = 0;
                 NyShortRequireSmaSlope                            = false;
                 NyShortSmaSlopeLookback                           = 3;
                 NyShortEnableWmaFilter                            = true;
-                NyShortWmaPeriod                                  = 71;
+                NyShortWmaPeriod                                  = 75;
                 NyShortMaxSignalCandleTicks                       = 0;
                 NyShortMinBodyPct                                 = 5.0;
                 NyShortTrendConfirmBars                           = 13;
                 NyShortEnableAdxFilter                            = true;
-                NyShortAdxPeriod                                  = 5;
-                NyShortAdxMinLevel                                = 20;
+                NyShortAdxPeriod                                  = 11;
+                NyShortAdxMinLevel                                = 17;
                 NyShortUseEmaEarlyExit                            = false;
-                NyShortEmaEarlyExitPeriod                         = 50;
+                NyShortEmaEarlyExitPeriod                         = 40;
                 NyShortEmaEarlyExitOffsetTicks                    = 0;
                 NyShortUseAdxEarlyExit                            = true;
                 NyShortAdxEarlyExitPeriod                         = 19;
@@ -582,11 +595,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ════════════════════════════════════════
                 EuEnable                                       = true;
                 EuTradeWindowStart                                = DateTime.Parse("02:07", System.Globalization.CultureInfo.InvariantCulture);
-                EuSkipTimeStart                                   = DateTime.Parse("00:45", System.Globalization.CultureInfo.InvariantCulture);
-                EuSkipTimeEnd                                     = DateTime.Parse("00:55", System.Globalization.CultureInfo.InvariantCulture);
+                EuSkipTimeStart                                   = DateTime.Parse("12:45 AM", System.Globalization.CultureInfo.InvariantCulture);
+                EuSkipTimeEnd                                     = DateTime.Parse("12:55 AM", System.Globalization.CultureInfo.InvariantCulture);
                 EuNoNewTradesAfter                                = DateTime.Parse("05:35", System.Globalization.CultureInfo.InvariantCulture);
                 EuForcedCloseTime                                 = DateTime.Parse("06:40", System.Globalization.CultureInfo.InvariantCulture);
-                EuMaxTradesPerSession                             = 2;
+                EuMaxTradesPerSession                             = 3;
                 EuMaxWinsPerSession                               = 0;
                 EuMaxLossesPerSession                             = 2;
                 EuMaxSessionProfitTicks                           = 1075;
@@ -594,8 +607,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuContracts                                       = 1;
                 EuEnableLongTrades                                = true;
                 EuEnableShortTrades                               = true;
-                EuLongMaPeriod                                    = 79;
-                EuLongEmaPeriod                                   = 43;
+                EuLongMaPeriod                                    = 82;
+                EuLongEmaPeriod                                   = 50;
                 EuLongMaType                                      = MAMode.Both;
                 EuLongEntryMode                                   = MichalEntryMode.Market;
                 EuLongLimitOffsetTicks                            = 1;
@@ -607,45 +620,49 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuLongCandleMultiplier                            = 3.34;
                 EuLongSlExtraTicks                                = 42;
                 EuLongTrailOffsetTicks                            = 76;
-                EuLongTrailDelayBars                              = 0;
-                EuLongMaxSlTicks                                  = 306;
+                EuLongTrailDelayBars                              = 3;
+                EuLongMaxSlTicks                                  = 284;
                 EuLongMaxSlToTpRatio                              = 0.47;
                 EuLongUsePriorCandleSl                            = true;
                 EuLongSlAtMa                                      = false;
                 EuLongMoveSlToEntryBar                            = true;
-                EuLongTrailCandleOffset                           = 15;
+                EuLongTrailCandleOffset                           = 12;
                 EuLongEnableBreakeven                             = true;
                 EuLongBreakevenMode                               = BEMode2.FixedTicks;
-                EuLongBreakevenTriggerTicks                       = 131;
+                EuLongBreakevenTriggerTicks                       = 141;
                 EuLongBreakevenCandlePct                          = 50.0;
                 EuLongBreakevenOffsetTicks                        = 17;
-                EuLongMaxBarsInTrade                              = 25;
+                EuLongMaxBarsInTrade                              = 24;
                 EuLongEnableOpposingBarExit                       = false;
                 EuLongEnableEngulfingExit                         = false;
                 EuLongEnablePriceOffsetTrail                      = true;
                 EuLongPriceOffsetReductionTicks                   = 88;
+                EuLongEnableRMultipleTrail                        = true;
+                EuLongRMultipleActivationPct                      = 80.0;
+                EuLongRMultipleTrailPct                           = 55.0;
+                EuLongRMultipleLockPct                            = 0.0;
                 EuLongRequireDirectionFlip                        = true;
                 EuLongAllowSameDirectionAfterLoss                 = true;
                 EuLongMaxDistanceFromSmaTicks                     = 0;
                 EuLongRequireSmaSlope                             = false;
                 EuLongSmaSlopeLookback                            = 2;
                 EuLongEnableWmaFilter                             = true;
-                EuLongWmaPeriod                                   = 138;
+                EuLongWmaPeriod                                   = 107;
                 EuLongMaxSignalCandleTicks                        = 0;
                 EuLongMinBodyPct                                  = 57.0;
                 EuLongTrendConfirmBars                            = 14;
                 EuLongEnableAdxFilter                             = true;
-                EuLongAdxPeriod                                   = 10;
+                EuLongAdxPeriod                                   = 13;
                 EuLongAdxMinLevel                                 = 13;
                 EuLongUseEmaEarlyExit                             = true;
-                EuLongEmaEarlyExitPeriod                          = 82;
+                EuLongEmaEarlyExitPeriod                          = 77;
                 EuLongEmaEarlyExitOffsetTicks                     = 0;
                 EuLongUseAdxEarlyExit                             = true;
                 EuLongAdxEarlyExitPeriod                          = 20;
                 EuLongAdxEarlyExitMin                             = 15.0;
                 EuLongUseAdxDrawdownExit                          = true;
                 EuLongAdxDrawdownFromPeak                         = 15.0;
-                EuShortMaPeriod                                   = 66;
+                EuShortMaPeriod                                   = 62;
                 EuShortEmaPeriod                                  = 92;
                 EuShortMaType                                     = MAMode.Both;
                 EuShortEntryMode                                  = MichalEntryMode.Market;
@@ -655,7 +672,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuShortTakeProfitTicks                            = 310;
                 EuShortMaxTakeProfitTicks                         = 1000;
                 EuShortSwingStrength                              = 1;
-                EuShortCandleMultiplier                           = 4.17;
+                EuShortCandleMultiplier                           = 4.22;
                 EuShortSlExtraTicks                               = 42;
                 EuShortTrailOffsetTicks                           = 42;
                 EuShortTrailDelayBars                             = 6;
@@ -675,6 +692,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuShortEnableEngulfingExit                        = false;
                 EuShortEnablePriceOffsetTrail                     = false;
                 EuShortPriceOffsetReductionTicks                  = 0;
+                EuShortEnableRMultipleTrail                       = false;
+                EuShortRMultipleActivationPct                     = 50.0;
+                EuShortRMultipleTrailPct                          = 100.0;
+                EuShortRMultipleLockPct                           = 0.0;
                 EuShortRequireDirectionFlip                       = true;
                 EuShortAllowSameDirectionAfterLoss                = true;
                 EuShortMaxDistanceFromSmaTicks                    = 0;
@@ -714,48 +735,52 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsContracts                                       = 1;
                 AsEnableLongTrades                                = true;
                 AsEnableShortTrades                               = true;
-                AsLongMaPeriod                                    = 77;
-                AsLongEmaPeriod                                   = 14;
+                AsLongMaPeriod                                    = 65;
+                AsLongEmaPeriod                                   = 26;
                 AsLongMaType                                      = MAMode.Both;
                 AsLongEntryMode                                   = MichalEntryMode.Market;
                 AsLongLimitOffsetTicks                            = 1;
                 AsLongLimitRetracementPct                         = 6.0;
                 AsLongTakeProfitMode                              = MichalTPMode.CandleMultiple;
                 AsLongTakeProfitTicks                             = 180;
-                AsLongMaxTakeProfitTicks                          = 650;
+                AsLongMaxTakeProfitTicks                          = 600;
                 AsLongSwingStrength                               = 1;
-                AsLongCandleMultiplier                            = 2.52;
+                AsLongCandleMultiplier                            = 2.65;
                 AsLongSlExtraTicks                                = 40;
                 AsLongTrailOffsetTicks                            = 0;
-                AsLongTrailDelayBars                              = 3;
-                AsLongMaxSlTicks                                  = 280;
+                AsLongTrailDelayBars                              = 2;
+                AsLongMaxSlTicks                                  = 277;
                 AsLongMaxSlToTpRatio                              = 0.47;
-                AsLongUsePriorCandleSl                            = false;
+                AsLongUsePriorCandleSl                            = true;
                 AsLongSlAtMa                                      = false;
                 AsLongMoveSlToEntryBar                            = true;
                 AsLongTrailCandleOffset                           = 15;
                 AsLongEnableBreakeven                             = true;
                 AsLongBreakevenMode                               = BEMode2.FixedTicks;
-                AsLongBreakevenTriggerTicks                       = 141;
+                AsLongBreakevenTriggerTicks                       = 103;
                 AsLongBreakevenCandlePct                          = 63.0;
-                AsLongBreakevenOffsetTicks                        = 30;
-                AsLongMaxBarsInTrade                              = 25;
+                AsLongBreakevenOffsetTicks                        = 34;
+                AsLongMaxBarsInTrade                              = 27;
                 AsLongEnableOpposingBarExit                       = false;
                 AsLongEnableEngulfingExit                         = false;
-                AsLongEnablePriceOffsetTrail                      = false;
-                AsLongPriceOffsetReductionTicks                   = 88;
+                AsLongEnablePriceOffsetTrail                      = true;
+                AsLongPriceOffsetReductionTicks                   = 12;
+                AsLongEnableRMultipleTrail                        = true;
+                AsLongRMultipleActivationPct                      = 49.0;
+                AsLongRMultipleTrailPct                           = 75.0;
+                AsLongRMultipleLockPct                            = 0.0;
                 AsLongRequireDirectionFlip                        = true;
                 AsLongAllowSameDirectionAfterLoss                 = true;
                 AsLongMaxDistanceFromSmaTicks                     = 0;
                 AsLongRequireSmaSlope                             = false;
                 AsLongSmaSlopeLookback                            = 2;
                 AsLongEnableWmaFilter                             = true;
-                AsLongWmaPeriod                                   = 55;
+                AsLongWmaPeriod                                   = 47;
                 AsLongMaxSignalCandleTicks                        = 0;
                 AsLongMinBodyPct                                  = 48.0;
                 AsLongTrendConfirmBars                            = 4;
                 AsLongEnableAdxFilter                             = true;
-                AsLongAdxPeriod                                   = 24;
+                AsLongAdxPeriod                                   = 16;
                 AsLongAdxMinLevel                                 = 15;
                 AsLongUseEmaEarlyExit                             = true;
                 AsLongEmaEarlyExitPeriod                          = 24;
@@ -766,7 +791,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsLongUseAdxDrawdownExit                          = true;
                 AsLongAdxDrawdownFromPeak                         = 12.0;
                 AsShortMaPeriod                                   = 47;
-                AsShortEmaPeriod                                  = 90;
+                AsShortEmaPeriod                                  = 89;
                 AsShortMaType                                     = MAMode.Both;
                 AsShortEntryMode                                  = MichalEntryMode.Market;
                 AsShortLimitOffsetTicks                           = 1;
@@ -775,26 +800,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsShortTakeProfitTicks                            = 310;
                 AsShortMaxTakeProfitTicks                         = 1000;
                 AsShortSwingStrength                              = 1;
-                AsShortCandleMultiplier                           = 4.06;
+                AsShortCandleMultiplier                           = 4.43;
                 AsShortSlExtraTicks                               = 42;
-                AsShortTrailOffsetTicks                           = 14;
-                AsShortTrailDelayBars                             = 15;
-                AsShortMaxSlTicks                                 = 191;
+                AsShortTrailOffsetTicks                           = 16;
+                AsShortTrailDelayBars                             = 20;
+                AsShortMaxSlTicks                                 = 188;
                 AsShortMaxSlToTpRatio                             = 0.48;
                 AsShortUsePriorCandleSl                           = true;
                 AsShortSlAtMa                                     = true;
                 AsShortMoveSlToEntryBar                           = true;
-                AsShortTrailCandleOffset                          = 3;
+                AsShortTrailCandleOffset                          = 2;
                 AsShortEnableBreakeven                            = true;
                 AsShortBreakevenMode                              = BEMode2.FixedTicks;
-                AsShortBreakevenTriggerTicks                      = 147;
+                AsShortBreakevenTriggerTicks                      = 142;
                 AsShortBreakevenCandlePct                         = 50.0;
-                AsShortBreakevenOffsetTicks                       = 19;
+                AsShortBreakevenOffsetTicks                       = 15;
                 AsShortMaxBarsInTrade                             = 0;
                 AsShortEnableOpposingBarExit                      = false;
                 AsShortEnableEngulfingExit                        = false;
                 AsShortEnablePriceOffsetTrail                     = true;
                 AsShortPriceOffsetReductionTicks                  = 47;
+                AsShortEnableRMultipleTrail                       = true;
+                AsShortRMultipleActivationPct                     = 111.0;
+                AsShortRMultipleTrailPct                          = 33.0;
+                AsShortRMultipleLockPct                           = 0.0;
                 AsShortRequireDirectionFlip                       = false;
                 AsShortAllowSameDirectionAfterLoss                = true;
                 AsShortMaxDistanceFromSmaTicks                    = 0;
@@ -807,15 +836,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsShortTrendConfirmBars                           = 19;
                 AsShortEnableAdxFilter                            = true;
                 AsShortAdxPeriod                                  = 5;
-                AsShortAdxMinLevel                                = 22;
+                AsShortAdxMinLevel                                = 23;
                 AsShortUseEmaEarlyExit                            = false;
-                AsShortEmaEarlyExitPeriod                         = 50;
+                AsShortEmaEarlyExitPeriod                         = 11;
                 AsShortEmaEarlyExitOffsetTicks                    = 0;
                 AsShortUseAdxEarlyExit                            = true;
                 AsShortAdxEarlyExitPeriod                         = 14;
-                AsShortAdxEarlyExitMin                            = 12.0;
+                AsShortAdxEarlyExitMin                            = 15.0;
                 AsShortUseAdxDrawdownExit                         = true;
-                AsShortAdxDrawdownFromPeak                        = 7.0;
+                AsShortAdxDrawdownFromPeak                        = 6.0;
             }
             else if (State == State.Configure)
             {
@@ -1011,6 +1040,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool SD_EnableEngulfingExit(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongEnableEngulfingExit : sid == 2 ? EuLongEnableEngulfingExit : AsLongEnableEngulfingExit) : (sid == 1 ? NyShortEnableEngulfingExit : sid == 2 ? EuShortEnableEngulfingExit : AsShortEnableEngulfingExit); }
         private bool SD_EnablePriceOffsetTrail(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongEnablePriceOffsetTrail : sid == 2 ? EuLongEnablePriceOffsetTrail : AsLongEnablePriceOffsetTrail) : (sid == 1 ? NyShortEnablePriceOffsetTrail : sid == 2 ? EuShortEnablePriceOffsetTrail : AsShortEnablePriceOffsetTrail); }
         private int SD_PriceOffsetReductionTicks(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongPriceOffsetReductionTicks : sid == 2 ? EuLongPriceOffsetReductionTicks : AsLongPriceOffsetReductionTicks) : (sid == 1 ? NyShortPriceOffsetReductionTicks : sid == 2 ? EuShortPriceOffsetReductionTicks : AsShortPriceOffsetReductionTicks); }
+        private bool   SD_EnableRMultipleTrail(int sid, int dir)   { return dir == 1 ? (sid == 1 ? NyLongEnableRMultipleTrail   : sid == 2 ? EuLongEnableRMultipleTrail   : AsLongEnableRMultipleTrail)   : (sid == 1 ? NyShortEnableRMultipleTrail   : sid == 2 ? EuShortEnableRMultipleTrail   : AsShortEnableRMultipleTrail);   }
+        private double SD_RMultipleActivationPct(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongRMultipleActivationPct : sid == 2 ? EuLongRMultipleActivationPct : AsLongRMultipleActivationPct) : (sid == 1 ? NyShortRMultipleActivationPct : sid == 2 ? EuShortRMultipleActivationPct : AsShortRMultipleActivationPct); }
+        private double SD_RMultipleTrailPct(int sid, int dir)      { return dir == 1 ? (sid == 1 ? NyLongRMultipleTrailPct      : sid == 2 ? EuLongRMultipleTrailPct      : AsLongRMultipleTrailPct)      : (sid == 1 ? NyShortRMultipleTrailPct      : sid == 2 ? EuShortRMultipleTrailPct      : AsShortRMultipleTrailPct);      }
+        private double SD_RMultipleLockPct(int sid, int dir)       { return dir == 1 ? (sid == 1 ? NyLongRMultipleLockPct       : sid == 2 ? EuLongRMultipleLockPct       : AsLongRMultipleLockPct)       : (sid == 1 ? NyShortRMultipleLockPct       : sid == 2 ? EuShortRMultipleLockPct       : AsShortRMultipleLockPct);       }
         private bool SD_RequireDirectionFlip(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongRequireDirectionFlip : sid == 2 ? EuLongRequireDirectionFlip : AsLongRequireDirectionFlip) : (sid == 1 ? NyShortRequireDirectionFlip : sid == 2 ? EuShortRequireDirectionFlip : AsShortRequireDirectionFlip); }
         private bool SD_AllowSameDirectionAfterLoss(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongAllowSameDirectionAfterLoss : sid == 2 ? EuLongAllowSameDirectionAfterLoss : AsLongAllowSameDirectionAfterLoss) : (sid == 1 ? NyShortAllowSameDirectionAfterLoss : sid == 2 ? EuShortAllowSameDirectionAfterLoss : AsShortAllowSameDirectionAfterLoss); }
         private int SD_MaxDistanceFromSmaTicks(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongMaxDistanceFromSmaTicks : sid == 2 ? EuLongMaxDistanceFromSmaTicks : AsLongMaxDistanceFromSmaTicks) : (sid == 1 ? NyShortMaxDistanceFromSmaTicks : sid == 2 ? EuShortMaxDistanceFromSmaTicks : AsShortMaxDistanceFromSmaTicks); }
@@ -1322,6 +1355,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     ManageTrailingStop();
                     ManageCandleLagTrail();
                     ManagePriceOffsetTrail();
+                    ManageRMultipleTrail();
                 }
 
                 if (hasActivePosition && Position.MarketPosition != MarketPosition.Flat)
@@ -1383,6 +1417,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             opposingBarBenchmarkSet     = false;
             priceOffsetTrailActive      = false;
             priceOffsetTrailDistance     = 0;
+            rMultipleSlSize              = 0;
+            rMultipleBestPrice           = 0;
+            rMultipleActivated           = false;
+            rMultipleLocked              = false;
             entryBarSlApplied           = false;
             entryOrder                  = null;
             stopOrder                   = null;
@@ -1452,6 +1490,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 originalStopPrice = slPrice;
+                // ── R-Multiple trail initialisation ──
+                rMultipleSlSize      = Math.Abs(tradeEntryPrice - slPrice);
+                rMultipleBestPrice   = tradeEntryPrice;
+                rMultipleActivated   = false;
+                rMultipleLocked      = false;
                 string entryAction;
                 bool isMarketEntry;
                 if (TryGetEntryWebhookAction(execution, out entryAction, out isMarketEntry))
@@ -2498,6 +2541,72 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private void ManageRMultipleTrail()
+        {
+            int sid = activeSessionId;
+            int contracts = S_Contracts(sid);
+            bool enabled = SD_EnableRMultipleTrail(sid, tradeDirection);
+            if (!enabled || tradeEntryPrice == 0 || rMultipleSlSize <= 0) return;
+
+            bool isLong  = tradeDirection == 1  && Position.MarketPosition == MarketPosition.Long;
+            bool isShort = tradeDirection == -1 && Position.MarketPosition == MarketPosition.Short;
+            if (!isLong && !isShort) return;
+
+            // Update High/Low watermark
+            if (isLong)
+            {
+                if (High[0] > rMultipleBestPrice) rMultipleBestPrice = High[0];
+            }
+            else
+            {
+                if (rMultipleBestPrice <= 0 || Low[0] < rMultipleBestPrice) rMultipleBestPrice = Low[0];
+            }
+
+            double profit = isLong ? rMultipleBestPrice - tradeEntryPrice
+                                   : tradeEntryPrice - rMultipleBestPrice;
+
+            // B) Activation: wait until profit >= ActivationPct % of initial SL size
+            double activationPct = SD_RMultipleActivationPct(sid, tradeDirection);
+            if (!rMultipleActivated)
+            {
+                if (activationPct > 0 && profit < rMultipleSlSize * (activationPct / 100.0)) return;
+                rMultipleActivated = true;
+            }
+
+            // C) Lock: once profit >= LockPct % of initial SL size, freeze the stop
+            double lockPct = SD_RMultipleLockPct(sid, tradeDirection);
+            if (lockPct > 0 && profit >= rMultipleSlSize * (lockPct / 100.0))
+            {
+                rMultipleLocked = true;
+                return;
+            }
+            if (rMultipleLocked) return;
+
+            // Trail: stop trails at trailPct % of SL size behind bestPrice
+            double trailPct = SD_RMultipleTrailPct(sid, tradeDirection);
+            if (trailPct <= 0) return;
+            double trailDist = rMultipleSlSize * (trailPct / 100.0);
+
+            if (isLong)
+            {
+                double newStop = Instrument.MasterInstrument.RoundToTickSize(rMultipleBestPrice - trailDist);
+                if (newStop > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newStop))
+                {
+                    ExitLongStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), LongEntrySignal);
+                    originalStopPrice = newStop;
+                }
+            }
+            else
+            {
+                double newStop = Instrument.MasterInstrument.RoundToTickSize(rMultipleBestPrice + trailDist);
+                if (newStop < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newStop))
+                {
+                    ExitShortStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), ShortEntrySignal);
+                    originalStopPrice = newStop;
+                }
+            }
+        }
+
         #endregion
 
 
@@ -3329,6 +3438,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
+        [Display(Name = "Enable R-Multiple Trail", Order = 6, GroupName = "07. Ny: Long: Trade Management")]
+        public bool NyLongEnableRMultipleTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 1000)]
+        [Display(Name = "R-Trail Activation (%R, 0=off)", Order = 7, GroupName = "07. Ny: Long: Trade Management")]
+        public double NyLongRMultipleActivationPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(1, 1000)]
+        [Display(Name = "R-Trail Distance (%R)", Order = 8, GroupName = "07. Ny: Long: Trade Management")]
+        public double NyLongRMultipleTrailPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "07. Ny: Long: Trade Management")]
+        public double NyLongRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "08. Ny: Long: Entry Filters")]
         public bool NyLongRequireDirectionFlip { get; set; }
 
@@ -3613,6 +3745,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, int.MaxValue)]
         [Display(Name = "Price-Offset Reduction (Ticks)", Order = 5, GroupName = "15. Ny: Short: Trade Management")]
         public int NyShortPriceOffsetReductionTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Enable R-Multiple Trail", Order = 6, GroupName = "15. Ny: Short: Trade Management")]
+        public bool NyShortEnableRMultipleTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 1000)]
+        [Display(Name = "R-Trail Activation (%R, 0=off)", Order = 7, GroupName = "15. Ny: Short: Trade Management")]
+        public double NyShortRMultipleActivationPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(1, 1000)]
+        [Display(Name = "R-Trail Distance (%R)", Order = 8, GroupName = "15. Ny: Short: Trade Management")]
+        public double NyShortRMultipleTrailPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "15. Ny: Short: Trade Management")]
+        public double NyShortRMultipleLockPct { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -3988,6 +4143,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
+        [Display(Name = "Enable R-Multiple Trail", Order = 6, GroupName = "24. Eu: Long: Trade Management")]
+        public bool EuLongEnableRMultipleTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 1000)]
+        [Display(Name = "R-Trail Activation (%R, 0=off)", Order = 7, GroupName = "24. Eu: Long: Trade Management")]
+        public double EuLongRMultipleActivationPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(1, 1000)]
+        [Display(Name = "R-Trail Distance (%R)", Order = 8, GroupName = "24. Eu: Long: Trade Management")]
+        public double EuLongRMultipleTrailPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "24. Eu: Long: Trade Management")]
+        public double EuLongRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "25. Eu: Long: Entry Filters")]
         public bool EuLongRequireDirectionFlip { get; set; }
 
@@ -4272,6 +4450,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, int.MaxValue)]
         [Display(Name = "Price-Offset Reduction (Ticks)", Order = 5, GroupName = "32. Eu: Short: Trade Management")]
         public int EuShortPriceOffsetReductionTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Enable R-Multiple Trail", Order = 6, GroupName = "32. Eu: Short: Trade Management")]
+        public bool EuShortEnableRMultipleTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 1000)]
+        [Display(Name = "R-Trail Activation (%R, 0=off)", Order = 7, GroupName = "32. Eu: Short: Trade Management")]
+        public double EuShortRMultipleActivationPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(1, 1000)]
+        [Display(Name = "R-Trail Distance (%R)", Order = 8, GroupName = "32. Eu: Short: Trade Management")]
+        public double EuShortRMultipleTrailPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "32. Eu: Short: Trade Management")]
+        public double EuShortRMultipleLockPct { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -4647,6 +4848,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
+        [Display(Name = "Enable R-Multiple Trail", Order = 6, GroupName = "41. As: Long: Trade Management")]
+        public bool AsLongEnableRMultipleTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 1000)]
+        [Display(Name = "R-Trail Activation (%R, 0=off)", Order = 7, GroupName = "41. As: Long: Trade Management")]
+        public double AsLongRMultipleActivationPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(1, 1000)]
+        [Display(Name = "R-Trail Distance (%R)", Order = 8, GroupName = "41. As: Long: Trade Management")]
+        public double AsLongRMultipleTrailPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "41. As: Long: Trade Management")]
+        public double AsLongRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "42. As: Long: Entry Filters")]
         public bool AsLongRequireDirectionFlip { get; set; }
 
@@ -4934,6 +5158,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
+        [Display(Name = "Enable R-Multiple Trail", Order = 6, GroupName = "49. As: Short: Trade Management")]
+        public bool AsShortEnableRMultipleTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 1000)]
+        [Display(Name = "R-Trail Activation (%R, 0=off)", Order = 7, GroupName = "49. As: Short: Trade Management")]
+        public double AsShortRMultipleActivationPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(1, 1000)]
+        [Display(Name = "R-Trail Distance (%R)", Order = 8, GroupName = "49. As: Short: Trade Management")]
+        public double AsShortRMultipleTrailPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "49. As: Short: Trade Management")]
+        public double AsShortRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "50. As: Short: Entry Filters")]
         public bool AsShortRequireDirectionFlip { get; set; }
 
@@ -5058,5 +5305,4 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         #endregion
     }
-
 }
