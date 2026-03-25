@@ -509,8 +509,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxAbsoluteExitLevel = 58.9;
                 AsiaStopPaddingPoints = 37.5;
                 AsiaExitCrossPoints = 3.75;
-                AsiaFlipEmaCrossPoints = 0.0;
-                AsiaMaxStopLossPoints = 0.0;
+                AsiaFlipEmaCrossPoints = 5.5;
+                AsiaMaxStopLossPoints = 194.0;
                 AsiaTakeProfitPoints = 93.75;
                 AsiaEntryOffsetPoints = 0.0;
                 AsiaEnableFlipBreakEven = false;
@@ -527,7 +527,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaHorizontalExitBars = 61;
 
                 UseLondonSession = true;
-                LondonSessionStart = new TimeSpan(2, 00, 0);
+                LondonSessionStart = new TimeSpan(1, 45, 0);
                 LondonSessionEnd = new TimeSpan(6, 30, 0);
                 AutoShiftLondon = true;
                 LondonEmaPeriod = 21;
@@ -544,8 +544,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonAdxAbsoluteExitLevel = 51.2;
                 LondonStopPaddingPoints = 28.75;
                 LondonExitCrossPoints = 2.82;
-                LondonFlipEmaCrossPoints = 0.0;
-                LondonMaxStopLossPoints = 0.0;
+                LondonFlipEmaCrossPoints = 6.25;
+                LondonMaxStopLossPoints = 165.0;
                 LondonTakeProfitPoints = 93.0;
                 LondonEntryOffsetPoints = 0.0;
                 LondonEnableFlipBreakEven = false;
@@ -580,8 +580,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxAbsoluteExitLevel = 70.6;
                 NewYorkStopPaddingPoints = 45.75;
                 NewYorkExitCrossPoints = 3.0;
-                NewYorkFlipEmaCrossPoints = 0.0;
-                NewYorkMaxStopLossPoints = 0.0;
+                NewYorkFlipEmaCrossPoints = 5.75;
+                NewYorkMaxStopLossPoints = 242.0;
                 NewYorkTakeProfitPoints = 123.5;
                 NewYorkHvSlPaddingPoints = 35.0;
                 NewYorkHvSlStartTime = new TimeSpan(9, 30, 0);
@@ -4344,7 +4344,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // [NinjaScriptProperty]
         // [Range(0.0, double.MaxValue)]
-        // [Display(Name = "FLIP EMA Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "Asia", Order = 26)]
+        // [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "Asia", Order = 26)]
         internal double AsiaFlipEmaCrossPoints { get; set; }
 
         // [NinjaScriptProperty]
@@ -4395,7 +4395,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal double AsiaMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "London Session(2:00-6:30)", Description = "Enable trading logic during the London time window.", GroupName = "London", Order = 0)]
+        [Display(Name = "London Session(1:45-6:30)", Description = "Enable trading logic during the London time window.", GroupName = "London", Order = 0)]
         public bool UseLondonSession { get; set; }
 
         // [NinjaScriptProperty]
@@ -4506,7 +4506,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // [NinjaScriptProperty]
         // [Range(0.0, double.MaxValue)]
-        // [Display(Name = "FLIP EMA Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "London", Order = 26)]
+        // [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "London", Order = 26)]
         internal double LondonFlipEmaCrossPoints { get; set; }
 
         // [NinjaScriptProperty]
@@ -4685,7 +4685,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // [NinjaScriptProperty]
         // [Range(0.0, double.MaxValue)]
-        // [Display(Name = "FLIP EMA Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "New York", Order = 27)]
+        // [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "New York", Order = 27)]
         internal double NewYorkFlipEmaCrossPoints { get; set; }
 
         // [NinjaScriptProperty]
