@@ -36,6 +36,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public enum TPModeEnum { FixedTicks, ORMultiple }
         public enum SLModeEnum { FixedTicks, ORMultiple }
         public enum BETriggerModeEnum { FixedTicks, ORMultiple }
+        public enum TrailModeEnum { FixedTicks, ORPercent }
         public enum WebhookProvider { TradersPost, ProjectX }
 
         #region Variables
@@ -99,6 +100,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         private bool beTriggered = false;
         private double beNewStopPrice = 0;
+        // OR Watermark Trail state
+        private bool trailActivated = false;      // true once activation threshold hit
+        private bool trailFrozen = false;          // true once freeze threshold hit
+        private double trailBestPrice = 0;         // high watermark (long) / low watermark (short)
         private bool bracketOrdersPlaced = false;
         private string currentEntrySignal = string.Empty;
         private int entrySignalSequence = 0;
@@ -139,6 +144,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int activeL_BETriggerTicks = 0;
         private double activeL_BETriggerORMultiple = 0;
         private int activeL_BEOffsetTicks = 0;
+        // Watermark Trail - Long
+        private bool activeL_TrailEnabled = false;
+        private TrailModeEnum activeL_TrailActivationMode = TrailModeEnum.FixedTicks;
+        private double activeL_TrailActivationValue = 0;
+        private TrailModeEnum activeL_TrailDistanceMode = TrailModeEnum.FixedTicks;
+        private double activeL_TrailDistanceValue = 0;
+        private TrailModeEnum activeL_TrailFreezeMode = TrailModeEnum.FixedTicks;
+        private double activeL_TrailFreezeValue = 0;
+        // Max Initial SL - Long
+        private int activeL_MaxInitialSLTicks = 0;
         // Active parameters for matched Short bucket
         private bool activeS_Enabled = false;
         private int activeS_ORMin = 0;
@@ -161,6 +176,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int activeS_BETriggerTicks = 0;
         private double activeS_BETriggerORMultiple = 0;
         private int activeS_BEOffsetTicks = 0;
+        // Watermark Trail - Short
+        private bool activeS_TrailEnabled = false;
+        private TrailModeEnum activeS_TrailActivationMode = TrailModeEnum.FixedTicks;
+        private double activeS_TrailActivationValue = 0;
+        private TrailModeEnum activeS_TrailDistanceMode = TrailModeEnum.FixedTicks;
+        private double activeS_TrailDistanceValue = 0;
+        private TrailModeEnum activeS_TrailFreezeMode = TrailModeEnum.FixedTicks;
+        private double activeS_TrailFreezeValue = 0;
+        // Max Initial SL - Short
+        private int activeS_MaxInitialSLTicks = 0;
 
         private static readonly string NewsDatesRaw =
 @"2025-01-08,14:00
@@ -431,6 +456,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B1L. Bucket 1 Long")]
         public int B1L_BEOffsetTicks { get; set; }
 
+        // ── B1L Watermark Trail ──
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for LONG trades.", Order = 22, GroupName = "B1L. Bucket 1 Long")]
+        public bool B1L_TrailEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Activation Mode", Description = "FixedTicks: start trailing after N ticks profit. ORPercent: start after X% of OR range profit.", Order = 23, GroupName = "B1L. Bucket 1 Long")]
+        public TrailModeEnum B1L_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B1L. Bucket 1 Long")]
+        public double B1L_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Distance Mode", Description = "FixedTicks: trail N ticks behind best price. ORPercent: trail X% of OR range behind best price.", Order = 25, GroupName = "B1L. Bucket 1 Long")]
+        public TrailModeEnum B1L_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 10000.0)]
+        [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B1L. Bucket 1 Long")]
+        public double B1L_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Freeze Mode", Description = "FixedTicks: freeze stop after N ticks profit. ORPercent: freeze after X% of OR range profit. Independent from activation mode.", Order = 27, GroupName = "B1L. Bucket 1 Long")]
+        public TrailModeEnum B1L_TrailFreezeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B1L. Bucket 1 Long")]
+        public double B1L_TrailFreezeValue { get; set; }
+
+        // ── B1L Max Initial SL ──
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B1L. Bucket 1 Long")]
+        public int B1L_MaxInitialSLTicks { get; set; }
+
         // ==================== BUCKET 1 SHORT ====================
 
         [NinjaScriptProperty]
@@ -532,6 +595,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B1S. Bucket 1 Short")]
         public int B1S_BEOffsetTicks { get; set; }
+
+        // ── B1S Watermark Trail ──
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for SHORT trades.", Order = 22, GroupName = "B1S. Bucket 1 Short")]
+        public bool B1S_TrailEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Activation Mode", Description = "FixedTicks: start trailing after N ticks profit. ORPercent: start after X% of OR range profit.", Order = 23, GroupName = "B1S. Bucket 1 Short")]
+        public TrailModeEnum B1S_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B1S. Bucket 1 Short")]
+        public double B1S_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Distance Mode", Description = "FixedTicks: trail N ticks behind best price. ORPercent: trail X% of OR range behind best price.", Order = 25, GroupName = "B1S. Bucket 1 Short")]
+        public TrailModeEnum B1S_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 10000.0)]
+        [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B1S. Bucket 1 Short")]
+        public double B1S_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Freeze Mode", Description = "FixedTicks: freeze stop after N ticks profit. ORPercent: freeze after X% of OR range profit. Independent from activation mode.", Order = 27, GroupName = "B1S. Bucket 1 Short")]
+        public TrailModeEnum B1S_TrailFreezeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B1S. Bucket 1 Short")]
+        public double B1S_TrailFreezeValue { get; set; }
+
+        // ── B1S Max Initial SL ──
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B1S. Bucket 1 Short")]
+        public int B1S_MaxInitialSLTicks { get; set; }
 
         // ==================== BUCKET 2 LONG ====================
 
@@ -635,6 +736,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B2L. Bucket 2 Long")]
         public int B2L_BEOffsetTicks { get; set; }
 
+        // ── B2L Watermark Trail ──
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for LONG trades.", Order = 22, GroupName = "B2L. Bucket 2 Long")]
+        public bool B2L_TrailEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Activation Mode", Description = "FixedTicks: start trailing after N ticks profit. ORPercent: start after X% of OR range profit.", Order = 23, GroupName = "B2L. Bucket 2 Long")]
+        public TrailModeEnum B2L_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B2L. Bucket 2 Long")]
+        public double B2L_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Distance Mode", Description = "FixedTicks: trail N ticks behind best price. ORPercent: trail X% of OR range behind best price.", Order = 25, GroupName = "B2L. Bucket 2 Long")]
+        public TrailModeEnum B2L_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 10000.0)]
+        [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B2L. Bucket 2 Long")]
+        public double B2L_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Freeze Mode", Description = "FixedTicks: freeze stop after N ticks profit. ORPercent: freeze after X% of OR range profit. Independent from activation mode.", Order = 27, GroupName = "B2L. Bucket 2 Long")]
+        public TrailModeEnum B2L_TrailFreezeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B2L. Bucket 2 Long")]
+        public double B2L_TrailFreezeValue { get; set; }
+
+        // ── B2L Max Initial SL ──
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B2L. Bucket 2 Long")]
+        public int B2L_MaxInitialSLTicks { get; set; }
+
         // ==================== BUCKET 2 SHORT ====================
 
         [NinjaScriptProperty]
@@ -736,6 +875,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B2S. Bucket 2 Short")]
         public int B2S_BEOffsetTicks { get; set; }
+
+        // ── B2S Watermark Trail ──
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for SHORT trades.", Order = 22, GroupName = "B2S. Bucket 2 Short")]
+        public bool B2S_TrailEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Activation Mode", Description = "FixedTicks: start trailing after N ticks profit. ORPercent: start after X% of OR range profit.", Order = 23, GroupName = "B2S. Bucket 2 Short")]
+        public TrailModeEnum B2S_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B2S. Bucket 2 Short")]
+        public double B2S_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Distance Mode", Description = "FixedTicks: trail N ticks behind best price. ORPercent: trail X% of OR range behind best price.", Order = 25, GroupName = "B2S. Bucket 2 Short")]
+        public TrailModeEnum B2S_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 10000.0)]
+        [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B2S. Bucket 2 Short")]
+        public double B2S_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Freeze Mode", Description = "FixedTicks: freeze stop after N ticks profit. ORPercent: freeze after X% of OR range profit. Independent from activation mode.", Order = 27, GroupName = "B2S. Bucket 2 Short")]
+        public TrailModeEnum B2S_TrailFreezeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B2S. Bucket 2 Short")]
+        public double B2S_TrailFreezeValue { get; set; }
+
+        // ── B2S Max Initial SL ──
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B2S. Bucket 2 Short")]
+        public int B2S_MaxInitialSLTicks { get; set; }
 
         // ==================== BUCKET 3 LONG ====================
 
@@ -839,6 +1016,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B3L. Bucket 3 Long")]
         public int B3L_BEOffsetTicks { get; set; }
 
+        // ── B3L Watermark Trail ──
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for LONG trades.", Order = 22, GroupName = "B3L. Bucket 3 Long")]
+        public bool B3L_TrailEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Activation Mode", Description = "FixedTicks: start trailing after N ticks profit. ORPercent: start after X% of OR range profit.", Order = 23, GroupName = "B3L. Bucket 3 Long")]
+        public TrailModeEnum B3L_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B3L. Bucket 3 Long")]
+        public double B3L_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Distance Mode", Description = "FixedTicks: trail N ticks behind best price. ORPercent: trail X% of OR range behind best price.", Order = 25, GroupName = "B3L. Bucket 3 Long")]
+        public TrailModeEnum B3L_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 10000.0)]
+        [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B3L. Bucket 3 Long")]
+        public double B3L_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Freeze Mode", Description = "FixedTicks: freeze stop after N ticks profit. ORPercent: freeze after X% of OR range profit. Independent from activation mode.", Order = 27, GroupName = "B3L. Bucket 3 Long")]
+        public TrailModeEnum B3L_TrailFreezeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B3L. Bucket 3 Long")]
+        public double B3L_TrailFreezeValue { get; set; }
+
+        // ── B3L Max Initial SL ──
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B3L. Bucket 3 Long")]
+        public int B3L_MaxInitialSLTicks { get; set; }
+
         // ==================== BUCKET 3 SHORT ====================
 
         [NinjaScriptProperty]
@@ -941,6 +1156,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B3S. Bucket 3 Short")]
         public int B3S_BEOffsetTicks { get; set; }
 
+        // ── B3S Watermark Trail ──
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for SHORT trades.", Order = 22, GroupName = "B3S. Bucket 3 Short")]
+        public bool B3S_TrailEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Activation Mode", Description = "FixedTicks: start trailing after N ticks profit. ORPercent: start after X% of OR range profit.", Order = 23, GroupName = "B3S. Bucket 3 Short")]
+        public TrailModeEnum B3S_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B3S. Bucket 3 Short")]
+        public double B3S_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Distance Mode", Description = "FixedTicks: trail N ticks behind best price. ORPercent: trail X% of OR range behind best price.", Order = 25, GroupName = "B3S. Bucket 3 Short")]
+        public TrailModeEnum B3S_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 10000.0)]
+        [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B3S. Bucket 3 Short")]
+        public double B3S_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trail Freeze Mode", Description = "FixedTicks: freeze stop after N ticks profit. ORPercent: freeze after X% of OR range profit. Independent from activation mode.", Order = 27, GroupName = "B3S. Bucket 3 Short")]
+        public TrailModeEnum B3S_TrailFreezeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B3S. Bucket 3 Short")]
+        public double B3S_TrailFreezeValue { get; set; }
+
+        // ── B3S Max Initial SL ──
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B3S. Bucket 3 Short")]
+        public int B3S_MaxInitialSLTicks { get; set; }
+
         
         #endregion
 
@@ -949,7 +1202,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description = @"30s ORB Strategy";
+                Description = @"30s ORB Strategy - New SL v8 (Max Initial SL filter per bucket)";
                 Name = "ADAMTesting";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
@@ -994,86 +1247,110 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B1L_Enabled = true;
                 B1L_ORMin = 0;
                 B1L_ORMax = 125;
-                B1L_BreakoutTicks = 0;
-                B1L_FirstTradeOffset = 36;
+                B1L_BreakoutTicks = 1;
+                B1L_FirstTradeOffset = 38;
                 B1L_TradeWindowStart = 21;
                 B1L_StopLossMode = SLModeEnum.ORMultiple;
                 B1L_StopLossTicks = 143;
-                B1L_StopLossORMultiple = 1.93;
+                B1L_StopLossORMultiple = 1.87;
                 B1L_TakeProfitMode = TPModeEnum.ORMultiple;
                 B1L_TakeProfitTicks = 567;
-                B1L_TakeProfitORMultiple = 5.07;
+                B1L_TakeProfitORMultiple = 4.51;
                 B1L_MaxTrades = 3;
-                B1L_MaxTradesTotal = 9;
+                B1L_MaxTradesTotal = 5;
                 B1L_MaxSessionLoss = 0;
                 B1L_MaxSessionProfit = 0;
                 B1L_BEEnabled = true;
                 B1L_BETriggerMode = BETriggerModeEnum.FixedTicks;
-                B1L_BETriggerTicks = 466;
+                B1L_BETriggerTicks = 350;
                 B1L_BETriggerORMultiple = 4.07;
-                B1L_BEOffsetTicks = 128;
+                B1L_BEOffsetTicks = 126;
+                B1L_TrailEnabled = true;
+                B1L_TrailActivationMode = TrailModeEnum.FixedTicks;
+                B1L_TrailActivationValue = 100.0;
+                B1L_TrailDistanceMode = TrailModeEnum.FixedTicks;
+                B1L_TrailDistanceValue = 100.0;
+                B1L_TrailFreezeMode = TrailModeEnum.FixedTicks;
+                B1L_TrailFreezeValue = 65.0;
+                B1L_MaxInitialSLTicks = 600;
 
                 // Bucket 1 Short
                 B1S_Enabled = true;
                 B1S_ORMin = 0;
                 B1S_ORMax = 125;
-                B1S_BreakoutTicks = 25;
+                B1S_BreakoutTicks = 22;
                 B1S_FirstTradeOffset = 11;
                 B1S_TradeWindowStart = 21;
-                B1S_StopLossMode = SLModeEnum.FixedTicks;
+                B1S_StopLossMode = SLModeEnum.ORMultiple;
                 B1S_StopLossTicks = 194;
-                B1S_StopLossORMultiple = 1.8;
+                B1S_StopLossORMultiple = 1.76;
                 B1S_TakeProfitMode = TPModeEnum.ORMultiple;
                 B1S_TakeProfitTicks = 620;
-                B1S_TakeProfitORMultiple = 5.75;
+                B1S_TakeProfitORMultiple = 3.55;
                 B1S_MaxTrades = 3;
-                B1S_MaxTradesTotal = 9;
+                B1S_MaxTradesTotal = 6;
                 B1S_MaxSessionLoss = 0;
                 B1S_MaxSessionProfit = 0;
-                B1S_BEEnabled = true;
+                B1S_BEEnabled = false;
                 B1S_BETriggerMode = BETriggerModeEnum.FixedTicks;
                 B1S_BETriggerTicks = 605;
-                B1S_BETriggerORMultiple = 4.0;
+                B1S_BETriggerORMultiple = 4.4;
                 B1S_BEOffsetTicks = 10;
+                B1S_TrailEnabled = true;
+                B1S_TrailActivationMode = TrailModeEnum.FixedTicks;
+                B1S_TrailActivationValue = 200.0;
+                B1S_TrailDistanceMode = TrailModeEnum.FixedTicks;
+                B1S_TrailDistanceValue = 80.0;
+                B1S_TrailFreezeMode = TrailModeEnum.FixedTicks;
+                B1S_TrailFreezeValue = 204.0;
+                B1S_MaxInitialSLTicks = 710;
 
                 // Bucket 2 Long
                 B2L_Enabled = true;
                 B2L_ORMin = 126;
                 B2L_ORMax = 178;
-                B2L_BreakoutTicks = 9;
-                B2L_FirstTradeOffset = 23;
+                B2L_BreakoutTicks = 12;
+                B2L_FirstTradeOffset = 58;
                 B2L_TradeWindowStart = 22;
                 B2L_StopLossMode = SLModeEnum.FixedTicks;
-                B2L_StopLossTicks = 186;
-                B2L_StopLossORMultiple = 1.3;
+                B2L_StopLossTicks = 226;
+                B2L_StopLossORMultiple = 1.27;
                 B2L_TakeProfitMode = TPModeEnum.ORMultiple;
                 B2L_TakeProfitTicks = 500;
-                B2L_TakeProfitORMultiple = 5.04;
+                B2L_TakeProfitORMultiple = 5.3;
                 B2L_MaxTrades = 3;
-                B2L_MaxTradesTotal = 9;
+                B2L_MaxTradesTotal = 4;
                 B2L_MaxSessionLoss = 0;
                 B2L_MaxSessionProfit = 0;
-                B2L_BEEnabled = true;
+                B2L_BEEnabled = false;
                 B2L_BETriggerMode = BETriggerModeEnum.FixedTicks;
                 B2L_BETriggerTicks = 405;
                 B2L_BETriggerORMultiple = 4.61;
                 B2L_BEOffsetTicks = 37;
+                B2L_TrailEnabled = true;
+                B2L_TrailActivationMode = TrailModeEnum.FixedTicks;
+                B2L_TrailActivationValue = 60.0;
+                B2L_TrailDistanceMode = TrailModeEnum.FixedTicks;
+                B2L_TrailDistanceValue = 93.0;
+                B2L_TrailFreezeMode = TrailModeEnum.FixedTicks;
+                B2L_TrailFreezeValue = 93.0;
+                B2L_MaxInitialSLTicks = 740;
 
                 // Bucket 2 Short
                 B2S_Enabled = true;
                 B2S_ORMin = 126;
                 B2S_ORMax = 184;
-                B2S_BreakoutTicks = 25;
+                B2S_BreakoutTicks = 30;
                 B2S_FirstTradeOffset = 1;
-                B2S_TradeWindowStart = 23;
+                B2S_TradeWindowStart = 24;
                 B2S_StopLossMode = SLModeEnum.FixedTicks;
-                B2S_StopLossTicks = 180;
-                B2S_StopLossORMultiple = 2.0;
+                B2S_StopLossTicks = 179;
+                B2S_StopLossORMultiple = 1.59;
                 B2S_TakeProfitMode = TPModeEnum.ORMultiple;
                 B2S_TakeProfitTicks = 620;
-                B2S_TakeProfitORMultiple = 5.25;
-                B2S_MaxTrades = 3;
-                B2S_MaxTradesTotal = 9;
+                B2S_TakeProfitORMultiple = 5.29;
+                B2S_MaxTrades = 2;
+                B2S_MaxTradesTotal = 5;
                 B2S_MaxSessionLoss = 0;
                 B2S_MaxSessionProfit = 0;
                 B2S_BEEnabled = true;
@@ -1081,52 +1358,76 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B2S_BETriggerTicks = 625;
                 B2S_BETriggerORMultiple = 4.87;
                 B2S_BEOffsetTicks = 31;
+                B2S_TrailEnabled = true;
+                B2S_TrailActivationMode = TrailModeEnum.FixedTicks;
+                B2S_TrailActivationValue = 155.0;
+                B2S_TrailDistanceMode = TrailModeEnum.FixedTicks;
+                B2S_TrailDistanceValue = 165.0;
+                B2S_TrailFreezeMode = TrailModeEnum.FixedTicks;
+                B2S_TrailFreezeValue = 158.0;
+                B2S_MaxInitialSLTicks = 690;
 
                 // Bucket 3 Long
                 B3L_Enabled = true;
                 B3L_ORMin = 179;
                 B3L_ORMax = 233;
-                B3L_BreakoutTicks = 1;
-                B3L_FirstTradeOffset = 14;
+                B3L_BreakoutTicks = 14;
+                B3L_FirstTradeOffset = 27;
                 B3L_TradeWindowStart = 40;
-                B3L_StopLossMode = SLModeEnum.FixedTicks;
-                B3L_StopLossTicks = 194;
-                B3L_StopLossORMultiple = 0.95;
+                B3L_StopLossMode = SLModeEnum.ORMultiple;
+                B3L_StopLossTicks = 190;
+                B3L_StopLossORMultiple = 0.92;
                 B3L_TakeProfitMode = TPModeEnum.ORMultiple;
                 B3L_TakeProfitTicks = 396;
-                B3L_TakeProfitORMultiple = 2.15;
+                B3L_TakeProfitORMultiple = 2.69;
                 B3L_MaxTrades = 3;
-                B3L_MaxTradesTotal = 9;
+                B3L_MaxTradesTotal = 6;
                 B3L_MaxSessionLoss = 0;
                 B3L_MaxSessionProfit = 0;
-                B3L_BEEnabled = true;
+                B3L_BEEnabled = false;
                 B3L_BETriggerMode = BETriggerModeEnum.FixedTicks;
-                B3L_BETriggerTicks = 344;
+                B3L_BETriggerTicks = 360;
                 B3L_BETriggerORMultiple = 4.61;
                 B3L_BEOffsetTicks = 100;
+                B3L_TrailEnabled = true;
+                B3L_TrailActivationMode = TrailModeEnum.FixedTicks;
+                B3L_TrailActivationValue = 60.0;
+                B3L_TrailDistanceMode = TrailModeEnum.FixedTicks;
+                B3L_TrailDistanceValue = 161.0;
+                B3L_TrailFreezeMode = TrailModeEnum.FixedTicks;
+                B3L_TrailFreezeValue = 245.0;
+                B3L_MaxInitialSLTicks = 540;
 
                 // Bucket 3 Short
                 B3S_Enabled = true;
                 B3S_ORMin = 185;
                 B3S_ORMax = 280;
-                B3S_BreakoutTicks = 25;
-                B3S_FirstTradeOffset = 27;
+                B3S_BreakoutTicks = 0;
+                B3S_FirstTradeOffset = 61;
                 B3S_TradeWindowStart = 51;
-                B3S_StopLossMode = SLModeEnum.FixedTicks;
-                B3S_StopLossTicks = 216;
-                B3S_StopLossORMultiple = 2.0;
+                B3S_StopLossMode = SLModeEnum.ORMultiple;
+                B3S_StopLossTicks = 200;
+                B3S_StopLossORMultiple = 0.78;
                 B3S_TakeProfitMode = TPModeEnum.ORMultiple;
                 B3S_TakeProfitTicks = 620;
-                B3S_TakeProfitORMultiple = 3.8;
+                B3S_TakeProfitORMultiple = 4.06;
                 B3S_MaxTrades = 3;
-                B3S_MaxTradesTotal = 9;
-                B3S_MaxSessionLoss = 0;
+                B3S_MaxTradesTotal = 6;
+                B3S_MaxSessionLoss = 10;
                 B3S_MaxSessionProfit = 0;
-                B3S_BEEnabled = true;
+                B3S_BEEnabled = false;
                 B3S_BETriggerMode = BETriggerModeEnum.FixedTicks;
                 B3S_BETriggerTicks = 349;
                 B3S_BETriggerORMultiple = 4.87;
                 B3S_BEOffsetTicks = 79;
+                B3S_TrailEnabled = true;
+                B3S_TrailActivationMode = TrailModeEnum.FixedTicks;
+                B3S_TrailActivationValue = 365.0;
+                B3S_TrailDistanceMode = TrailModeEnum.FixedTicks;
+                B3S_TrailDistanceValue = 166.0;
+                B3S_TrailFreezeMode = TrailModeEnum.FixedTicks;
+                B3S_TrailFreezeValue = 381.0;
+                B3S_MaxInitialSLTicks = 770;
 
             }
             else if (State == State.Configure)
@@ -1405,6 +1706,111 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
+            // === WATERMARK TRAIL ===
+            // Three-phase system: inactive → active (trailing) → frozen.
+            // Active phase: stop = bestPrice - trailingDistance, only advances, never retreats.
+            // Independent of BE — both can run simultaneously.
+            if (Position.MarketPosition != MarketPosition.Flat && entryPrice > 0 && orSet)
+            {
+                double orRange = orHigh - orLow;
+                double orRangeTicks = Math.Round(orRange / TickSize);
+                bool isLong = Position.MarketPosition == MarketPosition.Long;
+                bool isShort = Position.MarketPosition == MarketPosition.Short;
+                bool trailEnabled = isLong ? activeL_TrailEnabled : activeS_TrailEnabled;
+
+                if (trailEnabled && !trailFrozen)
+                {
+                    // Update best price watermark
+                    if (isLong)
+                    { if (trailBestPrice == 0 || High[0] > trailBestPrice) trailBestPrice = High[0]; }
+                    else
+                    { if (trailBestPrice == 0 || Low[0] < trailBestPrice) trailBestPrice = Low[0]; }
+
+                    double profitTicks = isLong
+                        ? Math.Round((currentPrice - entryPrice) / TickSize)
+                        : Math.Round((entryPrice - currentPrice) / TickSize);
+
+                    // ── Activation gate ──
+                    if (!trailActivated)
+                    {
+                        TrailModeEnum actMode = isLong ? activeL_TrailActivationMode : activeS_TrailActivationMode;
+                        double actValue = isLong ? activeL_TrailActivationValue : activeS_TrailActivationValue;
+                        double actThreshold = actMode == TrailModeEnum.ORPercent
+                            ? orRangeTicks * (actValue / 100.0)
+                            : actValue;
+                        if (actValue <= 0 || profitTicks >= actThreshold)
+                        {
+                            trailActivated = true;
+                            LogDebug(String.Format("{0} | *** TRAIL ACTIVATED {1} *** profit={2:F0}t threshold={3:F0}t",
+                                Time[0].ToString("HH:mm:ss"), isLong ? "LONG" : "SHORT",
+                                profitTicks, actThreshold));
+                        }
+                    }
+
+                    // ── Freeze gate ──
+                    if (trailActivated)
+                    {
+                        TrailModeEnum frzMode = isLong ? activeL_TrailFreezeMode : activeS_TrailFreezeMode;
+                        double frzValue = isLong ? activeL_TrailFreezeValue : activeS_TrailFreezeValue;
+                        if (frzValue > 0)
+                        {
+                            double frzThreshold = frzMode == TrailModeEnum.ORPercent
+                                ? orRangeTicks * (frzValue / 100.0)
+                                : frzValue;
+                            if (profitTicks >= frzThreshold)
+                            {
+                                trailFrozen = true;
+                                LogDebug(String.Format("{0} | *** TRAIL FROZEN {1} *** profit={2:F0}t >= freeze={3:F0}t | SL locked at {4:F2}",
+                                    Time[0].ToString("HH:mm:ss"), isLong ? "LONG" : "SHORT",
+                                    profitTicks, frzThreshold, currentStopPrice));
+                            }
+                        }
+                    }
+
+                    // ── Trail movement ──
+                    if (trailActivated && !trailFrozen)
+                    {
+                        TrailModeEnum distMode = isLong ? activeL_TrailDistanceMode : activeS_TrailDistanceMode;
+                        double distValue = isLong ? activeL_TrailDistanceValue : activeS_TrailDistanceValue;
+                        double trailDist = distMode == TrailModeEnum.ORPercent
+                            ? orRange * (distValue / 100.0)
+                            : distValue * TickSize;
+
+                        if (trailDist > 0)
+                        {
+                            if (isLong)
+                            {
+                                // Plain round only — sanitizer removed as it clamps valid trail updates
+                                double newStop = Instrument.MasterInstrument.RoundToTickSize(trailBestPrice - trailDist);
+                                if (newStop > currentStopPrice && newStop > 0)
+                                {
+                                    currentStopPrice = newStop;
+                                    SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
+                                    LogDebug(String.Format("{0} | *** TRAIL LONG *** best={1:F2} dist={2:F1}t SL->{3:F2}",
+                                        Time[0].ToString("HH:mm:ss"), trailBestPrice, trailDist / TickSize, currentStopPrice));
+                                    UpdateTradeLines();
+                                    UpdateInfoPanel();
+                                }
+                            }
+                            else
+                            {
+                                // Plain round only — sanitizer removed as it clamps valid trail updates
+                                double newStop = Instrument.MasterInstrument.RoundToTickSize(trailBestPrice + trailDist);
+                                if (newStop < currentStopPrice && newStop > 0)
+                                {
+                                    currentStopPrice = newStop;
+                                    SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
+                                    LogDebug(String.Format("{0} | *** TRAIL SHORT *** best={1:F2} dist={2:F1}t SL->{3:F2}",
+                                        Time[0].ToString("HH:mm:ss"), trailBestPrice, trailDist / TickSize, currentStopPrice));
+                                    UpdateTradeLines();
+                                    UpdateInfoPanel();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Max profit total
             if (MaxSessionProfitTotal > 0 && !maxProfitTotalReached)
             {
@@ -1502,6 +1908,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     string nextSignal = BuildEntrySignalName(true);
                     double nextStopPrice = CalculateLongStopPrice();
                     int nextTargetTicks = CalculateLongTargetTicks();
+
+                    // === MAX INITIAL SL CHECK (LONG) ===
+                    // Only applies to the first LONG trade of the session.
+                    // If SL distance exceeds limit: skip entry but consume trade slot
+                    if (activeL_MaxInitialSLTicks > 0 && sessionTradeCountLong == 0)
+                    {
+                        int slDistanceTicks = (int)Math.Round(Math.Abs(currentPrice - nextStopPrice) / TickSize);
+                        if (slDistanceTicks > activeL_MaxInitialSLTicks)
+                        {
+                            LogDebug(String.Format("{0} | *** MAX SL SKIP LONG *** SL={1}t > Max={2}t | Trade counted, no entry",
+                                Time[0].ToString("HH:mm:ss.fff"), slDistanceTicks, activeL_MaxInitialSLTicks));
+                            canTakeNewEntry = false;
+                            priceReturnedToOR = false;
+                            lastTradeDirection = MarketPosition.Long;
+                            sessionTradeCountLong++;
+                            sessionTradeCountTotal++;
+                            UpdateInfoPanel();
+                            return;
+                        }
+                    }
+
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", currentPrice, ContractQuantity))
                     {
                         LogDebug(String.Format("{0} | Entry confirmation declined | LONG.", Time[0].ToString("HH:mm:ss.fff")));
@@ -1534,6 +1961,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     string nextSignal = BuildEntrySignalName(false);
                     double nextStopPrice = CalculateShortStopPrice();
                     int nextTargetTicks = CalculateShortTargetTicks();
+
+                    // === MAX INITIAL SL CHECK (SHORT) ===
+                    // Only applies to the first SHORT trade of the session.
+                    // If SL distance exceeds limit: skip entry but consume trade slot
+                    if (activeS_MaxInitialSLTicks > 0 && sessionTradeCountShort == 0)
+                    {
+                        int slDistanceTicks = (int)Math.Round(Math.Abs(nextStopPrice - currentPrice) / TickSize);
+                        if (slDistanceTicks > activeS_MaxInitialSLTicks)
+                        {
+                            LogDebug(String.Format("{0} | *** MAX SL SKIP SHORT *** SL={1}t > Max={2}t | Trade counted, no entry",
+                                Time[0].ToString("HH:mm:ss.fff"), slDistanceTicks, activeS_MaxInitialSLTicks));
+                            canTakeNewEntry = false;
+                            priceReturnedToOR = false;
+                            lastTradeDirection = MarketPosition.Short;
+                            sessionTradeCountShort++;
+                            sessionTradeCountTotal++;
+                            UpdateInfoPanel();
+                            return;
+                        }
+                    }
+
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", currentPrice, ContractQuantity))
                     {
                         LogDebug(String.Format("{0} | Entry confirmation declined | SHORT.", Time[0].ToString("HH:mm:ss.fff")));
@@ -1616,6 +2064,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_BETriggerTicks = B1L_BETriggerTicks;
                     activeL_BETriggerORMultiple = B1L_BETriggerORMultiple;
                     activeL_BEOffsetTicks = B1L_BEOffsetTicks;
+                    activeL_TrailEnabled = B1L_TrailEnabled;
+                    activeL_TrailActivationMode = B1L_TrailActivationMode;
+                    activeL_TrailActivationValue = B1L_TrailActivationValue;
+                    activeL_TrailDistanceMode = B1L_TrailDistanceMode;
+                    activeL_TrailDistanceValue = B1L_TrailDistanceValue;
+                    activeL_TrailFreezeMode = B1L_TrailFreezeMode;
+                    activeL_TrailFreezeValue = B1L_TrailFreezeValue;
+                    activeL_MaxInitialSLTicks = B1L_MaxInitialSLTicks;
                     break;
                 case 2:
                     activeL_Enabled = B2L_Enabled;
@@ -1639,6 +2095,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_BETriggerTicks = B2L_BETriggerTicks;
                     activeL_BETriggerORMultiple = B2L_BETriggerORMultiple;
                     activeL_BEOffsetTicks = B2L_BEOffsetTicks;
+                    activeL_TrailEnabled = B2L_TrailEnabled;
+                    activeL_TrailActivationMode = B2L_TrailActivationMode;
+                    activeL_TrailActivationValue = B2L_TrailActivationValue;
+                    activeL_TrailDistanceMode = B2L_TrailDistanceMode;
+                    activeL_TrailDistanceValue = B2L_TrailDistanceValue;
+                    activeL_TrailFreezeMode = B2L_TrailFreezeMode;
+                    activeL_TrailFreezeValue = B2L_TrailFreezeValue;
+                    activeL_MaxInitialSLTicks = B2L_MaxInitialSLTicks;
                     break;
                 case 3:
                     activeL_Enabled = B3L_Enabled;
@@ -1662,6 +2126,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_BETriggerTicks = B3L_BETriggerTicks;
                     activeL_BETriggerORMultiple = B3L_BETriggerORMultiple;
                     activeL_BEOffsetTicks = B3L_BEOffsetTicks;
+                    activeL_TrailEnabled = B3L_TrailEnabled;
+                    activeL_TrailActivationMode = B3L_TrailActivationMode;
+                    activeL_TrailActivationValue = B3L_TrailActivationValue;
+                    activeL_TrailDistanceMode = B3L_TrailDistanceMode;
+                    activeL_TrailDistanceValue = B3L_TrailDistanceValue;
+                    activeL_TrailFreezeMode = B3L_TrailFreezeMode;
+                    activeL_TrailFreezeValue = B3L_TrailFreezeValue;
+                    activeL_MaxInitialSLTicks = B3L_MaxInitialSLTicks;
                     break;
             }
             LogDebug(String.Format("  LONG -> Bucket {0} | OR:{1}-{2}t SL={3} TP={4} BE={5}",
@@ -1698,6 +2170,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_BETriggerTicks = B1S_BETriggerTicks;
                     activeS_BETriggerORMultiple = B1S_BETriggerORMultiple;
                     activeS_BEOffsetTicks = B1S_BEOffsetTicks;
+                    activeS_TrailEnabled = B1S_TrailEnabled;
+                    activeS_TrailActivationMode = B1S_TrailActivationMode;
+                    activeS_TrailActivationValue = B1S_TrailActivationValue;
+                    activeS_TrailDistanceMode = B1S_TrailDistanceMode;
+                    activeS_TrailDistanceValue = B1S_TrailDistanceValue;
+                    activeS_TrailFreezeMode = B1S_TrailFreezeMode;
+                    activeS_TrailFreezeValue = B1S_TrailFreezeValue;
+                    activeS_MaxInitialSLTicks = B1S_MaxInitialSLTicks;
                     break;
                 case 2:
                     activeS_Enabled = B2S_Enabled;
@@ -1721,6 +2201,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_BETriggerTicks = B2S_BETriggerTicks;
                     activeS_BETriggerORMultiple = B2S_BETriggerORMultiple;
                     activeS_BEOffsetTicks = B2S_BEOffsetTicks;
+                    activeS_TrailEnabled = B2S_TrailEnabled;
+                    activeS_TrailActivationMode = B2S_TrailActivationMode;
+                    activeS_TrailActivationValue = B2S_TrailActivationValue;
+                    activeS_TrailDistanceMode = B2S_TrailDistanceMode;
+                    activeS_TrailDistanceValue = B2S_TrailDistanceValue;
+                    activeS_TrailFreezeMode = B2S_TrailFreezeMode;
+                    activeS_TrailFreezeValue = B2S_TrailFreezeValue;
+                    activeS_MaxInitialSLTicks = B2S_MaxInitialSLTicks;
                     break;
                 case 3:
                     activeS_Enabled = B3S_Enabled;
@@ -1744,6 +2232,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_BETriggerTicks = B3S_BETriggerTicks;
                     activeS_BETriggerORMultiple = B3S_BETriggerORMultiple;
                     activeS_BEOffsetTicks = B3S_BEOffsetTicks;
+                    activeS_TrailEnabled = B3S_TrailEnabled;
+                    activeS_TrailActivationMode = B3S_TrailActivationMode;
+                    activeS_TrailActivationValue = B3S_TrailActivationValue;
+                    activeS_TrailDistanceMode = B3S_TrailDistanceMode;
+                    activeS_TrailDistanceValue = B3S_TrailDistanceValue;
+                    activeS_TrailFreezeMode = B3S_TrailFreezeMode;
+                    activeS_TrailFreezeValue = B3S_TrailFreezeValue;
+                    activeS_MaxInitialSLTicks = B3S_MaxInitialSLTicks;
                     break;
             }
             LogDebug(String.Format("  SHORT -> Bucket {0} | OR:{1}-{2}t SL={3} TP={4} BE={5}",
@@ -2648,6 +3144,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             entryPrice = 0; pendingStopPrice = 0; pendingTargetTicks = 0;
             currentStopPrice = 0; currentTargetPrice = 0; currentTargetTicks = 0;
             beTriggered = false; beNewStopPrice = 0;
+            trailActivated = false; trailFrozen = false; trailBestPrice = 0;
             bracketOrdersPlaced = false;
             currentEntrySignal = string.Empty;
             canTakeNewEntry = true;
@@ -3081,7 +3578,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
 
-            lines.Add((string.Format("ADAM v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add((string.Format("ADAMTesting v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", ContractQuantity.ToString(CultureInfo.InvariantCulture), Brushes.LightGray, Brushes.LightGray));
             double orRange = 0.0;
             if (orSet && orHigh > double.MinValue && orLow < double.MaxValue)
