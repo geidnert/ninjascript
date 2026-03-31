@@ -698,10 +698,12 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (result == null || string.IsNullOrEmpty(result.Message))
                 return;
 
-            if ((result.IsEntryNotification && !showEntry) || (result.IsExitNotification && !showExit))
-                return;
+            bool shouldSendTradeMessage =
+                (result.IsEntryNotification && showEntry) ||
+                (result.IsExitNotification && showExit) ||
+                (result.IsEntrySideFill && showEntry);
 
-            if (result.IsEntrySideFill && !showEntry)
+            if (!shouldSendTradeMessage)
                 return;
 
             string message = result.Message;
@@ -4275,10 +4277,18 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         public TradeMessengerAddOnWindow()
         {
-            Caption = "Trade Messenger";
+            Caption = BuildCaption();
             Width = 760;
             Height = 820;
             Content = BuildContent();
+        }
+
+        private static string BuildCaption()
+        {
+            Version version = typeof(TradeMessengerAddOnWindow).Assembly.GetName().Version;
+            return version == null
+                ? "Trade Messenger"
+                : string.Format(CultureInfo.InvariantCulture, "Trade Messenger {0}", version);
         }
 
         public void LoadFromSettings(TradeMessengerAddOnSettings settings, string statusText)
