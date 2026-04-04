@@ -67,7 +67,8 @@ namespace NinjaTrader.Gui.NinjaScript
         private static readonly int PARALLEL_THREADS_COUNT = 4;
 
         private TextBox tbCsvRootDir;
-        private TextBox tbSelectedInstruments;
+        private DatePicker dpStartDate;
+        private DatePicker dpEndDate;
         private Button bConvert;
         private TextBox tbOutput;
         private Label lProgress;
@@ -119,13 +120,42 @@ namespace NinjaTrader.Gui.NinjaScript
                 Margin = new Thickness(margin, 0, margin, 0),
                 Content = "Root directory of converted CSV files:",
             };
-            tbSelectedInstruments = new TextBox() { Margin = new Thickness(margin, 0, margin, margin) };
-            Label lSelectedInstruments = new Label()
+            Label lDateRange = new Label()
             {
                 Foreground = FindResource("FontLabelBrush") as Brush,
                 Margin = new Thickness(margin, margin, margin, 0),
-                Content = "Semicolon separated RegEx'es to filter *.nrd file names (keep empty to proceed all):",
+                Content = "Data date range to convert (optional):",
             };
+            dpStartDate = new DatePicker()
+            {
+                Margin = new Thickness(0, 0, margin / 2, 0),
+                SelectedDateFormat = DatePickerFormat.Short,
+                Width = 220,
+            };
+            dpEndDate = new DatePicker()
+            {
+                Margin = new Thickness(margin / 2, 0, 0, 0),
+                SelectedDateFormat = DatePickerFormat.Short,
+                Width = 220,
+            };
+            Label lDateRangeTo = new Label()
+            {
+                Foreground = FindResource("FontLabelBrush") as Brush,
+                Margin = new Thickness(0),
+                Padding = new Thickness(0),
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Content = "to",
+            };
+            Grid gDateRange = new Grid() { Margin = new Thickness(margin, 0, margin, margin) };
+            gDateRange.ColumnDefinitions.Add(new ColumnDefinition() { Width = GridLength.Auto });
+            gDateRange.ColumnDefinitions.Add(new ColumnDefinition() { Width = GridLength.Auto });
+            gDateRange.ColumnDefinitions.Add(new ColumnDefinition() { Width = GridLength.Auto });
+            Grid.SetColumn(dpStartDate, 0);
+            Grid.SetColumn(lDateRangeTo, 1);
+            Grid.SetColumn(dpEndDate, 2);
+            gDateRange.Children.Add(dpStartDate);
+            gDateRange.Children.Add(lDateRangeTo);
+            gDateRange.Children.Add(dpEndDate);
             bConvert = new Button() { Margin = new Thickness(margin), IsDefault = true, Content = "_Convert" };
             bConvert.Click += OnConvertButtonClick;
             tbOutput = new TextBox()
@@ -156,16 +186,16 @@ namespace NinjaTrader.Gui.NinjaScript
             grid.RowDefinitions.Add(new RowDefinition() { Height = GridLength.Auto });
             Grid.SetRow(lCsvRootDir, 0);
             Grid.SetRow(tbCsvRootDir, 1);
-            Grid.SetRow(lSelectedInstruments, 2);
-            Grid.SetRow(tbSelectedInstruments, 3);
+            Grid.SetRow(lDateRange, 2);
+            Grid.SetRow(gDateRange, 3);
             Grid.SetRow(bConvert, 4);
             Grid.SetRow(tbOutput, 5);
             Grid.SetRow(lProgress, 6);
             Grid.SetRow(pbProgress, 7);
             grid.Children.Add(lCsvRootDir);
             grid.Children.Add(tbCsvRootDir);
-            grid.Children.Add(lSelectedInstruments);
-            grid.Children.Add(tbSelectedInstruments);
+            grid.Children.Add(lDateRange);
+            grid.Children.Add(gDateRange);
             grid.Children.Add(bConvert);
             grid.Children.Add(tbOutput);
             grid.Children.Add(lProgress);
@@ -193,8 +223,14 @@ namespace NinjaTrader.Gui.NinjaScript
 
             string nrdDir = Path.Combine(Globals.UserDataDir, "db", "replay");
             string csvDir = tbCsvRootDir.Text;
-            List<Regex> selectedInstruments = tbSelectedInstruments.Text.IsNullOrEmpty() ? null :
-                tbSelectedInstruments.Text.Split(';').Select(p => new Regex(p.Trim())).ToList();
+            DateTime? selectedStartDate = dpStartDate.SelectedDate?.Date;
+            DateTime? selectedEndDate = dpEndDate.SelectedDate?.Date;
+
+            if (selectedStartDate.HasValue && selectedEndDate.HasValue && selectedStartDate.Value > selectedEndDate.Value)
+            {
+                logout("ERROR: Start date must be before or equal to end date");
+                return;
+            }
 
             if (!Directory.Exists(nrdDir))
             {
@@ -228,7 +264,7 @@ namespace NinjaTrader.Gui.NinjaScript
                 totalFilesLength = 0;
                 List<DumpEntry> entries = new List<DumpEntry>();
                 foreach (string subDir in nrdSubDirs)
-                    ProceedDirectory(entries, nrdDir, subDir, csvDir, selectedInstruments);
+                    ProceedDirectory(entries, nrdDir, subDir, csvDir, selectedStartDate, selectedEndDate);
                 if (entries.Count == 0)
                 {
                     logout("No *.nrd files found to convert");
@@ -247,7 +283,7 @@ namespace NinjaTrader.Gui.NinjaScript
             }));
         }
 
-        private void ProceedDirectory(List<DumpEntry> entries, string nrdRoot, string nrdDir, string csvDir, List<Regex> selectedInstruments)
+        private void ProceedDirectory(List<DumpEntry> entries, string nrdRoot, string nrdDir, string csvDir, DateTime? selectedStartDate, DateTime? selectedEndDate)
         {
             string[] fileEntries = Directory.GetFiles(nrdDir, "*.nrd");
             if (fileEntries.Length == 0)
@@ -260,9 +296,6 @@ namespace NinjaTrader.Gui.NinjaScript
             {
                 string fullName = Path.GetFileName(Path.GetDirectoryName(fileName));
                 string relativeName = fileName.Substring(nrdRoot.Length);
-
-                if (selectedInstruments != null && selectedInstruments.Where(r => r.Match(relativeName).Success).Count() == 0)
-                    continue;
 
                 Collection<Instrument> instruments = InstrumentList.GetInstruments(fullName);
                 if (instruments.Count == 0)
@@ -277,7 +310,18 @@ namespace NinjaTrader.Gui.NinjaScript
                 }
                 Cbi.Instrument instrument = instruments[0];
                 string name = Path.GetFileNameWithoutExtension(fileName);
-                string csvFileName = string.Format("{0}.csv", Path.Combine(csvDir, instrument.FullName, name));
+                DateTime sourceDate = new DateTime(
+                    Convert.ToInt16(name.Substring(0, 4)),
+                    Convert.ToInt16(name.Substring(4, 2)),
+                    Convert.ToInt16(name.Substring(6, 2)));
+                DateTime outputDate = sourceDate.AddDays(1);
+
+                if (selectedStartDate.HasValue && outputDate.Date < selectedStartDate.Value.Date)
+                    continue;
+                if (selectedEndDate.HasValue && outputDate.Date > selectedEndDate.Value.Date)
+                    continue;
+
+                string csvFileName = string.Format("{0}.csv", Path.Combine(csvDir, instrument.FullName, outputDate.ToString("yyyyMMdd")));
                 if (File.Exists(csvFileName))
                 {
                     logout(string.Format("Conversion \"{0}\" to \"{1}\" is done already. Skipped",
@@ -290,10 +334,7 @@ namespace NinjaTrader.Gui.NinjaScript
                 {
                     NrdLength = nrdFileLength,
                     Instrument = instrument,
-                    Date = new DateTime(
-                        Convert.ToInt16(name.Substring(0, 4)),
-                        Convert.ToInt16(name.Substring(4, 2)),
-                        Convert.ToInt16(name.Substring(6, 2))),
+                    Date = sourceDate,
                     CsvFileName = csvFileName,
                     FromName = relativeName.Substring(1),
                     ToName = csvFileName.Substring(csvDir.Length + 1),
@@ -372,9 +413,21 @@ namespace NinjaTrader.Gui.NinjaScript
                     if (elCsvRootDir != null)
                         tbCsvRootDir.Text = elCsvRootDir.Value;
 
-                    XElement elSelectedInstruments = elRoot.Element("SelectedInstruments");
-                    if (elSelectedInstruments != null)
-                        tbSelectedInstruments.Text = elSelectedInstruments.Value;
+                    XElement elStartDate = elRoot.Element("StartDate");
+                    if (elStartDate != null)
+                    {
+                        DateTime parsed;
+                        if (DateTime.TryParse(elStartDate.Value, out parsed))
+                            dpStartDate.SelectedDate = parsed.Date;
+                    }
+
+                    XElement elEndDate = elRoot.Element("EndDate");
+                    if (elEndDate != null)
+                    {
+                        DateTime parsed;
+                        if (DateTime.TryParse(elEndDate.Value, out parsed))
+                            dpEndDate.SelectedDate = parsed.Date;
+                    }
                 }
             }
         }
@@ -384,9 +437,11 @@ namespace NinjaTrader.Gui.NinjaScript
             element.Elements().Where(el => el.Name.LocalName.Equals("NRDToCSV")).Remove();
             XElement elRoot = new XElement("NRDToCSV");
             XElement elCsvRootDir = new XElement("CsvRootDir", tbCsvRootDir.Text);
-            XElement elSelectedInstruments = new XElement("SelectedInstruments", tbSelectedInstruments.Text);
+            XElement elStartDate = new XElement("StartDate", dpStartDate.SelectedDate.HasValue ? dpStartDate.SelectedDate.Value.ToString("yyyy-MM-dd") : string.Empty);
+            XElement elEndDate = new XElement("EndDate", dpEndDate.SelectedDate.HasValue ? dpEndDate.SelectedDate.Value.ToString("yyyy-MM-dd") : string.Empty);
             elRoot.Add(elCsvRootDir);
-            elRoot.Add(elSelectedInstruments);
+            elRoot.Add(elStartDate);
+            elRoot.Add(elEndDate);
             element.Add(elRoot);
         }
 
@@ -410,7 +465,8 @@ namespace NinjaTrader.Gui.NinjaScript
                 bConvert.IsEnabled = true;
                 bConvert.Content = "_Cancel";
                 tbCsvRootDir.IsReadOnly = true;
-                tbSelectedInstruments.IsReadOnly = true;
+                dpStartDate.IsEnabled = false;
+                dpEndDate.IsEnabled = false;
                 double margin = (double)FindResource("MarginBase");
                 lProgress.Margin = new Thickness(0, 0, 0, 0);
                 lProgress.Height = 24;
@@ -433,7 +489,8 @@ namespace NinjaTrader.Gui.NinjaScript
                 pbProgress.Margin = new Thickness(0);
                 pbProgress.Height = 0;
                 tbCsvRootDir.IsReadOnly = false;
-                tbSelectedInstruments.IsReadOnly = false;
+                dpStartDate.IsEnabled = true;
+                dpEndDate.IsEnabled = true;
                 bConvert.IsEnabled = true;
                 bConvert.Content = "_Convert";
             });
