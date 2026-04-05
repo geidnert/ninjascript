@@ -28,8 +28,18 @@ using NinjaTrader.NinjaScript.DrawingTools;
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
-    public class HugoTesting : Strategy
+    public class HUGOTesting : Strategy
     {
+        public HUGOTesting()
+        {
+            VendorLicense(1346);
+        }
+        private const string StrategySignalPrefix = "HUGOTesting";
+        private const string LongEntrySignalPrefix = StrategySignalPrefix + "Long";
+        private const string ShortEntrySignalPrefix = StrategySignalPrefix + "Short";
+        private const string HeartbeatStrategyName = "HUGOTesting";
+        private const int RequiredPrimaryTimeframeMinutes = 15;
+
         #region Private Variables
         // EMA instances — one per bucket (may share same length but kept separate for flexibility)
         private EMA emaL1, emaL2, emaS1, emaS2;
@@ -65,6 +75,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // Order tracking
         private Order entryOrder;
+        private string managedEntrySignal = string.Empty;
+        private int entrySignalSequence;
 
         // Global Daily P&L tracking
         private double globalDailyPnL;
@@ -111,10 +123,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // v1.06: Skip Time Window
         private bool inSkipWindow;
         private bool inNewsSkipWindow;
+        private bool maxAccountLimitHit;
+        private bool isConfiguredTimeframeValid = true;
+        private bool isConfiguredInstrumentValid = true;
+        private bool timeframePopupShown;
+        private bool instrumentPopupShown;
         // v1.07: WMA / SMA / ADX indicators — one per bucket
         private WMA wmaL1, wmaL2, wmaS1, wmaS2;
         private SMA smaL1, smaL2, smaS1, smaS2;
         private ADX adxL1, adxL2, adxS1, adxS2;
+        private StrategyHeartbeatReporter heartbeatReporter;
 
         // Info box overlay
         private Border infoBoxContainer;
@@ -211,6 +229,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public string WebhookTickerOverride { get; set; }
 
         // ── Global Risk Management ────────────────────────────────────────────
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Account Balance", Description = "When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.", Order = 0, GroupName = "0. Common - Global Risk")]
+        public double MaxAccountBalance { get; set; }
+
         [NinjaScriptProperty]
         [Display(Name = "Enable Global Max Daily Loss", Order = 1, GroupName = "0. Common - Global Risk")]
         public bool EnableGlobalMaxDailyLoss { get; set; }
@@ -1119,8 +1142,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description = "HugoTesting";
-                Name        = "HugoTesting";
+                Description = "HUGOTesting";
+                Name        = "HUGOTesting";
                 Calculate                               = Calculate.OnBarClose;
                 EntriesPerDirection                     = 1;
                 EntryHandling                           = EntryHandling.AllEntries;
@@ -1148,6 +1171,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RequireEntryConfirmation = false;
                 WebhookUrl              = string.Empty;
                 WebhookTickerOverride   = string.Empty;
+                MaxAccountBalance       = 0.0;
 
                 EnableSkipTime          = true;
                 SkipTimeStart           = "08:25";
@@ -1497,9 +1521,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 dailyTradeCount_L1 = dailyTradeCount_L2 = dailyTradeCount_S1 = dailyTradeCount_S2 = 0;
                 dailyLossHit_L1 = dailyLossHit_L2 = dailyLossHit_S1 = dailyLossHit_S2 = false;
                 dailyProfitHit_L1 = dailyProfitHit_L2 = dailyProfitHit_S1 = dailyProfitHit_S2 = false;
+                managedEntrySignal      = string.Empty;
+                entrySignalSequence     = 0;
+                maxAccountLimitHit      = false;
+                isConfiguredTimeframeValid = true;
+                isConfiguredInstrumentValid = true;
+                timeframePopupShown     = false;
+                instrumentPopupShown    = false;
             }
             else if (State == State.DataLoaded)
             {
+                ValidateRequiredPrimaryTimeframe(RequiredPrimaryTimeframeMinutes);
+                ValidateRequiredPrimaryInstrument();
+
                 emaL1 = EMA(L1_EmaLength);
                 wmaL1 = WMA(L1_WMALength);
                 wmaL2 = WMA(L2_WMALength);
@@ -1525,10 +1559,244 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (L2_EmaLength != L1_EmaLength) AddChartIndicator(emaL2);
                 if (S1_EmaLength != L1_EmaLength && S1_EmaLength != L2_EmaLength) AddChartIndicator(emaS1);
                 if (S2_EmaLength != L1_EmaLength && S2_EmaLength != L2_EmaLength && S2_EmaLength != S1_EmaLength) AddChartIndicator(emaS2);
+
+                heartbeatReporter = new StrategyHeartbeatReporter(
+                    HeartbeatStrategyName,
+                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
+            }
+            else if (State == State.Realtime)
+            {
+                if (heartbeatReporter != null)
+                    heartbeatReporter.Start();
             }
             else if (State == State.Terminated)
             {
+                if (heartbeatReporter != null)
+                {
+                    heartbeatReporter.Dispose();
+                    heartbeatReporter = null;
+                }
+
                 DisposeInfoBoxOverlay();
+            }
+        }
+
+        private string GetEntrySignalPrefix(int direction)
+        {
+            return direction == 1 ? LongEntrySignalPrefix : ShortEntrySignalPrefix;
+        }
+
+        private string BuildManagedEntrySignal(int direction)
+        {
+            entrySignalSequence++;
+            return string.Format(CultureInfo.InvariantCulture, "{0}_{1}", GetEntrySignalPrefix(direction), entrySignalSequence);
+        }
+
+        private string BuildExitSignalName(string reason)
+        {
+            return StrategySignalPrefix + (reason ?? string.Empty);
+        }
+
+        private bool IsLongEntryOrderName(string orderName)
+        {
+            return !string.IsNullOrWhiteSpace(orderName)
+                && orderName.StartsWith(LongEntrySignalPrefix, StringComparison.Ordinal);
+        }
+
+        private bool IsShortEntryOrderName(string orderName)
+        {
+            return !string.IsNullOrWhiteSpace(orderName)
+                && orderName.StartsWith(ShortEntrySignalPrefix, StringComparison.Ordinal);
+        }
+
+        private string GetOpenLongEntrySignal()
+        {
+            return IsLongEntryOrderName(managedEntrySignal) ? managedEntrySignal : LongEntrySignalPrefix;
+        }
+
+        private string GetOpenShortEntrySignal()
+        {
+            return IsShortEntryOrderName(managedEntrySignal) ? managedEntrySignal : ShortEntrySignalPrefix;
+        }
+
+        private string GetActiveEntrySignal()
+        {
+            if (Position.MarketPosition == MarketPosition.Long)
+                return GetOpenLongEntrySignal();
+            if (Position.MarketPosition == MarketPosition.Short)
+                return GetOpenShortEntrySignal();
+            if (currentTradeDirection > 0)
+                return GetOpenLongEntrySignal();
+            if (currentTradeDirection < 0)
+                return GetOpenShortEntrySignal();
+            if (!string.IsNullOrWhiteSpace(activeBucket))
+                return activeBucket.StartsWith("L", StringComparison.Ordinal) ? GetOpenLongEntrySignal() : GetOpenShortEntrySignal();
+
+            return managedEntrySignal ?? string.Empty;
+        }
+
+        private void ConfigureInitialProtectiveOrders(string entrySignal, double stopLoss, double takeProfit)
+        {
+            if (string.IsNullOrWhiteSpace(entrySignal))
+                return;
+
+            SetStopLoss(entrySignal, CalculationMode.Price, stopLoss, false);
+            if (takeProfit > 0)
+                SetProfitTarget(entrySignal, CalculationMode.Price, takeProfit);
+        }
+
+        private void ExitAllPositions(string reason)
+        {
+            string exitSignal = BuildExitSignalName(reason);
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong(Math.Max(1, Position.Quantity), exitSignal, GetOpenLongEntrySignal());
+            else if (Position.MarketPosition == MarketPosition.Short)
+                ExitShort(Math.Max(1, Position.Quantity), exitSignal, GetOpenShortEntrySignal());
+        }
+
+        private bool IsAccountBalanceBlocked()
+        {
+            if (MaxAccountBalance <= 0.0)
+                return false;
+
+            double balance;
+            if (!TryGetCurrentNetLiquidation(out balance))
+                return false;
+
+            if (balance >= MaxAccountBalance && !maxAccountLimitHit)
+            {
+                maxAccountLimitHit = true;
+                Print(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} - Max account balance reached | netLiq={1:0.00} target={2:0.00}",
+                    Time[0],
+                    balance,
+                    MaxAccountBalance));
+            }
+
+            if (!maxAccountLimitHit)
+                return false;
+
+            CancelAllOrders();
+            ExitAllPositions("MaxAccountBalance");
+            return true;
+        }
+
+        private bool TryGetCurrentNetLiquidation(out double netLiquidation)
+        {
+            netLiquidation = 0.0;
+            if (Account == null)
+                return false;
+
+            try
+            {
+                netLiquidation = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                if (netLiquidation > 0.0)
+                    return true;
+
+                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                double unrealized = Position.MarketPosition != MarketPosition.Flat
+                    ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                    : 0.0;
+                netLiquidation = realizedCash + unrealized;
+                return realizedCash > 0.0 || Position.MarketPosition != MarketPosition.Flat;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
+        {
+            bool isMinuteSeries = BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute;
+            bool timeframeMatches = isMinuteSeries && BarsPeriod.Value == requiredMinutes;
+            isConfiguredTimeframeValid = timeframeMatches;
+            if (timeframeMatches)
+                return;
+
+            string actualTimeframe = BarsPeriod == null
+                ? "Unknown"
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on a {1}-minute chart. Current chart is {2}. Trading is disabled until timeframe is corrected.",
+                Name,
+                requiredMinutes,
+                actualTimeframe);
+            Print("Timeframe validation failed | " + message);
+            ShowTimeframeValidationPopup(message);
+        }
+
+        private void ShowTimeframeValidationPopup(string message)
+        {
+            if (timeframePopupShown)
+                return;
+
+            timeframePopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Timeframe",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch
+            {
+            }
+        }
+
+        private void ValidateRequiredPrimaryInstrument()
+        {
+            string instrumentName = Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+            bool instrumentMatches = instrumentName == "NQ" || instrumentName == "MNQ";
+            isConfiguredInstrumentValid = instrumentMatches;
+            if (instrumentMatches)
+                return;
+
+            string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on NQ or MNQ. Current instrument is {1}. Trading is disabled until instrument is corrected.",
+                Name,
+                actualInstrument);
+            Print("Instrument validation failed | " + message);
+            ShowInstrumentValidationPopup(message);
+        }
+
+        private void ShowInstrumentValidationPopup(string message)
+        {
+            if (instrumentPopupShown)
+                return;
+
+            instrumentPopupShown = true;
+            if (System.Windows.Application.Current == null)
+                return;
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(
+                    () =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Instrument",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch
+            {
             }
         }
 
@@ -1765,6 +2033,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DrawSessionTimeWindows();
             UpdateInfoBox();
 
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
+            {
+                CancelAllOrders();
+                ExitAllPositions("InvalidConfiguration");
+                return;
+            }
+
+            if (IsAccountBalanceBlocked())
+                return;
+
             if (CurrentBar < BarsRequiredToTrade) return;
 
             // ── Session reset (midnight-crossing safe) ───────────────────────
@@ -1819,12 +2097,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 CancelAllOrders();
                 ResetSignals();
-                // v1.10 fix: must use fromEntrySignal overload with PerEntryExecution
-                // otherwise NT8 ignores the exit while bracket orders are still live
-                if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong(Math.Max(1, Position.Quantity), "ForceClose", "LongEntry");
-                else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort(Math.Max(1, Position.Quantity), "ForceClose", "ShortEntry");
+                ExitAllPositions("ForceClose");
                 return;
             }
 
@@ -1840,10 +2113,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Print(Time[0] + " - Skip window started (" + SkipTimeStart + " - " + SkipTimeEnd + "). No new entries.");
                     if (FlattenAtSkipStart)
                     {
-                        if (Position.MarketPosition == MarketPosition.Long)  ExitLong("SkipWindowFlat");
-                        if (Position.MarketPosition == MarketPosition.Short) ExitShort("SkipWindowFlat");
                         CancelAllOrders();
                         ResetSignals();
+                        ExitAllPositions("SkipWindow");
                         Print(Time[0] + " - Flatten at skip start: position and orders cleared.");
                     }
                     else
@@ -1872,10 +2144,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Print(Time[0] + " - News skip window started around " + NewsTime + ". No new entries.");
                     if (FlattenAtNewsStart)
                     {
-                        if (Position.MarketPosition == MarketPosition.Long)  ExitLong("NewsSkipFlat");
-                        if (Position.MarketPosition == MarketPosition.Short) ExitShort("NewsSkipFlat");
                         CancelAllOrders();
                         ResetSignals();
+                        ExitAllPositions("NewsSkip");
                         Print(Time[0] + " - Flatten at news start: position and orders cleared.");
                     }
                     else
@@ -1913,9 +2184,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (EnableGlobalMaxDailyLoss && totalGlobalPnL <= -GlobalMaxDailyLoss)
             {
                 globalDailyLossLimitHit = true;
-                if (Position.MarketPosition == MarketPosition.Long)  ExitLong("GlobalMaxLoss");
-                if (Position.MarketPosition == MarketPosition.Short) ExitShort("GlobalMaxLoss");
                 CancelAllOrders(); ResetSignals();
+                ExitAllPositions("GlobalMaxLoss");
                 Print(Time[0] + " - GLOBAL Max daily LOSS limit hit: " + totalGlobalPnL + " pts. Trading halted.");
                 return;
             }
@@ -1923,9 +2193,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (EnableGlobalMaxDailyProfit && totalGlobalPnL >= GlobalMaxDailyProfit)
             {
                 globalDailyProfitLimitHit = true;
-                if (Position.MarketPosition == MarketPosition.Long)  ExitLong("GlobalMaxProfit");
-                if (Position.MarketPosition == MarketPosition.Short) ExitShort("GlobalMaxProfit");
                 CancelAllOrders(); ResetSignals();
+                ExitAllPositions("GlobalMaxProfit");
                 Print(Time[0] + " - GLOBAL Max daily PROFIT limit hit: " + totalGlobalPnL + " pts. Trading halted.");
                 return;
             }
@@ -1945,9 +2214,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (B_EnableMaxDailyLoss(activeBucket) && bucketTotalPnL <= -B_MaxDailyLoss(activeBucket))
                 {
                     SetBucketLossHit(activeBucket, true);
-                    if (Position.MarketPosition == MarketPosition.Long)  ExitLong(activeBucket + "_MaxLoss");
-                    if (Position.MarketPosition == MarketPosition.Short) ExitShort(activeBucket + "_MaxLoss");
                     CancelAllOrders(); ResetSignals();
+                    ExitAllPositions(activeBucket + "_MaxLoss");
                     Print(Time[0] + " - " + activeBucket + " Max daily LOSS limit hit: " + bucketTotalPnL + " pts.");
                     return;
                 }
@@ -1955,9 +2223,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (B_EnableMaxDailyProfit(activeBucket) && bucketTotalPnL >= B_MaxDailyProfit(activeBucket))
                 {
                     SetBucketProfitHit(activeBucket, true);
-                    if (Position.MarketPosition == MarketPosition.Long)  ExitLong(activeBucket + "_MaxProfit");
-                    if (Position.MarketPosition == MarketPosition.Short) ExitShort(activeBucket + "_MaxProfit");
                     CancelAllOrders(); ResetSignals();
+                    ExitAllPositions(activeBucket + "_MaxProfit");
                     Print(Time[0] + " - " + activeBucket + " Max daily PROFIT limit hit: " + bucketTotalPnL + " pts.");
                     return;
                 }
@@ -1985,8 +2252,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     Print(Time[0] + " - " + activeBucket + " Max bars in trade reached ("
                         + (CurrentBar - entryBar) + " bars). Exiting.");
-                    if (Position.MarketPosition == MarketPosition.Long)  ExitLong("MaxBarsExit");
-                    if (Position.MarketPosition == MarketPosition.Short) ExitShort("MaxBarsExit");
+                    ExitAllPositions("MaxBarsExit");
                     return;
                 }
 
@@ -2003,16 +2269,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (B_TakeProfitType(activeBucket) == Hugo_TakeProfitTypeEnum.EMACross)
                 {
                     if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
-                    { ExitLong("EMACrossExit"); return; }
+                    { ExitLong(BuildExitSignalName("EMACrossExit"), GetOpenLongEntrySignal()); return; }
                     if (Position.MarketPosition == MarketPosition.Short && Close[0] > activeEma[0] && Close[1] <= activeEma[1])
-                    { ExitShort("EMACrossExit"); return; }
+                    { ExitShort(BuildExitSignalName("EMACrossExit"), GetOpenShortEntrySignal()); return; }
                 }
 
                 // Opposite signal exit: use the active bucket's EMA
                 if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
-                    ExitLong("OppositeSignal");
+                    ExitLong(BuildExitSignalName("OppositeSignal"), GetOpenLongEntrySignal());
                 else if (Position.MarketPosition == MarketPosition.Short && Close[0] > activeEma[0] && Close[1] <= activeEma[1])
-                    ExitShort("OppositeSignal");
+                    ExitShort(BuildExitSignalName("OppositeSignal"), GetOpenShortEntrySignal());
             }
 
             // ── Cancel pending limit order on opposite signal ────────────────
@@ -2379,11 +2645,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     ? takeProfit - entryPrice : 0;
                 ResetTrailState();
 
-                SetStopLoss(CalculationMode.Price, stopLoss);
-                if (currentTargetPrice > 0)
-                    SetProfitTarget(CalculationMode.Price, currentTargetPrice);
-
-                EnterLong(ContractQuantity, "LongEntry");
+                managedEntrySignal = BuildManagedEntrySignal(1);
+                ConfigureInitialProtectiveOrders(managedEntrySignal, stopLoss, currentTargetPrice);
+                EnterLong(ContractQuantity, managedEntrySignal);
             }
             else
             {
@@ -2425,12 +2689,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 slMovedToEntryOnEMA = false;
 
                 currentTargetPrice  = 0;
-                SetStopLoss(CalculationMode.Price, stopLoss);
                 if (B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross)
                 {
                     takeProfit = CalculateTakeProfitFromEntry(true, limitPrice, stopLoss, b);
                     currentTargetPrice = takeProfit;
-                    SetProfitTarget(CalculationMode.Price, takeProfit);
                 }
 
                 initialStopDistance = limitPrice - stopLoss;
@@ -2438,7 +2700,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     ? takeProfit - limitPrice : 0;
                 ResetTrailState();
 
-                entryOrder = EnterLongLimit(ContractQuantity, limitPrice, "LongEntry");
+                managedEntrySignal = BuildManagedEntrySignal(1);
+                ConfigureInitialProtectiveOrders(managedEntrySignal, stopLoss, currentTargetPrice);
+                entryOrder = EnterLongLimit(ContractQuantity, limitPrice, managedEntrySignal);
             }
         }
 
@@ -2483,11 +2747,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     ? entryPrice - takeProfit : 0;
                 ResetTrailState();
 
-                SetStopLoss(CalculationMode.Price, stopLoss);
-                if (currentTargetPrice > 0)
-                    SetProfitTarget(CalculationMode.Price, currentTargetPrice);
-
-                EnterShort(ContractQuantity, "ShortEntry");
+                managedEntrySignal = BuildManagedEntrySignal(-1);
+                ConfigureInitialProtectiveOrders(managedEntrySignal, stopLoss, currentTargetPrice);
+                EnterShort(ContractQuantity, managedEntrySignal);
             }
             else
             {
@@ -2529,12 +2791,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 slMovedToEntryOnEMA = false;
 
                 currentTargetPrice  = 0;
-                SetStopLoss(CalculationMode.Price, stopLoss);
                 if (B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross)
                 {
                     takeProfit = CalculateTakeProfitFromEntry(false, limitPrice, stopLoss, b);
                     currentTargetPrice = takeProfit;
-                    SetProfitTarget(CalculationMode.Price, takeProfit);
                 }
 
                 initialStopDistance = stopLoss - limitPrice;
@@ -2542,7 +2802,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     ? limitPrice - takeProfit : 0;
                 ResetTrailState();
 
-                entryOrder = EnterShortLimit(ContractQuantity, limitPrice, "ShortEntry");
+                managedEntrySignal = BuildManagedEntrySignal(-1);
+                ConfigureInitialProtectiveOrders(managedEntrySignal, stopLoss, currentTargetPrice);
+                entryOrder = EnterShortLimit(ContractQuantity, limitPrice, managedEntrySignal);
             }
         }
 
@@ -2784,7 +3046,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
             }
 
-            SetStopLoss(CalculationMode.Price, roundedStop);
+            string entrySignal = positionDirection == MarketPosition.Long
+                ? GetOpenLongEntrySignal()
+                : positionDirection == MarketPosition.Short
+                    ? GetOpenShortEntrySignal()
+                    : GetActiveEntrySignal();
+            if (string.IsNullOrWhiteSpace(entrySignal))
+                return false;
+
+            SetStopLoss(entrySignal, CalculationMode.Price, roundedStop, false);
             currentStopPrice = roundedStop;
             return true;
         }
@@ -2873,10 +3143,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
 
             string orderName = execution.Order.Name ?? string.Empty;
-            if (orderName != "LongEntry" && orderName != "ShortEntry")
+            if (!IsLongEntryOrderName(orderName) && !IsShortEntryOrderName(orderName))
                 return false;
 
-            action = orderName == "LongEntry" ? "buy" : "sell";
+            action = IsLongEntryOrderName(orderName) ? "buy" : "sell";
             OrderType orderType = execution.Order.OrderType;
             isMarketEntry = orderType == OrderType.Market || orderType == OrderType.StopMarket;
             return true;
@@ -2887,11 +3157,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (execution == null || execution.Order == null)
                 return false;
 
-            if (orderName == "LongEntry" || orderName == "ShortEntry")
+            if (IsLongEntryOrderName(orderName) || IsShortEntryOrderName(orderName))
                 return false;
 
             string fromEntry = execution.Order.FromEntrySignal ?? string.Empty;
-            if (fromEntry == "LongEntry" || fromEntry == "ShortEntry")
+            if (IsLongEntryOrderName(fromEntry) || IsShortEntryOrderName(fromEntry))
                 return true;
 
             return marketPosition == MarketPosition.Flat;
@@ -3194,7 +3464,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (order == null)
                 return;
 
-            if (order.Name == "LongEntry" || order.Name == "ShortEntry")
+            if (IsLongEntryOrderName(order.Name) || IsShortEntryOrderName(order.Name))
             {
                 if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
                 {
@@ -3204,10 +3474,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeBucket = null;
                     currentTradeDirection = 0;
                     currentTargetPrice = 0;
+                    if (string.Equals(order.Name ?? string.Empty, managedEntrySignal ?? string.Empty, StringComparison.Ordinal))
+                        managedEntrySignal = string.Empty;
                 }
                 else if (orderState == OrderState.Filled)
                 {
                     entryOrder  = null;
+                    managedEntrySignal = order.Name ?? managedEntrySignal;
                     entryPrice  = averageFillPrice;
                     bestPriceSinceEntry = averageFillPrice;
                     if (filled < quantity)
@@ -3227,6 +3500,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool isMarketEntry;
             if (TryGetEntryWebhookAction(execution, out entryAction, out isMarketEntry))
             {
+                managedEntrySignal = execution.Order.Name ?? managedEntrySignal;
                 SendWebhook(entryAction, price, currentTargetPrice, currentStopPrice, isMarketEntry, quantity);
                 return;
             }
@@ -3270,6 +3544,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             initialTPDistance   = 0;
             currentTargetPrice  = 0;
             activeBucket        = null;
+            managedEntrySignal  = string.Empty;
         }
     }
 
