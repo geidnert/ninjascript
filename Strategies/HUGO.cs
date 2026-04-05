@@ -28,16 +28,16 @@ using NinjaTrader.NinjaScript.DrawingTools;
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
-    public class HUGOTesting : Strategy
+    public class HUGO : Strategy
     {
-        public HUGOTesting()
+        public HUGO()
         {
             VendorLicense(1346);
         }
-        private const string StrategySignalPrefix = "HUGOTesting";
+        private const string StrategySignalPrefix = "HUGO";
         private const string LongEntrySignalPrefix = StrategySignalPrefix + "Long";
         private const string ShortEntrySignalPrefix = StrategySignalPrefix + "Short";
-        private const string HeartbeatStrategyName = "HUGOTesting";
+        private const string HeartbeatStrategyName = "HUGO";
         private const int RequiredPrimaryTimeframeMinutes = 15;
 
         #region Private Variables
@@ -380,38 +380,47 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ── Time Settings ─────────────────────────────────────────────────────
         [NinjaScriptProperty]
         [Display(Name = "Session Start Time", Description = "Midnight-crossing anchor. Resets daily counters at this time. Set to the true start of the trading session (e.g. 18:00 for NQ).", Order = 1, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public string SessionStartTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Trade Window Start", Description = "Earliest time at which new entries are allowed. Can be later than Session Start Time.", Order = 2, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public string TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Last Entry Time", Order = 3, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public string LastEntryTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Force Close Time", Order = 4, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public string ForceCloseTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Session End Time", Order = 5, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public string SessionEndTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Skip Time Window", Order = 6, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public bool EnableSkipTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Skip Time Start", Order = 7, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public string SkipTimeStart { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Skip Time End", Order = 8, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public string SkipTimeEnd { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Flatten Position at Skip Start", Order = 9, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public bool FlattenAtSkipStart { get; set; }
 
         [NinjaScriptProperty]
@@ -430,6 +439,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Display(Name = "Flatten Position at News Start", Order = 13, GroupName = "0. Common - Time Settings")]
+        [Browsable(false)]
         public bool FlattenAtNewsStart { get; set; }
 
         // ── Contract Size ─────────────────────────────────────────────────────
@@ -458,29 +468,35 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Global Max Daily Loss", Order = 1, GroupName = "0. Common - Global Risk")]
+        [Browsable(false)]
         public bool EnableGlobalMaxDailyLoss { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "Global Max Daily Loss (Points)", Order = 2, GroupName = "0. Common - Global Risk")]
+        [Browsable(false)]
         public double GlobalMaxDailyLoss { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Global Max Daily Profit", Order = 3, GroupName = "0. Common - Global Risk")]
+        [Browsable(false)]
         public bool EnableGlobalMaxDailyProfit { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "Global Max Daily Profit (Points)", Order = 4, GroupName = "0. Common - Global Risk")]
+        [Browsable(false)]
         public double GlobalMaxDailyProfit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Global Max Trades Per Day", Order = 5, GroupName = "0. Common - Global Risk")]
+        [Browsable(false)]
         public bool EnableGlobalMaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "Global Max Trades Per Day", Order = 6, GroupName = "0. Common - Global Risk")]
+        [Browsable(false)]
         public int GlobalMaxTradesPerDay { get; set; }
 
         #endregion
@@ -493,271 +509,333 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable", Description = "Enable Long Small Candle bucket", Order = 0, GroupName = "L1.0 Bucket Settings")]
+        [Browsable(false)]
         public bool L1_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Min Candle Range (Points)", Description = "Minimum signal candle range for this bucket", Order = 1, GroupName = "L1.0 Bucket Settings")]
+        [Browsable(false)]
         public double L1_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Max Candle Range (Points)", Description = "Maximum signal candle range for this bucket (0 = no max)", Order = 2, GroupName = "L1.0 Bucket Settings")]
+        [Browsable(false)]
         public double L1_MaxCandleRange { get; set; }
 
         // EMA
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "L1 EMA Length", Order = 1, GroupName = "L1.1 EMA Settings")]
+        [Browsable(false)]
         public int L1_EmaLength { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable EMA Slope Filter", Order = 2, GroupName = "L1.1 EMA Settings")]
+        [Browsable(false)]
         public bool L1_EnableEmaSlope { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 EMA Slope Mode", Order = 3, GroupName = "L1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum L1_EmaSlopeMode { get; set; }
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum L1_EmaSlopeMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "L1 EMA Slope Bars", Order = 4, GroupName = "L1.1 EMA Settings")]
+        [Browsable(false)]
         public int L1_EmaSlopeBars { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 EMA Min Slope %", Order = 5, GroupName = "L1.1 EMA Settings")]
+        [Browsable(false)]
         public double L1_EmaSlopeMinPct { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L1 Enable WMA Filter", Order = 1, GroupName = "L1.1b WMA Filter")]
+        [Browsable(false)]
         public bool L1_EnableWMAFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L1 WMA Length", Order = 2, GroupName = "L1.1b WMA Filter")]
+        [Browsable(false)]
         public int L1_WMALength { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L1 Enable SMA Filter", Order = 1, GroupName = "L1.1c SMA Filter")]
+        [Browsable(false)]
         public bool L1_EnableSMAFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L1 SMA Length", Order = 2, GroupName = "L1.1c SMA Filter")]
+        [Browsable(false)]
         public int L1_SMALength { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L1 Enable ADX Filter", Order = 1, GroupName = "L1.1d ADX Filter")]
+        [Browsable(false)]
         public bool L1_EnableADXFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L1 ADX Period", Order = 2, GroupName = "L1.1d ADX Filter")]
+        [Browsable(false)]
         public int L1_ADXPeriod { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L1 ADX Min Value", Order = 3, GroupName = "L1.1d ADX Filter")]
+        [Browsable(false)]
         public double L1_ADXMin { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L1 ADX Max Value", Order = 4, GroupName = "L1.1d ADX Filter")]
+        [Browsable(false)]
         public double L1_ADXMax { get; set; }
 
         // Entry
         [NinjaScriptProperty]
         [Display(Name = "L1 Entry Type", Order = 1, GroupName = "L1.2 Entry Settings")]
-        public HugoTesting_EntryTypeEnum L1_EntryType { get; set; }
+        [Browsable(false)]
+        public Hugo_EntryTypeEnum L1_EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Pullback Offset (Points)", Order = 2, GroupName = "L1.2 Entry Settings")]
+        [Browsable(false)]
         public double L1_PullbackOffset { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "L1 Max Bars to Wait", Order = 3, GroupName = "L1.2 Entry Settings")]
+        [Browsable(false)]
         public int L1_MaxBarsToWait { get; set; }
 
         // Stop Loss
         [NinjaScriptProperty]
         [Display(Name = "L1 Stop Loss Type", Order = 1, GroupName = "L1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum L1_StopLossType { get; set; }
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum L1_StopLossType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "L1.3 Stop Loss")]
+        [Browsable(false)]
         public double L1_FixedStopLoss { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L1 SL Candle Multiplier", Order = 2, GroupName = "L1.3 Stop Loss")]
+        [Browsable(false)]
         public double L1_SLCandleMultiplier { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Stop Loss Offset (Points)", Order = 3, GroupName = "L1.3 Stop Loss")]
+        [Browsable(false)]
         public double L1_StopLossOffset { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Maximum Stop Loss (Points)", Order = 4, GroupName = "L1.3 Stop Loss")]
+        [Browsable(false)]
         public double L1_MaxStopLoss { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Max Bars In Trade", Order = 5, GroupName = "L1.3 Stop Loss")]
+        [Browsable(false)]
         public bool L1_EnableMaxBarsInTrade { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "L1 Max Bars In Trade", Order = 6, GroupName = "L1.3 Stop Loss")]
+        [Browsable(false)]
         public int L1_MaxBarsInTrade { get; set; }
 
         // Take Profit
         [NinjaScriptProperty]
         [Display(Name = "L1 Take Profit Type", Order = 1, GroupName = "L1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum L1_TakeProfitType { get; set; }
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum L1_TakeProfitType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.1, double.MaxValue)]
         [Display(Name = "L1 Risk Reward Ratio", Order = 2, GroupName = "L1.4 Take Profit")]
+        [Browsable(false)]
         public double L1_RiskRewardRatio { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Fixed Take Profit (Points)", Order = 3, GroupName = "L1.4 Take Profit")]
+        [Browsable(false)]
         public double L1_FixedTakeProfit { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L1 TP Candle Multiplier", Order = 4, GroupName = "L1.4 Take Profit")]
+        [Browsable(false)]
         public double L1_TPCandleMultiplier { get; set; }
 
         // Break Even
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Break Even", Order = 1, GroupName = "L1.5 Break Even")]
+        [Browsable(false)]
         public bool L1_EnableBreakEven { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Break Even Trigger Type", Order = 2, GroupName = "L1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum L1_BreakEvenTriggerType { get; set; }
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum L1_BreakEvenTriggerType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Break Even Trigger Value", Order = 3, GroupName = "L1.5 Break Even")]
+        [Browsable(false)]
         public double L1_BreakEvenTriggerValue { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Break Even Offset (Points)", Order = 4, GroupName = "L1.5 Break Even")]
+        [Browsable(false)]
         public double L1_BreakEvenOffset { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable SL to Entry on EMA Cross", Order = 5, GroupName = "L1.5 Break Even")]
+        [Browsable(false)]
         public bool L1_EnableSLToEntryOnEMA { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 SL to Entry Offset (Points)", Order = 6, GroupName = "L1.5 Break Even")]
+        [Browsable(false)]
         public double L1_SLToEntryOffset { get; set; }
 
         // Trailing Stop
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Price Trail Stop", Order = 1, GroupName = "L1.6 Trailing Stop")]
+        [Browsable(false)]
         public bool L1_EnablePriceTrail { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Trail Distance Mode", Order = 2, GroupName = "L1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum L1_TrailDistanceMode { get; set; }
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum L1_TrailDistanceMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "L1 Trail Distance Value", Order = 3, GroupName = "L1.6 Trailing Stop")]
+        [Browsable(false)]
         public double L1_TrailDistanceValue { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Trail Activation Mode", Order = 4, GroupName = "L1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum L1_TrailActivationMode { get; set; }
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum L1_TrailActivationMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Trail Activation Value", Order = 5, GroupName = "L1.6 Trailing Stop")]
+        [Browsable(false)]
         public double L1_TrailActivationValue { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "L1 Trail Step (Ticks)", Order = 6, GroupName = "L1.6 Trailing Stop")]
+        [Browsable(false)]
         public int L1_TrailStepTicks { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Trail Lock", Order = 7, GroupName = "L1.6 Trailing Stop")]
+        [Browsable(false)]
         public bool L1_EnableTrailLock { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Trail Lock Value", Order = 8, GroupName = "L1.6 Trailing Stop")]
+        [Browsable(false)]
         public double L1_TrailLockValue { get; set; }
 
         // Signal Quality Filters
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Candle Size Filter", Order = 1, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public bool L1_EnableCandleSizeFilter { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Min Candle Size (Points)", Order = 2, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public double L1_MinCandleSize { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Max Candle Size (Points)", Order = 3, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public double L1_MaxCandleSize { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Body % Filter", Order = 4, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public bool L1_EnableBodyPctFilter { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "L1 Min Body % of Range", Order = 5, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public double L1_MinBodyPct { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Close Distance Filter", Order = 6, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public bool L1_EnableCloseDistanceFilter { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Min Close Distance (Points)", Order = 7, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public double L1_MinCloseDistance { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Filter Wait Bars", Order = 8, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public bool L1_EnableFilterWaitBars { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "L1 Filter Wait Max Bars", Order = 9, GroupName = "L1.7 Signal Filters")]
+        [Browsable(false)]
         public int L1_FilterWaitMaxBars { get; set; }
 
         // Direction Flip
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Direction Flip", Order = 1, GroupName = "L1.8 Direction Flip")]
+        [Browsable(false)]
         public bool L1_EnableDirectionFlip { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Same Direction On Loss", Order = 2, GroupName = "L1.8 Direction Flip")]
+        [Browsable(false)]
         public bool L1_EnableSameDirectionOnLoss { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Loss Threshold (Points)", Order = 3, GroupName = "L1.8 Direction Flip")]
+        [Browsable(false)]
         public double L1_SameDirectionLossThreshold { get; set; }
 
         // Per-bucket Risk Management
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Max Daily Loss", Order = 1, GroupName = "L1.9 Risk Management")]
+        [Browsable(false)]
         public bool L1_EnableMaxDailyLoss { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Max Daily Loss (Points)", Order = 2, GroupName = "L1.9 Risk Management")]
+        [Browsable(false)]
         public double L1_MaxDailyLoss { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Max Daily Profit", Order = 3, GroupName = "L1.9 Risk Management")]
+        [Browsable(false)]
         public bool L1_EnableMaxDailyProfit { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L1 Max Daily Profit (Points)", Order = 4, GroupName = "L1.9 Risk Management")]
+        [Browsable(false)]
         public double L1_MaxDailyProfit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "L1 Enable Max Trades Per Day", Order = 5, GroupName = "L1.9 Risk Management")]
+        [Browsable(false)]
         public bool L1_EnableMaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "L1 Max Trades Per Day", Order = 6, GroupName = "L1.9 Risk Management")]
+        [Browsable(false)]
         public int L1_MaxTradesPerDay { get; set; }
 
         #endregion
@@ -770,146 +848,208 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Display(Name = "L2 Enable", Description = "Enable Long Large Candle bucket", Order = 0, GroupName = "L2.0 Bucket Settings")]
+        [Browsable(false)]
         public bool L2_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L2 Min Candle Range (Points)", Order = 1, GroupName = "L2.0 Bucket Settings")]
+        [Browsable(false)]
         public double L2_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "L2 Max Candle Range (Points)", Description = "0 = no max", Order = 2, GroupName = "L2.0 Bucket Settings")]
+        [Browsable(false)]
         public double L2_MaxCandleRange { get; set; }
 
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 EMA Length", Order = 1, GroupName = "L2.1 EMA Settings")]
+        [Browsable(false)]
         public int L2_EmaLength { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable EMA Slope Filter", Order = 2, GroupName = "L2.1 EMA Settings")]
+        [Browsable(false)]
         public bool L2_EnableEmaSlope { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 EMA Slope Mode", Order = 3, GroupName = "L2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum L2_EmaSlopeMode { get; set; }
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum L2_EmaSlopeMode { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 EMA Slope Bars", Order = 4, GroupName = "L2.1 EMA Settings")]
+        [Browsable(false)]
         public int L2_EmaSlopeBars { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 EMA Min Slope %", Order = 5, GroupName = "L2.1 EMA Settings")]
+        [Browsable(false)]
         public double L2_EmaSlopeMinPct { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Enable WMA Filter", Order = 1, GroupName = "L2.1b WMA Filter")]
+        [Browsable(false)]
         public bool L2_EnableWMAFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 WMA Length", Order = 2, GroupName = "L2.1b WMA Filter")]
+        [Browsable(false)]
         public int L2_WMALength { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Enable SMA Filter", Order = 1, GroupName = "L2.1c SMA Filter")]
+        [Browsable(false)]
         public bool L2_EnableSMAFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 SMA Length", Order = 2, GroupName = "L2.1c SMA Filter")]
+        [Browsable(false)]
         public int L2_SMALength { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Enable ADX Filter", Order = 1, GroupName = "L2.1d ADX Filter")]
+        [Browsable(false)]
         public bool L2_EnableADXFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 ADX Period", Order = 2, GroupName = "L2.1d ADX Filter")]
+        [Browsable(false)]
         public int L2_ADXPeriod { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 ADX Min Value", Order = 3, GroupName = "L2.1d ADX Filter")]
+        [Browsable(false)]
         public double L2_ADXMin { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 ADX Max Value", Order = 4, GroupName = "L2.1d ADX Filter")]
+        [Browsable(false)]
         public double L2_ADXMax { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Entry Type", Order = 1, GroupName = "L2.2 Entry Settings")]
-        public HugoTesting_EntryTypeEnum L2_EntryType { get; set; }
+        [Browsable(false)]
+        public Hugo_EntryTypeEnum L2_EntryType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Pullback Offset (Points)", Order = 2, GroupName = "L2.2 Entry Settings")]
+        [Browsable(false)]
         public double L2_PullbackOffset { get; set; }
         [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "L2 Max Bars to Wait", Order = 3, GroupName = "L2.2 Entry Settings")]
+        [Browsable(false)]
         public int L2_MaxBarsToWait { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Stop Loss Type", Order = 1, GroupName = "L2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum L2_StopLossType { get; set; }
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum L2_StopLossType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "L2.3 Stop Loss")]
+        [Browsable(false)]
         public double L2_FixedStopLoss { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L2 SL Candle Multiplier", Order = 2, GroupName = "L2.3 Stop Loss")]
+        [Browsable(false)]
         public double L2_SLCandleMultiplier { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Stop Loss Offset (Points)", Order = 3, GroupName = "L2.3 Stop Loss")]
+        [Browsable(false)]
         public double L2_StopLossOffset { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Maximum Stop Loss (Points)", Order = 4, GroupName = "L2.3 Stop Loss")]
+        [Browsable(false)]
         public double L2_MaxStopLoss { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable Max Bars In Trade", Order = 5, GroupName = "L2.3 Stop Loss")]
+        [Browsable(false)]
         public bool L2_EnableMaxBarsInTrade { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 Max Bars In Trade", Order = 6, GroupName = "L2.3 Stop Loss")]
+        [Browsable(false)]
         public int L2_MaxBarsInTrade { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Take Profit Type", Order = 1, GroupName = "L2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum L2_TakeProfitType { get; set; }
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum L2_TakeProfitType { get; set; }
         [NinjaScriptProperty][Range(0.1, double.MaxValue)][Display(Name = "L2 Risk Reward Ratio", Order = 2, GroupName = "L2.4 Take Profit")]
+        [Browsable(false)]
         public double L2_RiskRewardRatio { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Fixed Take Profit (Points)", Order = 3, GroupName = "L2.4 Take Profit")]
+        [Browsable(false)]
         public double L2_FixedTakeProfit { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L2 TP Candle Multiplier", Order = 4, GroupName = "L2.4 Take Profit")]
+        [Browsable(false)]
         public double L2_TPCandleMultiplier { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Enable Break Even", Order = 1, GroupName = "L2.5 Break Even")]
+        [Browsable(false)]
         public bool L2_EnableBreakEven { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Break Even Trigger Type", Order = 2, GroupName = "L2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum L2_BreakEvenTriggerType { get; set; }
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum L2_BreakEvenTriggerType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Break Even Trigger Value", Order = 3, GroupName = "L2.5 Break Even")]
+        [Browsable(false)]
         public double L2_BreakEvenTriggerValue { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Break Even Offset (Points)", Order = 4, GroupName = "L2.5 Break Even")]
+        [Browsable(false)]
         public double L2_BreakEvenOffset { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable SL to Entry on EMA Cross", Order = 5, GroupName = "L2.5 Break Even")]
+        [Browsable(false)]
         public bool L2_EnableSLToEntryOnEMA { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 SL to Entry Offset (Points)", Order = 6, GroupName = "L2.5 Break Even")]
+        [Browsable(false)]
         public double L2_SLToEntryOffset { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Enable Price Trail Stop", Order = 1, GroupName = "L2.6 Trailing Stop")]
+        [Browsable(false)]
         public bool L2_EnablePriceTrail { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Trail Distance Mode", Order = 2, GroupName = "L2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum L2_TrailDistanceMode { get; set; }
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum L2_TrailDistanceMode { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L2 Trail Distance Value", Order = 3, GroupName = "L2.6 Trailing Stop")]
+        [Browsable(false)]
         public double L2_TrailDistanceValue { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Trail Activation Mode", Order = 4, GroupName = "L2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum L2_TrailActivationMode { get; set; }
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum L2_TrailActivationMode { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Trail Activation Value", Order = 5, GroupName = "L2.6 Trailing Stop")]
+        [Browsable(false)]
         public double L2_TrailActivationValue { get; set; }
         [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "L2 Trail Step (Ticks)", Order = 6, GroupName = "L2.6 Trailing Stop")]
+        [Browsable(false)]
         public int L2_TrailStepTicks { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable Trail Lock", Order = 7, GroupName = "L2.6 Trailing Stop")]
+        [Browsable(false)]
         public bool L2_EnableTrailLock { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Trail Lock Value", Order = 8, GroupName = "L2.6 Trailing Stop")]
+        [Browsable(false)]
         public double L2_TrailLockValue { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Enable Candle Size Filter", Order = 1, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public bool L2_EnableCandleSizeFilter { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Min Candle Size (Points)", Order = 2, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public double L2_MinCandleSize { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Max Candle Size (Points)", Order = 3, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public double L2_MaxCandleSize { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable Body % Filter", Order = 4, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public bool L2_EnableBodyPctFilter { get; set; }
         [NinjaScriptProperty][Range(0, 100)][Display(Name = "L2 Min Body % of Range", Order = 5, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public double L2_MinBodyPct { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable Close Distance Filter", Order = 6, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public bool L2_EnableCloseDistanceFilter { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Min Close Distance (Points)", Order = 7, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public double L2_MinCloseDistance { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable Filter Wait Bars", Order = 8, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public bool L2_EnableFilterWaitBars { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 Filter Wait Max Bars", Order = 9, GroupName = "L2.7 Signal Filters")]
+        [Browsable(false)]
         public int L2_FilterWaitMaxBars { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Enable Direction Flip", Order = 1, GroupName = "L2.8 Direction Flip")]
+        [Browsable(false)]
         public bool L2_EnableDirectionFlip { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable Same Direction On Loss", Order = 2, GroupName = "L2.8 Direction Flip")]
+        [Browsable(false)]
         public bool L2_EnableSameDirectionOnLoss { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Loss Threshold (Points)", Order = 3, GroupName = "L2.8 Direction Flip")]
+        [Browsable(false)]
         public double L2_SameDirectionLossThreshold { get; set; }
 
         [NinjaScriptProperty][Display(Name = "L2 Enable Max Daily Loss", Order = 1, GroupName = "L2.9 Risk Management")]
+        [Browsable(false)]
         public bool L2_EnableMaxDailyLoss { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Max Daily Loss (Points)", Order = 2, GroupName = "L2.9 Risk Management")]
+        [Browsable(false)]
         public double L2_MaxDailyLoss { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable Max Daily Profit", Order = 3, GroupName = "L2.9 Risk Management")]
+        [Browsable(false)]
         public bool L2_EnableMaxDailyProfit { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Max Daily Profit (Points)", Order = 4, GroupName = "L2.9 Risk Management")]
+        [Browsable(false)]
         public double L2_MaxDailyProfit { get; set; }
         [NinjaScriptProperty][Display(Name = "L2 Enable Max Trades Per Day", Order = 5, GroupName = "L2.9 Risk Management")]
+        [Browsable(false)]
         public bool L2_EnableMaxTradesPerDay { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 Max Trades Per Day", Order = 6, GroupName = "L2.9 Risk Management")]
+        [Browsable(false)]
         public int L2_MaxTradesPerDay { get; set; }
 
         #endregion
@@ -922,146 +1062,208 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Display(Name = "S1 Enable", Description = "Enable Short Small Candle bucket", Order = 0, GroupName = "S1.0 Bucket Settings")]
+        [Browsable(false)]
         public bool S1_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "S1 Min Candle Range (Points)", Order = 1, GroupName = "S1.0 Bucket Settings")]
+        [Browsable(false)]
         public double S1_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "S1 Max Candle Range (Points)", Description = "0 = no max", Order = 2, GroupName = "S1.0 Bucket Settings")]
+        [Browsable(false)]
         public double S1_MaxCandleRange { get; set; }
 
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 EMA Length", Order = 1, GroupName = "S1.1 EMA Settings")]
+        [Browsable(false)]
         public int S1_EmaLength { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable EMA Slope Filter", Order = 2, GroupName = "S1.1 EMA Settings")]
+        [Browsable(false)]
         public bool S1_EnableEmaSlope { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 EMA Slope Mode", Order = 3, GroupName = "S1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum S1_EmaSlopeMode { get; set; }
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum S1_EmaSlopeMode { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 EMA Slope Bars", Order = 4, GroupName = "S1.1 EMA Settings")]
+        [Browsable(false)]
         public int S1_EmaSlopeBars { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 EMA Min Slope %", Order = 5, GroupName = "S1.1 EMA Settings")]
+        [Browsable(false)]
         public double S1_EmaSlopeMinPct { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Enable WMA Filter", Order = 1, GroupName = "S1.1b WMA Filter")]
+        [Browsable(false)]
         public bool S1_EnableWMAFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 WMA Length", Order = 2, GroupName = "S1.1b WMA Filter")]
+        [Browsable(false)]
         public int S1_WMALength { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Enable SMA Filter", Order = 1, GroupName = "S1.1c SMA Filter")]
+        [Browsable(false)]
         public bool S1_EnableSMAFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 SMA Length", Order = 2, GroupName = "S1.1c SMA Filter")]
+        [Browsable(false)]
         public int S1_SMALength { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Enable ADX Filter", Order = 1, GroupName = "S1.1d ADX Filter")]
+        [Browsable(false)]
         public bool S1_EnableADXFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 ADX Period", Order = 2, GroupName = "S1.1d ADX Filter")]
+        [Browsable(false)]
         public int S1_ADXPeriod { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 ADX Min Value", Order = 3, GroupName = "S1.1d ADX Filter")]
+        [Browsable(false)]
         public double S1_ADXMin { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 ADX Max Value", Order = 4, GroupName = "S1.1d ADX Filter")]
+        [Browsable(false)]
         public double S1_ADXMax { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Entry Type", Order = 1, GroupName = "S1.2 Entry Settings")]
-        public HugoTesting_EntryTypeEnum S1_EntryType { get; set; }
+        [Browsable(false)]
+        public Hugo_EntryTypeEnum S1_EntryType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Pullback Offset (Points)", Order = 2, GroupName = "S1.2 Entry Settings")]
+        [Browsable(false)]
         public double S1_PullbackOffset { get; set; }
         [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "S1 Max Bars to Wait", Order = 3, GroupName = "S1.2 Entry Settings")]
+        [Browsable(false)]
         public int S1_MaxBarsToWait { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Stop Loss Type", Order = 1, GroupName = "S1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum S1_StopLossType { get; set; }
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum S1_StopLossType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "S1.3 Stop Loss")]
+        [Browsable(false)]
         public double S1_FixedStopLoss { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S1 SL Candle Multiplier", Order = 2, GroupName = "S1.3 Stop Loss")]
+        [Browsable(false)]
         public double S1_SLCandleMultiplier { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Stop Loss Offset (Points)", Order = 3, GroupName = "S1.3 Stop Loss")]
+        [Browsable(false)]
         public double S1_StopLossOffset { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Maximum Stop Loss (Points)", Order = 4, GroupName = "S1.3 Stop Loss")]
+        [Browsable(false)]
         public double S1_MaxStopLoss { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable Max Bars In Trade", Order = 5, GroupName = "S1.3 Stop Loss")]
+        [Browsable(false)]
         public bool S1_EnableMaxBarsInTrade { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 Max Bars In Trade", Order = 6, GroupName = "S1.3 Stop Loss")]
+        [Browsable(false)]
         public int S1_MaxBarsInTrade { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Take Profit Type", Order = 1, GroupName = "S1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum S1_TakeProfitType { get; set; }
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum S1_TakeProfitType { get; set; }
         [NinjaScriptProperty][Range(0.1, double.MaxValue)][Display(Name = "S1 Risk Reward Ratio", Order = 2, GroupName = "S1.4 Take Profit")]
+        [Browsable(false)]
         public double S1_RiskRewardRatio { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Fixed Take Profit (Points)", Order = 3, GroupName = "S1.4 Take Profit")]
+        [Browsable(false)]
         public double S1_FixedTakeProfit { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S1 TP Candle Multiplier", Order = 4, GroupName = "S1.4 Take Profit")]
+        [Browsable(false)]
         public double S1_TPCandleMultiplier { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Enable Break Even", Order = 1, GroupName = "S1.5 Break Even")]
+        [Browsable(false)]
         public bool S1_EnableBreakEven { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Break Even Trigger Type", Order = 2, GroupName = "S1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum S1_BreakEvenTriggerType { get; set; }
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum S1_BreakEvenTriggerType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Break Even Trigger Value", Order = 3, GroupName = "S1.5 Break Even")]
+        [Browsable(false)]
         public double S1_BreakEvenTriggerValue { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Break Even Offset (Points)", Order = 4, GroupName = "S1.5 Break Even")]
+        [Browsable(false)]
         public double S1_BreakEvenOffset { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable SL to Entry on EMA Cross", Order = 5, GroupName = "S1.5 Break Even")]
+        [Browsable(false)]
         public bool S1_EnableSLToEntryOnEMA { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 SL to Entry Offset (Points)", Order = 6, GroupName = "S1.5 Break Even")]
+        [Browsable(false)]
         public double S1_SLToEntryOffset { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Enable Price Trail Stop", Order = 1, GroupName = "S1.6 Trailing Stop")]
+        [Browsable(false)]
         public bool S1_EnablePriceTrail { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Trail Distance Mode", Order = 2, GroupName = "S1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum S1_TrailDistanceMode { get; set; }
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum S1_TrailDistanceMode { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S1 Trail Distance Value", Order = 3, GroupName = "S1.6 Trailing Stop")]
+        [Browsable(false)]
         public double S1_TrailDistanceValue { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Trail Activation Mode", Order = 4, GroupName = "S1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum S1_TrailActivationMode { get; set; }
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum S1_TrailActivationMode { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Trail Activation Value", Order = 5, GroupName = "S1.6 Trailing Stop")]
+        [Browsable(false)]
         public double S1_TrailActivationValue { get; set; }
         [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "S1 Trail Step (Ticks)", Order = 6, GroupName = "S1.6 Trailing Stop")]
+        [Browsable(false)]
         public int S1_TrailStepTicks { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable Trail Lock", Order = 7, GroupName = "S1.6 Trailing Stop")]
+        [Browsable(false)]
         public bool S1_EnableTrailLock { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Trail Lock Value", Order = 8, GroupName = "S1.6 Trailing Stop")]
+        [Browsable(false)]
         public double S1_TrailLockValue { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Enable Candle Size Filter", Order = 1, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public bool S1_EnableCandleSizeFilter { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Min Candle Size (Points)", Order = 2, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public double S1_MinCandleSize { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Max Candle Size (Points)", Order = 3, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public double S1_MaxCandleSize { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable Body % Filter", Order = 4, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public bool S1_EnableBodyPctFilter { get; set; }
         [NinjaScriptProperty][Range(0, 100)][Display(Name = "S1 Min Body % of Range", Order = 5, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public double S1_MinBodyPct { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable Close Distance Filter", Order = 6, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public bool S1_EnableCloseDistanceFilter { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Min Close Distance (Points)", Order = 7, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public double S1_MinCloseDistance { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable Filter Wait Bars", Order = 8, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public bool S1_EnableFilterWaitBars { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 Filter Wait Max Bars", Order = 9, GroupName = "S1.7 Signal Filters")]
+        [Browsable(false)]
         public int S1_FilterWaitMaxBars { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Enable Direction Flip", Order = 1, GroupName = "S1.8 Direction Flip")]
+        [Browsable(false)]
         public bool S1_EnableDirectionFlip { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable Same Direction On Loss", Order = 2, GroupName = "S1.8 Direction Flip")]
+        [Browsable(false)]
         public bool S1_EnableSameDirectionOnLoss { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Loss Threshold (Points)", Order = 3, GroupName = "S1.8 Direction Flip")]
+        [Browsable(false)]
         public double S1_SameDirectionLossThreshold { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S1 Enable Max Daily Loss", Order = 1, GroupName = "S1.9 Risk Management")]
+        [Browsable(false)]
         public bool S1_EnableMaxDailyLoss { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Max Daily Loss (Points)", Order = 2, GroupName = "S1.9 Risk Management")]
+        [Browsable(false)]
         public double S1_MaxDailyLoss { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable Max Daily Profit", Order = 3, GroupName = "S1.9 Risk Management")]
+        [Browsable(false)]
         public bool S1_EnableMaxDailyProfit { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Max Daily Profit (Points)", Order = 4, GroupName = "S1.9 Risk Management")]
+        [Browsable(false)]
         public double S1_MaxDailyProfit { get; set; }
         [NinjaScriptProperty][Display(Name = "S1 Enable Max Trades Per Day", Order = 5, GroupName = "S1.9 Risk Management")]
+        [Browsable(false)]
         public bool S1_EnableMaxTradesPerDay { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 Max Trades Per Day", Order = 6, GroupName = "S1.9 Risk Management")]
+        [Browsable(false)]
         public int S1_MaxTradesPerDay { get; set; }
 
         #endregion
@@ -1074,146 +1276,208 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Display(Name = "S2 Enable", Description = "Enable Short Large Candle bucket", Order = 0, GroupName = "S2.0 Bucket Settings")]
+        [Browsable(false)]
         public bool S2_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "S2 Min Candle Range (Points)", Order = 1, GroupName = "S2.0 Bucket Settings")]
+        [Browsable(false)]
         public double S2_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "S2 Max Candle Range (Points)", Description = "0 = no max", Order = 2, GroupName = "S2.0 Bucket Settings")]
+        [Browsable(false)]
         public double S2_MaxCandleRange { get; set; }
 
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 EMA Length", Order = 1, GroupName = "S2.1 EMA Settings")]
+        [Browsable(false)]
         public int S2_EmaLength { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable EMA Slope Filter", Order = 2, GroupName = "S2.1 EMA Settings")]
+        [Browsable(false)]
         public bool S2_EnableEmaSlope { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 EMA Slope Mode", Order = 3, GroupName = "S2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum S2_EmaSlopeMode { get; set; }
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum S2_EmaSlopeMode { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 EMA Slope Bars", Order = 4, GroupName = "S2.1 EMA Settings")]
+        [Browsable(false)]
         public int S2_EmaSlopeBars { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 EMA Min Slope %", Order = 5, GroupName = "S2.1 EMA Settings")]
+        [Browsable(false)]
         public double S2_EmaSlopeMinPct { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Enable WMA Filter", Order = 1, GroupName = "S2.1b WMA Filter")]
+        [Browsable(false)]
         public bool S2_EnableWMAFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 WMA Length", Order = 2, GroupName = "S2.1b WMA Filter")]
+        [Browsable(false)]
         public int S2_WMALength { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Enable SMA Filter", Order = 1, GroupName = "S2.1c SMA Filter")]
+        [Browsable(false)]
         public bool S2_EnableSMAFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 SMA Length", Order = 2, GroupName = "S2.1c SMA Filter")]
+        [Browsable(false)]
         public int S2_SMALength { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Enable ADX Filter", Order = 1, GroupName = "S2.1d ADX Filter")]
+        [Browsable(false)]
         public bool S2_EnableADXFilter { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 ADX Period", Order = 2, GroupName = "S2.1d ADX Filter")]
+        [Browsable(false)]
         public int S2_ADXPeriod { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 ADX Min Value", Order = 3, GroupName = "S2.1d ADX Filter")]
+        [Browsable(false)]
         public double S2_ADXMin { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 ADX Max Value", Order = 4, GroupName = "S2.1d ADX Filter")]
+        [Browsable(false)]
         public double S2_ADXMax { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Entry Type", Order = 1, GroupName = "S2.2 Entry Settings")]
-        public HugoTesting_EntryTypeEnum S2_EntryType { get; set; }
+        [Browsable(false)]
+        public Hugo_EntryTypeEnum S2_EntryType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Pullback Offset (Points)", Order = 2, GroupName = "S2.2 Entry Settings")]
+        [Browsable(false)]
         public double S2_PullbackOffset { get; set; }
         [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "S2 Max Bars to Wait", Order = 3, GroupName = "S2.2 Entry Settings")]
+        [Browsable(false)]
         public int S2_MaxBarsToWait { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Stop Loss Type", Order = 1, GroupName = "S2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum S2_StopLossType { get; set; }
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum S2_StopLossType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "S2.3 Stop Loss")]
+        [Browsable(false)]
         public double S2_FixedStopLoss { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S2 SL Candle Multiplier", Order = 2, GroupName = "S2.3 Stop Loss")]
+        [Browsable(false)]
         public double S2_SLCandleMultiplier { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Stop Loss Offset (Points)", Order = 3, GroupName = "S2.3 Stop Loss")]
+        [Browsable(false)]
         public double S2_StopLossOffset { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Maximum Stop Loss (Points)", Order = 4, GroupName = "S2.3 Stop Loss")]
+        [Browsable(false)]
         public double S2_MaxStopLoss { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable Max Bars In Trade", Order = 5, GroupName = "S2.3 Stop Loss")]
+        [Browsable(false)]
         public bool S2_EnableMaxBarsInTrade { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 Max Bars In Trade", Order = 6, GroupName = "S2.3 Stop Loss")]
+        [Browsable(false)]
         public int S2_MaxBarsInTrade { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Take Profit Type", Order = 1, GroupName = "S2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum S2_TakeProfitType { get; set; }
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum S2_TakeProfitType { get; set; }
         [NinjaScriptProperty][Range(0.1, double.MaxValue)][Display(Name = "S2 Risk Reward Ratio", Order = 2, GroupName = "S2.4 Take Profit")]
+        [Browsable(false)]
         public double S2_RiskRewardRatio { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Fixed Take Profit (Points)", Order = 3, GroupName = "S2.4 Take Profit")]
+        [Browsable(false)]
         public double S2_FixedTakeProfit { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S2 TP Candle Multiplier", Order = 4, GroupName = "S2.4 Take Profit")]
+        [Browsable(false)]
         public double S2_TPCandleMultiplier { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Enable Break Even", Order = 1, GroupName = "S2.5 Break Even")]
+        [Browsable(false)]
         public bool S2_EnableBreakEven { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Break Even Trigger Type", Order = 2, GroupName = "S2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum S2_BreakEvenTriggerType { get; set; }
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum S2_BreakEvenTriggerType { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Break Even Trigger Value", Order = 3, GroupName = "S2.5 Break Even")]
+        [Browsable(false)]
         public double S2_BreakEvenTriggerValue { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Break Even Offset (Points)", Order = 4, GroupName = "S2.5 Break Even")]
+        [Browsable(false)]
         public double S2_BreakEvenOffset { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable SL to Entry on EMA Cross", Order = 5, GroupName = "S2.5 Break Even")]
+        [Browsable(false)]
         public bool S2_EnableSLToEntryOnEMA { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 SL to Entry Offset (Points)", Order = 6, GroupName = "S2.5 Break Even")]
+        [Browsable(false)]
         public double S2_SLToEntryOffset { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Enable Price Trail Stop", Order = 1, GroupName = "S2.6 Trailing Stop")]
+        [Browsable(false)]
         public bool S2_EnablePriceTrail { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Trail Distance Mode", Order = 2, GroupName = "S2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum S2_TrailDistanceMode { get; set; }
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum S2_TrailDistanceMode { get; set; }
         [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S2 Trail Distance Value", Order = 3, GroupName = "S2.6 Trailing Stop")]
+        [Browsable(false)]
         public double S2_TrailDistanceValue { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Trail Activation Mode", Order = 4, GroupName = "S2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum S2_TrailActivationMode { get; set; }
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum S2_TrailActivationMode { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Trail Activation Value", Order = 5, GroupName = "S2.6 Trailing Stop")]
+        [Browsable(false)]
         public double S2_TrailActivationValue { get; set; }
         [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "S2 Trail Step (Ticks)", Order = 6, GroupName = "S2.6 Trailing Stop")]
+        [Browsable(false)]
         public int S2_TrailStepTicks { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable Trail Lock", Order = 7, GroupName = "S2.6 Trailing Stop")]
+        [Browsable(false)]
         public bool S2_EnableTrailLock { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Trail Lock Value", Order = 8, GroupName = "S2.6 Trailing Stop")]
+        [Browsable(false)]
         public double S2_TrailLockValue { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Enable Candle Size Filter", Order = 1, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public bool S2_EnableCandleSizeFilter { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Min Candle Size (Points)", Order = 2, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public double S2_MinCandleSize { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Max Candle Size (Points)", Order = 3, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public double S2_MaxCandleSize { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable Body % Filter", Order = 4, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public bool S2_EnableBodyPctFilter { get; set; }
         [NinjaScriptProperty][Range(0, 100)][Display(Name = "S2 Min Body % of Range", Order = 5, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public double S2_MinBodyPct { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable Close Distance Filter", Order = 6, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public bool S2_EnableCloseDistanceFilter { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Min Close Distance (Points)", Order = 7, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public double S2_MinCloseDistance { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable Filter Wait Bars", Order = 8, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public bool S2_EnableFilterWaitBars { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 Filter Wait Max Bars", Order = 9, GroupName = "S2.7 Signal Filters")]
+        [Browsable(false)]
         public int S2_FilterWaitMaxBars { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Enable Direction Flip", Order = 1, GroupName = "S2.8 Direction Flip")]
+        [Browsable(false)]
         public bool S2_EnableDirectionFlip { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable Same Direction On Loss", Order = 2, GroupName = "S2.8 Direction Flip")]
+        [Browsable(false)]
         public bool S2_EnableSameDirectionOnLoss { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Loss Threshold (Points)", Order = 3, GroupName = "S2.8 Direction Flip")]
+        [Browsable(false)]
         public double S2_SameDirectionLossThreshold { get; set; }
 
         [NinjaScriptProperty][Display(Name = "S2 Enable Max Daily Loss", Order = 1, GroupName = "S2.9 Risk Management")]
+        [Browsable(false)]
         public bool S2_EnableMaxDailyLoss { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Max Daily Loss (Points)", Order = 2, GroupName = "S2.9 Risk Management")]
+        [Browsable(false)]
         public double S2_MaxDailyLoss { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable Max Daily Profit", Order = 3, GroupName = "S2.9 Risk Management")]
+        [Browsable(false)]
         public bool S2_EnableMaxDailyProfit { get; set; }
         [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Max Daily Profit (Points)", Order = 4, GroupName = "S2.9 Risk Management")]
+        [Browsable(false)]
         public double S2_MaxDailyProfit { get; set; }
         [NinjaScriptProperty][Display(Name = "S2 Enable Max Trades Per Day", Order = 5, GroupName = "S2.9 Risk Management")]
+        [Browsable(false)]
         public bool S2_EnableMaxTradesPerDay { get; set; }
         [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 Max Trades Per Day", Order = 6, GroupName = "S2.9 Risk Management")]
+        [Browsable(false)]
         public int S2_MaxTradesPerDay { get; set; }
 
         #endregion
@@ -1230,34 +1494,34 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         private bool B_EnableEmaSlope(string b) { switch(b){case "L1":return L1_EnableEmaSlope;case "L2":return L2_EnableEmaSlope;case "S1":return S1_EnableEmaSlope;case "S2":return S2_EnableEmaSlope;default:return false;} }
-        private HugoTesting_EmaSlopeModeEnum B_EmaSlopeMode(string b) { switch(b){case "L1":return L1_EmaSlopeMode;case "L2":return L2_EmaSlopeMode;case "S1":return S1_EmaSlopeMode;case "S2":return S2_EmaSlopeMode;default:return HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;} }
+        private Hugo_EmaSlopeModeEnum B_EmaSlopeMode(string b) { switch(b){case "L1":return L1_EmaSlopeMode;case "L2":return L2_EmaSlopeMode;case "S1":return S1_EmaSlopeMode;case "S2":return S2_EmaSlopeMode;default:return Hugo_EmaSlopeModeEnum.MagnitudeOnly;} }
         private int B_EmaSlopeBars(string b) { switch(b){case "L1":return L1_EmaSlopeBars;case "L2":return L2_EmaSlopeBars;case "S1":return S1_EmaSlopeBars;case "S2":return S2_EmaSlopeBars;default:return 49;} }
         private double B_EmaSlopeMinPct(string b) { switch(b){case "L1":return L1_EmaSlopeMinPct;case "L2":return L2_EmaSlopeMinPct;case "S1":return S1_EmaSlopeMinPct;case "S2":return S2_EmaSlopeMinPct;default:return 0;} }
 
-        private HugoTesting_EntryTypeEnum B_EntryType(string b) { switch(b){case "L1":return L1_EntryType;case "L2":return L2_EntryType;case "S1":return S1_EntryType;case "S2":return S2_EntryType;default:return HugoTesting_EntryTypeEnum.Immediate;} }
+        private Hugo_EntryTypeEnum B_EntryType(string b) { switch(b){case "L1":return L1_EntryType;case "L2":return L2_EntryType;case "S1":return S1_EntryType;case "S2":return S2_EntryType;default:return Hugo_EntryTypeEnum.Immediate;} }
         private double B_PullbackOffset(string b) { switch(b){case "L1":return L1_PullbackOffset;case "L2":return L2_PullbackOffset;case "S1":return S1_PullbackOffset;case "S2":return S2_PullbackOffset;default:return 3;} }
         private int B_MaxBarsToWait(string b) { switch(b){case "L1":return L1_MaxBarsToWait;case "L2":return L2_MaxBarsToWait;case "S1":return S1_MaxBarsToWait;case "S2":return S2_MaxBarsToWait;default:return 0;} }
 
-        private HugoTesting_StopLossTypeEnum B_StopLossType(string b) { switch(b){case "L1":return L1_StopLossType;case "L2":return L2_StopLossType;case "S1":return S1_StopLossType;case "S2":return S2_StopLossType;default:return HugoTesting_StopLossTypeEnum.Fixed;} }
+        private Hugo_StopLossTypeEnum B_StopLossType(string b) { switch(b){case "L1":return L1_StopLossType;case "L2":return L2_StopLossType;case "S1":return S1_StopLossType;case "S2":return S2_StopLossType;default:return Hugo_StopLossTypeEnum.Fixed;} }
         private double B_FixedStopLoss(string b) { switch(b){case "L1":return L1_FixedStopLoss;case "L2":return L2_FixedStopLoss;case "S1":return S1_FixedStopLoss;case "S2":return S2_FixedStopLoss;default:return 57;} }
         private double B_StopLossOffset(string b) { switch(b){case "L1":return L1_StopLossOffset;case "L2":return L2_StopLossOffset;case "S1":return S1_StopLossOffset;case "S2":return S2_StopLossOffset;default:return 56;} }
         private double B_MaxStopLoss(string b) { switch(b){case "L1":return L1_MaxStopLoss;case "L2":return L2_MaxStopLoss;case "S1":return S1_MaxStopLoss;case "S2":return S2_MaxStopLoss;default:return 50;} }
 
-        private HugoTesting_TakeProfitTypeEnum B_TakeProfitType(string b) { switch(b){case "L1":return L1_TakeProfitType;case "L2":return L2_TakeProfitType;case "S1":return S1_TakeProfitType;case "S2":return S2_TakeProfitType;default:return HugoTesting_TakeProfitTypeEnum.RiskReward;} }
+        private Hugo_TakeProfitTypeEnum B_TakeProfitType(string b) { switch(b){case "L1":return L1_TakeProfitType;case "L2":return L2_TakeProfitType;case "S1":return S1_TakeProfitType;case "S2":return S2_TakeProfitType;default:return Hugo_TakeProfitTypeEnum.RiskReward;} }
         private double B_RiskRewardRatio(string b) { switch(b){case "L1":return L1_RiskRewardRatio;case "L2":return L2_RiskRewardRatio;case "S1":return S1_RiskRewardRatio;case "S2":return S2_RiskRewardRatio;default:return 3.42;} }
         private double B_FixedTakeProfit(string b) { switch(b){case "L1":return L1_FixedTakeProfit;case "L2":return L2_FixedTakeProfit;case "S1":return S1_FixedTakeProfit;case "S2":return S2_FixedTakeProfit;default:return 100;} }
         private double B_SLCandleMultiplier(string b) { switch(b){case "L1":return L1_SLCandleMultiplier;case "L2":return L2_SLCandleMultiplier;case "S1":return S1_SLCandleMultiplier;case "S2":return S2_SLCandleMultiplier;default:return 1.0;} }
         private double B_TPCandleMultiplier(string b) { switch(b){case "L1":return L1_TPCandleMultiplier;case "L2":return L2_TPCandleMultiplier;case "S1":return S1_TPCandleMultiplier;case "S2":return S2_TPCandleMultiplier;default:return 1.0;} }
 
         private bool B_EnableBreakEven(string b) { switch(b){case "L1":return L1_EnableBreakEven;case "L2":return L2_EnableBreakEven;case "S1":return S1_EnableBreakEven;case "S2":return S2_EnableBreakEven;default:return false;} }
-        private HugoTesting_BreakEvenTriggerEnum B_BreakEvenTriggerType(string b) { switch(b){case "L1":return L1_BreakEvenTriggerType;case "L2":return L2_BreakEvenTriggerType;case "S1":return S1_BreakEvenTriggerType;case "S2":return S2_BreakEvenTriggerType;default:return HugoTesting_BreakEvenTriggerEnum.RiskMultiple;} }
+        private Hugo_BreakEvenTriggerEnum B_BreakEvenTriggerType(string b) { switch(b){case "L1":return L1_BreakEvenTriggerType;case "L2":return L2_BreakEvenTriggerType;case "S1":return S1_BreakEvenTriggerType;case "S2":return S2_BreakEvenTriggerType;default:return Hugo_BreakEvenTriggerEnum.RiskMultiple;} }
         private double B_BreakEvenTriggerValue(string b) { switch(b){case "L1":return L1_BreakEvenTriggerValue;case "L2":return L2_BreakEvenTriggerValue;case "S1":return S1_BreakEvenTriggerValue;case "S2":return S2_BreakEvenTriggerValue;default:return 3.29;} }
         private double B_BreakEvenOffset(string b) { switch(b){case "L1":return L1_BreakEvenOffset;case "L2":return L2_BreakEvenOffset;case "S1":return S1_BreakEvenOffset;case "S2":return S2_BreakEvenOffset;default:return 2;} }
 
         private bool B_EnablePriceTrail(string b) { switch(b){case "L1":return L1_EnablePriceTrail;case "L2":return L2_EnablePriceTrail;case "S1":return S1_EnablePriceTrail;case "S2":return S2_EnablePriceTrail;default:return false;} }
-        private HugoTesting_TrailDistanceModeEnum B_TrailDistanceMode(string b) { switch(b){case "L1":return L1_TrailDistanceMode;case "L2":return L2_TrailDistanceMode;case "S1":return S1_TrailDistanceMode;case "S2":return S2_TrailDistanceMode;default:return HugoTesting_TrailDistanceModeEnum.FixedPoints;} }
+        private Hugo_TrailDistanceModeEnum B_TrailDistanceMode(string b) { switch(b){case "L1":return L1_TrailDistanceMode;case "L2":return L2_TrailDistanceMode;case "S1":return S1_TrailDistanceMode;case "S2":return S2_TrailDistanceMode;default:return Hugo_TrailDistanceModeEnum.FixedPoints;} }
         private double B_TrailDistanceValue(string b) { switch(b){case "L1":return L1_TrailDistanceValue;case "L2":return L2_TrailDistanceValue;case "S1":return S1_TrailDistanceValue;case "S2":return S2_TrailDistanceValue;default:return 20;} }
-        private HugoTesting_TrailActivationModeEnum B_TrailActivationMode(string b) { switch(b){case "L1":return L1_TrailActivationMode;case "L2":return L2_TrailActivationMode;case "S1":return S1_TrailActivationMode;case "S2":return S2_TrailActivationMode;default:return HugoTesting_TrailActivationModeEnum.FixedPoints;} }
+        private Hugo_TrailActivationModeEnum B_TrailActivationMode(string b) { switch(b){case "L1":return L1_TrailActivationMode;case "L2":return L2_TrailActivationMode;case "S1":return S1_TrailActivationMode;case "S2":return S2_TrailActivationMode;default:return Hugo_TrailActivationModeEnum.FixedPoints;} }
         private double B_TrailActivationValue(string b) { switch(b){case "L1":return L1_TrailActivationValue;case "L2":return L2_TrailActivationValue;case "S1":return S1_TrailActivationValue;case "S2":return S2_TrailActivationValue;default:return 30;} }
         private int B_TrailStepTicks(string b) { switch(b){case "L1":return L1_TrailStepTicks;case "L2":return L2_TrailStepTicks;case "S1":return S1_TrailStepTicks;case "S2":return S2_TrailStepTicks;default:return 0;} }
         private bool B_EnableTrailLock(string b) { switch(b){case "L1":return L1_EnableTrailLock;case "L2":return L2_EnableTrailLock;case "S1":return S1_EnableTrailLock;case "S2":return S2_EnableTrailLock;default:return false;} }
@@ -1364,8 +1628,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description = "HUGOTesting";
-                Name        = "HUGOTesting";
+                Description = "HUGO";
+                Name        = "HUGO";
                 Calculate                               = Calculate.OnBarClose;
                 EntriesPerDirection                     = 1;
                 EntryHandling                           = EntryHandling.AllEntries;
@@ -1417,7 +1681,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 L1_EmaLength            = 48;
                 L1_EnableEmaSlope       = true;
-                L1_EmaSlopeMode         = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
+                L1_EmaSlopeMode         = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
                 L1_EmaSlopeBars         = 53;
                 L1_EmaSlopeMinPct       = 0.069;
 
@@ -1430,11 +1694,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L1_ADXMin               = 20;
                 L1_ADXMax               = 100;
 
-                L1_EntryType            = HugoTesting_EntryTypeEnum.Immediate;
+                L1_EntryType            = Hugo_EntryTypeEnum.Immediate;
                 L1_PullbackOffset       = 3;
                 L1_MaxBarsToWait        = 0;
 
-                L1_StopLossType         = HugoTesting_StopLossTypeEnum.Fixed;
+                L1_StopLossType         = Hugo_StopLossTypeEnum.Fixed;
                 L1_FixedStopLoss        = 59;
                 L1_SLCandleMultiplier    = 1.0;
                 L1_StopLossOffset       = 22;
@@ -1442,22 +1706,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L1_EnableMaxBarsInTrade = false;
                 L1_MaxBarsInTrade       = 20;
 
-                L1_TakeProfitType       = HugoTesting_TakeProfitTypeEnum.RiskReward;
+                L1_TakeProfitType       = Hugo_TakeProfitTypeEnum.RiskReward;
                 L1_RiskRewardRatio      = 3.67;
                 L1_FixedTakeProfit      = 203;
                 L1_TPCandleMultiplier    = 1.0;
 
                 L1_EnableBreakEven          = false;
-                L1_BreakEvenTriggerType     = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
+                L1_BreakEvenTriggerType     = Hugo_BreakEvenTriggerEnum.RiskMultiple;
                 L1_BreakEvenTriggerValue    = 2.67;
                 L1_BreakEvenOffset          = 11;
                 L1_EnableSLToEntryOnEMA     = false;
                 L1_SLToEntryOffset          = 0;
 
                 L1_EnablePriceTrail         = false;
-                L1_TrailDistanceMode        = HugoTesting_TrailDistanceModeEnum.FixedPoints;
+                L1_TrailDistanceMode        = Hugo_TrailDistanceModeEnum.FixedPoints;
                 L1_TrailDistanceValue       = 55;
-                L1_TrailActivationMode      = HugoTesting_TrailActivationModeEnum.FixedPoints;
+                L1_TrailActivationMode      = Hugo_TrailActivationModeEnum.FixedPoints;
                 L1_TrailActivationValue     = 150;
                 L1_TrailStepTicks           = 0;
                 L1_EnableTrailLock          = false;
@@ -1491,7 +1755,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 L2_EmaLength            = 47;
                 L2_EnableEmaSlope       = true;
-                L2_EmaSlopeMode         = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
+                L2_EmaSlopeMode         = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
                 L2_EmaSlopeBars         = 27;
                 L2_EmaSlopeMinPct       = 0.055;
 
@@ -1504,11 +1768,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L2_ADXMin               = 14;
                 L2_ADXMax               = 100;
 
-                L2_EntryType            = HugoTesting_EntryTypeEnum.Immediate;
+                L2_EntryType            = Hugo_EntryTypeEnum.Immediate;
                 L2_PullbackOffset       = 3;
                 L2_MaxBarsToWait        = 0;
 
-                L2_StopLossType         = HugoTesting_StopLossTypeEnum.Fixed;
+                L2_StopLossType         = Hugo_StopLossTypeEnum.Fixed;
                 L2_FixedStopLoss        = 56.75;
                 L2_SLCandleMultiplier    = 1.0;
                 L2_StopLossOffset       = 56;
@@ -1516,22 +1780,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L2_EnableMaxBarsInTrade = false;
                 L2_MaxBarsInTrade       = 20;
 
-                L2_TakeProfitType       = HugoTesting_TakeProfitTypeEnum.RiskReward;
+                L2_TakeProfitType       = Hugo_TakeProfitTypeEnum.RiskReward;
                 L2_RiskRewardRatio      = 3.42;
                 L2_FixedTakeProfit      = 100;
                 L2_TPCandleMultiplier    = 1.0;
 
                 L2_EnableBreakEven          = true;
-                L2_BreakEvenTriggerType     = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
+                L2_BreakEvenTriggerType     = Hugo_BreakEvenTriggerEnum.RiskMultiple;
                 L2_BreakEvenTriggerValue    = 1.88;
                 L2_BreakEvenOffset          = 2;
                 L2_EnableSLToEntryOnEMA     = false;
                 L2_SLToEntryOffset          = 0;
 
                 L2_EnablePriceTrail         = false;
-                L2_TrailDistanceMode        = HugoTesting_TrailDistanceModeEnum.FixedPoints;
+                L2_TrailDistanceMode        = Hugo_TrailDistanceModeEnum.FixedPoints;
                 L2_TrailDistanceValue       = 25;
-                L2_TrailActivationMode      = HugoTesting_TrailActivationModeEnum.FixedPoints;
+                L2_TrailActivationMode      = Hugo_TrailActivationModeEnum.FixedPoints;
                 L2_TrailActivationValue     = 192;
                 L2_TrailStepTicks           = 0;
                 L2_EnableTrailLock          = false;
@@ -1565,7 +1829,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 S1_EmaLength            = 48;
                 S1_EnableEmaSlope       = true;
-                S1_EmaSlopeMode         = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
+                S1_EmaSlopeMode         = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
                 S1_EmaSlopeBars         = 45;
                 S1_EmaSlopeMinPct       = 0.057;
 
@@ -1578,11 +1842,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S1_ADXMin               = 20;
                 S1_ADXMax               = 100;
 
-                S1_EntryType            = HugoTesting_EntryTypeEnum.Immediate;
+                S1_EntryType            = Hugo_EntryTypeEnum.Immediate;
                 S1_PullbackOffset       = 3;
                 S1_MaxBarsToWait        = 0;
 
-                S1_StopLossType         = HugoTesting_StopLossTypeEnum.Fixed;
+                S1_StopLossType         = Hugo_StopLossTypeEnum.Fixed;
                 S1_FixedStopLoss        = 61.5;
                 S1_SLCandleMultiplier    = 1.0;
                 S1_StopLossOffset       = 56;
@@ -1590,22 +1854,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S1_EnableMaxBarsInTrade = false;
                 S1_MaxBarsInTrade       = 20;
 
-                S1_TakeProfitType       = HugoTesting_TakeProfitTypeEnum.RiskReward;
+                S1_TakeProfitType       = Hugo_TakeProfitTypeEnum.RiskReward;
                 S1_RiskRewardRatio      = 3.42;
                 S1_FixedTakeProfit      = 100;
                 S1_TPCandleMultiplier    = 1.0;
 
                 S1_EnableBreakEven          = true;
-                S1_BreakEvenTriggerType     = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
+                S1_BreakEvenTriggerType     = Hugo_BreakEvenTriggerEnum.RiskMultiple;
                 S1_BreakEvenTriggerValue    = 1.05;
                 S1_BreakEvenOffset          = 2;
                 S1_EnableSLToEntryOnEMA     = false;
                 S1_SLToEntryOffset          = 0;
 
                 S1_EnablePriceTrail         = false;
-                S1_TrailDistanceMode        = HugoTesting_TrailDistanceModeEnum.FixedPoints;
+                S1_TrailDistanceMode        = Hugo_TrailDistanceModeEnum.FixedPoints;
                 S1_TrailDistanceValue       = 20;
-                S1_TrailActivationMode      = HugoTesting_TrailActivationModeEnum.FixedPoints;
+                S1_TrailActivationMode      = Hugo_TrailActivationModeEnum.FixedPoints;
                 S1_TrailActivationValue     = 147;
                 S1_TrailStepTicks           = 0;
                 S1_EnableTrailLock          = false;
@@ -1639,7 +1903,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 S2_EmaLength            = 46;
                 S2_EnableEmaSlope       = true;
-                S2_EmaSlopeMode         = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
+                S2_EmaSlopeMode         = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
                 S2_EmaSlopeBars         = 46;
                 S2_EmaSlopeMinPct       = 0.06;
 
@@ -1652,11 +1916,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S2_ADXMin               = 20;
                 S2_ADXMax               = 100;
 
-                S2_EntryType            = HugoTesting_EntryTypeEnum.Immediate;
+                S2_EntryType            = Hugo_EntryTypeEnum.Immediate;
                 S2_PullbackOffset       = 3;
                 S2_MaxBarsToWait        = 0;
 
-                S2_StopLossType         = HugoTesting_StopLossTypeEnum.Fixed;
+                S2_StopLossType         = Hugo_StopLossTypeEnum.Fixed;
                 S2_FixedStopLoss        = 61;
                 S2_SLCandleMultiplier    = 1.0;
                 S2_StopLossOffset       = 56;
@@ -1664,22 +1928,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S2_EnableMaxBarsInTrade = false;
                 S2_MaxBarsInTrade       = 20;
 
-                S2_TakeProfitType       = HugoTesting_TakeProfitTypeEnum.RiskReward;
+                S2_TakeProfitType       = Hugo_TakeProfitTypeEnum.RiskReward;
                 S2_RiskRewardRatio      = 3.35;
                 S2_FixedTakeProfit      = 100;
                 S2_TPCandleMultiplier    = 1.0;
 
                 S2_EnableBreakEven          = true;
-                S2_BreakEvenTriggerType     = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
+                S2_BreakEvenTriggerType     = Hugo_BreakEvenTriggerEnum.RiskMultiple;
                 S2_BreakEvenTriggerValue    = 3.27;
                 S2_BreakEvenOffset          = 2;
                 S2_EnableSLToEntryOnEMA     = false;
                 S2_SLToEntryOffset          = 0;
 
                 S2_EnablePriceTrail         = false;
-                S2_TrailDistanceMode        = HugoTesting_TrailDistanceModeEnum.FixedPoints;
+                S2_TrailDistanceMode        = Hugo_TrailDistanceModeEnum.FixedPoints;
                 S2_TrailDistanceValue       = 60;
-                S2_TrailActivationMode      = HugoTesting_TrailActivationModeEnum.FixedPoints;
+                S2_TrailActivationMode      = Hugo_TrailActivationModeEnum.FixedPoints;
                 S2_TrailActivationValue     = 196;
                 S2_TrailStepTicks           = 0;
                 S2_EnableTrailLock          = false;
@@ -1776,11 +2040,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 emaS1 = EMA(S1_EmaLength);
                 emaS2 = EMA(S2_EmaLength);
 
-                // Add distinct EMAs to chart (avoid duplicates if same length)
-                AddChartIndicator(emaL1);
-                if (L2_EmaLength != L1_EmaLength) AddChartIndicator(emaL2);
-                if (S1_EmaLength != L1_EmaLength && S1_EmaLength != L2_EmaLength) AddChartIndicator(emaS1);
-                if (S2_EmaLength != L1_EmaLength && S2_EmaLength != L2_EmaLength && S2_EmaLength != S1_EmaLength) AddChartIndicator(emaS2);
+                // EMA indicators remain internal in the public strategy build.
 
                 heartbeatReporter = new StrategyHeartbeatReporter(
                     HeartbeatStrategyName,
@@ -2509,12 +2769,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // v1.06: SL to Entry on EMA Cross (per-bucket, one-way ratchet)
                 CheckSLToEntryOnEMA(activeEma);
 
-                if (B_StopLossType(activeBucket) == HugoTesting_StopLossTypeEnum.EMATrailing)
+                if (B_StopLossType(activeBucket) == Hugo_StopLossTypeEnum.EMATrailing)
                     UpdateEMATrailingStop(activeEma);
 
                 ManagePriceTrailingStop();
 
-                if (B_TakeProfitType(activeBucket) == HugoTesting_TakeProfitTypeEnum.EMACross)
+                if (B_TakeProfitType(activeBucket) == Hugo_TakeProfitTypeEnum.EMACross)
                 {
                     if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
                     { ExitLong(BuildExitSignalName("EMACrossExit"), GetOpenLongEntrySignal()); return; }
@@ -2745,7 +3005,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             // Trail distance
-            double trailDist = B_TrailDistanceMode(activeBucket) == HugoTesting_TrailDistanceModeEnum.FixedPoints
+            double trailDist = B_TrailDistanceMode(activeBucket) == Hugo_TrailDistanceModeEnum.FixedPoints
                 ? B_TrailDistanceValue(activeBucket)
                 : (initialStopDistance > 0
                     ? initialStopDistance * B_TrailDistanceValue(activeBucket) / 100.0
@@ -2779,7 +3039,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double GetTrailThreshold(double value)
         {
             if (activeBucket == null) return value;
-            if (B_TrailActivationMode(activeBucket) == HugoTesting_TrailActivationModeEnum.PctOfRRTarget && initialTPDistance > 0)
+            if (B_TrailActivationMode(activeBucket) == Hugo_TrailActivationModeEnum.PctOfRRTarget && initialTPDistance > 0)
                 return initialTPDistance * value / 100.0;
             return value;
         }
@@ -2812,9 +3072,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             switch (B_EmaSlopeMode(bucket))
             {
-                case HugoTesting_EmaSlopeModeEnum.DirectionEnforced:
+                case Hugo_EmaSlopeModeEnum.DirectionEnforced:
                     return isLong ? slopePct >= B_EmaSlopeMinPct(bucket) : slopePct <= -B_EmaSlopeMinPct(bucket);
-                case HugoTesting_EmaSlopeModeEnum.MagnitudeOnly:
+                case Hugo_EmaSlopeModeEnum.MagnitudeOnly:
                     return Math.Abs(slopePct) >= B_EmaSlopeMinPct(bucket);
                 default:
                     return true;
@@ -2863,14 +3123,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (B_MaxStopLoss(b) > 0)
             {
-                double entryEst = B_EntryType(b) == HugoTesting_EntryTypeEnum.Immediate ? Close[0] : e[0] - B_PullbackOffset(b);
+                double entryEst = B_EntryType(b) == Hugo_EntryTypeEnum.Immediate ? Close[0] : e[0] - B_PullbackOffset(b);
                 double slDist   = entryEst - stopLoss;
                 if (slDist > B_MaxStopLoss(b)) stopLoss = entryEst - B_MaxStopLoss(b);
             }
 
-            if (B_EntryType(b) == HugoTesting_EntryTypeEnum.Immediate)
+            if (B_EntryType(b) == Hugo_EntryTypeEnum.Immediate)
             {
-                double targetPrice = B_TakeProfitType(b) != HugoTesting_TakeProfitTypeEnum.EMACross ? takeProfit : 0;
+                double targetPrice = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross ? takeProfit : 0;
                 if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], ContractQuantity))
                 {
                     Print(Time[0] + " - Long entry confirmation declined.");
@@ -2889,7 +3149,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 slMovedToEntryOnEMA = false;
 
                 initialStopDistance = entryPrice - stopLoss;
-                initialTPDistance   = B_TakeProfitType(b) != HugoTesting_TakeProfitTypeEnum.EMACross
+                initialTPDistance   = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross
                     ? takeProfit - entryPrice : 0;
                 ResetTrailState();
 
@@ -2909,9 +3169,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return;
                 }
 
-                if (B_StopLossType(b) == HugoTesting_StopLossTypeEnum.Fixed)
+                if (B_StopLossType(b) == Hugo_StopLossTypeEnum.Fixed)
                     stopLoss = limitPrice - B_FixedStopLoss(b);
-                else if (B_StopLossType(b) == HugoTesting_StopLossTypeEnum.EMAFixed || B_StopLossType(b) == HugoTesting_StopLossTypeEnum.EMATrailing)
+                else if (B_StopLossType(b) == Hugo_StopLossTypeEnum.EMAFixed || B_StopLossType(b) == Hugo_StopLossTypeEnum.EMATrailing)
                     stopLoss = e[0] - B_StopLossOffset(b);
 
                 if (B_MaxStopLoss(b) > 0)
@@ -2937,14 +3197,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 slMovedToEntryOnEMA = false;
 
                 currentTargetPrice  = 0;
-                if (B_TakeProfitType(b) != HugoTesting_TakeProfitTypeEnum.EMACross)
+                if (B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross)
                 {
                     takeProfit = CalculateTakeProfitFromEntry(true, limitPrice, stopLoss, b);
                     currentTargetPrice = takeProfit;
                 }
 
                 initialStopDistance = limitPrice - stopLoss;
-                initialTPDistance   = B_TakeProfitType(b) != HugoTesting_TakeProfitTypeEnum.EMACross
+                initialTPDistance   = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross
                     ? takeProfit - limitPrice : 0;
                 ResetTrailState();
 
@@ -2965,14 +3225,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (B_MaxStopLoss(b) > 0)
             {
-                double entryEst = B_EntryType(b) == HugoTesting_EntryTypeEnum.Immediate ? Close[0] : e[0] + B_PullbackOffset(b);
+                double entryEst = B_EntryType(b) == Hugo_EntryTypeEnum.Immediate ? Close[0] : e[0] + B_PullbackOffset(b);
                 double slDist   = stopLoss - entryEst;
                 if (slDist > B_MaxStopLoss(b)) stopLoss = entryEst + B_MaxStopLoss(b);
             }
 
-            if (B_EntryType(b) == HugoTesting_EntryTypeEnum.Immediate)
+            if (B_EntryType(b) == Hugo_EntryTypeEnum.Immediate)
             {
-                double targetPrice = B_TakeProfitType(b) != HugoTesting_TakeProfitTypeEnum.EMACross ? takeProfit : 0;
+                double targetPrice = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross ? takeProfit : 0;
                 if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], ContractQuantity))
                 {
                     Print(Time[0] + " - Short entry confirmation declined.");
@@ -2991,7 +3251,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 slMovedToEntryOnEMA = false;
 
                 initialStopDistance = stopLoss - entryPrice;
-                initialTPDistance   = B_TakeProfitType(b) != HugoTesting_TakeProfitTypeEnum.EMACross
+                initialTPDistance   = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross
                     ? entryPrice - takeProfit : 0;
                 ResetTrailState();
 
@@ -3011,9 +3271,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return;
                 }
 
-                if (B_StopLossType(b) == HugoTesting_StopLossTypeEnum.Fixed)
+                if (B_StopLossType(b) == Hugo_StopLossTypeEnum.Fixed)
                     stopLoss = limitPrice + B_FixedStopLoss(b);
-                else if (B_StopLossType(b) == HugoTesting_StopLossTypeEnum.EMAFixed || B_StopLossType(b) == HugoTesting_StopLossTypeEnum.EMATrailing)
+                else if (B_StopLossType(b) == Hugo_StopLossTypeEnum.EMAFixed || B_StopLossType(b) == Hugo_StopLossTypeEnum.EMATrailing)
                     stopLoss = e[0] + B_StopLossOffset(b);
 
                 if (B_MaxStopLoss(b) > 0)
@@ -3039,14 +3299,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 slMovedToEntryOnEMA = false;
 
                 currentTargetPrice  = 0;
-                if (B_TakeProfitType(b) != HugoTesting_TakeProfitTypeEnum.EMACross)
+                if (B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross)
                 {
                     takeProfit = CalculateTakeProfitFromEntry(false, limitPrice, stopLoss, b);
                     currentTargetPrice = takeProfit;
                 }
 
                 initialStopDistance = stopLoss - limitPrice;
-                initialTPDistance   = B_TakeProfitType(b) != HugoTesting_TakeProfitTypeEnum.EMACross
+                initialTPDistance   = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross
                     ? limitPrice - takeProfit : 0;
                 ResetTrailState();
 
@@ -3064,14 +3324,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             switch (B_StopLossType(b))
             {
-                case HugoTesting_StopLossTypeEnum.Fixed:
+                case Hugo_StopLossTypeEnum.Fixed:
                     return isLong ? Close[0] - B_FixedStopLoss(b) : Close[0] + B_FixedStopLoss(b);
-                case HugoTesting_StopLossTypeEnum.CandleHighLow:
+                case Hugo_StopLossTypeEnum.CandleHighLow:
                     return isLong ? crossoverCandleLow - B_StopLossOffset(b) : crossoverCandleHigh + B_StopLossOffset(b);
-                case HugoTesting_StopLossTypeEnum.EMAFixed:
-                case HugoTesting_StopLossTypeEnum.EMATrailing:
+                case Hugo_StopLossTypeEnum.EMAFixed:
+                case Hugo_StopLossTypeEnum.EMATrailing:
                     return isLong ? e[0] - B_StopLossOffset(b) : e[0] + B_StopLossOffset(b);
-                case HugoTesting_StopLossTypeEnum.CandleMultiple:
+                case Hugo_StopLossTypeEnum.CandleMultiple:
                 {
                     double candleRange = crossoverCandleHigh - crossoverCandleLow;
                     double slDist = candleRange * B_SLCandleMultiplier(b);
@@ -3087,13 +3347,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double risk = isLong ? entry - stopLoss : stopLoss - entry;
             switch (B_TakeProfitType(b))
             {
-                case HugoTesting_TakeProfitTypeEnum.RiskReward:
+                case Hugo_TakeProfitTypeEnum.RiskReward:
                     return isLong ? entry + risk * B_RiskRewardRatio(b) : entry - risk * B_RiskRewardRatio(b);
-                case HugoTesting_TakeProfitTypeEnum.Fixed:
+                case Hugo_TakeProfitTypeEnum.Fixed:
                     return isLong ? entry + B_FixedTakeProfit(b) : entry - B_FixedTakeProfit(b);
-                case HugoTesting_TakeProfitTypeEnum.EMACross:
+                case Hugo_TakeProfitTypeEnum.EMACross:
                     return isLong ? entry + 1000 : entry - 1000;
-                case HugoTesting_TakeProfitTypeEnum.CandleMultiple:
+                case Hugo_TakeProfitTypeEnum.CandleMultiple:
                 {
                     double candleRange = crossoverCandleHigh - crossoverCandleLow;
                     return isLong ? entry + candleRange * B_TPCandleMultiplier(b)
@@ -3153,7 +3413,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 risk   = currentStopPrice - Position.AveragePrice;
             }
 
-            bool trigger = B_BreakEvenTriggerType(activeBucket) == HugoTesting_BreakEvenTriggerEnum.Points
+            bool trigger = B_BreakEvenTriggerType(activeBucket) == Hugo_BreakEvenTriggerEnum.Points
                 ? profit >= B_BreakEvenTriggerValue(activeBucket)
                 : risk > 0 && (profit / risk) >= B_BreakEvenTriggerValue(activeBucket);
 
@@ -3847,11 +4107,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // ════════════════════════════════════════════════════════════════════════
     //  Enums (unchanged from v1.03)
     // ════════════════════════════════════════════════════════════════════════
-    public enum HugoTesting_EntryTypeEnum        { Immediate, WaitForPullback }
-    public enum HugoTesting_StopLossTypeEnum     { Fixed, CandleHighLow, EMAFixed, EMATrailing, CandleMultiple }
-    public enum HugoTesting_TakeProfitTypeEnum   { RiskReward, Fixed, EMACross, CandleMultiple }
-    public enum HugoTesting_BreakEvenTriggerEnum { Points, RiskMultiple }
-    public enum HugoTesting_EmaSlopeModeEnum     { DirectionEnforced, MagnitudeOnly }
-    public enum HugoTesting_TrailDistanceModeEnum   { FixedPoints, PctOfInitialSL }
-    public enum HugoTesting_TrailActivationModeEnum { FixedPoints, PctOfRRTarget }
+    public enum Hugo_EntryTypeEnum        { Immediate, WaitForPullback }
+    public enum Hugo_StopLossTypeEnum     { Fixed, CandleHighLow, EMAFixed, EMATrailing, CandleMultiple }
+    public enum Hugo_TakeProfitTypeEnum   { RiskReward, Fixed, EMACross, CandleMultiple }
+    public enum Hugo_BreakEvenTriggerEnum { Points, RiskMultiple }
+    public enum Hugo_EmaSlopeModeEnum     { DirectionEnforced, MagnitudeOnly }
+    public enum Hugo_TrailDistanceModeEnum   { FixedPoints, PctOfInitialSL }
+    public enum Hugo_TrailActivationModeEnum { FixedPoints, PctOfRRTarget }
 }
