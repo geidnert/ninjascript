@@ -35,8 +35,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             VendorLicense(1346);
         }
         private const string StrategySignalPrefix = "HUGOTesting";
-        private const string LongEntrySignalPrefix = StrategySignalPrefix + "Long";
-        private const string ShortEntrySignalPrefix = StrategySignalPrefix + "Short";
+        private const string LongEntrySignal = StrategySignalPrefix + "Long";
+        private const string ShortEntrySignal = StrategySignalPrefix + "Short";
         private const string HeartbeatStrategyName = "HUGOTesting";
         private const int RequiredPrimaryTimeframeMinutes = 15;
 
@@ -1399,7 +1399,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SkipTimeStart           = "08:25";
                 SkipTimeEnd             = "08:30";
                 FlattenAtSkipStart      = false;
-                UseNewsSkip             = true;
+                UseNewsSkip             = false;
                 NewsBlockMinutes        = 1;
                 FlattenAtNewsStart      = false;
 
@@ -1805,13 +1805,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string GetEntrySignalPrefix(int direction)
         {
-            return direction == 1 ? LongEntrySignalPrefix : ShortEntrySignalPrefix;
+            return direction == 1 ? LongEntrySignal : ShortEntrySignal;
         }
 
         private string BuildManagedEntrySignal(int direction)
         {
-            entrySignalSequence++;
-            return string.Format(CultureInfo.InvariantCulture, "{0}_{1}", GetEntrySignalPrefix(direction), entrySignalSequence);
+            return GetEntrySignalPrefix(direction);
         }
 
         private string BuildExitSignalName(string reason)
@@ -1822,23 +1821,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool IsLongEntryOrderName(string orderName)
         {
             return !string.IsNullOrWhiteSpace(orderName)
-                && orderName.StartsWith(LongEntrySignalPrefix, StringComparison.Ordinal);
+                && string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal);
         }
 
         private bool IsShortEntryOrderName(string orderName)
         {
             return !string.IsNullOrWhiteSpace(orderName)
-                && orderName.StartsWith(ShortEntrySignalPrefix, StringComparison.Ordinal);
+                && string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal);
         }
 
         private string GetOpenLongEntrySignal()
         {
-            return IsLongEntryOrderName(managedEntrySignal) ? managedEntrySignal : LongEntrySignalPrefix;
+            return LongEntrySignal;
         }
 
         private string GetOpenShortEntrySignal()
         {
-            return IsShortEntryOrderName(managedEntrySignal) ? managedEntrySignal : ShortEntrySignalPrefix;
+            return ShortEntrySignal;
         }
 
         private string GetActiveEntrySignal()
@@ -1859,21 +1858,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void ConfigureInitialProtectiveOrders(string entrySignal, double stopLoss, double takeProfit)
         {
-            if (string.IsNullOrWhiteSpace(entrySignal))
-                return;
-
-            SetStopLoss(entrySignal, CalculationMode.Price, stopLoss, false);
+            SetStopLoss(CalculationMode.Price, stopLoss);
             if (takeProfit > 0)
-                SetProfitTarget(entrySignal, CalculationMode.Price, takeProfit);
+                SetProfitTarget(CalculationMode.Price, takeProfit);
         }
 
         private void ExitAllPositions(string reason)
         {
             string exitSignal = BuildExitSignalName(reason);
             if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong(Math.Max(1, Position.Quantity), exitSignal, GetOpenLongEntrySignal());
+            {
+                if (string.Equals(reason, "ForceClose", StringComparison.Ordinal))
+                    ExitLong(Math.Max(1, Position.Quantity), exitSignal, GetOpenLongEntrySignal());
+                else
+                    ExitLong(exitSignal);
+            }
             else if (Position.MarketPosition == MarketPosition.Short)
-                ExitShort(Math.Max(1, Position.Quantity), exitSignal, GetOpenShortEntrySignal());
+            {
+                if (string.Equals(reason, "ForceClose", StringComparison.Ordinal))
+                    ExitShort(Math.Max(1, Position.Quantity), exitSignal, GetOpenShortEntrySignal());
+                else
+                    ExitShort(exitSignal);
+            }
         }
 
         private bool IsAccountBalanceBlocked()
@@ -2517,16 +2523,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (B_TakeProfitType(activeBucket) == HugoTesting_TakeProfitTypeEnum.EMACross)
                 {
                     if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
-                    { ExitLong(BuildExitSignalName("EMACrossExit"), GetOpenLongEntrySignal()); return; }
+                    { ExitLong(BuildExitSignalName("EMACrossExit")); return; }
                     if (Position.MarketPosition == MarketPosition.Short && Close[0] > activeEma[0] && Close[1] <= activeEma[1])
-                    { ExitShort(BuildExitSignalName("EMACrossExit"), GetOpenShortEntrySignal()); return; }
+                    { ExitShort(BuildExitSignalName("EMACrossExit")); return; }
                 }
 
                 // Opposite signal exit: use the active bucket's EMA
                 if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
-                    ExitLong(BuildExitSignalName("OppositeSignal"), GetOpenLongEntrySignal());
+                    ExitLong(BuildExitSignalName("OppositeSignal"));
                 else if (Position.MarketPosition == MarketPosition.Short && Close[0] > activeEma[0] && Close[1] <= activeEma[1])
-                    ExitShort(BuildExitSignalName("OppositeSignal"), GetOpenShortEntrySignal());
+                    ExitShort(BuildExitSignalName("OppositeSignal"));
             }
 
             // ── Cancel pending limit order on opposite signal ────────────────
@@ -3287,28 +3293,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool TryUpdateProtectiveStop(MarketPosition positionDirection, double proposedStopPrice, string context)
         {
             double roundedStop = Instrument.MasterInstrument.RoundToTickSize(proposedStopPrice);
-            if (!CanAmendProtectiveStopForCurrentMarket(positionDirection, roundedStop))
+            if (State == State.Realtime && !CanAmendProtectiveStopForCurrentMarket(positionDirection, roundedStop))
             {
                 Print(Time[0] + " - " + (activeBucket ?? "?") + " " + context + " skipped: proposed stop "
                     + roundedStop.ToString("F2") + " is on the wrong side of market for " + positionDirection + ".");
                 return false;
             }
 
-            string entrySignal = positionDirection == MarketPosition.Long
-                ? GetOpenLongEntrySignal()
-                : positionDirection == MarketPosition.Short
-                    ? GetOpenShortEntrySignal()
-                    : GetActiveEntrySignal();
-            if (string.IsNullOrWhiteSpace(entrySignal))
-                return false;
-
-            SetStopLoss(entrySignal, CalculationMode.Price, roundedStop, false);
+            SetStopLoss(CalculationMode.Price, roundedStop);
             currentStopPrice = roundedStop;
             return true;
         }
 
         private bool CanPlaceLongLimitSafely(double limitPrice, string context)
         {
+            if (State != State.Realtime)
+                return true;
+
             double referencePrice = GetCurrentAsk();
             if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
                 referencePrice = Close[0];
@@ -3325,6 +3326,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool CanPlaceShortLimitSafely(double limitPrice, string context)
         {
+            if (State != State.Realtime)
+                return true;
+
             double referencePrice = GetCurrentBid();
             if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
                 referencePrice = Close[0];
