@@ -581,6 +581,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkHorizontalExitBars = 36;
 
                 CloseAtSessionEnd = false;
+                ForceCloseTime = string.Empty;
                 AsiaSessionBrush = Brushes.DarkCyan;
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
@@ -742,6 +743,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             UpdateActiveSession(Time[0]);
             UpdateEmaPlotVisibility();
             UpdateAdxPlotVisibility();
+
+            if (IsForceCloseTimeReached(Time[0]))
+            {
+                CancelWorkingEntryOrders();
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong(BuildExitSignalName("ForceClose"), GetOpenLongEntrySignal());
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort(BuildExitSignalName("ForceClose"), GetOpenShortEntrySignal());
+                return;
+            }
 
             bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
             bool inNewsSkipPrev = CurrentBar > 0 && TimeInNewsSkip(Time[1]);
@@ -2384,6 +2395,98 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private bool IsForceCloseTimeReached(DateTime barTime)
+        {
+            DateTime forceCloseDateTime;
+            if (!TryGetForceCloseDateTime(barTime, out forceCloseDateTime))
+                return false;
+
+            return barTime >= forceCloseDateTime;
+        }
+
+        private bool TryGetForceCloseDateTime(DateTime referenceTime, out DateTime forceCloseDateTime)
+        {
+            forceCloseDateTime = Core.Globals.MinDate;
+
+            TimeSpan forceCloseTimeOfDay;
+            if (!TryParseConfiguredForceCloseTime(out forceCloseTimeOfDay))
+                return false;
+
+            DateTime anchorStart;
+            if (!TryGetTradingDayAnchorStart(referenceTime, out anchorStart))
+                return false;
+
+            forceCloseDateTime = forceCloseTimeOfDay <= anchorStart.TimeOfDay
+                ? anchorStart.Date.AddDays(1) + forceCloseTimeOfDay
+                : anchorStart.Date + forceCloseTimeOfDay;
+            return true;
+        }
+
+        private bool TryParseConfiguredForceCloseTime(out TimeSpan forceCloseTime)
+        {
+            forceCloseTime = TimeSpan.Zero;
+
+            string configured = ForceCloseTime;
+            if (string.IsNullOrWhiteSpace(configured))
+                return false;
+
+            return TimeSpan.TryParse(configured, CultureInfo.InvariantCulture, out forceCloseTime)
+                || TimeSpan.TryParse(configured, out forceCloseTime);
+        }
+
+        private bool TryGetTradingDayAnchorSlot(out SessionSlot slot)
+        {
+            if (UseAsiaSession && AsiaSessionStart != AsiaSessionEnd)
+            {
+                slot = SessionSlot.Asia;
+                return true;
+            }
+
+            if (UseLondonSession && LondonSessionStart != LondonSessionEnd)
+            {
+                slot = SessionSlot.London;
+                return true;
+            }
+
+            if (UseNewYorkSession && NewYorkSessionStart != NewYorkSessionEnd)
+            {
+                slot = SessionSlot.NewYork;
+                return true;
+            }
+
+            slot = SessionSlot.None;
+            return false;
+        }
+
+        private bool TryGetTradingDayAnchorStart(DateTime referenceTime, out DateTime anchorStart)
+        {
+            anchorStart = Core.Globals.MinDate;
+
+            SessionSlot anchorSlot;
+            if (!TryGetTradingDayAnchorSlot(out anchorSlot))
+                return false;
+
+            TimeSpan currentStart;
+            TimeSpan currentEnd;
+            if (!TryGetSessionWindow(anchorSlot, referenceTime, out currentStart, out currentEnd))
+                return false;
+
+            if (referenceTime.TimeOfDay >= currentStart)
+            {
+                anchorStart = referenceTime.Date + currentStart;
+                return true;
+            }
+
+            TimeSpan previousStart;
+            TimeSpan previousEnd;
+            DateTime previousReference = referenceTime.AddDays(-1);
+            if (!TryGetSessionWindow(anchorSlot, previousReference, out previousStart, out previousEnd))
+                return false;
+
+            anchorStart = previousReference.Date + previousStart;
+            return true;
+        }
+
         private int GetTradesThisSession(SessionSlot slot)
         {
             switch (slot)
@@ -3160,11 +3263,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} start={4:hh\\:mm} end={5:hh\\:mm} ema={6} adxMin={7:0.##} adxMax={8:0.##} adxSlopeMin={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} exitCross={14:0.##} flipCross={15:0.##} entryStop={16} slPad={17:0.##} hvSlPad={18:0.##} hvWindow={19:hh\\:mm}-{20:hh\\:mm} entryOffset={21:0.##} flipBe={22}/{23:0.##} flipTp={24:0.##} tpPct={25:0.##} mode={26} atrMult={27:0.##} stopPct={28:0.##} adxFlipMin={29} adxDdRiskMode={30} adxDdRiskSlPts={31:0.##} adxDdRiskTpPts={32:0.##} horizontal={33}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} entryStop={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} mode={27} atrMult={28:0.##} stopPct={29:0.##} adxFlipMin={30} adxDdRiskMode={31} adxDdRiskSlPts={32:0.##} adxDdRiskTpPts={33:0.##} horizontal={34}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
                 CloseAtSessionEnd,
+                string.IsNullOrWhiteSpace(ForceCloseTime) ? "Off" : ForceCloseTime,
                 start,
                 end,
                 activeEmaPeriod,
@@ -4732,8 +4836,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool CloseAtSessionEnd { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Force Close Time", Description = "Optional. Leave empty to disable. Enter as HH:mm:ss using the 5-minute bar timestamp, for example 04:55:00 to flatten on the 05:00 bar close. After this time, cancel working entries, flatten any open position, and block new trades for the rest of the trading day.", GroupName = "13. Risk", Order = 1)]
+        public string ForceCloseTime { get; set; }
+
+        [NinjaScriptProperty]
         [XmlIgnore]
-        [Display(Name = "Asia Session Fill", Description = "Background color used to highlight Asia session windows.", GroupName = "10. Sessions", Order = 1)]
+        [Display(Name = "Asia Session Fill", Description = "Background color used to highlight Asia session windows.", GroupName = "10. Sessions", Order = 2)]
         public Brush AsiaSessionBrush { get; set; }
 
         [Browsable(false)]
@@ -4745,7 +4853,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [XmlIgnore]
-        [Display(Name = "London Session Fill", Description = "Background color used to highlight London session windows.", GroupName = "10. Sessions", Order = 2)]
+        [Display(Name = "London Session Fill", Description = "Background color used to highlight London session windows.", GroupName = "10. Sessions", Order = 3)]
         public Brush LondonSessionBrush { get; set; }
 
         [Browsable(false)]
@@ -4757,7 +4865,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [XmlIgnore]
-        [Display(Name = "New York Session Fill", Description = "Background color used to highlight New York session windows.", GroupName = "10. Sessions", Order = 3)]
+        [Display(Name = "New York Session Fill", Description = "Background color used to highlight New York session windows.", GroupName = "10. Sessions", Order = 4)]
         public Brush NewYorkSessionBrush { get; set; }
 
         [Browsable(false)]
@@ -4768,15 +4876,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Show EMA On Chart", Description = "Show/hide EMA indicators on chart.", GroupName = "10. Sessions", Order = 4)]
+        [Display(Name = "Show EMA On Chart", Description = "Show/hide EMA indicators on chart.", GroupName = "10. Sessions", Order = 5)]
         public bool ShowEmaOnChart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Show On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 5)]
+        [Display(Name = "ADX Show On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 6)]
         public bool ShowAdxOnChart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Show Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 6)]
+        [Display(Name = "ADX Show Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 7)]
         public bool ShowAdxThresholdLines { get; set; }
 
         [NinjaScriptProperty]
@@ -4840,7 +4948,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double MaxAccountBalance { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 1)]
+        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 2)]
         public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
