@@ -934,11 +934,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             return;
                         }
                         double flipTakeProfitPoints = GetEffectiveFlipTakeProfitPoints();
+                        double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, flipTakeProfitPoints, false);
                         pendingShortStopForWebhook = stopPrice;
                         pendingShortEntryIsFlip = true;
                         SetStopLossByDistanceTicks(ShortFlipEntrySignal, entryPrice, stopPrice);
                         SetProfitTargetByDistanceTicks(ShortFlipEntrySignal, flipTakeProfitPoints);
-                        SendFlipWebhooks("sell", entryPrice, stopPrice, useMarketEntry, qty, MarketPosition.Long);
+                        SendFlipWebhooks("sell", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, qty, MarketPosition.Long);
                         StartTradeLines(entryPrice, stopPrice, flipTakeProfitPoints > 0.0 ? entryPrice - flipTakeProfitPoints : 0.0, flipTakeProfitPoints > 0.0);
                         SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortFlipEntrySignal);
 
@@ -1069,11 +1070,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             return;
                         }
                         double flipTakeProfitPoints = GetEffectiveFlipTakeProfitPoints();
+                        double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, flipTakeProfitPoints, true);
                         pendingLongStopForWebhook = stopPrice;
                         pendingLongEntryIsFlip = true;
                         SetStopLossByDistanceTicks(LongFlipEntrySignal, entryPrice, stopPrice);
                         SetProfitTargetByDistanceTicks(LongFlipEntrySignal, flipTakeProfitPoints);
-                        SendFlipWebhooks("buy", entryPrice, stopPrice, useMarketEntry, qty, MarketPosition.Short);
+                        SendFlipWebhooks("buy", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, qty, MarketPosition.Short);
                         StartTradeLines(entryPrice, stopPrice, flipTakeProfitPoints > 0.0 ? entryPrice + flipTakeProfitPoints : 0.0, flipTakeProfitPoints > 0.0);
                         SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongFlipEntrySignal);
 
@@ -1215,11 +1217,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         return;
                     }
 
+                    double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, activeTakeProfitPoints, true);
                     pendingLongStopForWebhook = stopPrice;
                     pendingLongEntryIsFlip = false;
                     SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
                     SetProfitTargetByDistanceTicks(LongEntrySignal, activeTakeProfitPoints);
-                    SendWebhook("buy", entryPrice, entryPrice, stopPrice, useMarketEntry, qty);
+                    SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice + activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                     SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongEntrySignal);
                     LogDebug(string.Format("Place LONG {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useMarketEntry ? "market" : "limit", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
@@ -1264,11 +1267,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         return;
                     }
 
+                    double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, activeTakeProfitPoints, false);
                     pendingShortStopForWebhook = stopPrice;
                     pendingShortEntryIsFlip = false;
                     SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
                     SetProfitTargetByDistanceTicks(ShortEntrySignal, activeTakeProfitPoints);
-                    SendWebhook("sell", entryPrice, entryPrice, stopPrice, useMarketEntry, qty);
+                    SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, qty);
                     StartTradeLines(entryPrice, stopPrice, activeTakeProfitPoints > 0.0 ? entryPrice - activeTakeProfitPoints : 0.0, activeTakeProfitPoints > 0.0);
                     SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortEntrySignal);
                     LogDebug(string.Format("Place SHORT {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useMarketEntry ? "market" : "limit", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
@@ -3933,6 +3937,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return baseQty;
         }
 
+        private double GetWebhookTakeProfitPrice(double entryPrice, double takeProfitPoints, bool isLong)
+        {
+            if (takeProfitPoints <= 0.0)
+                return entryPrice;
+
+            double takeProfitPrice = isLong
+                ? entryPrice + takeProfitPoints
+                : entryPrice - takeProfitPoints;
+            return Instrument.MasterInstrument.RoundToTickSize(takeProfitPrice);
+        }
+
         private void SetStopLossByDistanceTicks(string fromEntrySignal, double referenceEntryPrice, double plannedStopPrice)
         {
             int stopTicks = PriceToTicks(Math.Abs(referenceEntryPrice - plannedStopPrice));
@@ -4008,7 +4023,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private void SendFlipWebhooks(string entryEventType, double entryPrice, double stopPrice, bool isMarketEntry, int entryQuantity, MarketPosition expectedCurrentPosition)
+        private void SendFlipWebhooks(string entryEventType, double entryPrice, double takeProfitPrice, double stopPrice, bool isMarketEntry, int entryQuantity, MarketPosition expectedCurrentPosition)
         {
             int positionQty = Math.Abs(Position.Quantity);
             bool shouldExitFirst = Position.MarketPosition == expectedCurrentPosition && positionQty > 0;
@@ -4030,7 +4045,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 isMarketEntry,
                 entryPrice,
                 stopPrice));
-            SendWebhook(entryEventType, entryPrice, entryPrice, stopPrice, isMarketEntry, webhookEntryQty);
+            SendWebhook(entryEventType, entryPrice, takeProfitPrice, stopPrice, isMarketEntry, webhookEntryQty);
         }
 
         private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
@@ -4675,8 +4690,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int orderType = isMarketEntry ? 2 : 1;
             int normalizedQuantity = Math.Max(1, quantity);
             double entry = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
-            int tpTicks = Math.Max(1, PriceToTicks(Math.Abs(takeProfit - entry)));
-            int slTicks = Math.Max(1, PriceToTicks(Math.Abs(entry - stopLoss)));
+            bool isLong = orderSide == 0;
+            int tpTicks = NormalizeProjectXBracketTicks(
+                PriceToTicks(takeProfit - entry),
+                4,
+                isLong ? 1 : -1);
+            int slTicks = NormalizeProjectXBracketTicks(
+                PriceToTicks(stopLoss - entry),
+                1,
+                isLong ? -1 : 1);
 
             string limitPart = isMarketEntry
                 ? string.Empty
@@ -4700,6 +4722,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 projectXLastOrderIds[GetProjectXOrderKey(accountId, contractId)] = orderId;
 
             return response;
+        }
+
+        private int NormalizeProjectXBracketTicks(int rawTicks, int minAbsTicks, int zeroTickDirection)
+        {
+            int direction = rawTicks == 0 ? Math.Sign(zeroTickDirection) : Math.Sign(rawTicks);
+            int absTicks = Math.Abs(rawTicks);
+            if (absTicks < minAbsTicks)
+                absTicks = minAbsTicks;
+            return direction * absTicks;
         }
 
         private string ProjectXClosePosition(int accountId, string contractId)
