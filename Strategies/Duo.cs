@@ -248,6 +248,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool currentPositionIsFlipEntry;
         private bool pendingLongEntryIsFlip;
         private bool pendingShortEntryIsFlip;
+        private bool suppressProjectXNextExecutionExitWebhook;
         private bool flipBreakEvenActivated;
         private bool takeProfitStopTriggered;
         private double initialStopPrice;
@@ -1447,8 +1448,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentPositionEntryBar = -1;
             }
 
-            if (ShouldSendExitWebhook(execution, orderName, marketPosition))
-                SendWebhook("exit", 0, 0, 0, true, quantity);
+            bool shouldSendExitWebhook = ShouldSendExitWebhook(execution, orderName, marketPosition);
+            if (shouldSendExitWebhook)
+            {
+                if (WebhookProviderType == WebhookProvider.ProjectX && suppressProjectXNextExecutionExitWebhook)
+                {
+                    suppressProjectXNextExecutionExitWebhook = false;
+                    LogDebug(string.Format(
+                        "ProjectX execution exit suppressed | order={0} qty={1} posAfter={2}",
+                        orderName,
+                        quantity,
+                        marketPosition));
+                }
+                else
+                {
+                    SendWebhook("exit", 0, 0, 0, true, quantity);
+                }
+            }
 
             if (DebugLogging)
             {
@@ -4034,7 +4050,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     "Flip webhook sequence | step=exit side={0} qty={1}",
                     expectedCurrentPosition,
                     positionQty));
-                SendWebhook("exit", 0, 0, 0, true, positionQty);
+                bool exitWebhookSent = SendWebhook("exit", 0, 0, 0, true, positionQty);
+                if (WebhookProviderType == WebhookProvider.ProjectX)
+                    suppressProjectXNextExecutionExitWebhook = exitWebhookSent;
             }
 
             int webhookEntryQty = Math.Max(1, entryQuantity);
@@ -4048,10 +4066,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SendWebhook(entryEventType, entryPrice, takeProfitPrice, stopPrice, isMarketEntry, webhookEntryQty);
         }
 
-        private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
+        private bool SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
         {
             if (State != State.Realtime)
-                return;
+                return false;
 
             if (WebhookProviderType == WebhookProvider.ProjectX)
             {
@@ -4064,14 +4082,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     entryPrice,
                     takeProfit,
                     stopLoss));
-                SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
-                return;
+                return SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
             }
 
             if (string.IsNullOrWhiteSpace(WebhookUrl))
             {
                 LogDebug(string.Format("Webhook skipped | provider=TradersPost event={0} reason=empty-url", eventType));
-                return;
+                return false;
             }
 
             try
@@ -4119,7 +4136,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         "Webhook skipped | provider=TradersPost event={0} reason=empty-payload qty={1}",
                         eventType,
                         orderQty));
-                    return;
+                    return false;
                 }
 
                 LogDebug(string.Format(
@@ -4138,19 +4155,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 LogDebug(string.Format("Webhook sent | provider=TradersPost event={0} action={1} qty={2}", eventType, action, orderQty));
+                return true;
             }
             catch (Exception ex)
             {
                 LogDebug(string.Format("Webhook error: {0}", ex.Message));
+                return false;
             }
         }
 
-        private void SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        private bool SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
         {
             if (!EnsureProjectXSession())
             {
                 LogDebug(string.Format("Webhook skipped | provider=ProjectX event={0} reason=auth-unavailable", eventType));
-                return;
+                return false;
             }
 
             List<ProjectXAccountInfo> targetAccounts;
@@ -4158,7 +4177,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!TryGetProjectXTargets(out targetAccounts, out contractId))
             {
                 LogDebug(string.Format("Webhook skipped | provider=ProjectX event={0} reason=account-selection-or-contract-unavailable", eventType));
-                return;
+                return false;
             }
 
             LogDebug(string.Format(
@@ -4175,10 +4194,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     {
                         case "buy":
                         case "sell":
-                            ProjectXPlaceOrder(eventType, account.Id, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+                            if (ProjectXPrepareForEntry(account.Id, contractId))
+                                ProjectXPlaceOrder(eventType, account.Id, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
                             break;
                         case "exit":
-                            ProjectXClosePosition(account.Id, contractId);
+                            ProjectXFlattenPosition(account.Id, contractId);
                             break;
                         case "cancel":
                             ProjectXCancelOrders(account.Id, contractId);
@@ -4195,6 +4215,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         ex.Message));
                 }
             }
+
+            return targetAccounts.Count > 0;
         }
 
         private void RunProjectXStartupPreflight()
@@ -4733,6 +4755,83 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return direction * absTicks;
         }
 
+        private bool ProjectXPrepareForEntry(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+            {
+                LogDebug(string.Format(
+                    "ProjectX prepare failed | stage=cancel-clear accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+                return false;
+            }
+
+            int positionSize;
+            if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                {
+                    LogDebug(string.Format(
+                        "ProjectX prepare failed | stage=flat accountId={0} contractId={1} positionSize={2}",
+                        accountId,
+                        contractId,
+                        positionSize));
+                    return false;
+                }
+
+                ProjectXCancelOrders(accountId, contractId);
+                if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                {
+                    LogDebug(string.Format(
+                        "ProjectX prepare failed | stage=post-close-cancel accountId={0} contractId={1}",
+                        accountId,
+                        contractId));
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void ProjectXFlattenPosition(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+            {
+                LogDebug(string.Format(
+                    "ProjectX flatten warning | stage=cancel-clear accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+            }
+
+            int positionSize;
+            if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                {
+                    LogDebug(string.Format(
+                        "ProjectX flatten warning | stage=flat accountId={0} contractId={1} positionSize={2}",
+                        accountId,
+                        contractId,
+                        positionSize));
+                }
+            }
+
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+            {
+                LogDebug(string.Format(
+                    "ProjectX flatten warning | stage=post-close-cancel accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+            }
+        }
+
         private string ProjectXClosePosition(int accountId, string contractId)
         {
             string json = string.Format(CultureInfo.InvariantCulture,
@@ -4742,20 +4841,58 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return ProjectXPost("/api/Position/closeContract", json, true);
         }
 
-        private string ProjectXCancelOrders(int accountId, string contractId)
+        private void ProjectXCancelOrders(int accountId, string contractId)
         {
-            int lastOrderId;
-            if (projectXLastOrderIds.TryGetValue(GetProjectXOrderKey(accountId, contractId), out lastOrderId))
+            foreach (int orderId in GetProjectXOpenOrderIds(accountId, contractId))
             {
                 string cancelJson = string.Format(CultureInfo.InvariantCulture,
                     "{{\"accountId\":{0},\"orderId\":{1}}}",
                     accountId,
-                    lastOrderId);
-                return ProjectXPost("/api/Order/cancel", cancelJson, true);
+                    orderId);
+                ProjectXPost("/api/Order/cancel", cancelJson, true);
             }
 
+            projectXLastOrderIds.Remove(GetProjectXOrderKey(accountId, contractId));
+        }
+
+        private bool WaitForProjectXFlat(int accountId, string contractId, int timeoutMs)
+        {
+            DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow <= deadlineUtc)
+            {
+                int positionSize;
+                if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize == 0)
+                    return true;
+
+                System.Threading.Thread.Sleep(150);
+            }
+
+            return false;
+        }
+
+        private bool WaitForProjectXOrdersCleared(int accountId, string contractId, int timeoutMs)
+        {
+            DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow <= deadlineUtc)
+            {
+                if (GetProjectXOpenOrderIds(accountId, contractId).Count == 0)
+                    return true;
+
+                System.Threading.Thread.Sleep(150);
+            }
+
+            return false;
+        }
+
+        private List<int> GetProjectXOpenOrderIds(int accountId, string contractId)
+        {
+            var orderIds = new List<int>();
             string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
             string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return orderIds;
+
             foreach (var order in ExtractProjectXOrders(searchResponse))
             {
                 object contractObj;
@@ -4766,17 +4903,45 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 object idObj;
                 int id;
-                if (!order.TryGetValue("id", out idObj) || !int.TryParse(idObj != null ? idObj.ToString() : string.Empty, out id) || id <= 0)
+                if (!order.TryGetValue("id", out idObj) || !TryConvertToInt(idObj, out id) || id <= 0)
                     continue;
 
-                string cancelJson = string.Format(CultureInfo.InvariantCulture,
-                    "{{\"accountId\":{0},\"orderId\":{1}}}",
-                    accountId,
-                    id);
-                ProjectXPost("/api/Order/cancel", cancelJson, true);
+                orderIds.Add(id);
             }
 
-            return searchResponse;
+            return orderIds;
+        }
+
+        private bool TryGetProjectXOpenPositionSize(int accountId, string contractId, out int signedSize)
+        {
+            signedSize = 0;
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Position/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return false;
+
+            foreach (var position in ExtractProjectXPositions(searchResponse))
+            {
+                object contractObj;
+                if (!position.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object typeObj;
+                object sizeObj;
+                int type;
+                int size;
+                if (!position.TryGetValue("type", out typeObj) || !TryConvertToInt(typeObj, out type))
+                    continue;
+                if (!position.TryGetValue("size", out sizeObj) || !TryConvertToInt(sizeObj, out size) || size <= 0)
+                    continue;
+
+                signedSize += type == 2 ? -size : size;
+            }
+
+            return true;
         }
 
         private string ProjectXPost(string path, string json, bool requiresAuth)
@@ -4946,6 +5111,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (data == null || !data.TryGetValue(key, out raw) || raw == null)
                     return false;
                 return int.TryParse(raw.ToString(), out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetJsonBool(string json, string key, out bool value)
+        {
+            value = false;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return TryConvertToBool(raw, out value);
             }
             catch
             {
@@ -5136,6 +5322,38 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             object raw;
             if (data == null || !data.TryGetValue("orders", out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict != null)
+                    yield return dict;
+            }
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXPositions(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            var serializer = new JavaScriptSerializer();
+            Dictionary<string, object> data;
+            try
+            {
+                data = serializer.Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("positions", out raw) || raw == null)
                 yield break;
 
             var items = raw as System.Collections.IEnumerable;
