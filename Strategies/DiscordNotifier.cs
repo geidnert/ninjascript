@@ -57,6 +57,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double monthlyTotal = 0;
         private string currentMonth = "";
         private Dictionary<DateTime, double> monthlyDayTotals = new Dictionary<DateTime, double>();
+        // Stored trading day key for the most recent Discord message, based on the CME 6pm ET session boundary.
         private DateTime lastMessageDay = DateTime.MinValue;
         // Internal toggle: when true, skip Discord posts and log the full message for debugging.
         private bool debugMode = false;
@@ -65,6 +66,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool isProcessingDiscordQueue = false;
         private bool stopDiscordQueue = false;
         private int discordMinDelayMs = 1000;
+        private static readonly TimeSpan cmeTradingDayStart = new TimeSpan(18, 0, 0);
 
         private class DiscordMessage
         {
@@ -138,7 +140,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         foreach (var d in dailyPnls.Keys)
                             if (d > latestTradeDate) latestTradeDate = d;
 
-                        thisWeek = latestTradeDate.AddDays(-(int)latestTradeDate.DayOfWeek + (int)DayOfWeek.Monday);
+                        thisWeek = GetTradingWeekStart(latestTradeDate);
                     }
                     else
                     {
@@ -185,8 +187,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     LogToOutput2("ℹ️ No stats file found — starting from scratch.");
                     dailyPnls.Clear();
-                    DateTime now = Core.Globals.Now.Date;
-                    currentWeekStart = now.AddDays(-(int)now.DayOfWeek + (int)DayOfWeek.Monday);
+                    DateTime now = GetTradingDay(Core.Globals.Now);
+                    currentWeekStart = GetTradingWeekStart(now);
                     lastSavedWeekStart = currentWeekStart;
                     lastMessageId = "";
                     lastMessageDay = DateTime.MinValue;
@@ -339,10 +341,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void PostPositionStatus(DateTime filltime)
         {
-            DateTime localDate = filltime.Date;
-            DateTime weekStart = localDate.AddDays(-(int)localDate.DayOfWeek + (int)DayOfWeek.Monday);
+            DateTime tradingDay = GetTradingDay(filltime);
+            DateTime weekStart = GetTradingWeekStart(tradingDay);
 
-            string monthKey = filltime.ToString("yyyy-MM");
+            string monthKey = tradingDay.ToString("yyyy-MM");
 
             if (currentMonth == "")
             {
@@ -388,10 +390,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void AddTradeToWeek(DateTime entryFillTime, DateTime exitFillTime, double tradePnl)
         {
-            DateTime localDate = exitFillTime.Date;
-            DateTime weekStart = localDate.AddDays(-(int)localDate.DayOfWeek + (int)DayOfWeek.Monday);
+            DateTime tradingDay = GetTradingDay(exitFillTime);
+            DateTime weekStart = GetTradingWeekStart(tradingDay);
 
-            string monthKey = exitFillTime.ToString("yyyy-MM");
+            string monthKey = tradingDay.ToString("yyyy-MM");
 
             if (currentMonth == "")
             {
@@ -424,22 +426,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogToOutput2($"📅 Starting new week: {currentWeekStart:MMMM dd, yyyy}");
             }
 
-            if (!dailyPnls.ContainsKey(localDate))
-                dailyPnls[localDate] = new Dictionary<string, double>();
+            if (!dailyPnls.ContainsKey(tradingDay))
+                dailyPnls[tradingDay] = new Dictionary<string, double>();
 
             DateTime safeEntryTime = entryFillTime == DateTime.MinValue ? exitFillTime : entryFillTime;
             string tradeKey = BuildTradeKey(safeEntryTime, exitFillTime);
-            if (dailyPnls[localDate].ContainsKey(tradeKey))
+            if (dailyPnls[tradingDay].ContainsKey(tradeKey))
             {
                 PostWeeklySummary(exitFillTime);
                 return;
             }
 
-            dailyPnls[localDate][tradeKey] = tradePnl;
+            dailyPnls[tradingDay][tradeKey] = tradePnl;
             monthlyTotal += tradePnl;
-            if (!monthlyDayTotals.ContainsKey(localDate))
-                monthlyDayTotals[localDate] = 0;
-            monthlyDayTotals[localDate] += tradePnl;
+            if (!monthlyDayTotals.ContainsKey(tradingDay))
+                monthlyDayTotals[tradingDay] = 0;
+            monthlyDayTotals[tradingDay] += tradePnl;
 
             SavePnLStats();
             PostWeeklySummary(exitFillTime);
@@ -455,18 +457,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void PostDailySummary(DateTime filltime, bool includeStatus)
         {
-            DateTime localDate = filltime.Date;
+            DateTime tradingDay = GetTradingDay(filltime);
 
-            if (!dailyPnls.ContainsKey(localDate))
-                dailyPnls[localDate] = new Dictionary<string, double>();
+            if (!dailyPnls.ContainsKey(tradingDay))
+                dailyPnls[tradingDay] = new Dictionary<string, double>();
 
             var sb = new StringBuilder();
             sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━");
-            sb.AppendLine($"📅 **{localDate:dddd MMMM dd, yyyy}**");
+            sb.AppendLine($"📅 **{FormatTradingDayLabel(tradingDay)}**");
             sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
             double dayTotal = 0;
-            if (dailyPnls.TryGetValue(localDate, out var pnls))
+            if (dailyPnls.TryGetValue(tradingDay, out var pnls))
             {
                 foreach (var trade in pnls)
                 {
@@ -514,7 +516,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             sb.AppendLine($"**Monthly Daily Average: {FormatPnl(monthlyDailyAverage)}**");
             sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
 
-            EnqueueDiscordMessage(sb.ToString(), localDate);
+            EnqueueDiscordMessage(sb.ToString(), tradingDay);
         }
 
         private void EnqueueDiscordMessage(string content, DateTime messageDay)
@@ -601,8 +603,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             try
             {
-                bool sameDay = lastMessageDay != DateTime.MinValue && lastMessageDay.Date == messageDay.Date;
-                if (!string.IsNullOrEmpty(lastMessageId) && sameDay)
+                bool sameTradingDay = lastMessageDay != DateTime.MinValue && lastMessageDay.Date == messageDay.Date;
+                if (!string.IsNullOrEmpty(lastMessageId) && sameTradingDay)
                 {
                     try
                     {
@@ -611,7 +613,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         deleteReq.Method = "DELETE";
                         deleteReq.Headers["Authorization"] = $"Bot {DiscordBotToken}";
                         using (var resp = (HttpWebResponse)deleteReq.GetResponse()) { }
-                        LogToOutput2($"🗑️ Deleted old Discord message for current day ({lastMessageId}).");
+                        LogToOutput2($"🗑️ Deleted old Discord message for current CME trading day ({lastMessageId}).");
                     }
                     catch (WebException delEx)
                     {
@@ -625,7 +627,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
                 else if (!string.IsNullOrEmpty(lastMessageId))
                 {
-                    LogToOutput2($"🗓️ Keeping old message ({lastMessageId}) for previous day.");
+                    LogToOutput2($"🗓️ Keeping old message ({lastMessageId}) for previous CME trading day.");
                 }
                 else
                 {
@@ -821,6 +823,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string FormatTradeTime(DateTime time) =>
             $"{time.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLower()} EST";
 
+        private static DateTime GetTradingDay(DateTime timestamp)
+        {
+            DateTime tradingDay = timestamp.Date;
+            if (timestamp.TimeOfDay >= cmeTradingDayStart)
+                tradingDay = tradingDay.AddDays(1);
+            return tradingDay;
+        }
+
+        private static DateTime GetTradingWeekStart(DateTime tradingDay) =>
+            tradingDay.AddDays(-(int)tradingDay.DayOfWeek + (int)DayOfWeek.Monday);
+
+        private static string FormatTradingDayLabel(DateTime tradingDay) =>
+            $"CME Trading Day: {tradingDay:dddd MMMM dd, yyyy}";
+
         private bool IsRateLimited(WebException ex)
         {
             var response = ex.Response as HttpWebResponse;
@@ -877,11 +893,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (dailyPnls.Count == 0)
                     return false;
 
-                DateTime now = Core.Globals.Now.Date;
-                DateTime weekStart = now.AddDays(-(int)now.DayOfWeek + (int)DayOfWeek.Monday);
+                DateTime now = GetTradingDay(Core.Globals.Now);
+                DateTime weekStart = GetTradingWeekStart(now);
                 foreach (var kvp in dailyPnls.Keys)
                 {
-                    DateTime dayWeekStart = kvp.AddDays(-(int)kvp.DayOfWeek + (int)DayOfWeek.Monday);
+                    DateTime dayWeekStart = GetTradingWeekStart(kvp);
                     if (dayWeekStart == weekStart)
                         return true;
                 }
