@@ -218,7 +218,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string projectXSessionToken;
         private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
         private List<ProjectXAccountInfo> projectXAccounts;
-        private readonly Dictionary<string, int> projectXLastOrderIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, long> projectXLastOrderIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         private string projectXResolvedContractId;
         private string projectXResolvedInstrumentKey = string.Empty;
         private bool accountBalanceLimitReached;
@@ -5004,8 +5004,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 slTicks);
 
             string response = ProjectXPost("/api/Order/place", json, true);
-            int orderId;
-            if (TryGetJsonInt(response, "orderId", out orderId))
+            long orderId;
+            if (TryGetJsonLong(response, "orderId", out orderId))
                 projectXLastOrderIds[GetProjectXOrderKey(accountId, contractId)] = orderId;
 
             return response;
@@ -5108,7 +5108,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void ProjectXCancelOrders(int accountId, string contractId)
         {
-            foreach (int orderId in GetProjectXOpenOrderIds(accountId, contractId))
+            foreach (long orderId in GetProjectXOpenOrderIds(accountId, contractId))
             {
                 string cancelJson = string.Format(CultureInfo.InvariantCulture,
                     "{{\"accountId\":{0},\"orderId\":{1}}}",
@@ -5149,9 +5149,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return false;
         }
 
-        private List<int> GetProjectXOpenOrderIds(int accountId, string contractId)
+        private List<long> GetProjectXOpenOrderIds(int accountId, string contractId)
         {
-            var orderIds = new List<int>();
+            var orderIds = new List<long>();
             string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
             string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
             bool success;
@@ -5167,8 +5167,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     continue;
 
                 object idObj;
-                int id;
-                if (!order.TryGetValue("id", out idObj) || !TryConvertToInt(idObj, out id) || id <= 0)
+                long id;
+                if (!order.TryGetValue("id", out idObj) || !TryConvertToLong(idObj, out id) || id <= 0)
                     continue;
 
                 orderIds.Add(id);
@@ -5383,6 +5383,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private bool TryGetJsonLong(string json, string key, out long value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return TryConvertToLong(raw, out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private bool TryGetJsonBool(string json, string key, out bool value)
         {
             value = false;
@@ -5552,6 +5573,45 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToLong(object raw, out long value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+
+            if (raw is int)
+            {
+                value = (int)raw;
+                return true;
+            }
+
+            if (raw is long)
+            {
+                value = (long)raw;
+                return true;
+            }
+
+            if (raw is decimal)
+            {
+                decimal decimalValue = (decimal)raw;
+                if (decimalValue < long.MinValue || decimalValue > long.MaxValue)
+                    return false;
+                value = (long)decimalValue;
+                return true;
+            }
+
+            if (raw is double)
+            {
+                double doubleValue = (double)raw;
+                if (doubleValue < long.MinValue || doubleValue > long.MaxValue)
+                    return false;
+                value = (long)doubleValue;
+                return true;
+            }
+
+            return long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
         }
 
         private bool TryConvertToBool(object raw, out bool value)
