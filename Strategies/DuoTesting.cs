@@ -14,6 +14,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using NinjaTrader.Cbi;
+using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
@@ -236,6 +237,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double currentStopPrice;
         private bool adxDdRiskModeApplied;
         private int currentPositionEntryBar = -1;
+        private Order activeStopLossOrder;
+        private Order activeProfitTargetOrder;
+        private Order activeExitOrder;
+        private DateTime protectionAuditGraceUntilUtc = Core.Globals.MinDate;
         private bool isConfiguredTimeframeValid = true;
         private bool isConfiguredInstrumentValid = true;
         private bool timeframePopupShown;
@@ -765,10 +770,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ProcessSessionTransitions(SessionSlot.London);
             ProcessSessionTransitions(SessionSlot.NewYork);
             ReconcileTrackedEntryOrders();
+            ReconcileTrackedProtectiveOrders();
 
             UpdateActiveSession(Time[0]);
             UpdateEmaPlotVisibility();
             UpdateAdxPlotVisibility();
+
+            if (AuditPositionProtection("bar-watchdog"))
+                return;
 
             if (IsForceCloseTimeReached(Time[0]))
             {
@@ -1266,6 +1275,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        protected override void OnMarketData(MarketDataEventArgs marketDataUpdate)
+        {
+            if (marketDataUpdate == null || marketDataUpdate.MarketDataType != MarketDataType.Last)
+                return;
+
+            if (State != State.Realtime || Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            AuditPositionProtection("tick-watchdog");
+        }
+
         protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
             double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string comment)
         {
@@ -1292,6 +1312,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     shortEntryOrder = null;
                 }
             }
+
+            TrackProtectiveAndExitOrders(order, orderState);
 
             if (orderState == OrderState.Rejected)
                 HandleOrderRejected(order, error, comment);
@@ -1330,6 +1352,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     FinalizeTradeLines();
                 EndTradeAttempt("entry-" + orderState);
             }
+
+            if (orderState == OrderState.Cancelled && IsProtectiveOrderName(order.Name))
+                AuditPositionProtection("protective-cancelled");
 
             if (orderState == OrderState.Filled || orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
                 UpdateInfo();
@@ -1376,6 +1401,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentPositionIsFlipEntry = IsLongEntryOrderName(orderName) ? pendingLongEntryIsFlip : pendingShortEntryIsFlip;
                 pendingLongEntryIsFlip = false;
                 pendingShortEntryIsFlip = false;
+                activeStopLossOrder = null;
+                activeProfitTargetOrder = null;
+                activeExitOrder = null;
                 flipBreakEvenActivated = false;
                 takeProfitStopTriggered = false;
                 initialStopPrice = marketPosition == MarketPosition.Long
@@ -1402,6 +1430,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         FormatSessionLabel(entrySession),
                         GetTradesThisSession(entrySession)));
                 }
+
+                ArmProtectionAuditGracePeriod("entry-fill");
             }
             else if (marketPosition == MarketPosition.Flat && lockedTradeSession != SessionSlot.None)
             {
@@ -1415,6 +1445,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentStopPrice = 0.0;
                 adxDdRiskModeApplied = false;
                 currentPositionEntryBar = -1;
+                ClearProtectionAuditState();
             }
             else if (marketPosition == MarketPosition.Flat)
             {
@@ -1426,6 +1457,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 currentStopPrice = 0.0;
                 adxDdRiskModeApplied = false;
                 currentPositionEntryBar = -1;
+                ClearProtectionAuditState();
             }
 
             bool shouldSendExitWebhook = ShouldSendExitWebhook(execution, orderName, marketPosition);
@@ -2588,6 +2620,258 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                  order.OrderState == OrderState.Accepted ||
                  order.OrderState == OrderState.ChangePending ||
                  order.OrderState == OrderState.PartFilled);
+        }
+
+        private void TrackProtectiveAndExitOrders(Order order, OrderState orderState)
+        {
+            string orderName = order != null ? (order.Name ?? string.Empty) : string.Empty;
+
+            if (IsProtectiveOrderName(orderName))
+            {
+                bool isActive = IsOrderActive(order);
+
+                if (orderName.Equals("Stop loss", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (isActive)
+                        activeStopLossOrder = order;
+                    else if (MatchesTrackedOrder(activeStopLossOrder, order))
+                        activeStopLossOrder = null;
+                }
+                else if (orderName.Equals("Profit target", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (isActive)
+                        activeProfitTargetOrder = order;
+                    else if (MatchesTrackedOrder(activeProfitTargetOrder, order))
+                        activeProfitTargetOrder = null;
+                }
+
+                if (orderState == OrderState.Filled)
+                    ArmProtectionAuditGracePeriod("protective-filled", 2000);
+            }
+
+            if (IsStrategyExitOrderName(orderName))
+            {
+                if (IsOrderActive(order))
+                {
+                    activeExitOrder = order;
+                    ArmProtectionAuditGracePeriod("exit-active", 2000);
+                }
+                else
+                {
+                    if (MatchesTrackedOrder(activeExitOrder, order))
+                        activeExitOrder = null;
+
+                    ArmProtectionAuditGracePeriod("exit-terminal", 2000);
+                }
+            }
+        }
+
+        private bool AuditPositionProtection(string reason)
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                ClearProtectionAuditState();
+                return false;
+            }
+
+            ReconcileTrackedProtectiveOrders();
+
+            if (DateTime.UtcNow < protectionAuditGraceUntilUtc)
+                return false;
+
+            if (IsOrderActive(activeExitOrder))
+                return false;
+
+            double takeProfitPoints = GetActivePositionTakeProfitPoints();
+            bool requiresTarget = takeProfitPoints > 0.0;
+            bool hasStop = IsOrderActive(activeStopLossOrder);
+            bool hasTarget = !requiresTarget || IsOrderActive(activeProfitTargetOrder);
+
+            if (hasStop && hasTarget)
+                return false;
+
+            double restoredStopPrice;
+            double restoredTakeProfitPoints;
+            if (TryRestorePositionProtection(out restoredStopPrice, out restoredTakeProfitPoints))
+            {
+                ArmProtectionAuditGracePeriod("restore-" + reason);
+                Print(string.Format(
+                    "{0} | {8} | bar={1} | Protection guard | action=restore reason={2} side={3} hasStop={4} hasTarget={5} stop={6:0.00} tpPts={7:0.00}",
+                    Time[0],
+                    CurrentBar,
+                    reason,
+                    Position.MarketPosition,
+                    hasStop,
+                    hasTarget,
+                    restoredStopPrice,
+                    restoredTakeProfitPoints,
+                    HeartbeatStrategyName));
+                return true;
+            }
+
+            string entrySignal = Position.MarketPosition == MarketPosition.Long
+                ? GetOpenLongEntrySignal()
+                : GetOpenShortEntrySignal();
+
+            Print(string.Format(
+                "{0} | {6} | bar={1} | Protection guard | action=flatten reason={2} side={3} hasStop={4} hasTarget={5}",
+                Time[0],
+                CurrentBar,
+                reason,
+                Position.MarketPosition,
+                hasStop,
+                hasTarget,
+                HeartbeatStrategyName));
+
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong(BuildExitSignalName("ProtectionGuard"), entrySignal);
+            else if (Position.MarketPosition == MarketPosition.Short)
+                ExitShort(BuildExitSignalName("ProtectionGuard"), entrySignal);
+
+            ArmProtectionAuditGracePeriod("flatten-" + reason, 2000);
+            return true;
+        }
+
+        private bool TryRestorePositionProtection(out double stopPrice, out double takeProfitPoints)
+        {
+            stopPrice = 0.0;
+            takeProfitPoints = 0.0;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return false;
+
+            string entrySignal = Position.MarketPosition == MarketPosition.Long
+                ? GetOpenLongEntrySignal()
+                : GetOpenShortEntrySignal();
+            if (string.IsNullOrEmpty(entrySignal))
+                return false;
+
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
+            double desiredStopPrice = currentStopPrice > 0.0 ? currentStopPrice : initialStopPrice;
+            desiredStopPrice = Instrument.MasterInstrument.RoundToTickSize(desiredStopPrice);
+
+            if (desiredStopPrice <= 0.0 || !IsManagedStopPriceValid(desiredStopPrice, closePrice))
+                return false;
+
+            SetStopLoss(entrySignal, CalculationMode.Price, desiredStopPrice, false);
+            currentStopPrice = desiredStopPrice;
+            UpdateTradeLineStopPrice(desiredStopPrice);
+            activeStopLossOrder = null;
+            stopPrice = desiredStopPrice;
+
+            takeProfitPoints = GetActivePositionTakeProfitPoints();
+            if (takeProfitPoints > 0.0)
+            {
+                int targetTicks = PriceToTicks(takeProfitPoints);
+                if (targetTicks < 1)
+                    targetTicks = 1;
+                SetProfitTarget(entrySignal, CalculationMode.Ticks, targetTicks);
+                activeProfitTargetOrder = null;
+            }
+
+            return true;
+        }
+
+        private void ReconcileTrackedProtectiveOrders()
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                ClearProtectionAuditState();
+                return;
+            }
+
+            if (Account == null)
+                return;
+
+            Order foundStop = null;
+            Order foundTarget = null;
+            Order foundExit = null;
+            string entrySignal = Position.MarketPosition == MarketPosition.Long
+                ? GetOpenLongEntrySignal()
+                : GetOpenShortEntrySignal();
+
+            try
+            {
+                foreach (Order accountOrder in Account.Orders)
+                {
+                    if (!IsOrderActive(accountOrder) || !IsOrderForThisInstrument(accountOrder))
+                        continue;
+
+                    string orderName = accountOrder.Name ?? string.Empty;
+                    string fromEntrySignal = accountOrder.FromEntrySignal ?? string.Empty;
+                    bool signalMatches = fromEntrySignal.Length == 0
+                        || entrySignal.Length == 0
+                        || string.Equals(fromEntrySignal, entrySignal, StringComparison.Ordinal);
+
+                    if (!signalMatches)
+                        continue;
+
+                    if (orderName.Equals("Stop loss", StringComparison.OrdinalIgnoreCase))
+                        foundStop = accountOrder;
+                    else if (orderName.Equals("Profit target", StringComparison.OrdinalIgnoreCase))
+                        foundTarget = accountOrder;
+                    else if (IsStrategyExitOrderName(orderName))
+                        foundExit = accountOrder;
+                }
+            }
+            catch
+            {
+                return;
+            }
+
+            activeStopLossOrder = foundStop;
+            activeProfitTargetOrder = foundTarget;
+            activeExitOrder = foundExit;
+        }
+
+        private bool IsProtectiveOrderName(string orderName)
+        {
+            return !string.IsNullOrEmpty(orderName)
+                && (orderName.Equals("Stop loss", StringComparison.OrdinalIgnoreCase)
+                    || orderName.Equals("Profit target", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private bool IsStrategyExitOrderName(string orderName)
+        {
+            return !string.IsNullOrEmpty(orderName)
+                && orderName.StartsWith("Duo", StringComparison.OrdinalIgnoreCase)
+                && !IsEntryOrderName(orderName);
+        }
+
+        private bool MatchesTrackedOrder(Order trackedOrder, Order order)
+        {
+            if (trackedOrder == null || order == null)
+                return false;
+
+            string trackedId = trackedOrder.OrderId ?? string.Empty;
+            string orderId = order.OrderId ?? string.Empty;
+            return string.Equals(trackedId, orderId, StringComparison.Ordinal);
+        }
+
+        private bool IsOrderForThisInstrument(Order order)
+        {
+            return order != null
+                && order.Instrument != null
+                && Instrument != null
+                && string.Equals(order.Instrument.FullName, Instrument.FullName, StringComparison.Ordinal);
+        }
+
+        private void ArmProtectionAuditGracePeriod(string reason, int milliseconds = 3000)
+        {
+            DateTime candidateUtc = DateTime.UtcNow.AddMilliseconds(milliseconds);
+            if (candidateUtc > protectionAuditGraceUntilUtc)
+                protectionAuditGraceUntilUtc = candidateUtc;
+
+            if (DebugLogging)
+                LogDebug(string.Format("Protection grace armed | reason={0} ms={1}", reason, milliseconds));
+        }
+
+        private void ClearProtectionAuditState()
+        {
+            activeStopLossOrder = null;
+            activeProfitTargetOrder = null;
+            activeExitOrder = null;
+            protectionAuditGraceUntilUtc = Core.Globals.MinDate;
         }
 
         private void ReconcileTrackedEntryOrders()
