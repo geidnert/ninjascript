@@ -511,8 +511,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             sb.AppendLine("---");
             sb.AppendLine($"**Weekly Total: {FormatPnl(weeklyTotal)}**");
-            int monthlyDayCount = monthlyDayTotals.Count;
-            double monthlyDailyAverage = monthlyDayCount > 0 ? monthlyTotal / monthlyDayCount : 0;
+            int monthlyTradingDayCount = CountWeekdaysInMonthToDate(tradingDay);
+            double monthlyDailyAverage = monthlyTradingDayCount > 0 ? monthlyTotal / monthlyTradingDayCount : 0;
             sb.AppendLine($"**Monthly Daily Average: {FormatPnl(monthlyDailyAverage)}**");
             sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
 
@@ -836,6 +836,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private static string FormatTradingDayLabel(DateTime tradingDay) =>
             $"CME Trading Day: {tradingDay:dddd MMMM dd, yyyy}";
+
+        private static int CountWeekdaysInMonthToDate(DateTime tradingDay)
+        {
+            DateTime cursor = new DateTime(tradingDay.Year, tradingDay.Month, 1);
+            int count = 0;
+            while (cursor <= tradingDay.Date)
+            {
+                if (cursor.DayOfWeek >= DayOfWeek.Monday && cursor.DayOfWeek <= DayOfWeek.Friday)
+                    count++;
+                cursor = cursor.AddDays(1);
+            }
+            return count;
+        }
 
         private bool IsRateLimited(WebException ex)
         {
