@@ -619,7 +619,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ShowEmaOnChart = true;
                 ShowAdxOnChart = true;
                 ShowAdxThresholdLines = true;
-                ShowAtrOnChart = false;
+                ShowAtrOnChart = true;
                 ShowAtrThresholdLines = true;
 
                 UseNewsSkip = true;
