@@ -24,11 +24,11 @@ using NinjaTrader.NinjaScript.Indicators;
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
-    public class DuoTesting : Strategy
+    public class DUOTesting : Strategy
     {
-        private const string HeartbeatStrategyName = "DuoTesting";
+        private const string HeartbeatStrategyName = "DUOTesting";
 
-        public DuoTesting()
+        public DUOTesting()
         {
             VendorLicense(337);
         }
@@ -248,10 +248,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool instrumentPopupShown;
         private const double FlipBodyThresholdPercent = 0.0;
         private const int TakeProfitAtrPeriod = 14;
-        private const string LongEntrySignal = "DuoLong";
-        private const string ShortEntrySignal = "DuoShort";
-        private const string LongFlipEntrySignal = "DuoLong";
-        private const string ShortFlipEntrySignal = "DuoShort";
+        private const string LongEntrySignal = "DUOLong";
+        private const string ShortEntrySignal = "DUOShort";
+        private const string LongFlipEntrySignal = "DUOLong";
+        private const string ShortFlipEntrySignal = "DUOShort";
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
         private static readonly string NewsDatesRaw =
 @"2025-01-02,08:30
@@ -490,7 +490,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Name = "DuoTesting2";
+                Name = "DUOTesting2";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
@@ -1561,7 +1561,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string BuildExitSignalName(string reason)
         {
-            return "Duo" + reason;
+            return "DUO" + reason;
         }
 
         private void TryApplyFlipBreakEvenStop()
@@ -1927,7 +1927,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 || normalized.Equals("TakeProfitExit", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("ProtectiveReject", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("TwoCandleReverse", StringComparison.OrdinalIgnoreCase)
-                || normalized.StartsWith("Duo", StringComparison.OrdinalIgnoreCase))
+                || normalized.StartsWith("DUO", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -1940,7 +1940,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (tradeLinesActive)
                 FinalizeTradeLines();
 
-            tradeLineTagPrefix = string.Format("Duo_TradeLine_{0}_{1}_", ++tradeLineTagCounter, CurrentBar);
+            tradeLineTagPrefix = string.Format("DUO_TradeLine_{0}_{1}_", ++tradeLineTagCounter, CurrentBar);
             tradeLinesActive = true;
             tradeLineSignalBar = Math.Max(0, CurrentBar - 1);
             tradeLineExitBar = -1;
@@ -2454,7 +2454,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             Draw.HorizontalLine(
                 adx,
-                "Duo_ADX_Min_" + adxTagSuffix,
+                "DUO_ADX_Min_" + adxTagSuffix,
                 drawMin ? minThreshold : 0.0,
                 drawMin ? Brushes.LimeGreen : Brushes.Transparent,
                 DashStyleHelper.Solid,
@@ -2462,7 +2462,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             Draw.HorizontalLine(
                 adx,
-                "Duo_ADX_Max_" + adxTagSuffix,
+                "DUO_ADX_Max_" + adxTagSuffix,
                 drawMax ? maxThreshold : 0.0,
                 drawMax ? Brushes.OrangeRed : Brushes.Transparent,
                 DashStyleHelper.Dash,
@@ -2878,7 +2878,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool IsStrategyExitOrderName(string orderName)
         {
             return !string.IsNullOrEmpty(orderName)
-                && orderName.StartsWith("Duo", StringComparison.OrdinalIgnoreCase)
+                && orderName.StartsWith("DUO", StringComparison.OrdinalIgnoreCase)
                 && !IsEntryOrderName(orderName);
         }
 
@@ -3360,9 +3360,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CurrentBar < 1)
                 return;
 
-            DrawSessionBackground(SessionSlot.Asia, "Duo_Asia", AsiaSessionBrush ?? Brushes.LightSkyBlue);
-            DrawSessionBackground(SessionSlot.London, "Duo_London", LondonSessionBrush ?? Brushes.LightSkyBlue);
-            DrawSessionBackground(SessionSlot.NewYork, "Duo_NewYork", NewYorkSessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.Asia, "DUO_Asia", AsiaSessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.London, "DUO_London", LondonSessionBrush ?? Brushes.LightSkyBlue);
+            DrawSessionBackground(SessionSlot.NewYork, "DUO_NewYork", NewYorkSessionBrush ?? Brushes.LightSkyBlue);
             DrawNewYorkSkipWindow(Time[0]);
         }
 
@@ -3444,7 +3444,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
             }
 
-            string tagBase = string.Format("Duo_NewYorkSkip_{0:yyyyMMdd_HHmm}", windowStart);
+            string tagBase = string.Format("DUO_NewYorkSkip_{0:yyyyMMdd_HHmm}", windowStart);
             Draw.Rectangle(
                 this,
                 tagBase + "_Rect",
@@ -3486,7 +3486,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
                 catch { }
 
-                string tagBase = string.Format("Duo_News_{0:yyyyMMdd_HHmm}", newsTime);
+                string tagBase = string.Format("DUO_News_{0:yyyyMMdd_HHmm}", newsTime);
 
                 Draw.Rectangle(
                     this,
@@ -4035,7 +4035,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 paBrush = Brushes.Gold;
             }
 
-            lines.Add((string.Format("Duo v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add((string.Format("DUO v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", contractsText, Brushes.LightGray, Brushes.LightGray));
             lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
             string momentumThresholdText = activeAdxMinSlopePoints > 0.0
