@@ -16,6 +16,7 @@ using System.Xml.Serialization;
 using NinjaTrader.Cbi;
 using NinjaTrader.Data;
 using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
@@ -49,6 +50,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             PercentMove,
             AtrTrail
+        }
+
+        private sealed class TradeLineSnapshot
+        {
+            public int StartBar;
+            public int EndBar;
+            public double EntryPrice;
+            public double StopPrice;
+            public double TakeProfitPrice;
+            public double TakeProfitTriggerPrice;
+            public bool HasTakeProfit;
+            public bool HasTakeProfitTrigger;
         }
 
         // Commercial (closed list) option: uncomment these converters and the [TypeConverter(...)] lines
@@ -165,6 +178,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double tradeLineTpPrice;
         private double tradeLineTpTriggerPrice;
         private double tradeLineSlPrice;
+        private readonly List<TradeLineSnapshot> historicalTradeLines = new List<TradeLineSnapshot>();
 
         private EMA emaAsia;
         private EMA emaLondon;
@@ -691,6 +705,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tradeLineTpPrice = 0.0;
                 tradeLineTpTriggerPrice = 0.0;
                 tradeLineSlPrice = 0.0;
+                historicalTradeLines.Clear();
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
                 UpdateAdxPlotVisibility();
@@ -783,6 +798,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ProcessSessionTransitions(SessionSlot.NewYork);
             ReconcileTrackedEntryOrders();
             ReconcileTrackedProtectiveOrders();
+            SyncTradeLinesToLivePositionAndOrders();
 
             UpdateActiveSession(Time[0]);
             UpdateEmaPlotVisibility();
@@ -1337,6 +1353,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             TrackProtectiveAndExitOrders(order, orderState);
+            SyncTradeLinesToProtectiveOrder(order, limitPrice, stopPrice);
+            SyncTradeLinesToFilledEntryOrder(order, orderState, averageFillPrice);
 
             if (orderState == OrderState.Rejected)
                 HandleOrderRejected(order, error, comment);
@@ -1416,7 +1434,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             string orderName = execution.Order.Name ?? string.Empty;
-            double fillPrice = Instrument.MasterInstrument.RoundToTickSize(price);
+            double effectiveFillPrice = execution.Order.AverageFillPrice > 0.0
+                ? execution.Order.AverageFillPrice
+                : price;
+            double fillPrice = Instrument.MasterInstrument.RoundToTickSize(effectiveFillPrice);
 
             if (IsEntryOrderName(orderName))
             {
@@ -1437,7 +1458,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 initialStopPrice = Instrument.MasterInstrument.RoundToTickSize(initialStopPrice);
                 if (initialStopPrice <= 0.0 && tradeLineSlPrice > 0.0)
                     initialStopPrice = Instrument.MasterInstrument.RoundToTickSize(tradeLineSlPrice);
+                initialStopPrice = BuildFilledStopPrice(marketPosition, fillPrice, initialStopPrice);
                 currentStopPrice = initialStopPrice;
+                ReanchorTradeLinesToEntryFill(marketPosition, fillPrice, currentPositionIsFlipEntry, initialStopPrice);
                 adxDdRiskModeApplied = false;
                 currentPositionEntryBar = CurrentBar;
                 SessionSlot entrySession = activeSession != SessionSlot.None
@@ -1515,7 +1538,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (!IsEntryOrderName(orderName))
             {
-                if (tradeLinesActive)
+                if (tradeLinesActive && ShouldFinalizeTradeLinesOnExecution(orderName))
                     FinalizeTradeLines();
                 EndTradeAttempt("exit-" + orderName);
             }
@@ -1523,9 +1546,83 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             UpdateInfo();
         }
 
+        protected override void OnRender(ChartControl chartControl, ChartScale chartScale)
+        {
+            base.OnRender(chartControl, chartScale);
+
+            if (!UseCustomTradeLineRendering() || RenderTarget == null || chartControl == null || chartScale == null || ChartBars == null)
+                return;
+
+            bool hasActiveSegment = ShouldRenderActiveTradeLinesCustom();
+            bool hasHistoricalSegments = historicalTradeLines.Count > 0;
+            if (!hasActiveSegment && !hasHistoricalSegments)
+                return;
+
+            var oldAntialiasMode = RenderTarget.AntialiasMode;
+            RenderTarget.AntialiasMode = SharpDX.Direct2D1.AntialiasMode.Aliased;
+
+            using (var entryBrush = Brushes.Gold.ToDxBrush(RenderTarget))
+            using (var stopBrush = Brushes.Red.ToDxBrush(RenderTarget))
+            using (var targetBrush = Brushes.LimeGreen.ToDxBrush(RenderTarget))
+            {
+                foreach (TradeLineSnapshot snapshot in historicalTradeLines)
+                {
+                    DrawRenderedTradeLineSet(
+                        chartControl,
+                        chartScale,
+                        snapshot.StartBar,
+                        snapshot.EndBar,
+                        snapshot.EntryPrice,
+                        snapshot.StopPrice,
+                        snapshot.HasTakeProfit,
+                        snapshot.TakeProfitPrice,
+                        snapshot.HasTakeProfitTrigger,
+                        snapshot.TakeProfitTriggerPrice,
+                        entryBrush,
+                        stopBrush,
+                        targetBrush);
+                }
+
+                if (hasActiveSegment)
+                {
+                    DrawRenderedTradeLineSet(
+                        chartControl,
+                        chartScale,
+                        tradeLineSignalBar,
+                        CurrentBar,
+                        tradeLineEntryPrice,
+                        tradeLineSlPrice,
+                        tradeLineHasTp,
+                        tradeLineTpPrice,
+                        tradeLineHasTpTrigger,
+                        tradeLineTpTriggerPrice,
+                        entryBrush,
+                        stopBrush,
+                        targetBrush);
+                }
+            }
+
+            RenderTarget.AntialiasMode = oldAntialiasMode;
+        }
+
         private bool IsEntryOrderName(string orderName)
         {
             return IsLongEntryOrderName(orderName) || IsShortEntryOrderName(orderName);
+        }
+
+        private bool ShouldFinalizeTradeLinesOnExecution(string orderName)
+        {
+            if (!tradeLinesActive)
+                return false;
+
+            if (!string.Equals(orderName, "Close position", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // During a managed flip, NinjaTrader emits a synthetic "Close position" execution
+            // for the old leg. The new trade lines have already been started for the incoming leg,
+            // so finalizing them here would erase the flip's fresh line set before its entry fill arrives.
+            bool flipTransitionActive = pendingLongEntryIsFlip || pendingShortEntryIsFlip || currentPositionIsFlipEntry;
+            return !flipTransitionActive;
         }
 
         private double GetEffectiveFlipEmaCrossPoints()
@@ -1958,6 +2055,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SetTradeLineTakeProfitState(takeProfitPrice, hasTakeProfit);
 
             DrawTradeLinesAtBarsAgo(1, 0);
+            RequestTradeLineRender();
         }
 
         private void UpdateTradeLines()
@@ -1971,6 +2069,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 : 0;
 
             DrawTradeLinesAtBarsAgo(startBarsAgo, endBarsAgo);
+
+            if (ShouldRenderActiveTradeLinesCustom())
+                RequestTradeLineRender();
         }
 
         private void FinalizeTradeLines()
@@ -1979,9 +2080,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             tradeLineExitBar = CurrentBar;
+            historicalTradeLines.Add(new TradeLineSnapshot
+            {
+                StartBar = tradeLineSignalBar,
+                EndBar = tradeLineExitBar,
+                EntryPrice = tradeLineEntryPrice,
+                StopPrice = tradeLineSlPrice,
+                HasTakeProfit = tradeLineHasTp,
+                TakeProfitPrice = tradeLineTpPrice,
+                HasTakeProfitTrigger = tradeLineHasTpTrigger,
+                TakeProfitTriggerPrice = tradeLineTpTriggerPrice
+            });
             UpdateTradeLines();
             tradeLinesActive = false;
             ClearTradeLineState();
+            RequestTradeLineRender();
         }
 
         private void ClearTradeLineState()
@@ -2014,6 +2127,162 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             UpdateTradeLines();
         }
 
+        private void SyncTradeLinesToProtectiveOrder(Order order, double limitPrice, double stopPrice)
+        {
+            if (!tradeLinesActive || order == null || !IsOrderActive(order))
+                return;
+
+            string orderName = order.Name ?? string.Empty;
+            if (orderName.Equals("Stop loss", StringComparison.OrdinalIgnoreCase))
+            {
+                double actualStopPrice = GetWorkingOrderStopPrice(order, stopPrice);
+                if (actualStopPrice > 0.0)
+                {
+                    currentStopPrice = actualStopPrice;
+                    UpdateTradeLineStopPrice(actualStopPrice);
+                }
+            }
+            else if (orderName.Equals("Profit target", StringComparison.OrdinalIgnoreCase))
+            {
+                double actualTargetPrice = GetWorkingOrderLimitPrice(order, limitPrice);
+                if (actualTargetPrice > 0.0)
+                    UpdateTradeLineTakeProfitPrice(actualTargetPrice);
+            }
+        }
+
+        private void SyncTradeLinesToFilledEntryOrder(Order order, OrderState orderState, double averageFillPrice)
+        {
+            if (!tradeLinesActive || order == null || orderState != OrderState.Filled || !IsEntryOrderName(order.Name))
+                return;
+
+            double actualFillPrice = averageFillPrice > 0.0
+                ? Instrument.MasterInstrument.RoundToTickSize(averageFillPrice)
+                : 0.0;
+            if (actualFillPrice <= 0.0)
+                return;
+
+            bool isLongEntry = IsLongEntryOrderName(order.Name);
+            bool isFlipEntry = isLongEntry ? pendingLongEntryIsFlip : pendingShortEntryIsFlip;
+            double plannedStopPrice = isLongEntry ? pendingLongStopForWebhook : pendingShortStopForWebhook;
+            double actualStopPrice = BuildFilledStopPrice(
+                isLongEntry ? MarketPosition.Long : MarketPosition.Short,
+                actualFillPrice,
+                plannedStopPrice);
+
+            ReanchorTradeLinesToEntryFill(
+                isLongEntry ? MarketPosition.Long : MarketPosition.Short,
+                actualFillPrice,
+                isFlipEntry,
+                actualStopPrice);
+        }
+
+        private void SyncTradeLinesToLivePositionAndOrders()
+        {
+            if (!tradeLinesActive || Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            bool changed = false;
+
+            double actualEntryPrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            if (actualEntryPrice > 0.0 && Math.Abs(actualEntryPrice - tradeLineEntryPrice) > TickSize * 0.5)
+            {
+                tradeLineEntryPrice = actualEntryPrice;
+                changed = true;
+            }
+
+            if (IsOrderActive(activeStopLossOrder))
+            {
+                double actualStopPrice = GetWorkingOrderStopPrice(activeStopLossOrder, 0.0);
+                if (actualStopPrice > 0.0 && Math.Abs(actualStopPrice - tradeLineSlPrice) > TickSize * 0.5)
+                {
+                    tradeLineSlPrice = actualStopPrice;
+                    currentStopPrice = actualStopPrice;
+                    changed = true;
+                }
+            }
+
+            if (IsOrderActive(activeProfitTargetOrder))
+            {
+                double actualTargetPrice = GetWorkingOrderLimitPrice(activeProfitTargetOrder, 0.0);
+                if (actualTargetPrice > 0.0 && (!tradeLineHasTp || Math.Abs(actualTargetPrice - tradeLineTpPrice) > TickSize * 0.5 || changed))
+                {
+                    SetTradeLineTakeProfitState(actualTargetPrice, true);
+                    changed = true;
+                }
+            }
+
+            if (changed)
+                UpdateTradeLines();
+        }
+
+        private double GetWorkingOrderStopPrice(Order order, double fallbackStopPrice)
+        {
+            double rawStopPrice = order != null && order.StopPrice > 0.0
+                ? order.StopPrice
+                : fallbackStopPrice;
+            return rawStopPrice > 0.0
+                ? Instrument.MasterInstrument.RoundToTickSize(rawStopPrice)
+                : 0.0;
+        }
+
+        private double GetWorkingOrderLimitPrice(Order order, double fallbackLimitPrice)
+        {
+            double rawLimitPrice = order != null && order.LimitPrice > 0.0
+                ? order.LimitPrice
+                : fallbackLimitPrice;
+            return rawLimitPrice > 0.0
+                ? Instrument.MasterInstrument.RoundToTickSize(rawLimitPrice)
+                : 0.0;
+        }
+
+        private double BuildFilledStopPrice(MarketPosition marketPosition, double fillPrice, double plannedStopPrice)
+        {
+            if (marketPosition == MarketPosition.Flat || plannedStopPrice <= 0.0)
+                return 0.0;
+
+            double referenceEntryPrice = tradeLineEntryPrice > 0.0
+                ? tradeLineEntryPrice
+                : fillPrice;
+            int stopTicks = PriceToTicks(Math.Abs(referenceEntryPrice - plannedStopPrice));
+            if (stopTicks < 1)
+                stopTicks = 1;
+
+            double stopPrice = marketPosition == MarketPosition.Long
+                ? fillPrice - stopTicks * TickSize
+                : fillPrice + stopTicks * TickSize;
+            return Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+        }
+
+        private void ReanchorTradeLinesToEntryFill(MarketPosition marketPosition, double fillPrice, bool isFlipEntry, double stopPrice)
+        {
+            if (!tradeLinesActive || marketPosition == MarketPosition.Flat)
+                return;
+
+            tradeLineEntryPrice = Instrument.MasterInstrument.RoundToTickSize(fillPrice);
+            tradeLineSlPrice = stopPrice > 0.0
+                ? Instrument.MasterInstrument.RoundToTickSize(stopPrice)
+                : 0.0;
+
+            double takeProfitPoints = GetConfiguredEntryTakeProfitPoints(isFlipEntry);
+            if (takeProfitPoints > 0.0)
+            {
+                int targetTicks = PriceToTicks(takeProfitPoints);
+                if (targetTicks < 1)
+                    targetTicks = 1;
+
+                double takeProfitPrice = marketPosition == MarketPosition.Long
+                    ? fillPrice + targetTicks * TickSize
+                    : fillPrice - targetTicks * TickSize;
+                SetTradeLineTakeProfitState(takeProfitPrice, true);
+            }
+            else
+            {
+                SetTradeLineTakeProfitState(0.0, false);
+            }
+
+            UpdateTradeLines();
+        }
+
         private void SetTradeLineTakeProfitState(double takeProfitPrice, bool hasTakeProfit)
         {
             tradeLineHasTp = hasTakeProfit;
@@ -2040,6 +2309,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (string.IsNullOrEmpty(tradeLineTagPrefix))
                 return;
 
+            if (UseCustomTradeLineRendering())
+                return;
+
             Draw.Line(this, tradeLineTagPrefix + "Entry", false,
                 startBarsAgo, tradeLineEntryPrice,
                 endBarsAgo, tradeLineEntryPrice,
@@ -2064,6 +2336,104 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     startBarsAgo, tradeLineTpTriggerPrice,
                     endBarsAgo, tradeLineTpTriggerPrice,
                     Brushes.LimeGreen, DashStyleHelper.Dot, 2);
+            }
+        }
+
+        private bool ShouldRenderActiveTradeLinesCustom()
+        {
+            return tradeLinesActive && tradeLineSignalBar >= 0 && tradeLineExitBar < 0;
+        }
+
+        private bool UseCustomTradeLineRendering()
+        {
+            return true;
+        }
+
+        private void RequestTradeLineRender()
+        {
+            if (ChartControl == null)
+                return;
+
+            if (ChartControl.Dispatcher == null || ChartControl.Dispatcher.CheckAccess())
+            {
+                ChartControl.InvalidateVisual();
+                return;
+            }
+
+            ChartControl.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (ChartControl != null)
+                    ChartControl.InvalidateVisual();
+            }));
+        }
+
+        private float GetSnappedTradeLineY(ChartScale chartScale, double price)
+        {
+            float priceY = (float)chartScale.GetYByValue(price);
+            return (float)Math.Round(priceY);
+        }
+
+        private void DrawRenderedTradeLineSet(
+            ChartControl chartControl,
+            ChartScale chartScale,
+            int startBarIndex,
+            int endBarIndex,
+            double entryPrice,
+            double stopPrice,
+            bool hasTakeProfit,
+            double takeProfitPrice,
+            bool hasTakeProfitTrigger,
+            double takeProfitTriggerPrice,
+            SharpDX.Direct2D1.Brush entryBrush,
+            SharpDX.Direct2D1.Brush stopBrush,
+            SharpDX.Direct2D1.Brush targetBrush)
+        {
+            int visibleStartBarIndex = Math.Max(ChartBars.FromIndex, startBarIndex);
+            int visibleEndBarIndex = Math.Min(ChartBars.ToIndex, endBarIndex);
+            if (visibleEndBarIndex < visibleStartBarIndex)
+                return;
+
+            float startX = chartControl.GetXByBarIndex(ChartBars, visibleStartBarIndex);
+            float endX = chartControl.GetXByBarIndex(ChartBars, visibleEndBarIndex);
+            float panelLeft = ChartPanel != null ? ChartPanel.X : startX;
+            float panelRight = ChartPanel != null ? ChartPanel.X + ChartPanel.W : endX;
+            startX = Math.Max(startX, panelLeft);
+            endX = Math.Min(endX, panelRight);
+            if (endX <= startX)
+                return;
+
+            DrawPixelSnappedHorizontalLine(chartScale, startX, endX, entryPrice, entryBrush, 2f);
+            DrawPixelSnappedHorizontalLine(chartScale, startX, endX, stopPrice, stopBrush, 2f);
+
+            if (hasTakeProfit)
+                DrawPixelSnappedHorizontalLine(chartScale, startX, endX, takeProfitPrice, targetBrush, 2f);
+
+            if (hasTakeProfitTrigger)
+                DrawPixelSnappedDottedHorizontalLine(chartScale, startX, endX, takeProfitTriggerPrice, targetBrush, 2f);
+        }
+
+        private void DrawPixelSnappedHorizontalLine(ChartScale chartScale, float startX, float endX, double price, SharpDX.Direct2D1.Brush brush, float width)
+        {
+            if (price <= 0.0 || endX <= startX)
+                return;
+
+            float y = GetSnappedTradeLineY(chartScale, price);
+            RenderTarget.DrawLine(new SharpDX.Vector2(startX, y), new SharpDX.Vector2(endX, y), brush, width);
+        }
+
+        private void DrawPixelSnappedDottedHorizontalLine(ChartScale chartScale, float startX, float endX, double price, SharpDX.Direct2D1.Brush brush, float width)
+        {
+            if (price <= 0.0 || endX <= startX)
+                return;
+
+            float y = GetSnappedTradeLineY(chartScale, price);
+            const float dashLength = 4f;
+            const float gapLength = 4f;
+
+            for (float x = startX; x < endX; x += dashLength + gapLength)
+            {
+                float segmentEndX = Math.Min(x + dashLength, endX);
+                RenderTarget.DrawLine(new SharpDX.Vector2(x, y), new SharpDX.Vector2(segmentEndX, y), brush, width);
             }
         }
 
