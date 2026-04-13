@@ -116,6 +116,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             None,
             Asia,
+            Asia2,
+            Asia3,
+            London,
+            London2,
+            London3,
+            NewYork,
+            NewYork2,
+            NewYork3
+        }
+
+        private enum SessionFamily
+        {
+            None,
+            Asia,
             London,
             NewYork
         }
@@ -150,15 +164,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string webhookUrl = string.Empty;
         private string webhookTickerOverride = string.Empty;
         private double asiaAdxMinSlopePoints;
+        private double asia2AdxMinSlopePoints;
+        private double asia3AdxMinSlopePoints;
         private double londonAdxMinSlopePoints;
+        private double london2AdxMinSlopePoints;
+        private double london3AdxMinSlopePoints;
         private double newYorkAdxMinSlopePoints;
+        private double newYork2AdxMinSlopePoints;
+        private double newYork3AdxMinSlopePoints;
         private TimeZoneInfo targetTimeZone;
         private TimeZoneInfo londonTimeZone;
         private StrategyHeartbeatReporter heartbeatReporter;
 
         private bool asiaSessionClosed;
+        private bool asia2SessionClosed;
+        private bool asia3SessionClosed;
         private bool londonSessionClosed;
+        private bool london2SessionClosed;
+        private bool london3SessionClosed;
         private bool newYorkSessionClosed;
+        private bool newYork2SessionClosed;
+        private bool newYork3SessionClosed;
 
         private bool sessionInitialized;
         private SessionSlot activeSession = SessionSlot.None;
@@ -181,14 +207,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private readonly List<TradeLineSnapshot> historicalTradeLines = new List<TradeLineSnapshot>();
 
         private EMA emaAsia;
+        private EMA emaAsia2;
+        private EMA emaAsia3;
         private EMA emaLondon;
+        private EMA emaLondon2;
+        private EMA emaLondon3;
         private EMA emaNewYork;
+        private EMA emaNewYork2;
+        private EMA emaNewYork3;
         private EMA activeEma;
         private ATR takeProfitAtr;
         private DUOAtrVisual atrVisual;
         private DM adxAsia;
+        private DM adxAsia2;
+        private DM adxAsia3;
         private DM adxLondon;
+        private DM adxLondon2;
+        private DM adxLondon3;
         private DM adxNewYork;
+        private DM adxNewYork2;
+        private DM adxNewYork3;
         private DM activeAdx;
 
         private int activeEmaPeriod;
@@ -267,6 +305,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortEntrySignal = "DUOShort";
         private const string LongFlipEntrySignal = "DUOLong";
         private const string ShortFlipEntrySignal = "DUOShort";
+        private static readonly SessionSlot[] ConfigurableSessionSlots = new[]
+        {
+            SessionSlot.Asia,
+            SessionSlot.Asia2,
+            SessionSlot.Asia3,
+            SessionSlot.London,
+            SessionSlot.London2,
+            SessionSlot.London3,
+            SessionSlot.NewYork,
+            SessionSlot.NewYork2,
+            SessionSlot.NewYork3
+        };
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
         private static readonly string NewsDatesRaw =
 @"2025-01-02,08:30
@@ -549,6 +599,78 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxDdRiskModeTakeProfitPoints = 1.0;
                 AsiaHorizontalExitBars = 61;
 
+                UseAsia2Session = false;
+                Asia2SessionStart = AsiaSessionStart;
+                Asia2SessionEnd = AsiaSessionEnd;
+                Asia2BlockSundayTrades = AsiaBlockSundayTrades;
+                Asia2EmaPeriod = AsiaEmaPeriod;
+                Asia2Contracts = AsiaContracts;
+                Asia2TradeDirection = AsiaTradeDirection;
+                Asia2FlipAdxThreshold = AsiaFlipAdxThreshold;
+                Asia2EmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
+                Asia2MaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
+                Asia2AdxPeriod = AsiaAdxPeriod;
+                Asia2AdxThreshold = AsiaAdxThreshold;
+                Asia2AdxMaxThreshold = AsiaAdxMaxThreshold;
+                Asia2AdxMinSlopePoints = AsiaAdxMinSlopePoints;
+                Asia2AdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
+                Asia2AdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
+                Asia2StopPaddingPoints = AsiaStopPaddingPoints;
+                Asia2ExitCrossPoints = AsiaExitCrossPoints;
+                Asia2FlipEmaCrossPoints = AsiaFlipEmaCrossPoints;
+                Asia2MaxStopLossPoints = AsiaMaxStopLossPoints;
+                Asia2TakeProfitPoints = AsiaTakeProfitPoints;
+                Asia2AtrMinimum = AsiaAtrMinimum;
+                Asia2EntryOffsetPoints = AsiaEntryOffsetPoints;
+                Asia2EnableFlipBreakEven = AsiaEnableFlipBreakEven;
+                Asia2FlipBreakEvenTriggerPoints = AsiaFlipBreakEvenTriggerPoints;
+                Asia2FlipTakeProfitPoints = AsiaFlipTakeProfitPoints;
+                Asia2TakeProfitPercentTriggerPercent = AsiaTakeProfitPercentTriggerPercent;
+                Asia2TakeProfitStopMode = AsiaTakeProfitStopMode;
+                Asia2TakeProfitAtrTrailMultiplier = AsiaTakeProfitAtrTrailMultiplier;
+                Asia2TakeProfitPercentStopMovePercent = AsiaTakeProfitPercentStopMovePercent;
+                Asia2RequireMinAdxForFlips = AsiaRequireMinAdxForFlips;
+                Asia2EnableAdxDdRiskMode = AsiaEnableAdxDdRiskMode;
+                Asia2AdxDdRiskModeStopLossPoints = AsiaAdxDdRiskModeStopLossPoints;
+                Asia2AdxDdRiskModeTakeProfitPoints = AsiaAdxDdRiskModeTakeProfitPoints;
+                Asia2HorizontalExitBars = AsiaHorizontalExitBars;
+
+                UseAsia3Session = false;
+                Asia3SessionStart = AsiaSessionStart;
+                Asia3SessionEnd = AsiaSessionEnd;
+                Asia3BlockSundayTrades = AsiaBlockSundayTrades;
+                Asia3EmaPeriod = AsiaEmaPeriod;
+                Asia3Contracts = AsiaContracts;
+                Asia3TradeDirection = AsiaTradeDirection;
+                Asia3FlipAdxThreshold = AsiaFlipAdxThreshold;
+                Asia3EmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
+                Asia3MaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
+                Asia3AdxPeriod = AsiaAdxPeriod;
+                Asia3AdxThreshold = AsiaAdxThreshold;
+                Asia3AdxMaxThreshold = AsiaAdxMaxThreshold;
+                Asia3AdxMinSlopePoints = AsiaAdxMinSlopePoints;
+                Asia3AdxPeakDrawdownExitUnits = AsiaAdxPeakDrawdownExitUnits;
+                Asia3AdxAbsoluteExitLevel = AsiaAdxAbsoluteExitLevel;
+                Asia3StopPaddingPoints = AsiaStopPaddingPoints;
+                Asia3ExitCrossPoints = AsiaExitCrossPoints;
+                Asia3FlipEmaCrossPoints = AsiaFlipEmaCrossPoints;
+                Asia3MaxStopLossPoints = AsiaMaxStopLossPoints;
+                Asia3TakeProfitPoints = AsiaTakeProfitPoints;
+                Asia3AtrMinimum = AsiaAtrMinimum;
+                Asia3EntryOffsetPoints = AsiaEntryOffsetPoints;
+                Asia3EnableFlipBreakEven = AsiaEnableFlipBreakEven;
+                Asia3FlipBreakEvenTriggerPoints = AsiaFlipBreakEvenTriggerPoints;
+                Asia3FlipTakeProfitPoints = AsiaFlipTakeProfitPoints;
+                Asia3TakeProfitPercentTriggerPercent = AsiaTakeProfitPercentTriggerPercent;
+                Asia3TakeProfitStopMode = AsiaTakeProfitStopMode;
+                Asia3TakeProfitAtrTrailMultiplier = AsiaTakeProfitAtrTrailMultiplier;
+                Asia3TakeProfitPercentStopMovePercent = AsiaTakeProfitPercentStopMovePercent;
+                Asia3RequireMinAdxForFlips = AsiaRequireMinAdxForFlips;
+                Asia3EnableAdxDdRiskMode = AsiaEnableAdxDdRiskMode;
+                Asia3AdxDdRiskModeStopLossPoints = AsiaAdxDdRiskModeStopLossPoints;
+                Asia3AdxDdRiskModeTakeProfitPoints = AsiaAdxDdRiskModeTakeProfitPoints;
+                Asia3HorizontalExitBars = AsiaHorizontalExitBars;
+
                 UseLondonSession = true;
                 LondonSessionStart = new TimeSpan(1, 45, 0);
                 LondonSessionEnd = new TimeSpan(6, 30, 0);
@@ -584,6 +706,78 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonAdxDdRiskModeStopLossPoints = 3.0;
                 LondonAdxDdRiskModeTakeProfitPoints = 52.0;
                 LondonHorizontalExitBars = 60;
+
+                UseLondon2Session = false;
+                London2SessionStart = LondonSessionStart;
+                London2SessionEnd = LondonSessionEnd;
+                AutoShiftLondon2 = AutoShiftLondon;
+                London2EmaPeriod = LondonEmaPeriod;
+                London2Contracts = LondonContracts;
+                London2TradeDirection = LondonTradeDirection;
+                London2FlipAdxThreshold = LondonFlipAdxThreshold;
+                London2EmaMinSlopePointsPerBar = LondonEmaMinSlopePointsPerBar;
+                London2MaxEntryDistanceFromEmaPoints = LondonMaxEntryDistanceFromEmaPoints;
+                London2AdxPeriod = LondonAdxPeriod;
+                London2AdxThreshold = LondonAdxThreshold;
+                London2AdxMaxThreshold = LondonAdxMaxThreshold;
+                London2AdxMinSlopePoints = LondonAdxMinSlopePoints;
+                London2AdxPeakDrawdownExitUnits = LondonAdxPeakDrawdownExitUnits;
+                London2AdxAbsoluteExitLevel = LondonAdxAbsoluteExitLevel;
+                London2StopPaddingPoints = LondonStopPaddingPoints;
+                London2ExitCrossPoints = LondonExitCrossPoints;
+                London2FlipEmaCrossPoints = LondonFlipEmaCrossPoints;
+                London2MaxStopLossPoints = LondonMaxStopLossPoints;
+                London2TakeProfitPoints = LondonTakeProfitPoints;
+                London2AtrMinimum = LondonAtrMinimum;
+                London2EntryOffsetPoints = LondonEntryOffsetPoints;
+                London2EnableFlipBreakEven = LondonEnableFlipBreakEven;
+                London2FlipBreakEvenTriggerPoints = LondonFlipBreakEvenTriggerPoints;
+                London2FlipTakeProfitPoints = LondonFlipTakeProfitPoints;
+                London2TakeProfitPercentTriggerPercent = LondonTakeProfitPercentTriggerPercent;
+                London2TakeProfitStopMode = LondonTakeProfitStopMode;
+                London2TakeProfitAtrTrailMultiplier = LondonTakeProfitAtrTrailMultiplier;
+                London2TakeProfitPercentStopMovePercent = LondonTakeProfitPercentStopMovePercent;
+                London2RequireMinAdxForFlips = LondonRequireMinAdxForFlips;
+                London2EnableAdxDdRiskMode = LondonEnableAdxDdRiskMode;
+                London2AdxDdRiskModeStopLossPoints = LondonAdxDdRiskModeStopLossPoints;
+                London2AdxDdRiskModeTakeProfitPoints = LondonAdxDdRiskModeTakeProfitPoints;
+                London2HorizontalExitBars = LondonHorizontalExitBars;
+
+                UseLondon3Session = false;
+                London3SessionStart = LondonSessionStart;
+                London3SessionEnd = LondonSessionEnd;
+                AutoShiftLondon3 = AutoShiftLondon;
+                London3EmaPeriod = LondonEmaPeriod;
+                London3Contracts = LondonContracts;
+                London3TradeDirection = LondonTradeDirection;
+                London3FlipAdxThreshold = LondonFlipAdxThreshold;
+                London3EmaMinSlopePointsPerBar = LondonEmaMinSlopePointsPerBar;
+                London3MaxEntryDistanceFromEmaPoints = LondonMaxEntryDistanceFromEmaPoints;
+                London3AdxPeriod = LondonAdxPeriod;
+                London3AdxThreshold = LondonAdxThreshold;
+                London3AdxMaxThreshold = LondonAdxMaxThreshold;
+                London3AdxMinSlopePoints = LondonAdxMinSlopePoints;
+                London3AdxPeakDrawdownExitUnits = LondonAdxPeakDrawdownExitUnits;
+                London3AdxAbsoluteExitLevel = LondonAdxAbsoluteExitLevel;
+                London3StopPaddingPoints = LondonStopPaddingPoints;
+                London3ExitCrossPoints = LondonExitCrossPoints;
+                London3FlipEmaCrossPoints = LondonFlipEmaCrossPoints;
+                London3MaxStopLossPoints = LondonMaxStopLossPoints;
+                London3TakeProfitPoints = LondonTakeProfitPoints;
+                London3AtrMinimum = LondonAtrMinimum;
+                London3EntryOffsetPoints = LondonEntryOffsetPoints;
+                London3EnableFlipBreakEven = LondonEnableFlipBreakEven;
+                London3FlipBreakEvenTriggerPoints = LondonFlipBreakEvenTriggerPoints;
+                London3FlipTakeProfitPoints = LondonFlipTakeProfitPoints;
+                London3TakeProfitPercentTriggerPercent = LondonTakeProfitPercentTriggerPercent;
+                London3TakeProfitStopMode = LondonTakeProfitStopMode;
+                London3TakeProfitAtrTrailMultiplier = LondonTakeProfitAtrTrailMultiplier;
+                London3TakeProfitPercentStopMovePercent = LondonTakeProfitPercentStopMovePercent;
+                London3RequireMinAdxForFlips = LondonRequireMinAdxForFlips;
+                London3EnableAdxDdRiskMode = LondonEnableAdxDdRiskMode;
+                London3AdxDdRiskModeStopLossPoints = LondonAdxDdRiskModeStopLossPoints;
+                London3AdxDdRiskModeTakeProfitPoints = LondonAdxDdRiskModeTakeProfitPoints;
+                London3HorizontalExitBars = LondonHorizontalExitBars;
 
                 UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 35, 0);
@@ -625,6 +819,86 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxDdRiskModeTakeProfitPoints = 72.0;
                 NewYorkHorizontalExitBars = 36;
 
+                UseNewYork2Session = false;
+                NewYork2SessionStart = NewYorkSessionStart;
+                NewYork2SessionEnd = NewYorkSessionEnd;
+                NewYork2SkipStart = NewYorkSkipStart;
+                NewYork2SkipEnd = NewYorkSkipEnd;
+                NewYork2EmaPeriod = NewYorkEmaPeriod;
+                NewYork2Contracts = NewYorkContracts;
+                NewYork2TradeDirection = NewYorkTradeDirection;
+                NewYork2FlipAdxThreshold = NewYorkFlipAdxThreshold;
+                NewYork2EmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
+                NewYork2MaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
+                NewYork2AdxPeriod = NewYorkAdxPeriod;
+                NewYork2AdxThreshold = NewYorkAdxThreshold;
+                NewYork2AdxMaxThreshold = NewYorkAdxMaxThreshold;
+                NewYork2AdxMinSlopePoints = NewYorkAdxMinSlopePoints;
+                NewYork2AdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
+                NewYork2AdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
+                NewYork2StopPaddingPoints = NewYorkStopPaddingPoints;
+                NewYork2ExitCrossPoints = NewYorkExitCrossPoints;
+                NewYork2FlipEmaCrossPoints = NewYorkFlipEmaCrossPoints;
+                NewYork2MaxStopLossPoints = NewYorkMaxStopLossPoints;
+                NewYork2TakeProfitPoints = NewYorkTakeProfitPoints;
+                NewYork2AtrMinimum = NewYorkAtrMinimum;
+                NewYork2HvSlPaddingPoints = NewYorkHvSlPaddingPoints;
+                NewYork2HvSlStartTime = NewYorkHvSlStartTime;
+                NewYork2HvSlEndTime = NewYorkHvSlEndTime;
+                NewYork2EntryOffsetPoints = NewYorkEntryOffsetPoints;
+                NewYork2EnableFlipBreakEven = NewYorkEnableFlipBreakEven;
+                NewYork2FlipBreakEvenTriggerPoints = NewYorkFlipBreakEvenTriggerPoints;
+                NewYork2FlipTakeProfitPoints = NewYorkFlipTakeProfitPoints;
+                NewYork2TakeProfitPercentTriggerPercent = NewYorkTakeProfitPercentTriggerPercent;
+                NewYork2TakeProfitStopMode = NewYorkTakeProfitStopMode;
+                NewYork2TakeProfitAtrTrailMultiplier = NewYorkTakeProfitAtrTrailMultiplier;
+                NewYork2TakeProfitPercentStopMovePercent = NewYorkTakeProfitPercentStopMovePercent;
+                NewYork2RequireMinAdxForFlips = NewYorkRequireMinAdxForFlips;
+                NewYork2EnableAdxDdRiskMode = NewYorkEnableAdxDdRiskMode;
+                NewYork2AdxDdRiskModeStopLossPoints = NewYorkAdxDdRiskModeStopLossPoints;
+                NewYork2AdxDdRiskModeTakeProfitPoints = NewYorkAdxDdRiskModeTakeProfitPoints;
+                NewYork2HorizontalExitBars = NewYorkHorizontalExitBars;
+
+                UseNewYork3Session = false;
+                NewYork3SessionStart = NewYorkSessionStart;
+                NewYork3SessionEnd = NewYorkSessionEnd;
+                NewYork3SkipStart = NewYorkSkipStart;
+                NewYork3SkipEnd = NewYorkSkipEnd;
+                NewYork3EmaPeriod = NewYorkEmaPeriod;
+                NewYork3Contracts = NewYorkContracts;
+                NewYork3TradeDirection = NewYorkTradeDirection;
+                NewYork3FlipAdxThreshold = NewYorkFlipAdxThreshold;
+                NewYork3EmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
+                NewYork3MaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
+                NewYork3AdxPeriod = NewYorkAdxPeriod;
+                NewYork3AdxThreshold = NewYorkAdxThreshold;
+                NewYork3AdxMaxThreshold = NewYorkAdxMaxThreshold;
+                NewYork3AdxMinSlopePoints = NewYorkAdxMinSlopePoints;
+                NewYork3AdxPeakDrawdownExitUnits = NewYorkAdxPeakDrawdownExitUnits;
+                NewYork3AdxAbsoluteExitLevel = NewYorkAdxAbsoluteExitLevel;
+                NewYork3StopPaddingPoints = NewYorkStopPaddingPoints;
+                NewYork3ExitCrossPoints = NewYorkExitCrossPoints;
+                NewYork3FlipEmaCrossPoints = NewYorkFlipEmaCrossPoints;
+                NewYork3MaxStopLossPoints = NewYorkMaxStopLossPoints;
+                NewYork3TakeProfitPoints = NewYorkTakeProfitPoints;
+                NewYork3AtrMinimum = NewYorkAtrMinimum;
+                NewYork3HvSlPaddingPoints = NewYorkHvSlPaddingPoints;
+                NewYork3HvSlStartTime = NewYorkHvSlStartTime;
+                NewYork3HvSlEndTime = NewYorkHvSlEndTime;
+                NewYork3EntryOffsetPoints = NewYorkEntryOffsetPoints;
+                NewYork3EnableFlipBreakEven = NewYorkEnableFlipBreakEven;
+                NewYork3FlipBreakEvenTriggerPoints = NewYorkFlipBreakEvenTriggerPoints;
+                NewYork3FlipTakeProfitPoints = NewYorkFlipTakeProfitPoints;
+                NewYork3TakeProfitPercentTriggerPercent = NewYorkTakeProfitPercentTriggerPercent;
+                NewYork3TakeProfitStopMode = NewYorkTakeProfitStopMode;
+                NewYork3TakeProfitAtrTrailMultiplier = NewYorkTakeProfitAtrTrailMultiplier;
+                NewYork3TakeProfitPercentStopMovePercent = NewYorkTakeProfitPercentStopMovePercent;
+                NewYork3RequireMinAdxForFlips = NewYorkRequireMinAdxForFlips;
+                NewYork3EnableAdxDdRiskMode = NewYorkEnableAdxDdRiskMode;
+                NewYork3AdxDdRiskModeStopLossPoints = NewYorkAdxDdRiskModeStopLossPoints;
+                NewYork3AdxDdRiskModeTakeProfitPoints = NewYorkAdxDdRiskModeTakeProfitPoints;
+                NewYork3HorizontalExitBars = NewYorkHorizontalExitBars;
+
                 CloseAtSessionEnd = false;
                 ForceCloseTime = string.Empty;
                 AsiaSessionBrush = Brushes.DarkCyan;
@@ -659,29 +933,59 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ValidateRequiredPrimaryInstrument();
 
                 emaAsia = EMA(AsiaEmaPeriod);
+                emaAsia2 = EMA(Asia2EmaPeriod);
+                emaAsia3 = EMA(Asia3EmaPeriod);
                 emaLondon = EMA(LondonEmaPeriod);
+                emaLondon2 = EMA(London2EmaPeriod);
+                emaLondon3 = EMA(London3EmaPeriod);
                 emaNewYork = EMA(NewYorkEmaPeriod);
+                emaNewYork2 = EMA(NewYork2EmaPeriod);
+                emaNewYork3 = EMA(NewYork3EmaPeriod);
                 takeProfitAtr = ATR(TakeProfitAtrPeriod);
                 atrVisual = DUOAtrVisual(TakeProfitAtrPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
+                adxAsia2 = DM(Asia2AdxPeriod);
+                adxAsia3 = DM(Asia3AdxPeriod);
                 adxLondon = DM(LondonAdxPeriod);
+                adxLondon2 = DM(London2AdxPeriod);
+                adxLondon3 = DM(London3AdxPeriod);
                 adxNewYork = DM(NewYorkAdxPeriod);
+                adxNewYork2 = DM(NewYork2AdxPeriod);
+                adxNewYork3 = DM(NewYork3AdxPeriod);
                 UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
+                UpdateAdxReferenceLines(adxAsia2, Asia2AdxThreshold, Asia2AdxMaxThreshold);
+                UpdateAdxReferenceLines(adxAsia3, Asia3AdxThreshold, Asia3AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxLondon, LondonAdxThreshold, LondonAdxMaxThreshold);
+                UpdateAdxReferenceLines(adxLondon2, London2AdxThreshold, London2AdxMaxThreshold);
+                UpdateAdxReferenceLines(adxLondon3, London3AdxThreshold, London3AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxNewYork, NewYorkAdxThreshold, NewYorkAdxMaxThreshold);
+                UpdateAdxReferenceLines(adxNewYork2, NewYork2AdxThreshold, NewYork2AdxMaxThreshold);
+                UpdateAdxReferenceLines(adxNewYork3, NewYork3AdxThreshold, NewYork3AdxMaxThreshold);
 
                 if (ShowEmaOnChart)
                 {
                     AddChartIndicator(emaAsia);
+                    AddChartIndicator(emaAsia2);
+                    AddChartIndicator(emaAsia3);
                     AddChartIndicator(emaLondon);
+                    AddChartIndicator(emaLondon2);
+                    AddChartIndicator(emaLondon3);
                     AddChartIndicator(emaNewYork);
+                    AddChartIndicator(emaNewYork2);
+                    AddChartIndicator(emaNewYork3);
                 }
 
                 if (ShowAdxOnChart)
                 {
                     AddChartIndicator(adxAsia);
+                    AddChartIndicator(adxAsia2);
+                    AddChartIndicator(adxAsia3);
                     AddChartIndicator(adxLondon);
+                    AddChartIndicator(adxLondon2);
+                    AddChartIndicator(adxLondon3);
                     AddChartIndicator(adxNewYork);
+                    AddChartIndicator(adxNewYork2);
+                    AddChartIndicator(adxNewYork3);
                 }
 
                 if (ShowAtrOnChart || ShowAtrThresholdLines)
@@ -723,8 +1027,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 adxDdRiskModeApplied = false;
                 currentPositionEntryBar = -1;
                 asiaSessionClosed = false;
+                asia2SessionClosed = false;
+                asia3SessionClosed = false;
                 londonSessionClosed = false;
+                london2SessionClosed = false;
+                london3SessionClosed = false;
                 newYorkSessionClosed = false;
+                newYork2SessionClosed = false;
+                newYork3SessionClosed = false;
                 projectXSessionToken = null;
                 projectXTokenAcquiredUtc = Core.Globals.MinDate;
                 projectXAccounts = null;
@@ -793,9 +1103,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             UpdateTradeLines();
             UpdateInfo();
 
-            ProcessSessionTransitions(SessionSlot.Asia);
-            ProcessSessionTransitions(SessionSlot.London);
-            ProcessSessionTransitions(SessionSlot.NewYork);
+            foreach (SessionSlot slot in ConfigurableSessionSlots)
+                ProcessSessionTransitions(slot);
             ReconcileTrackedEntryOrders();
             ReconcileTrackedProtectiveOrders();
             SyncTradeLinesToLivePositionAndOrders();
@@ -831,8 +1140,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
-            bool inNySkipNow = activeSession == SessionSlot.NewYork && IsNewYorkSkipTime(Time[0]);
-            bool isAsiaSundayBlockedNow = activeSession == SessionSlot.Asia && AsiaBlockSundayTrades && Time[0].DayOfWeek == DayOfWeek.Sunday;
+            bool inNySkipNow = IsNewYorkFamily(activeSession) && IsNewYorkSkipTime(activeSession, Time[0]);
+            bool isAsiaSundayBlockedNow = IsAsiaSundayBlocked(activeSession, Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double atrValue = GetCurrentAtrValue();
@@ -1184,7 +1493,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (inNewsSkipNow)
                         reasons.Add(string.Format("NewsSkip minutes={0}", NewsBlockMinutes));
                     if (inNySkipNow)
-                        reasons.Add(string.Format("NewYorkSkip {0:hh\\:mm}-{1:hh\\:mm}", NewYorkSkipStart, NewYorkSkipEnd));
+                    {
+                        TimeSpan skipStart;
+                        TimeSpan skipEnd;
+                        if (TryGetNewYorkSkipWindow(activeSession, out skipStart, out skipEnd))
+                            reasons.Add(string.Format("NewYorkSkip {0:hh\\:mm}-{1:hh\\:mm}", skipStart, skipEnd));
+                        else
+                            reasons.Add("NewYorkSkip");
+                    }
                     if (isAsiaSundayBlockedNow)
                         reasons.Add("AsiaSundayBlock");
                     if (accountBlocked)
@@ -2497,73 +2813,85 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private static SessionFamily GetSessionFamily(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                case SessionSlot.Asia2:
+                case SessionSlot.Asia3:
+                    return SessionFamily.Asia;
+
+                case SessionSlot.London:
+                case SessionSlot.London2:
+                case SessionSlot.London3:
+                    return SessionFamily.London;
+
+                case SessionSlot.NewYork:
+                case SessionSlot.NewYork2:
+                case SessionSlot.NewYork3:
+                    return SessionFamily.NewYork;
+
+                default:
+                    return SessionFamily.None;
+            }
+        }
+
+        private static bool IsAsiaFamily(SessionSlot slot)
+        {
+            return GetSessionFamily(slot) == SessionFamily.Asia;
+        }
+
+        private static bool IsLondonFamily(SessionSlot slot)
+        {
+            return GetSessionFamily(slot) == SessionFamily.London;
+        }
+
+        private static bool IsNewYorkFamily(SessionSlot slot)
+        {
+            return GetSessionFamily(slot) == SessionFamily.NewYork;
+        }
+
         private SessionSlot DetermineSessionForTime(DateTime time)
         {
             TimeSpan now = time.TimeOfDay;
-            TimeSpan asiaStart = TimeSpan.Zero;
-            TimeSpan asiaEnd = TimeSpan.Zero;
-            TimeSpan londonStart = TimeSpan.Zero;
-            TimeSpan londonEnd = TimeSpan.Zero;
-            TimeSpan nyStart = TimeSpan.Zero;
-            TimeSpan nyEnd = TimeSpan.Zero;
+            SessionSlot nextSlot = SessionSlot.None;
+            DateTime nextStart = DateTime.MaxValue;
+            bool hasConfiguredSession = false;
 
-            bool asiaConfigured = IsSessionConfigured(SessionSlot.Asia)
-                && TryGetSessionWindow(SessionSlot.Asia, time, out asiaStart, out asiaEnd);
-            bool londonConfigured = IsSessionConfigured(SessionSlot.London)
-                && TryGetSessionWindow(SessionSlot.London, time, out londonStart, out londonEnd);
-            bool newYorkConfigured = IsSessionConfigured(SessionSlot.NewYork)
-                && TryGetSessionWindow(SessionSlot.NewYork, time, out nyStart, out nyEnd);
-
-            if (asiaConfigured && IsTimeInRange(now, asiaStart, asiaEnd))
-                return SessionSlot.Asia;
-            if (londonConfigured && IsTimeInRange(now, londonStart, londonEnd))
-                return SessionSlot.London;
-            if (newYorkConfigured && IsTimeInRange(now, nyStart, nyEnd))
-                return SessionSlot.NewYork;
-
-            if (!asiaConfigured && !londonConfigured && !newYorkConfigured)
-                return SessionSlot.None;
-
-            DateTime nextAsiaStart = DateTime.MaxValue;
-            DateTime nextLondonStart = DateTime.MaxValue;
-            DateTime nextNewYorkStart = DateTime.MaxValue;
-
-            if (asiaConfigured)
+            foreach (SessionSlot slot in ConfigurableSessionSlots)
             {
-                nextAsiaStart = time.Date + asiaStart;
-                if (nextAsiaStart <= time)
-                    nextAsiaStart = nextAsiaStart.AddDays(1);
+                TimeSpan start;
+                TimeSpan end;
+                if (!IsSessionConfigured(slot) || !TryGetSessionWindow(slot, time, out start, out end))
+                    continue;
+
+                hasConfiguredSession = true;
+                if (IsTimeInRange(now, start, end))
+                    return slot;
+
+                DateTime candidateStart = time.Date + start;
+                if (candidateStart <= time)
+                    candidateStart = candidateStart.AddDays(1);
+
+                if (candidateStart < nextStart)
+                {
+                    nextStart = candidateStart;
+                    nextSlot = slot;
+                }
             }
 
-            if (londonConfigured)
-            {
-                nextLondonStart = time.Date + londonStart;
-                if (nextLondonStart <= time)
-                    nextLondonStart = nextLondonStart.AddDays(1);
-            }
-
-            if (newYorkConfigured)
-            {
-                nextNewYorkStart = time.Date + nyStart;
-                if (nextNewYorkStart <= time)
-                    nextNewYorkStart = nextNewYorkStart.AddDays(1);
-            }
-
-            if (nextAsiaStart <= nextLondonStart && nextAsiaStart <= nextNewYorkStart)
-                return SessionSlot.Asia;
-            if (nextLondonStart <= nextNewYorkStart)
-                return SessionSlot.London;
-            return SessionSlot.NewYork;
+            return hasConfiguredSession ? nextSlot : SessionSlot.None;
         }
 
         private SessionSlot GetFirstConfiguredSession()
         {
-            if (IsSessionConfigured(SessionSlot.Asia))
-                return SessionSlot.Asia;
-            if (IsSessionConfigured(SessionSlot.London))
-                return SessionSlot.London;
-            if (IsSessionConfigured(SessionSlot.NewYork))
-                return SessionSlot.NewYork;
+            foreach (SessionSlot slot in ConfigurableSessionSlots)
+            {
+                if (IsSessionConfigured(slot))
+                    return slot;
+            }
+
             return SessionSlot.None;
         }
 
@@ -2573,10 +2901,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case SessionSlot.Asia:
                     return UseAsiaSession && AsiaSessionStart != AsiaSessionEnd;
+                case SessionSlot.Asia2:
+                    return UseAsia2Session && Asia2SessionStart != Asia2SessionEnd;
+                case SessionSlot.Asia3:
+                    return UseAsia3Session && Asia3SessionStart != Asia3SessionEnd;
                 case SessionSlot.London:
                     return UseLondonSession && LondonSessionStart != LondonSessionEnd;
+                case SessionSlot.London2:
+                    return UseLondon2Session && London2SessionStart != London2SessionEnd;
+                case SessionSlot.London3:
+                    return UseLondon3Session && London3SessionStart != London3SessionEnd;
                 case SessionSlot.NewYork:
                     return UseNewYorkSession && NewYorkSessionStart != NewYorkSessionEnd;
+                case SessionSlot.NewYork2:
+                    return UseNewYork2Session && NewYork2SessionStart != NewYork2SessionEnd;
+                case SessionSlot.NewYork3:
+                    return UseNewYork3Session && NewYork3SessionStart != NewYork3SessionEnd;
                 default:
                     return false;
             }
@@ -2627,6 +2967,88 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHorizontalExitBars = AsiaHorizontalExitBars;
                     break;
 
+                case SessionSlot.Asia2:
+                    activeEma = emaAsia2;
+                    activeAdx = adxAsia2;
+                    activeEmaPeriod = Asia2EmaPeriod;
+                    activeAdxPeriod = Asia2AdxPeriod;
+                    activeAdxThreshold = Asia2AdxThreshold;
+                    activeFlipAdxThreshold = Asia2FlipAdxThreshold;
+                    activeAdxMaxThreshold = Asia2AdxMaxThreshold;
+                    activeAdxMinSlopePoints = Asia2AdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = Asia2AdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = Asia2AdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = Asia2Contracts;
+                    activeTradeDirection = Asia2TradeDirection;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = Asia2EmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = Asia2MaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = Asia2StopPaddingPoints;
+                    activeExitCrossPoints = Asia2ExitCrossPoints;
+                    activeFlipEmaCrossPoints = Asia2FlipEmaCrossPoints;
+                    activeMaxStopLossPoints = Asia2MaxStopLossPoints;
+                    activeTakeProfitPoints = Asia2TakeProfitPoints;
+                    activeMinimumAtrForEntry = Asia2AtrMinimum;
+                    activeHvSlPaddingPoints = 0.0;
+                    activeHvSlStartTime = TimeSpan.Zero;
+                    activeHvSlEndTime = TimeSpan.Zero;
+                    activeEntryOffsetPoints = Asia2EntryOffsetPoints;
+                    activeEnableFlipBreakEven = Asia2EnableFlipBreakEven;
+                    activeFlipBreakEvenTriggerPoints = Asia2FlipBreakEvenTriggerPoints;
+                    activeFlipTakeProfitPoints = Asia2FlipTakeProfitPoints;
+                    activeTakeProfitPercentTriggerPercent = Asia2TakeProfitPercentTriggerPercent;
+                    activeTakeProfitStopMode = Asia2TakeProfitStopMode;
+                    activeTakeProfitAtrTrailMultiplier = Asia2TakeProfitAtrTrailMultiplier;
+                    activeTakeProfitPercentStopMovePercent = Asia2TakeProfitPercentStopMovePercent;
+                    activeRequireMinAdxForFlips = Asia2RequireMinAdxForFlips;
+                    activeEnableAdxDdRiskMode = Asia2EnableAdxDdRiskMode;
+                    activeAdxDdRiskModeStopLossPoints = Asia2AdxDdRiskModeStopLossPoints;
+                    activeAdxDdRiskModeTakeProfitPoints = Asia2AdxDdRiskModeTakeProfitPoints;
+                    activeHorizontalExitBars = Asia2HorizontalExitBars;
+                    break;
+
+                case SessionSlot.Asia3:
+                    activeEma = emaAsia3;
+                    activeAdx = adxAsia3;
+                    activeEmaPeriod = Asia3EmaPeriod;
+                    activeAdxPeriod = Asia3AdxPeriod;
+                    activeAdxThreshold = Asia3AdxThreshold;
+                    activeFlipAdxThreshold = Asia3FlipAdxThreshold;
+                    activeAdxMaxThreshold = Asia3AdxMaxThreshold;
+                    activeAdxMinSlopePoints = Asia3AdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = Asia3AdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = Asia3AdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = Asia3Contracts;
+                    activeTradeDirection = Asia3TradeDirection;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = Asia3EmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = Asia3MaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = Asia3StopPaddingPoints;
+                    activeExitCrossPoints = Asia3ExitCrossPoints;
+                    activeFlipEmaCrossPoints = Asia3FlipEmaCrossPoints;
+                    activeMaxStopLossPoints = Asia3MaxStopLossPoints;
+                    activeTakeProfitPoints = Asia3TakeProfitPoints;
+                    activeMinimumAtrForEntry = Asia3AtrMinimum;
+                    activeHvSlPaddingPoints = 0.0;
+                    activeHvSlStartTime = TimeSpan.Zero;
+                    activeHvSlEndTime = TimeSpan.Zero;
+                    activeEntryOffsetPoints = Asia3EntryOffsetPoints;
+                    activeEnableFlipBreakEven = Asia3EnableFlipBreakEven;
+                    activeFlipBreakEvenTriggerPoints = Asia3FlipBreakEvenTriggerPoints;
+                    activeFlipTakeProfitPoints = Asia3FlipTakeProfitPoints;
+                    activeTakeProfitPercentTriggerPercent = Asia3TakeProfitPercentTriggerPercent;
+                    activeTakeProfitStopMode = Asia3TakeProfitStopMode;
+                    activeTakeProfitAtrTrailMultiplier = Asia3TakeProfitAtrTrailMultiplier;
+                    activeTakeProfitPercentStopMovePercent = Asia3TakeProfitPercentStopMovePercent;
+                    activeRequireMinAdxForFlips = Asia3RequireMinAdxForFlips;
+                    activeEnableAdxDdRiskMode = Asia3EnableAdxDdRiskMode;
+                    activeAdxDdRiskModeStopLossPoints = Asia3AdxDdRiskModeStopLossPoints;
+                    activeAdxDdRiskModeTakeProfitPoints = Asia3AdxDdRiskModeTakeProfitPoints;
+                    activeHorizontalExitBars = Asia3HorizontalExitBars;
+                    break;
+
                 case SessionSlot.London:
                     activeEma = emaLondon;
                     activeAdx = adxLondon;
@@ -2668,6 +3090,88 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHorizontalExitBars = LondonHorizontalExitBars;
                     break;
 
+                case SessionSlot.London2:
+                    activeEma = emaLondon2;
+                    activeAdx = adxLondon2;
+                    activeEmaPeriod = London2EmaPeriod;
+                    activeAdxPeriod = London2AdxPeriod;
+                    activeAdxThreshold = London2AdxThreshold;
+                    activeFlipAdxThreshold = London2FlipAdxThreshold;
+                    activeAdxMaxThreshold = London2AdxMaxThreshold;
+                    activeAdxMinSlopePoints = London2AdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = London2AdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = London2AdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = London2Contracts;
+                    activeTradeDirection = London2TradeDirection;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = London2EmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = London2MaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = London2StopPaddingPoints;
+                    activeExitCrossPoints = London2ExitCrossPoints;
+                    activeFlipEmaCrossPoints = London2FlipEmaCrossPoints;
+                    activeMaxStopLossPoints = London2MaxStopLossPoints;
+                    activeTakeProfitPoints = London2TakeProfitPoints;
+                    activeMinimumAtrForEntry = London2AtrMinimum;
+                    activeHvSlPaddingPoints = 0.0;
+                    activeHvSlStartTime = TimeSpan.Zero;
+                    activeHvSlEndTime = TimeSpan.Zero;
+                    activeEntryOffsetPoints = London2EntryOffsetPoints;
+                    activeEnableFlipBreakEven = London2EnableFlipBreakEven;
+                    activeFlipBreakEvenTriggerPoints = London2FlipBreakEvenTriggerPoints;
+                    activeFlipTakeProfitPoints = London2FlipTakeProfitPoints;
+                    activeTakeProfitPercentTriggerPercent = London2TakeProfitPercentTriggerPercent;
+                    activeTakeProfitStopMode = London2TakeProfitStopMode;
+                    activeTakeProfitAtrTrailMultiplier = London2TakeProfitAtrTrailMultiplier;
+                    activeTakeProfitPercentStopMovePercent = London2TakeProfitPercentStopMovePercent;
+                    activeRequireMinAdxForFlips = London2RequireMinAdxForFlips;
+                    activeEnableAdxDdRiskMode = London2EnableAdxDdRiskMode;
+                    activeAdxDdRiskModeStopLossPoints = London2AdxDdRiskModeStopLossPoints;
+                    activeAdxDdRiskModeTakeProfitPoints = London2AdxDdRiskModeTakeProfitPoints;
+                    activeHorizontalExitBars = London2HorizontalExitBars;
+                    break;
+
+                case SessionSlot.London3:
+                    activeEma = emaLondon3;
+                    activeAdx = adxLondon3;
+                    activeEmaPeriod = London3EmaPeriod;
+                    activeAdxPeriod = London3AdxPeriod;
+                    activeAdxThreshold = London3AdxThreshold;
+                    activeFlipAdxThreshold = London3FlipAdxThreshold;
+                    activeAdxMaxThreshold = London3AdxMaxThreshold;
+                    activeAdxMinSlopePoints = London3AdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = London3AdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = London3AdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = London3Contracts;
+                    activeTradeDirection = London3TradeDirection;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = London3EmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = London3MaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = London3StopPaddingPoints;
+                    activeExitCrossPoints = London3ExitCrossPoints;
+                    activeFlipEmaCrossPoints = London3FlipEmaCrossPoints;
+                    activeMaxStopLossPoints = London3MaxStopLossPoints;
+                    activeTakeProfitPoints = London3TakeProfitPoints;
+                    activeMinimumAtrForEntry = London3AtrMinimum;
+                    activeHvSlPaddingPoints = 0.0;
+                    activeHvSlStartTime = TimeSpan.Zero;
+                    activeHvSlEndTime = TimeSpan.Zero;
+                    activeEntryOffsetPoints = London3EntryOffsetPoints;
+                    activeEnableFlipBreakEven = London3EnableFlipBreakEven;
+                    activeFlipBreakEvenTriggerPoints = London3FlipBreakEvenTriggerPoints;
+                    activeFlipTakeProfitPoints = London3FlipTakeProfitPoints;
+                    activeTakeProfitPercentTriggerPercent = London3TakeProfitPercentTriggerPercent;
+                    activeTakeProfitStopMode = London3TakeProfitStopMode;
+                    activeTakeProfitAtrTrailMultiplier = London3TakeProfitAtrTrailMultiplier;
+                    activeTakeProfitPercentStopMovePercent = London3TakeProfitPercentStopMovePercent;
+                    activeRequireMinAdxForFlips = London3RequireMinAdxForFlips;
+                    activeEnableAdxDdRiskMode = London3EnableAdxDdRiskMode;
+                    activeAdxDdRiskModeStopLossPoints = London3AdxDdRiskModeStopLossPoints;
+                    activeAdxDdRiskModeTakeProfitPoints = London3AdxDdRiskModeTakeProfitPoints;
+                    activeHorizontalExitBars = London3HorizontalExitBars;
+                    break;
+
                 case SessionSlot.NewYork:
                     activeEma = emaNewYork;
                     activeAdx = adxNewYork;
@@ -2707,6 +3211,88 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = NewYorkAdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = NewYorkAdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = NewYorkHorizontalExitBars;
+                    break;
+
+                case SessionSlot.NewYork2:
+                    activeEma = emaNewYork2;
+                    activeAdx = adxNewYork2;
+                    activeEmaPeriod = NewYork2EmaPeriod;
+                    activeAdxPeriod = NewYork2AdxPeriod;
+                    activeAdxThreshold = NewYork2AdxThreshold;
+                    activeFlipAdxThreshold = NewYork2FlipAdxThreshold;
+                    activeAdxMaxThreshold = NewYork2AdxMaxThreshold;
+                    activeAdxMinSlopePoints = NewYork2AdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = NewYork2AdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = NewYork2AdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = NewYork2Contracts;
+                    activeTradeDirection = NewYork2TradeDirection;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = NewYork2EmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = NewYork2MaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = NewYork2StopPaddingPoints;
+                    activeExitCrossPoints = NewYork2ExitCrossPoints;
+                    activeFlipEmaCrossPoints = NewYork2FlipEmaCrossPoints;
+                    activeMaxStopLossPoints = NewYork2MaxStopLossPoints;
+                    activeTakeProfitPoints = NewYork2TakeProfitPoints;
+                    activeMinimumAtrForEntry = NewYork2AtrMinimum;
+                    activeHvSlPaddingPoints = NewYork2HvSlPaddingPoints;
+                    activeHvSlStartTime = NewYork2HvSlStartTime;
+                    activeHvSlEndTime = NewYork2HvSlEndTime;
+                    activeEntryOffsetPoints = NewYork2EntryOffsetPoints;
+                    activeEnableFlipBreakEven = NewYork2EnableFlipBreakEven;
+                    activeFlipBreakEvenTriggerPoints = NewYork2FlipBreakEvenTriggerPoints;
+                    activeFlipTakeProfitPoints = NewYork2FlipTakeProfitPoints;
+                    activeTakeProfitPercentTriggerPercent = NewYork2TakeProfitPercentTriggerPercent;
+                    activeTakeProfitStopMode = NewYork2TakeProfitStopMode;
+                    activeTakeProfitAtrTrailMultiplier = NewYork2TakeProfitAtrTrailMultiplier;
+                    activeTakeProfitPercentStopMovePercent = NewYork2TakeProfitPercentStopMovePercent;
+                    activeRequireMinAdxForFlips = NewYork2RequireMinAdxForFlips;
+                    activeEnableAdxDdRiskMode = NewYork2EnableAdxDdRiskMode;
+                    activeAdxDdRiskModeStopLossPoints = NewYork2AdxDdRiskModeStopLossPoints;
+                    activeAdxDdRiskModeTakeProfitPoints = NewYork2AdxDdRiskModeTakeProfitPoints;
+                    activeHorizontalExitBars = NewYork2HorizontalExitBars;
+                    break;
+
+                case SessionSlot.NewYork3:
+                    activeEma = emaNewYork3;
+                    activeAdx = adxNewYork3;
+                    activeEmaPeriod = NewYork3EmaPeriod;
+                    activeAdxPeriod = NewYork3AdxPeriod;
+                    activeAdxThreshold = NewYork3AdxThreshold;
+                    activeFlipAdxThreshold = NewYork3FlipAdxThreshold;
+                    activeAdxMaxThreshold = NewYork3AdxMaxThreshold;
+                    activeAdxMinSlopePoints = NewYork3AdxMinSlopePoints;
+                    activeAdxPeakDrawdownExitUnits = NewYork3AdxPeakDrawdownExitUnits;
+                    activeAdxAbsoluteExitLevel = NewYork3AdxAbsoluteExitLevel;
+                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
+                    activeContracts = NewYork3Contracts;
+                    activeTradeDirection = NewYork3TradeDirection;
+                    activeEntryStopMode = InitialStopMode.WickExtreme;
+                    activeEmaMinSlopePointsPerBar = NewYork3EmaMinSlopePointsPerBar;
+                    activeMaxEntryDistanceFromEmaPoints = NewYork3MaxEntryDistanceFromEmaPoints;
+                    activeStopPaddingPoints = NewYork3StopPaddingPoints;
+                    activeExitCrossPoints = NewYork3ExitCrossPoints;
+                    activeFlipEmaCrossPoints = NewYork3FlipEmaCrossPoints;
+                    activeMaxStopLossPoints = NewYork3MaxStopLossPoints;
+                    activeTakeProfitPoints = NewYork3TakeProfitPoints;
+                    activeMinimumAtrForEntry = NewYork3AtrMinimum;
+                    activeHvSlPaddingPoints = NewYork3HvSlPaddingPoints;
+                    activeHvSlStartTime = NewYork3HvSlStartTime;
+                    activeHvSlEndTime = NewYork3HvSlEndTime;
+                    activeEntryOffsetPoints = NewYork3EntryOffsetPoints;
+                    activeEnableFlipBreakEven = NewYork3EnableFlipBreakEven;
+                    activeFlipBreakEvenTriggerPoints = NewYork3FlipBreakEvenTriggerPoints;
+                    activeFlipTakeProfitPoints = NewYork3FlipTakeProfitPoints;
+                    activeTakeProfitPercentTriggerPercent = NewYork3TakeProfitPercentTriggerPercent;
+                    activeTakeProfitStopMode = NewYork3TakeProfitStopMode;
+                    activeTakeProfitAtrTrailMultiplier = NewYork3TakeProfitAtrTrailMultiplier;
+                    activeTakeProfitPercentStopMovePercent = NewYork3TakeProfitPercentStopMovePercent;
+                    activeRequireMinAdxForFlips = NewYork3RequireMinAdxForFlips;
+                    activeEnableAdxDdRiskMode = NewYork3EnableAdxDdRiskMode;
+                    activeAdxDdRiskModeStopLossPoints = NewYork3AdxDdRiskModeStopLossPoints;
+                    activeAdxDdRiskModeTakeProfitPoints = NewYork3AdxDdRiskModeTakeProfitPoints;
+                    activeHorizontalExitBars = NewYork3HorizontalExitBars;
                     break;
 
                 default:
@@ -2756,21 +3342,39 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!ShowEmaOnChart)
             {
                 SetEmaVisible(emaAsia, false);
+                SetEmaVisible(emaAsia2, false);
+                SetEmaVisible(emaAsia3, false);
                 SetEmaVisible(emaLondon, false);
+                SetEmaVisible(emaLondon2, false);
+                SetEmaVisible(emaLondon3, false);
                 SetEmaVisible(emaNewYork, false);
+                SetEmaVisible(emaNewYork2, false);
+                SetEmaVisible(emaNewYork3, false);
                 return;
             }
 
             SetEmaVisible(emaAsia, ShouldShowEmaInstance(emaAsia));
+            SetEmaVisible(emaAsia2, ShouldShowEmaInstance(emaAsia2));
+            SetEmaVisible(emaAsia3, ShouldShowEmaInstance(emaAsia3));
             SetEmaVisible(emaLondon, ShouldShowEmaInstance(emaLondon));
+            SetEmaVisible(emaLondon2, ShouldShowEmaInstance(emaLondon2));
+            SetEmaVisible(emaLondon3, ShouldShowEmaInstance(emaLondon3));
             SetEmaVisible(emaNewYork, ShouldShowEmaInstance(emaNewYork));
+            SetEmaVisible(emaNewYork2, ShouldShowEmaInstance(emaNewYork2));
+            SetEmaVisible(emaNewYork3, ShouldShowEmaInstance(emaNewYork3));
         }
 
         private void UpdateAdxPlotVisibility()
         {
             SetAdxVisible(adxAsia, ShowAdxOnChart);
+            SetAdxVisible(adxAsia2, ShowAdxOnChart);
+            SetAdxVisible(adxAsia3, ShowAdxOnChart);
             SetAdxVisible(adxLondon, ShowAdxOnChart);
+            SetAdxVisible(adxLondon2, ShowAdxOnChart);
+            SetAdxVisible(adxLondon3, ShowAdxOnChart);
             SetAdxVisible(adxNewYork, ShowAdxOnChart);
+            SetAdxVisible(adxNewYork2, ShowAdxOnChart);
+            SetAdxVisible(adxNewYork3, ShowAdxOnChart);
         }
 
         private void UpdateAtrPlotVisibility()
@@ -2789,8 +3393,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
 
             return (activeSession == SessionSlot.Asia && ReferenceEquals(ema, emaAsia))
+                || (activeSession == SessionSlot.Asia2 && ReferenceEquals(ema, emaAsia2))
+                || (activeSession == SessionSlot.Asia3 && ReferenceEquals(ema, emaAsia3))
                 || (activeSession == SessionSlot.London && ReferenceEquals(ema, emaLondon))
-                || (activeSession == SessionSlot.NewYork && ReferenceEquals(ema, emaNewYork));
+                || (activeSession == SessionSlot.London2 && ReferenceEquals(ema, emaLondon2))
+                || (activeSession == SessionSlot.London3 && ReferenceEquals(ema, emaLondon3))
+                || (activeSession == SessionSlot.NewYork && ReferenceEquals(ema, emaNewYork))
+                || (activeSession == SessionSlot.NewYork2 && ReferenceEquals(ema, emaNewYork2))
+                || (activeSession == SessionSlot.NewYork3 && ReferenceEquals(ema, emaNewYork3));
         }
 
         private void SetEmaVisible(EMA ema, bool visible)
@@ -2868,20 +3478,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private int GetMaxConfiguredEmaPeriod()
         {
-            return Math.Max(AsiaEmaPeriod, Math.Max(LondonEmaPeriod, NewYorkEmaPeriod));
+            return new[]
+            {
+                AsiaEmaPeriod,
+                Asia2EmaPeriod,
+                Asia3EmaPeriod,
+                LondonEmaPeriod,
+                London2EmaPeriod,
+                London3EmaPeriod,
+                NewYorkEmaPeriod,
+                NewYork2EmaPeriod,
+                NewYork3EmaPeriod
+            }.Max();
+        }
+
+        private bool IsFamilyActive(SessionFamily family, DateTime time)
+        {
+            if (family == SessionFamily.None)
+                return false;
+
+            foreach (SessionSlot slot in ConfigurableSessionSlots)
+            {
+                if (GetSessionFamily(slot) == family && TimeInSession(slot, time))
+                    return true;
+            }
+
+            return false;
         }
 
         private void ProcessSessionTransitions(SessionSlot slot)
         {
             bool inNow = TimeInSession(slot, Time[0]);
             bool inPrev = CurrentBar > 0 ? TimeInSession(slot, Time[1]) : inNow;
+            SessionFamily family = GetSessionFamily(slot);
+            bool familyActivePrev = CurrentBar > 0 && IsFamilyActive(family, Time[1]);
 
             if (inNow && !inPrev)
             {
                 SetSessionClosed(slot, false);
-                SetTradesThisSession(slot, 0);
                 LogDebug(string.Format("{0} session start.", FormatSessionLabel(slot)));
-                LogDebug(string.Format("{0} trade counter reset.", FormatSessionLabel(slot)));
+                if (!familyActivePrev)
+                {
+                    SetTradesThisSession(slot, 0);
+                    string resetLabel = family == SessionFamily.None
+                        ? FormatSessionLabel(slot)
+                        : GetFamilyAnchorSlotLabel(family);
+                    LogDebug(string.Format("{0} trade counter reset.", resetLabel));
+                }
                 if (activeSession == slot)
                     LogSessionActivation("start");
             }
@@ -2900,6 +3543,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SetSessionClosed(slot, true);
                 string sessionEndAction = CloseAtSessionEnd ? "flatten/cancel" : "cancel-only";
                 LogDebug(string.Format("{0} session end: {1}. closeAtSessionEnd={2}", FormatSessionLabel(slot), sessionEndAction, CloseAtSessionEnd));
+            }
+        }
+
+        private string GetFamilyAnchorSlotLabel(SessionFamily family)
+        {
+            switch (family)
+            {
+                case SessionFamily.Asia:
+                    return "Asia";
+                case SessionFamily.London:
+                    return "London";
+                case SessionFamily.NewYork:
+                    return "New York";
+                default:
+                    return "None";
             }
         }
 
@@ -2944,22 +3602,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool TryGetTradingDayAnchorSlot(out SessionSlot slot)
         {
-            if (UseAsiaSession && AsiaSessionStart != AsiaSessionEnd)
+            foreach (SessionSlot configuredSlot in ConfigurableSessionSlots)
             {
-                slot = SessionSlot.Asia;
-                return true;
-            }
-
-            if (UseLondonSession && LondonSessionStart != LondonSessionEnd)
-            {
-                slot = SessionSlot.London;
-                return true;
-            }
-
-            if (UseNewYorkSession && NewYorkSessionStart != NewYorkSessionEnd)
-            {
-                slot = SessionSlot.NewYork;
-                return true;
+                if (IsSessionConfigured(configuredSlot))
+                {
+                    slot = configuredSlot;
+                    return true;
+                }
             }
 
             slot = SessionSlot.None;
@@ -2997,13 +3646,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private int GetTradesThisSession(SessionSlot slot)
         {
-            switch (slot)
+            switch (GetSessionFamily(slot))
             {
-                case SessionSlot.Asia:
+                case SessionFamily.Asia:
                     return asiaTradesThisSession;
-                case SessionSlot.London:
+                case SessionFamily.London:
                     return londonTradesThisSession;
-                case SessionSlot.NewYork:
+                case SessionFamily.NewYork:
                     return newYorkTradesThisSession;
                 default:
                     return 0;
@@ -3013,15 +3662,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void SetTradesThisSession(SessionSlot slot, int value)
         {
             int normalized = Math.Max(0, value);
-            switch (slot)
+            switch (GetSessionFamily(slot))
             {
-                case SessionSlot.Asia:
+                case SessionFamily.Asia:
                     asiaTradesThisSession = normalized;
                     break;
-                case SessionSlot.London:
+                case SessionFamily.London:
                     londonTradesThisSession = normalized;
                     break;
-                case SessionSlot.NewYork:
+                case SessionFamily.NewYork:
                     newYorkTradesThisSession = normalized;
                     break;
             }
@@ -3621,11 +4270,51 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     end = AsiaSessionEnd;
                     return true;
 
+                case SessionSlot.Asia2:
+                    if (!UseAsia2Session || Asia2SessionStart == Asia2SessionEnd)
+                        return false;
+                    start = Asia2SessionStart;
+                    end = Asia2SessionEnd;
+                    return true;
+
+                case SessionSlot.Asia3:
+                    if (!UseAsia3Session || Asia3SessionStart == Asia3SessionEnd)
+                        return false;
+                    start = Asia3SessionStart;
+                    end = Asia3SessionEnd;
+                    return true;
+
                 case SessionSlot.London:
                     if (!UseLondonSession || LondonSessionStart == LondonSessionEnd)
                         return false;
                     start = LondonSessionStart;
                     end = LondonSessionEnd;
+                    if (ShouldAutoShiftSession(slot))
+                    {
+                        TimeSpan shift = GetLondonSessionShiftForDate(referenceTime.Date);
+                        start = ShiftTime(start, shift);
+                        end = ShiftTime(end, shift);
+                    }
+                    return true;
+
+                case SessionSlot.London2:
+                    if (!UseLondon2Session || London2SessionStart == London2SessionEnd)
+                        return false;
+                    start = London2SessionStart;
+                    end = London2SessionEnd;
+                    if (ShouldAutoShiftSession(slot))
+                    {
+                        TimeSpan shift = GetLondonSessionShiftForDate(referenceTime.Date);
+                        start = ShiftTime(start, shift);
+                        end = ShiftTime(end, shift);
+                    }
+                    return true;
+
+                case SessionSlot.London3:
+                    if (!UseLondon3Session || London3SessionStart == London3SessionEnd)
+                        return false;
+                    start = London3SessionStart;
+                    end = London3SessionEnd;
                     if (ShouldAutoShiftSession(slot))
                     {
                         TimeSpan shift = GetLondonSessionShiftForDate(referenceTime.Date);
@@ -3641,6 +4330,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     end = NewYorkSessionEnd;
                     return true;
 
+                case SessionSlot.NewYork2:
+                    if (!UseNewYork2Session || NewYork2SessionStart == NewYork2SessionEnd)
+                        return false;
+                    start = NewYork2SessionStart;
+                    end = NewYork2SessionEnd;
+                    return true;
+
+                case SessionSlot.NewYork3:
+                    if (!UseNewYork3Session || NewYork3SessionStart == NewYork3SessionEnd)
+                        return false;
+                    start = NewYork3SessionStart;
+                    end = NewYork3SessionEnd;
+                    return true;
+
                 default:
                     return false;
             }
@@ -3648,7 +4351,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool ShouldAutoShiftSession(SessionSlot slot)
         {
-            return slot == SessionSlot.London && AutoShiftLondon;
+            switch (slot)
+            {
+                case SessionSlot.London:
+                    return AutoShiftLondon;
+                case SessionSlot.London2:
+                    return AutoShiftLondon2;
+                case SessionSlot.London3:
+                    return AutoShiftLondon3;
+                default:
+                    return false;
+            }
         }
 
         private TimeSpan GetLondonSessionShiftForDate(DateTime date)
@@ -3757,10 +4470,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CurrentBar < 1)
                 return;
 
-            DrawSessionBackground(SessionSlot.Asia, "DUO_Asia", AsiaSessionBrush ?? Brushes.LightSkyBlue);
-            DrawSessionBackground(SessionSlot.London, "DUO_London", LondonSessionBrush ?? Brushes.LightSkyBlue);
-            DrawSessionBackground(SessionSlot.NewYork, "DUO_NewYork", NewYorkSessionBrush ?? Brushes.LightSkyBlue);
-            DrawNewYorkSkipWindow(Time[0]);
+            foreach (SessionSlot slot in ConfigurableSessionSlots)
+                DrawSessionBackground(slot, "DUO_" + FormatSessionLabel(slot), GetSessionFillBrush(slot));
+
+            foreach (SessionSlot slot in ConfigurableSessionSlots.Where(IsNewYorkFamily))
+                DrawNewYorkSkipWindow(slot, Time[0]);
         }
 
         private void DrawSessionBackground(SessionSlot slot, string tagPrefix, Brush fillBrush)
@@ -3795,32 +4509,99 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private bool IsNewYorkSkipTime(DateTime time)
+        private Brush GetSessionFillBrush(SessionSlot slot)
         {
-            if (!UseNewYorkSession)
+            switch (GetSessionFamily(slot))
+            {
+                case SessionFamily.Asia:
+                    return AsiaSessionBrush ?? Brushes.LightSkyBlue;
+                case SessionFamily.London:
+                    return LondonSessionBrush ?? Brushes.LightSkyBlue;
+                case SessionFamily.NewYork:
+                    return NewYorkSessionBrush ?? Brushes.LightSkyBlue;
+                default:
+                    return Brushes.LightSkyBlue;
+            }
+        }
+
+        private bool IsAsiaSundayBlocked(SessionSlot slot, DateTime time)
+        {
+            if (!IsAsiaFamily(slot) || time.DayOfWeek != DayOfWeek.Sunday)
                 return false;
 
-            if (NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    return AsiaBlockSundayTrades;
+                case SessionSlot.Asia2:
+                    return Asia2BlockSundayTrades;
+                case SessionSlot.Asia3:
+                    return Asia3BlockSundayTrades;
+                default:
+                    return false;
+            }
+        }
+
+        private bool TryGetNewYorkSkipWindow(SessionSlot slot, out TimeSpan start, out TimeSpan end)
+        {
+            start = TimeSpan.Zero;
+            end = TimeSpan.Zero;
+
+            switch (slot)
+            {
+                case SessionSlot.NewYork:
+                    if (!UseNewYorkSession || NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
+                        return false;
+                    start = NewYorkSkipStart;
+                    end = NewYorkSkipEnd;
+                    return true;
+
+                case SessionSlot.NewYork2:
+                    if (!UseNewYork2Session || NewYork2SkipStart == TimeSpan.Zero || NewYork2SkipEnd == TimeSpan.Zero)
+                        return false;
+                    start = NewYork2SkipStart;
+                    end = NewYork2SkipEnd;
+                    return true;
+
+                case SessionSlot.NewYork3:
+                    if (!UseNewYork3Session || NewYork3SkipStart == TimeSpan.Zero || NewYork3SkipEnd == TimeSpan.Zero)
+                        return false;
+                    start = NewYork3SkipStart;
+                    end = NewYork3SkipEnd;
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        private bool IsNewYorkSkipTime(SessionSlot slot, DateTime time)
+        {
+            if (!IsNewYorkFamily(slot))
+                return false;
+
+            TimeSpan skipStart;
+            TimeSpan skipEnd;
+            if (!TryGetNewYorkSkipWindow(slot, out skipStart, out skipEnd))
                 return false;
 
             TimeSpan now = time.TimeOfDay;
-            if (NewYorkSkipStart < NewYorkSkipEnd)
-                return now >= NewYorkSkipStart && now <= NewYorkSkipEnd;
+            if (skipStart < skipEnd)
+                return now >= skipStart && now <= skipEnd;
 
-            return now >= NewYorkSkipStart || now <= NewYorkSkipEnd;
+            return now >= skipStart || now <= skipEnd;
         }
 
-        private void DrawNewYorkSkipWindow(DateTime barTime)
+        private void DrawNewYorkSkipWindow(SessionSlot slot, DateTime barTime)
         {
-            if (!UseNewYorkSession)
+            TimeSpan skipStart;
+            TimeSpan skipEnd;
+            if (!TryGetNewYorkSkipWindow(slot, out skipStart, out skipEnd))
                 return;
 
-            if (NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
-                return;
-
-            DateTime windowStart = barTime.Date + NewYorkSkipStart;
-            DateTime windowEnd = barTime.Date + NewYorkSkipEnd;
-            if (NewYorkSkipStart > NewYorkSkipEnd)
+            DateTime windowStart = barTime.Date + skipStart;
+            DateTime windowEnd = barTime.Date + skipEnd;
+            if (skipStart > skipEnd)
                 windowEnd = windowEnd.AddDays(1);
 
             int startBarsAgo = Bars.GetBar(windowStart);
@@ -3841,7 +4622,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
             }
 
-            string tagBase = string.Format("DUO_NewYorkSkip_{0:yyyyMMdd_HHmm}", windowStart);
+            string tagBase = string.Format("DUO_{0}_Skip_{1:yyyyMMdd_HHmm}", FormatSessionLabel(slot), windowStart);
             Draw.Rectangle(
                 this,
                 tagBase + "_Rect",
@@ -3983,10 +4764,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case SessionSlot.Asia:
                     return asiaSessionClosed;
+                case SessionSlot.Asia2:
+                    return asia2SessionClosed;
+                case SessionSlot.Asia3:
+                    return asia3SessionClosed;
                 case SessionSlot.London:
                     return londonSessionClosed;
+                case SessionSlot.London2:
+                    return london2SessionClosed;
+                case SessionSlot.London3:
+                    return london3SessionClosed;
                 case SessionSlot.NewYork:
                     return newYorkSessionClosed;
+                case SessionSlot.NewYork2:
+                    return newYork2SessionClosed;
+                case SessionSlot.NewYork3:
+                    return newYork3SessionClosed;
                 default:
                     return false;
             }
@@ -3999,11 +4792,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case SessionSlot.Asia:
                     asiaSessionClosed = value;
                     break;
+                case SessionSlot.Asia2:
+                    asia2SessionClosed = value;
+                    break;
+                case SessionSlot.Asia3:
+                    asia3SessionClosed = value;
+                    break;
                 case SessionSlot.London:
                     londonSessionClosed = value;
                     break;
+                case SessionSlot.London2:
+                    london2SessionClosed = value;
+                    break;
+                case SessionSlot.London3:
+                    london3SessionClosed = value;
+                    break;
                 case SessionSlot.NewYork:
                     newYorkSessionClosed = value;
+                    break;
+                case SessionSlot.NewYork2:
+                    newYork2SessionClosed = value;
+                    break;
+                case SessionSlot.NewYork3:
+                    newYork3SessionClosed = value;
                     break;
             }
         }
@@ -4013,11 +4824,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (slot)
             {
                 case SessionSlot.Asia:
-                    return "Asia";
+                    return "Asia1";
+                case SessionSlot.Asia2:
+                    return "Asia2";
+                case SessionSlot.Asia3:
+                    return "Asia3";
                 case SessionSlot.London:
-                    return "London";
+                    return "London1";
+                case SessionSlot.London2:
+                    return "London2";
+                case SessionSlot.London3:
+                    return "London3";
                 case SessionSlot.NewYork:
-                    return "New York";
+                    return "NewYork1";
+                case SessionSlot.NewYork2:
+                    return "NewYork2";
+                case SessionSlot.NewYork3:
+                    return "NewYork3";
                 default:
                     return "None";
             }
@@ -4548,7 +5371,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private int GetMaxConfiguredAdxPeriod()
         {
-            return Math.Max(AsiaAdxPeriod, Math.Max(LondonAdxPeriod, NewYorkAdxPeriod));
+            return new[]
+            {
+                AsiaAdxPeriod,
+                Asia2AdxPeriod,
+                Asia3AdxPeriod,
+                LondonAdxPeriod,
+                London2AdxPeriod,
+                London3AdxPeriod,
+                NewYorkAdxPeriod,
+                NewYork2AdxPeriod,
+                NewYork3AdxPeriod
+            }.Max();
         }
 
         private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
@@ -6148,59 +6982,59 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia Session(18:30-2:00)", Description = "Enable trading logic during the Asia time window.", GroupName = "Asia", Order = 0)]
+        [Display(Name = "Asia 1 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 1 time window.", GroupName = "Asia 1", Order = 0)]
         public bool UseAsiaSession { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "Asia session start time in chart time zone.", GroupName = "Asia", Order = 1)]
+        [Display(Name = "Session Start", Description = "Asia 1 session start time in chart time zone.", GroupName = "Asia 1", Order = 1)]
         public TimeSpan AsiaSessionStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "Asia session end time in chart time zone.", GroupName = "Asia", Order = 2)]
+        [Display(Name = "Session End", Description = "Asia 1 session end time in chart time zone.", GroupName = "Asia 1", Order = 2)]
         public TimeSpan AsiaSessionEnd { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia entries/flips on Sundays.", GroupName = "Asia", Order = 3)]
+        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 1 entries/flips on Sundays.", GroupName = "Asia 1", Order = 3)]
         public bool AsiaBlockSundayTrades { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by Asia entry and exit logic.", GroupName = "Asia", Order = 4)]
+        [Display(Name = "EMA Period", Description = "EMA period used by Asia 1 entry and exit logic.", GroupName = "Asia 1", Order = 4)]
         public int AsiaEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia entries.", GroupName = "Asia", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 1 entries.", GroupName = "Asia 1", Order = 5)]
         public int AsiaContracts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Direction", Description = "Select whether Asia can take long, short, or both directions.", GroupName = "Asia", Order = 6)]
+        [Display(Name = "Trade Direction", Description = "Select whether Asia 1 can take long, short, or both directions.", GroupName = "Asia 1", Order = 6)]
         public SessionTradeDirection AsiaTradeDirection { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia trend filter.", GroupName = "Asia", Order = 10)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia 1 trend filter.", GroupName = "Asia 1", Order = 10)]
         public int AsiaAdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 11)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia 1 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 1", Order = 11)]
         public double AsiaAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia", Order = 7)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia 1 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 1", Order = 7)]
         public double AsiaFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia", Order = 12)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia 1 entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia 1", Order = 12)]
         public double AsiaAdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         // [TypeConverter(typeof(AsiaAdxSlopeDropdownConverter))]
-        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "Asia", Order = 13)]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "Asia 1", Order = 13)]
         public double AsiaAdxMinSlopePoints
         {
             get { return asiaAdxMinSlopePoints; }
@@ -6209,178 +7043,522 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia", Order = 14)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia 1", Order = 14)]
         public double AsiaAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "Asia", Order = 8)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "Asia 1", Order = 8)]
         public double AsiaEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia", Order = 9)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia 1", Order = 9)]
         public double AsiaMaxEntryDistanceFromEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia", Order = 15)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia 1", Order = 15)]
         public double AsiaAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "Asia", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "Asia 1", Order = 16)]
         public double AsiaStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia", Order = 17)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia 1", Order = 17)]
         public double AsiaExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia", Order = 18)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia 1", Order = 18)]
         public double AsiaTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "Asia", Order = 22)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "Asia 1", Order = 22)]
         public double AsiaEntryOffsetPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "Asia", Order = 23)]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "Asia 1", Order = 23)]
         public bool AsiaEnableFlipBreakEven { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "Asia", Order = 24)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "Asia 1", Order = 24)]
         public double AsiaFlipBreakEvenTriggerPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "Asia", Order = 25)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "Asia 1", Order = 25)]
         public double AsiaFlipTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "Asia", Order = 26)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "Asia 1", Order = 26)]
         public double AsiaFlipEmaCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Asia", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Asia 1", Order = 27)]
         public double AsiaTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia 1", Order = 28)]
         public TakeProfitStopMode AsiaTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "Asia", Order = 29)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "Asia 1", Order = 29)]
         public double AsiaTakeProfitAtrTrailMultiplier { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Asia", Order = 30)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Asia 1", Order = 30)]
         public double AsiaTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "Asia", Order = 31)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "Asia 1", Order = 31)]
         public bool AsiaRequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "Asia", Order = 32)]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "Asia 1", Order = 32)]
         public bool AsiaEnableAdxDdRiskMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "Asia", Order = 33)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "Asia 1", Order = 33)]
         public double AsiaAdxDdRiskModeStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "Asia", Order = 34)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "Asia 1", Order = 34)]
         public double AsiaAdxDdRiskModeTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "Asia", Order = 35)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "Asia 1", Order = 35)]
         public int AsiaHorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia", Order = 36)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 1", Order = 36)]
         public double AsiaMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia entries and flips while ATR(14) is below this value.", GroupName = "Asia", Order = 37)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 1 entries and flips while ATR(14) is below this value.", GroupName = "Asia 1", Order = 37)]
         public double AsiaAtrMinimum { get; set; }
 
+
         [NinjaScriptProperty]
-        [Display(Name = "London Session(1:45-6:30)", Description = "Enable trading logic during the London time window.", GroupName = "London", Order = 0)]
+        [Display(Name = "Asia 2 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 2 time window.", GroupName = "Asia 2", Order = 0)]
+        public bool UseAsia2Session { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "Asia 2 session start time in chart time zone.", GroupName = "Asia 2", Order = 1)]
+        public TimeSpan Asia2SessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "Asia 2 session end time in chart time zone.", GroupName = "Asia 2", Order = 2)]
+        public TimeSpan Asia2SessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 2 entries/flips on Sundays.", GroupName = "Asia 2", Order = 3)]
+        public bool Asia2BlockSundayTrades { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by Asia 2 entry and exit logic.", GroupName = "Asia 2", Order = 4)]
+        public int Asia2EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 2 entries.", GroupName = "Asia 2", Order = 5)]
+        public int Asia2Contracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether Asia 2 can take long, short, or both directions.", GroupName = "Asia 2", Order = 6)]
+        public SessionTradeDirection Asia2TradeDirection { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia 2 trend filter.", GroupName = "Asia 2", Order = 10)]
+        public int Asia2AdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia 2 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 2", Order = 11)]
+        public double Asia2AdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia 2 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 2", Order = 7)]
+        public double Asia2FlipAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia 2 entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia 2", Order = 12)]
+        public double Asia2AdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        // [TypeConverter(typeof(Asia2AdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "Asia 2", Order = 13)]
+        public double Asia2AdxMinSlopePoints
+        {
+            get { return asia2AdxMinSlopePoints; }
+            set { asia2AdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia 2", Order = 14)]
+        public double Asia2AdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "Asia 2", Order = 8)]
+        public double Asia2EmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia 2", Order = 9)]
+        public double Asia2MaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia 2", Order = 15)]
+        public double Asia2AdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "Asia 2", Order = 16)]
+        public double Asia2StopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia 2", Order = 17)]
+        public double Asia2ExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia 2", Order = 18)]
+        public double Asia2TakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "Asia 2", Order = 22)]
+        public double Asia2EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "Asia 2", Order = 23)]
+        public bool Asia2EnableFlipBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "Asia 2", Order = 24)]
+        public double Asia2FlipBreakEvenTriggerPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "Asia 2", Order = 25)]
+        public double Asia2FlipTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "Asia 2", Order = 26)]
+        public double Asia2FlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Asia 2", Order = 27)]
+        public double Asia2TakeProfitPercentTriggerPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia 2", Order = 28)]
+        public TakeProfitStopMode Asia2TakeProfitStopMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "Asia 2", Order = 29)]
+        public double Asia2TakeProfitAtrTrailMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Asia 2", Order = 30)]
+        public double Asia2TakeProfitPercentStopMovePercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "Asia 2", Order = 31)]
+        public bool Asia2RequireMinAdxForFlips { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "Asia 2", Order = 32)]
+        public bool Asia2EnableAdxDdRiskMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "Asia 2", Order = 33)]
+        public double Asia2AdxDdRiskModeStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "Asia 2", Order = 34)]
+        public double Asia2AdxDdRiskModeTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "Asia 2", Order = 35)]
+        public int Asia2HorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 2", Order = 36)]
+        public double Asia2MaxStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 2 entries and flips while ATR(14) is below this value.", GroupName = "Asia 2", Order = 37)]
+        public double Asia2AtrMinimum { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "Asia 3 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 3 time window.", GroupName = "Asia 3", Order = 0)]
+        public bool UseAsia3Session { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "Asia 3 session start time in chart time zone.", GroupName = "Asia 3", Order = 1)]
+        public TimeSpan Asia3SessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "Asia 3 session end time in chart time zone.", GroupName = "Asia 3", Order = 2)]
+        public TimeSpan Asia3SessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 3 entries/flips on Sundays.", GroupName = "Asia 3", Order = 3)]
+        public bool Asia3BlockSundayTrades { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by Asia 3 entry and exit logic.", GroupName = "Asia 3", Order = 4)]
+        public int Asia3EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 3 entries.", GroupName = "Asia 3", Order = 5)]
+        public int Asia3Contracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether Asia 3 can take long, short, or both directions.", GroupName = "Asia 3", Order = 6)]
+        public SessionTradeDirection Asia3TradeDirection { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia 3 trend filter.", GroupName = "Asia 3", Order = 10)]
+        public int Asia3AdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia 3 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 3", Order = 11)]
+        public double Asia3AdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Asia 3 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 3", Order = 7)]
+        public double Asia3FlipAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia 3 entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia 3", Order = 12)]
+        public double Asia3AdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        // [TypeConverter(typeof(Asia3AdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "Asia 3", Order = 13)]
+        public double Asia3AdxMinSlopePoints
+        {
+            get { return asia3AdxMinSlopePoints; }
+            set { asia3AdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia 3", Order = 14)]
+        public double Asia3AdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "Asia 3", Order = 8)]
+        public double Asia3EmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "Asia 3", Order = 9)]
+        public double Asia3MaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia 3", Order = 15)]
+        public double Asia3AdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "Asia 3", Order = 16)]
+        public double Asia3StopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "Asia 3", Order = 17)]
+        public double Asia3ExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia 3", Order = 18)]
+        public double Asia3TakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "Asia 3", Order = 22)]
+        public double Asia3EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "Asia 3", Order = 23)]
+        public bool Asia3EnableFlipBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "Asia 3", Order = 24)]
+        public double Asia3FlipBreakEvenTriggerPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "Asia 3", Order = 25)]
+        public double Asia3FlipTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "Asia 3", Order = 26)]
+        public double Asia3FlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Asia 3", Order = 27)]
+        public double Asia3TakeProfitPercentTriggerPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia 3", Order = 28)]
+        public TakeProfitStopMode Asia3TakeProfitStopMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "Asia 3", Order = 29)]
+        public double Asia3TakeProfitAtrTrailMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Asia 3", Order = 30)]
+        public double Asia3TakeProfitPercentStopMovePercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "Asia 3", Order = 31)]
+        public bool Asia3RequireMinAdxForFlips { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "Asia 3", Order = 32)]
+        public bool Asia3EnableAdxDdRiskMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "Asia 3", Order = 33)]
+        public double Asia3AdxDdRiskModeStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "Asia 3", Order = 34)]
+        public double Asia3AdxDdRiskModeTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "Asia 3", Order = 35)]
+        public int Asia3HorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 3", Order = 36)]
+        public double Asia3MaxStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 3 entries and flips while ATR(14) is below this value.", GroupName = "Asia 3", Order = 37)]
+        public double Asia3AtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London 1 Session(1:45-6:30)", Description = "Enable trading logic during the London 1 time window.", GroupName = "London 1", Order = 0)]
         public bool UseLondonSession { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "London session start time in chart time zone.", GroupName = "London", Order = 1)]
+        [Display(Name = "Session Start", Description = "London 1 session start time in chart time zone.", GroupName = "London 1", Order = 1)]
         public TimeSpan LondonSessionStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "London session end time in chart time zone.", GroupName = "London", Order = 2)]
+        [Display(Name = "Session End", Description = "London 1 session end time in chart time zone.", GroupName = "London 1", Order = 2)]
         public TimeSpan LondonSessionEnd { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Auto Shift", Description = "Apply London DST auto-shift for this session window.", GroupName = "London", Order = 3)]
+        [Display(Name = "Auto Shift", Description = "Apply London 1 DST auto-shift for this session window.", GroupName = "London 1", Order = 3)]
         public bool AutoShiftLondon { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by London entry and exit logic.", GroupName = "London", Order = 4)]
+        [Display(Name = "EMA Period", Description = "EMA period used by London 1 entry and exit logic.", GroupName = "London 1", Order = 4)]
         public int LondonEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for London entries.", GroupName = "London", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 1 entries.", GroupName = "London 1", Order = 5)]
         public int LondonContracts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Direction", Description = "Select whether London can take long, short, or both directions.", GroupName = "London", Order = 6)]
+        [Display(Name = "Trade Direction", Description = "Select whether London 1 can take long, short, or both directions.", GroupName = "London 1", Order = 6)]
         public SessionTradeDirection LondonTradeDirection { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, London flips are allowed only when ADX is greater than or equal to this value.", GroupName = "London", Order = 7)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, London 1 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "London 1", Order = 7)]
         public double LondonFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "London", Order = 8)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "London 1", Order = 8)]
         public double LondonEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "London", Order = 9)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "London 1", Order = 9)]
         public double LondonMaxEntryDistanceFromEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the London trend filter.", GroupName = "London", Order = 10)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the London 1 trend filter.", GroupName = "London 1", Order = 10)]
         public int LondonAdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. London entries are allowed only when ADX is greater than or equal to this value.", GroupName = "London", Order = 11)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. London 1 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "London 1", Order = 11)]
         public double LondonAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. London entries are allowed only when ADX is less than or equal to this value.", GroupName = "London", Order = 12)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. London 1 entries are allowed only when ADX is less than or equal to this value.", GroupName = "London 1", Order = 12)]
         public double LondonAdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "London", Order = 13)]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "London 1", Order = 13)]
         public double LondonAdxMinSlopePoints
         {
             get { return londonAdxMinSlopePoints; }
@@ -6389,163 +7567,505 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "London", Order = 14)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "London 1", Order = 14)]
         public double LondonAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "London", Order = 15)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "London 1", Order = 15)]
         public double LondonAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "London", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "London 1", Order = 16)]
         public double LondonStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London", Order = 17)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London 1", Order = 17)]
         public double LondonExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London", Order = 18)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London 1", Order = 18)]
         public double LondonTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "London", Order = 22)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "London 1", Order = 22)]
         public double LondonEntryOffsetPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "London", Order = 23)]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "London 1", Order = 23)]
         public bool LondonEnableFlipBreakEven { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "London", Order = 24)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "London 1", Order = 24)]
         public double LondonFlipBreakEvenTriggerPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "London", Order = 25)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "London 1", Order = 25)]
         public double LondonFlipTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "London", Order = 26)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "London 1", Order = 26)]
         public double LondonFlipEmaCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "London", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "London 1", Order = 27)]
         public double LondonTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London 1", Order = 28)]
         public TakeProfitStopMode LondonTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "London", Order = 29)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "London 1", Order = 29)]
         public double LondonTakeProfitAtrTrailMultiplier { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "London", Order = 30)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "London 1", Order = 30)]
         public double LondonTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "London", Order = 31)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "London 1", Order = 31)]
         public bool LondonRequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "London", Order = 32)]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "London 1", Order = 32)]
         public bool LondonEnableAdxDdRiskMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "London", Order = 33)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "London 1", Order = 33)]
         public double LondonAdxDdRiskModeStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "London", Order = 34)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "London 1", Order = 34)]
         public double LondonAdxDdRiskModeTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "London", Order = 35)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "London 1", Order = 35)]
         public int LondonHorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London", Order = 36)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 1", Order = 36)]
         public double LondonMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London entries and flips while ATR(14) is below this value.", GroupName = "London", Order = 37)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 1 entries and flips while ATR(14) is below this value.", GroupName = "London 1", Order = 37)]
         public double LondonAtrMinimum { get; set; }
 
+
         [NinjaScriptProperty]
-        [Display(Name = "New York Session(9:35-13:30)", Description = "Enable trading logic during the New York time window.", GroupName = "New York", Order = 0)]
+        [Display(Name = "London 2 Session(1:45-6:30)", Description = "Enable trading logic during the London 2 time window.", GroupName = "London 2", Order = 0)]
+        public bool UseLondon2Session { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "London 2 session start time in chart time zone.", GroupName = "London 2", Order = 1)]
+        public TimeSpan London2SessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "London 2 session end time in chart time zone.", GroupName = "London 2", Order = 2)]
+        public TimeSpan London2SessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Auto Shift", Description = "Apply London 2 DST auto-shift for this session window.", GroupName = "London 2", Order = 3)]
+        public bool AutoShiftLondon2 { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by London 2 entry and exit logic.", GroupName = "London 2", Order = 4)]
+        public int London2EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 2 entries.", GroupName = "London 2", Order = 5)]
+        public int London2Contracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether London 2 can take long, short, or both directions.", GroupName = "London 2", Order = 6)]
+        public SessionTradeDirection London2TradeDirection { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, London 2 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "London 2", Order = 7)]
+        public double London2FlipAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "London 2", Order = 8)]
+        public double London2EmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "London 2", Order = 9)]
+        public double London2MaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the London 2 trend filter.", GroupName = "London 2", Order = 10)]
+        public int London2AdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. London 2 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "London 2", Order = 11)]
+        public double London2AdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. London 2 entries are allowed only when ADX is less than or equal to this value.", GroupName = "London 2", Order = 12)]
+        public double London2AdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "London 2", Order = 13)]
+        public double London2AdxMinSlopePoints
+        {
+            get { return london2AdxMinSlopePoints; }
+            set { london2AdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "London 2", Order = 14)]
+        public double London2AdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "London 2", Order = 15)]
+        public double London2AdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "London 2", Order = 16)]
+        public double London2StopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London 2", Order = 17)]
+        public double London2ExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London 2", Order = 18)]
+        public double London2TakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "London 2", Order = 22)]
+        public double London2EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "London 2", Order = 23)]
+        public bool London2EnableFlipBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "London 2", Order = 24)]
+        public double London2FlipBreakEvenTriggerPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "London 2", Order = 25)]
+        public double London2FlipTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "London 2", Order = 26)]
+        public double London2FlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "London 2", Order = 27)]
+        public double London2TakeProfitPercentTriggerPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London 2", Order = 28)]
+        public TakeProfitStopMode London2TakeProfitStopMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "London 2", Order = 29)]
+        public double London2TakeProfitAtrTrailMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "London 2", Order = 30)]
+        public double London2TakeProfitPercentStopMovePercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "London 2", Order = 31)]
+        public bool London2RequireMinAdxForFlips { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "London 2", Order = 32)]
+        public bool London2EnableAdxDdRiskMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "London 2", Order = 33)]
+        public double London2AdxDdRiskModeStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "London 2", Order = 34)]
+        public double London2AdxDdRiskModeTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "London 2", Order = 35)]
+        public int London2HorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 2", Order = 36)]
+        public double London2MaxStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 2 entries and flips while ATR(14) is below this value.", GroupName = "London 2", Order = 37)]
+        public double London2AtrMinimum { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "London 3 Session(1:45-6:30)", Description = "Enable trading logic during the London 3 time window.", GroupName = "London 3", Order = 0)]
+        public bool UseLondon3Session { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "London 3 session start time in chart time zone.", GroupName = "London 3", Order = 1)]
+        public TimeSpan London3SessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "London 3 session end time in chart time zone.", GroupName = "London 3", Order = 2)]
+        public TimeSpan London3SessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Auto Shift", Description = "Apply London 3 DST auto-shift for this session window.", GroupName = "London 3", Order = 3)]
+        public bool AutoShiftLondon3 { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by London 3 entry and exit logic.", GroupName = "London 3", Order = 4)]
+        public int London3EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 3 entries.", GroupName = "London 3", Order = 5)]
+        public int London3Contracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether London 3 can take long, short, or both directions.", GroupName = "London 3", Order = 6)]
+        public SessionTradeDirection London3TradeDirection { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, London 3 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "London 3", Order = 7)]
+        public double London3FlipAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "London 3", Order = 8)]
+        public double London3EmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "London 3", Order = 9)]
+        public double London3MaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the London 3 trend filter.", GroupName = "London 3", Order = 10)]
+        public int London3AdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. London 3 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "London 3", Order = 11)]
+        public double London3AdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. London 3 entries are allowed only when ADX is less than or equal to this value.", GroupName = "London 3", Order = 12)]
+        public double London3AdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "London 3", Order = 13)]
+        public double London3AdxMinSlopePoints
+        {
+            get { return london3AdxMinSlopePoints; }
+            set { london3AdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "London 3", Order = 14)]
+        public double London3AdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "London 3", Order = 15)]
+        public double London3AdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "London 3", Order = 16)]
+        public double London3StopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "London 3", Order = 17)]
+        public double London3ExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "London 3", Order = 18)]
+        public double London3TakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "London 3", Order = 22)]
+        public double London3EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "London 3", Order = 23)]
+        public bool London3EnableFlipBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "London 3", Order = 24)]
+        public double London3FlipBreakEvenTriggerPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "London 3", Order = 25)]
+        public double London3FlipTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "London 3", Order = 26)]
+        public double London3FlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "London 3", Order = 27)]
+        public double London3TakeProfitPercentTriggerPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London 3", Order = 28)]
+        public TakeProfitStopMode London3TakeProfitStopMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "London 3", Order = 29)]
+        public double London3TakeProfitAtrTrailMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "London 3", Order = 30)]
+        public double London3TakeProfitPercentStopMovePercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "London 3", Order = 31)]
+        public bool London3RequireMinAdxForFlips { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "London 3", Order = 32)]
+        public bool London3EnableAdxDdRiskMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "London 3", Order = 33)]
+        public double London3AdxDdRiskModeStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "London 3", Order = 34)]
+        public double London3AdxDdRiskModeTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "London 3", Order = 35)]
+        public int London3HorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 3", Order = 36)]
+        public double London3MaxStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 3 entries and flips while ATR(14) is below this value.", GroupName = "London 3", Order = 37)]
+        public double London3AtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York 1 Session(9:35-13:30)", Description = "Enable trading logic during the New York 1 time window.", GroupName = "New York 1", Order = 0)]
         public bool UseNewYorkSession { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "New York session start time in chart time zone.", GroupName = "New York", Order = 1)]
+        [Display(Name = "Session Start", Description = "New York 1 session start time in chart time zone.", GroupName = "New York 1", Order = 1)]
         public TimeSpan NewYorkSessionStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "New York session end time in chart time zone.", GroupName = "New York", Order = 2)]
+        [Display(Name = "Session End", Description = "New York 1 session end time in chart time zone.", GroupName = "New York 1", Order = 2)]
         public TimeSpan NewYorkSessionEnd { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Skip Start", Description = "Start of New York skip window.", GroupName = "New York", Order = 3)]
+        [Display(Name = "Skip Start", Description = "Start of New York 1 skip window.", GroupName = "New York 1", Order = 3)]
         public TimeSpan NewYorkSkipStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Skip End", Description = "End of New York skip window.", GroupName = "New York", Order = 4)]
+        [Display(Name = "Skip End", Description = "End of New York 1 skip window.", GroupName = "New York 1", Order = 4)]
         public TimeSpan NewYorkSkipEnd { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York entry and exit logic.", GroupName = "New York", Order = 5)]
+        [Display(Name = "EMA Period", Description = "EMA period used by New York 1 entry and exit logic.", GroupName = "New York 1", Order = 5)]
         public int NewYorkEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York entries.", GroupName = "New York", Order = 6)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 1 entries.", GroupName = "New York 1", Order = 6)]
         public int NewYorkContracts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Direction", Description = "Select whether New York can take long, short, or both directions.", GroupName = "New York", Order = 7)]
+        [Display(Name = "Trade Direction", Description = "Select whether New York 1 can take long, short, or both directions.", GroupName = "New York 1", Order = 7)]
         public SessionTradeDirection NewYorkTradeDirection { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York trend filter.", GroupName = "New York", Order = 11)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York 1 trend filter.", GroupName = "New York 1", Order = 11)]
         public int NewYorkAdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 12)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York 1 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York 1", Order = 12)]
         public double NewYorkAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York", Order = 8)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York 1 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York 1", Order = 8)]
         public double NewYorkFlipAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York", Order = 13)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York 1 entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York 1", Order = 13)]
         public double NewYorkAdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         // [TypeConverter(typeof(NewYorkAdxSlopeDropdownConverter))]
-        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "New York", Order = 14)]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "New York 1", Order = 14)]
         public double NewYorkAdxMinSlopePoints
         {
             get { return newYorkAdxMinSlopePoints; }
@@ -6554,127 +8074,505 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York", Order = 15)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York 1", Order = 15)]
         public double NewYorkAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "New York", Order = 9)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "New York 1", Order = 9)]
         public double NewYorkEmaMinSlopePointsPerBar { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York", Order = 10)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York 1", Order = 10)]
         public double NewYorkMaxEntryDistanceFromEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York", Order = 16)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York 1", Order = 16)]
         public double NewYorkAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "New York", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "New York 1", Order = 17)]
         public double NewYorkStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York", Order = 18)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York 1", Order = 18)]
         public double NewYorkExitCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York", Order = 19)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York 1", Order = 19)]
         public double NewYorkTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "HV SL Padding Points", Description = "High-volatility stop distance in points from EMA on the opposite side. 0 disables HV stop logic.", GroupName = "New York", Order = 20)]
+        [Display(Name = "HV SL Padding Points", Description = "High-volatility stop distance in points from EMA on the opposite side. 0 disables HV stop logic.", GroupName = "New York 1", Order = 20)]
         public double NewYorkHvSlPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "New York", Order = 21)]
+        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "New York 1", Order = 21)]
         public TimeSpan NewYorkHvSlStartTime { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "New York", Order = 22)]
+        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "New York 1", Order = 22)]
         public TimeSpan NewYorkHvSlEndTime { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "New York", Order = 23)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "New York 1", Order = 23)]
         public double NewYorkEntryOffsetPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "New York", Order = 24)]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "New York 1", Order = 24)]
         public bool NewYorkEnableFlipBreakEven { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "New York", Order = 25)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "New York 1", Order = 25)]
         public double NewYorkFlipBreakEvenTriggerPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "New York", Order = 26)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "New York 1", Order = 26)]
         public double NewYorkFlipTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "New York", Order = 27)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "New York 1", Order = 27)]
         public double NewYorkFlipEmaCrossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "New York", Order = 28)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "New York 1", Order = 28)]
         public double NewYorkTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York", Order = 29)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York 1", Order = 29)]
         public TakeProfitStopMode NewYorkTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "New York", Order = 30)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "New York 1", Order = 30)]
         public double NewYorkTakeProfitAtrTrailMultiplier { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "New York", Order = 31)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "New York 1", Order = 31)]
         public double NewYorkTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "New York", Order = 32)]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "New York 1", Order = 32)]
         public bool NewYorkRequireMinAdxForFlips { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "New York", Order = 33)]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "New York 1", Order = 33)]
         public bool NewYorkEnableAdxDdRiskMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "New York", Order = 34)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "New York 1", Order = 34)]
         public double NewYorkAdxDdRiskModeStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "New York", Order = 35)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "New York 1", Order = 35)]
         public double NewYorkAdxDdRiskModeTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "New York", Order = 36)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "New York 1", Order = 36)]
         public int NewYorkHorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York", Order = 37)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 1", Order = 37)]
         public double NewYorkMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York entries and flips while ATR(14) is below this value.", GroupName = "New York", Order = 38)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 1 entries and flips while ATR(14) is below this value.", GroupName = "New York 1", Order = 38)]
         public double NewYorkAtrMinimum { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York 2 Session(9:35-13:30)", Description = "Enable trading logic during the New York 2 time window.", GroupName = "New York 2", Order = 0)]
+        public bool UseNewYork2Session { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "New York 2 session start time in chart time zone.", GroupName = "New York 2", Order = 1)]
+        public TimeSpan NewYork2SessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "New York 2 session end time in chart time zone.", GroupName = "New York 2", Order = 2)]
+        public TimeSpan NewYork2SessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip Start", Description = "Start of New York 2 skip window.", GroupName = "New York 2", Order = 3)]
+        public TimeSpan NewYork2SkipStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip End", Description = "End of New York 2 skip window.", GroupName = "New York 2", Order = 4)]
+        public TimeSpan NewYork2SkipEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by New York 2 entry and exit logic.", GroupName = "New York 2", Order = 5)]
+        public int NewYork2EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 2 entries.", GroupName = "New York 2", Order = 6)]
+        public int NewYork2Contracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether New York 2 can take long, short, or both directions.", GroupName = "New York 2", Order = 7)]
+        public SessionTradeDirection NewYork2TradeDirection { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York 2 trend filter.", GroupName = "New York 2", Order = 11)]
+        public int NewYork2AdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York 2 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York 2", Order = 12)]
+        public double NewYork2AdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York 2 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York 2", Order = 8)]
+        public double NewYork2FlipAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York 2 entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York 2", Order = 13)]
+        public double NewYork2AdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        // [TypeConverter(typeof(NewYork2AdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "New York 2", Order = 14)]
+        public double NewYork2AdxMinSlopePoints
+        {
+            get { return newYork2AdxMinSlopePoints; }
+            set { newYork2AdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York 2", Order = 15)]
+        public double NewYork2AdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "New York 2", Order = 9)]
+        public double NewYork2EmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York 2", Order = 10)]
+        public double NewYork2MaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York 2", Order = 16)]
+        public double NewYork2AdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "New York 2", Order = 17)]
+        public double NewYork2StopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York 2", Order = 18)]
+        public double NewYork2ExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York 2", Order = 19)]
+        public double NewYork2TakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "HV SL Padding Points", Description = "High-volatility stop distance in points from EMA on the opposite side. 0 disables HV stop logic.", GroupName = "New York 2", Order = 20)]
+        public double NewYork2HvSlPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "New York 2", Order = 21)]
+        public TimeSpan NewYork2HvSlStartTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "New York 2", Order = 22)]
+        public TimeSpan NewYork2HvSlEndTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "New York 2", Order = 23)]
+        public double NewYork2EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "New York 2", Order = 24)]
+        public bool NewYork2EnableFlipBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "New York 2", Order = 25)]
+        public double NewYork2FlipBreakEvenTriggerPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "New York 2", Order = 26)]
+        public double NewYork2FlipTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "New York 2", Order = 27)]
+        public double NewYork2FlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "New York 2", Order = 28)]
+        public double NewYork2TakeProfitPercentTriggerPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York 2", Order = 29)]
+        public TakeProfitStopMode NewYork2TakeProfitStopMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "New York 2", Order = 30)]
+        public double NewYork2TakeProfitAtrTrailMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "New York 2", Order = 31)]
+        public double NewYork2TakeProfitPercentStopMovePercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "New York 2", Order = 32)]
+        public bool NewYork2RequireMinAdxForFlips { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "New York 2", Order = 33)]
+        public bool NewYork2EnableAdxDdRiskMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "New York 2", Order = 34)]
+        public double NewYork2AdxDdRiskModeStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "New York 2", Order = 35)]
+        public double NewYork2AdxDdRiskModeTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "New York 2", Order = 36)]
+        public int NewYork2HorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 2", Order = 37)]
+        public double NewYork2MaxStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 2 entries and flips while ATR(14) is below this value.", GroupName = "New York 2", Order = 38)]
+        public double NewYork2AtrMinimum { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York 3 Session(9:35-13:30)", Description = "Enable trading logic during the New York 3 time window.", GroupName = "New York 3", Order = 0)]
+        public bool UseNewYork3Session { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session Start", Description = "New York 3 session start time in chart time zone.", GroupName = "New York 3", Order = 1)]
+        public TimeSpan NewYork3SessionStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Session End", Description = "New York 3 session end time in chart time zone.", GroupName = "New York 3", Order = 2)]
+        public TimeSpan NewYork3SessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip Start", Description = "Start of New York 3 skip window.", GroupName = "New York 3", Order = 3)]
+        public TimeSpan NewYork3SkipStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Skip End", Description = "End of New York 3 skip window.", GroupName = "New York 3", Order = 4)]
+        public TimeSpan NewYork3SkipEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA Period", Description = "EMA period used by New York 3 entry and exit logic.", GroupName = "New York 3", Order = 5)]
+        public int NewYork3EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 3 entries.", GroupName = "New York 3", Order = 6)]
+        public int NewYork3Contracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Direction", Description = "Select whether New York 3 can take long, short, or both directions.", GroupName = "New York 3", Order = 7)]
+        public SessionTradeDirection NewYork3TradeDirection { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York 3 trend filter.", GroupName = "New York 3", Order = 11)]
+        public int NewYork3AdxPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York 3 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York 3", Order = 12)]
+        public double NewYork3AdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, New York 3 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "New York 3", Order = 8)]
+        public double NewYork3FlipAdxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York 3 entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York 3", Order = 13)]
+        public double NewYork3AdxMaxThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        // [TypeConverter(typeof(NewYork3AdxSlopeDropdownConverter))]
+        [Display(Name = "ADX Momentum Threshold", Description = "Momentum Threshold (2 decimals)", GroupName = "New York 3", Order = 14)]
+        public double NewYork3AdxMinSlopePoints
+        {
+            get { return newYork3AdxMinSlopePoints; }
+            set { newYork3AdxMinSlopePoints = Math.Round(value, 2, MidpointRounding.AwayFromZero); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York 3", Order = 15)]
+        public double NewYork3AdxPeakDrawdownExitUnits { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "New York 3", Order = 9)]
+        public double NewYork3EmaMinSlopePointsPerBar { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Max Entry Distance From EMA", Description = "0 disables. Block flip entries when close is farther than this many points from EMA.", GroupName = "New York 3", Order = 10)]
+        public double NewYork3MaxEntryDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York 3", Order = 16)]
+        public double NewYork3AdxAbsoluteExitLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "SL Padding Points", Description = "Normal (non-HV) stop distance in points from EMA on the opposite side.", GroupName = "New York 3", Order = 17)]
+        public double NewYork3StopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Exit Cross Points", Description = "Additional points beyond EMA before evaluating exit/flip. 0 means EMA touch/cross.", GroupName = "New York 3", Order = 18)]
+        public double NewYork3ExitCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York 3", Order = 19)]
+        public double NewYork3TakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "HV SL Padding Points", Description = "High-volatility stop distance in points from EMA on the opposite side. 0 disables HV stop logic.", GroupName = "New York 3", Order = 20)]
+        public double NewYork3HvSlPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "HV SL Start Time", Description = "Start time for using HV SL Padding Points.", GroupName = "New York 3", Order = 21)]
+        public TimeSpan NewYork3HvSlStartTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "HV SL End Time", Description = "End time for using HV SL Padding Points.", GroupName = "New York 3", Order = 22)]
+        public TimeSpan NewYork3HvSlEndTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "New York 3", Order = 23)]
+        public double NewYork3EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "New York 3", Order = 24)]
+        public bool NewYork3EnableFlipBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip BE Trigger (Points)", Description = "Only used for flip entries when Enable Flip BE Trigger is on. At this unrealized profit in points, stop loss moves to break-even.", GroupName = "New York 3", Order = 25)]
+        public double NewYork3FlipBreakEvenTriggerPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Flip TP (Points)", Description = "0 uses the session take profit. Greater than 0 overrides take profit only for flip entries.", GroupName = "New York 3", Order = 26)]
+        public double NewYork3FlipTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "FLIP Exit Cross Points", Description = "0 uses Exit Cross Points. When an open trade reaches the normal exit cross, require this many points beyond EMA before reversing to the opposite side.", GroupName = "New York 3", Order = 27)]
+        public double NewYork3FlipEmaCrossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "New York 3", Order = 28)]
+        public double NewYork3TakeProfitPercentTriggerPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York 3", Order = 29)]
+        public TakeProfitStopMode NewYork3TakeProfitStopMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "TP % ATR Trail Multiplier", Description = "Only used when TP % Stop Mode is AtrTrail. Trail stop at current close minus/plus ATR(14) x this multiplier.", GroupName = "New York 3", Order = 30)]
+        public double NewYork3TakeProfitAtrTrailMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Only used when TP % Stop Mode is PercentMove. Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "New York 3", Order = 31)]
+        public double NewYork3TakeProfitPercentStopMovePercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ADX Require Min For Flips (FLIP)", Description = "If enabled, flips are blocked while ADX is below the active session minimum ADX threshold line.", GroupName = "New York 3", Order = 32)]
+        public bool NewYork3RequireMinAdxForFlips { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable ADX DD Risk Mode", Description = "If enabled, ADX peak drawdown trigger arms a defensive bracket instead of immediate ADX drawdown exit.", GroupName = "New York 3", Order = 33)]
+        public bool NewYork3EnableAdxDdRiskMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk SL (Points)", Description = "0 disables stop adjustment. When ADX DD risk mode arms, set stop to avg entry minus/plus this many points.", GroupName = "New York 3", Order = 34)]
+        public double NewYork3AdxDdRiskModeStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ADX DD Risk TP (Points)", Description = "0 disables target adjustment. When ADX DD risk mode arms, set take profit distance to this many points from avg entry.", GroupName = "New York 3", Order = 35)]
+        public double NewYork3AdxDdRiskModeTakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Horizontal Exit Bars", Description = "0 disables. Close an open trade once it has been held for this many closed 5-minute bars since entry.", GroupName = "New York 3", Order = 36)]
+        public int NewYork3HorizontalExitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 3", Order = 37)]
+        public double NewYork3MaxStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 3 entries and flips while ATR(14) is below this value.", GroupName = "New York 3", Order = 38)]
+        public double NewYork3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Session End", Description = "If true, flatten positions and cancel entries at each configured session end.", GroupName = "10. Sessions", Order = 0)]
