@@ -28,14 +28,14 @@ using NinjaTrader.NinjaScript.DrawingTools;
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
-    public class MICHTesting : Strategy
+    public class MICHTestingewSL18 : Strategy
     {
-        private const string StrategySignalPrefix = "MICHTesting";
+        private const string StrategySignalPrefix = "MICH";
         private const string LongEntrySignal = StrategySignalPrefix + "Long";
         private const string ShortEntrySignal = StrategySignalPrefix + "Short";
-        private const string HeartbeatStrategyName = "MICHTesting";
+        private const string HeartbeatStrategyName = "MICHTestingewSL18";
 
-        public MICHTesting()
+        public MICHTestingewSL18()
         {
             VendorLicense(1235);
         }
@@ -44,6 +44,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         // ── Ny session indicators ──
+        private ATR nyLongAtr;
+        private ATR nyShortAtr;
         private SMA nyLongSmaHigh, nyLongSmaLow;
         private EMA nyLongEmaHigh, nyLongEmaLow;
         private WMA nyLongWmaFilter;
@@ -60,6 +62,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private ADX nyShortEarlyExitAdx;
 
         // ── Eu session indicators ──
+        private ATR euLongAtr;
+        private ATR euShortAtr;
         private SMA euLongSmaHigh, euLongSmaLow;
         private EMA euLongEmaHigh, euLongEmaLow;
         private WMA euLongWmaFilter;
@@ -76,6 +80,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private ADX euShortEarlyExitAdx;
 
         // ── As session indicators ──
+        private ATR asLongAtr;
+        private ATR asShortAtr;
         private SMA asLongSmaHigh, asLongSmaLow;
         private EMA asLongEmaHigh, asLongEmaLow;
         private WMA asLongWmaFilter;
@@ -158,6 +164,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool forceFlattenOrderSubmitted;
         private string forceFlattenReason;
         private double tradePeakAdx;
+        private double entryAtr;            // ATR value captured at entry bar close
 
         // ── Time-window transition tracking ──
         private bool wasInNewsSkipWindow;
@@ -424,7 +431,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description                     = @"MICHTesting";
+                Description                     = @"MICHTesting — NY / EU / Asia with ORBO-style trail (bestPrice watermark, activation threshold, trail lock).";
                 Name                            = "MICHTesting";
                 Calculate                       = Calculate.OnBarClose;
                 EntriesPerDirection             = 1;
@@ -446,7 +453,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ─── General ───
                 RequireEntryConfirmation        = false;
                 SessionStartTime                = DateTime.Parse("18:00", System.Globalization.CultureInfo.InvariantCulture);
-                UseNewsSkip                     = true;
+                UseNewsSkip                     = false;
                 NewsBlockMinutes                = 1;
                 FlattenOnBlockedWindowTransition = true;
                 DebugLogging                    = true;
@@ -490,6 +497,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyLongMaxTakeProfitTicks                          = 1179;
                 NyLongSwingStrength                               = 1;
                 NyLongCandleMultiplier                            = 4.07;
+                NyLongAtrPeriod                                   = 14;
+                NyLongAtrThresholdTicks                           = 100;
+                NyLongLowAtrCandleMultiplier                      = 5.1;
+                NyLongHighAtrCandleMultiplier                     = 4.9;
                 NyLongSlExtraTicks                                = 41;
                 NyLongTrailOffsetTicks                            = 34;
                 NyLongTrailDelayBars                              = 4;
@@ -513,6 +524,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyLongRMultipleActivationPct                      = 31.0;
                 NyLongRMultipleTrailPct                           = 2.0;
                 NyLongRMultipleLockPct                            = 0.0;
+                NyLongMAEMaxTicks                                 = 300;
                 NyLongRequireDirectionFlip                        = true;
                 NyLongAllowSameDirectionAfterLoss                 = true;
                 NyLongMaxDistanceFromSmaTicks                     = 0;
@@ -545,6 +557,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyShortMaxTakeProfitTicks                         = 1179;
                 NyShortSwingStrength                              = 1;
                 NyShortCandleMultiplier                           = 4.3;
+                NyShortAtrPeriod                                  = 14;
+                NyShortAtrThresholdTicks                          = 100;
+                NyShortLowAtrCandleMultiplier                     = 4.0;
+                NyShortHighAtrCandleMultiplier                    = 2.9;
                 NyShortSlExtraTicks                               = 42;
                 NyShortTrailOffsetTicks                           = 42;
                 NyShortTrailDelayBars                             = 1;
@@ -568,6 +584,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyShortRMultipleActivationPct                     = 27.0;
                 NyShortRMultipleTrailPct                          = 20.0;
                 NyShortRMultipleLockPct                           = 0.0;
+                NyShortMAEMaxTicks                                = 309;
                 NyShortRequireDirectionFlip                       = true;
                 NyShortAllowSameDirectionAfterLoss                = true;
                 NyShortMaxDistanceFromSmaTicks                    = 0;
@@ -618,6 +635,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuLongMaxTakeProfitTicks                          = 890;
                 EuLongSwingStrength                               = 1;
                 EuLongCandleMultiplier                            = 3.34;
+                EuLongAtrPeriod                                   = 14;
+                EuLongAtrThresholdTicks                           = 60;
+                EuLongLowAtrCandleMultiplier                      = 3.6;
+                EuLongHighAtrCandleMultiplier                     = 5.0;
                 EuLongSlExtraTicks                                = 42;
                 EuLongTrailOffsetTicks                            = 76;
                 EuLongTrailDelayBars                              = 3;
@@ -641,6 +662,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuLongRMultipleActivationPct                      = 80.0;
                 EuLongRMultipleTrailPct                           = 55.0;
                 EuLongRMultipleLockPct                            = 0.0;
+                EuLongMAEMaxTicks                                 = 211;
                 EuLongRequireDirectionFlip                        = true;
                 EuLongAllowSameDirectionAfterLoss                 = true;
                 EuLongMaxDistanceFromSmaTicks                     = 0;
@@ -673,6 +695,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuShortMaxTakeProfitTicks                         = 1000;
                 EuShortSwingStrength                              = 1;
                 EuShortCandleMultiplier                           = 4.22;
+                EuShortAtrPeriod                                  = 14;
+                EuShortAtrThresholdTicks                          = 60;
+                EuShortLowAtrCandleMultiplier                     = 4.3;
+                EuShortHighAtrCandleMultiplier                    = 4.5;
                 EuShortSlExtraTicks                               = 42;
                 EuShortTrailOffsetTicks                           = 42;
                 EuShortTrailDelayBars                             = 6;
@@ -696,6 +722,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuShortRMultipleActivationPct                     = 50.0;
                 EuShortRMultipleTrailPct                          = 100.0;
                 EuShortRMultipleLockPct                           = 0.0;
+                EuShortMAEMaxTicks                                = 211;
                 EuShortRequireDirectionFlip                       = true;
                 EuShortAllowSameDirectionAfterLoss                = true;
                 EuShortMaxDistanceFromSmaTicks                    = 0;
@@ -746,6 +773,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsLongMaxTakeProfitTicks                          = 600;
                 AsLongSwingStrength                               = 1;
                 AsLongCandleMultiplier                            = 2.65;
+                AsLongAtrPeriod                                   = 14;
+                AsLongAtrThresholdTicks                           = 50;
+                AsLongLowAtrCandleMultiplier                      = 2.6;
+                AsLongHighAtrCandleMultiplier                     = 3.2;
                 AsLongSlExtraTicks                                = 40;
                 AsLongTrailOffsetTicks                            = 0;
                 AsLongTrailDelayBars                              = 2;
@@ -769,6 +800,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsLongRMultipleActivationPct                      = 49.0;
                 AsLongRMultipleTrailPct                           = 75.0;
                 AsLongRMultipleLockPct                            = 0.0;
+                AsLongMAEMaxTicks                                 = 0;
                 AsLongRequireDirectionFlip                        = true;
                 AsLongAllowSameDirectionAfterLoss                 = true;
                 AsLongMaxDistanceFromSmaTicks                     = 0;
@@ -801,6 +833,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsShortMaxTakeProfitTicks                         = 1000;
                 AsShortSwingStrength                              = 1;
                 AsShortCandleMultiplier                           = 4.43;
+                AsShortAtrPeriod                                  = 14;
+                AsShortAtrThresholdTicks                          = 0;
+                AsShortLowAtrCandleMultiplier                     = 4.43;
+                AsShortHighAtrCandleMultiplier                    = 4.43;
                 AsShortSlExtraTicks                               = 42;
                 AsShortTrailOffsetTicks                           = 16;
                 AsShortTrailDelayBars                             = 20;
@@ -824,6 +860,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsShortRMultipleActivationPct                     = 111.0;
                 AsShortRMultipleTrailPct                          = 33.0;
                 AsShortRMultipleLockPct                           = 0.0;
+                AsShortMAEMaxTicks                                = 0;
                 AsShortRequireDirectionFlip                       = false;
                 AsShortAllowSameDirectionAfterLoss                = true;
                 AsShortMaxDistanceFromSmaTicks                    = 0;
@@ -863,6 +900,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 nyLongSwing        = Swing(NyLongSwingStrength);
                 nyLongEarlyExitEma = EMA(NyLongEmaEarlyExitPeriod);
                 nyLongEarlyExitAdx = ADX(NyLongAdxEarlyExitPeriod);
+                nyLongAtr           = ATR(NyLongAtrPeriod);
                 nyShortSmaHigh      = SMA(High,  NyShortMaPeriod);
                 nyShortSmaLow       = SMA(Low,   NyShortMaPeriod);
                 nyShortEmaHigh      = EMA(High,  NyShortEmaPeriod);
@@ -872,6 +910,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 nyShortSwing        = Swing(NyShortSwingStrength);
                 nyShortEarlyExitEma = EMA(NyShortEmaEarlyExitPeriod);
                 nyShortEarlyExitAdx = ADX(NyShortAdxEarlyExitPeriod);
+                nyShortAtr           = ATR(NyShortAtrPeriod);
                 }
 
                 if (EuEnable)
@@ -886,6 +925,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 euLongSwing        = Swing(EuLongSwingStrength);
                 euLongEarlyExitEma = EMA(EuLongEmaEarlyExitPeriod);
                 euLongEarlyExitAdx = ADX(EuLongAdxEarlyExitPeriod);
+                euLongAtr           = ATR(EuLongAtrPeriod);
                 euShortSmaHigh      = SMA(High,  EuShortMaPeriod);
                 euShortSmaLow       = SMA(Low,   EuShortMaPeriod);
                 euShortEmaHigh      = EMA(High,  EuShortEmaPeriod);
@@ -895,6 +935,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 euShortSwing        = Swing(EuShortSwingStrength);
                 euShortEarlyExitEma = EMA(EuShortEmaEarlyExitPeriod);
                 euShortEarlyExitAdx = ADX(EuShortAdxEarlyExitPeriod);
+                euShortAtr           = ATR(EuShortAtrPeriod);
                 }
 
                 if (AsEnable)
@@ -909,6 +950,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 asLongSwing        = Swing(AsLongSwingStrength);
                 asLongEarlyExitEma = EMA(AsLongEmaEarlyExitPeriod);
                 asLongEarlyExitAdx = ADX(AsLongAdxEarlyExitPeriod);
+                asLongAtr           = ATR(AsLongAtrPeriod);
                 asShortSmaHigh      = SMA(High,  AsShortMaPeriod);
                 asShortSmaLow       = SMA(Low,   AsShortMaPeriod);
                 asShortEmaHigh      = EMA(High,  AsShortEmaPeriod);
@@ -918,6 +960,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 asShortSwing        = Swing(AsShortSwingStrength);
                 asShortEarlyExitEma = EMA(AsShortEmaEarlyExitPeriod);
                 asShortEarlyExitAdx = ADX(AsShortAdxEarlyExitPeriod);
+                asShortAtr           = ATR(AsShortAtrPeriod);
                 }
 
                 // Chart display — NY Long MAs (primary session)
@@ -1026,6 +1069,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int SD_MaxTakeProfitTicks(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongMaxTakeProfitTicks : sid == 2 ? EuLongMaxTakeProfitTicks : AsLongMaxTakeProfitTicks) : (sid == 1 ? NyShortMaxTakeProfitTicks : sid == 2 ? EuShortMaxTakeProfitTicks : AsShortMaxTakeProfitTicks); }
         private int SD_SwingStrength(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongSwingStrength : sid == 2 ? EuLongSwingStrength : AsLongSwingStrength) : (sid == 1 ? NyShortSwingStrength : sid == 2 ? EuShortSwingStrength : AsShortSwingStrength); }
         private double SD_CandleMultiplier(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongCandleMultiplier : sid == 2 ? EuLongCandleMultiplier : AsLongCandleMultiplier) : (sid == 1 ? NyShortCandleMultiplier : sid == 2 ? EuShortCandleMultiplier : AsShortCandleMultiplier); }
+        private int    SD_AtrPeriod(int sid, int dir)              { return dir == 1 ? (sid == 1 ? NyLongAtrPeriod              : sid == 2 ? EuLongAtrPeriod              : AsLongAtrPeriod)              : (sid == 1 ? NyShortAtrPeriod              : sid == 2 ? EuShortAtrPeriod              : AsShortAtrPeriod);              }
+        private int    SD_AtrThresholdTicks(int sid, int dir)      { return dir == 1 ? (sid == 1 ? NyLongAtrThresholdTicks      : sid == 2 ? EuLongAtrThresholdTicks      : AsLongAtrThresholdTicks)      : (sid == 1 ? NyShortAtrThresholdTicks      : sid == 2 ? EuShortAtrThresholdTicks      : AsShortAtrThresholdTicks);      }
+        private double SD_LowAtrCandleMultiplier(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongLowAtrCandleMultiplier : sid == 2 ? EuLongLowAtrCandleMultiplier : AsLongLowAtrCandleMultiplier) : (sid == 1 ? NyShortLowAtrCandleMultiplier : sid == 2 ? EuShortLowAtrCandleMultiplier : AsShortLowAtrCandleMultiplier); }
+        private double SD_HighAtrCandleMultiplier(int sid, int dir){ return dir == 1 ? (sid == 1 ? NyLongHighAtrCandleMultiplier : sid == 2 ? EuLongHighAtrCandleMultiplier : AsLongHighAtrCandleMultiplier) : (sid == 1 ? NyShortHighAtrCandleMultiplier : sid == 2 ? EuShortHighAtrCandleMultiplier : AsShortHighAtrCandleMultiplier); }
+        private ATR    S_Atr(int sid, int dir)                     { return dir == 1 ? (sid == 1 ? nyLongAtr : sid == 2 ? euLongAtr : asLongAtr) : (sid == 1 ? nyShortAtr : sid == 2 ? euShortAtr : asShortAtr); }
         private int SD_SlExtraTicks(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongSlExtraTicks : sid == 2 ? EuLongSlExtraTicks : AsLongSlExtraTicks) : (sid == 1 ? NyShortSlExtraTicks : sid == 2 ? EuShortSlExtraTicks : AsShortSlExtraTicks); }
         private int SD_TrailOffsetTicks(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongTrailOffsetTicks : sid == 2 ? EuLongTrailOffsetTicks : AsLongTrailOffsetTicks) : (sid == 1 ? NyShortTrailOffsetTicks : sid == 2 ? EuShortTrailOffsetTicks : AsShortTrailOffsetTicks); }
         private int SD_TrailDelayBars(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongTrailDelayBars : sid == 2 ? EuLongTrailDelayBars : AsLongTrailDelayBars) : (sid == 1 ? NyShortTrailDelayBars : sid == 2 ? EuShortTrailDelayBars : AsShortTrailDelayBars); }
@@ -1047,6 +1095,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int SD_PriceOffsetReductionTicks(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongPriceOffsetReductionTicks : sid == 2 ? EuLongPriceOffsetReductionTicks : AsLongPriceOffsetReductionTicks) : (sid == 1 ? NyShortPriceOffsetReductionTicks : sid == 2 ? EuShortPriceOffsetReductionTicks : AsShortPriceOffsetReductionTicks); }
         private bool   SD_EnableRMultipleTrail(int sid, int dir)   { return dir == 1 ? (sid == 1 ? NyLongEnableRMultipleTrail   : sid == 2 ? EuLongEnableRMultipleTrail   : AsLongEnableRMultipleTrail)   : (sid == 1 ? NyShortEnableRMultipleTrail   : sid == 2 ? EuShortEnableRMultipleTrail   : AsShortEnableRMultipleTrail);   }
         private double SD_RMultipleActivationPct(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongRMultipleActivationPct : sid == 2 ? EuLongRMultipleActivationPct : AsLongRMultipleActivationPct) : (sid == 1 ? NyShortRMultipleActivationPct : sid == 2 ? EuShortRMultipleActivationPct : AsShortRMultipleActivationPct); }
+        private int    SD_MAEMaxTicks(int sid, int dir)            { return dir == 1 ? (sid == 1 ? NyLongMAEMaxTicks            : sid == 2 ? EuLongMAEMaxTicks            : AsLongMAEMaxTicks)            : (sid == 1 ? NyShortMAEMaxTicks            : sid == 2 ? EuShortMAEMaxTicks            : AsShortMAEMaxTicks);            }
         private double SD_RMultipleTrailPct(int sid, int dir)      { return dir == 1 ? (sid == 1 ? NyLongRMultipleTrailPct      : sid == 2 ? EuLongRMultipleTrailPct      : AsLongRMultipleTrailPct)      : (sid == 1 ? NyShortRMultipleTrailPct      : sid == 2 ? EuShortRMultipleTrailPct      : AsShortRMultipleTrailPct);      }
         private double SD_RMultipleLockPct(int sid, int dir)       { return dir == 1 ? (sid == 1 ? NyLongRMultipleLockPct       : sid == 2 ? EuLongRMultipleLockPct       : AsLongRMultipleLockPct)       : (sid == 1 ? NyShortRMultipleLockPct       : sid == 2 ? EuShortRMultipleLockPct       : AsShortRMultipleLockPct);       }
         private bool SD_RequireDirectionFlip(int sid, int dir) { return dir == 1 ? (sid == 1 ? NyLongRequireDirectionFlip : sid == 2 ? EuLongRequireDirectionFlip : AsLongRequireDirectionFlip) : (sid == 1 ? NyShortRequireDirectionFlip : sid == 2 ? EuShortRequireDirectionFlip : AsShortRequireDirectionFlip); }
@@ -1434,6 +1483,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             forceFlattenOrderSubmitted  = false;
             forceFlattenReason          = null;
             tradePeakAdx                = 0.0;
+            entryAtr                    = 0;
 
             CheckSessionLimitsInternal(sid);
             activeSessionId = 0;
@@ -1474,6 +1524,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 int earlyAdxPeriod = SD_AdxEarlyExitPeriod(sid, tradeDirection);
                 tradePeakAdx = (earlyAdx != null && CurrentBar >= earlyAdxPeriod) ? earlyAdx[0] : 0.0;
 
+                // ── Capture ATR at entry bar close (must be before CalculateTakeProfit) ──
+                ATR entryAtrInd = S_Atr(sid, tradeDirection);
+                entryAtr = (entryAtrInd != null && CurrentBar >= SD_AtrPeriod(sid, tradeDirection)) ? entryAtrInd[0] : 0;
+
                 int contracts = S_Contracts(sid);
                 string entryName = GetEntrySignalName(tradeDirection);
                 double tpPrice = CalculateTakeProfit(tradeEntryPrice);
@@ -1483,6 +1537,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     if (tpPrice <= tradeEntryPrice) tpPrice = tradeEntryPrice + SD_TakeProfitTicks(sid, 1) * TickSize;
                     if (slPrice >= tradeEntryPrice) slPrice = tradeEntryPrice - 4 * TickSize;
+                    slPrice = ClampStopToMAE(slPrice, true);
                     targetOrder = ExitLongLimit(0, true, contracts, tpPrice, BuildExitSignalName("TP"), entryName);
                     stopOrder = ExitLongStopMarket(0, true, contracts, slPrice, BuildExitSignalName("SL"), entryName);
                 }
@@ -1490,6 +1545,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     if (tpPrice >= tradeEntryPrice) tpPrice = tradeEntryPrice - SD_TakeProfitTicks(sid, -1) * TickSize;
                     if (slPrice <= tradeEntryPrice) slPrice = tradeEntryPrice + 4 * TickSize;
+                    slPrice = ClampStopToMAE(slPrice, false);
                     targetOrder = ExitShortLimit(0, true, contracts, tpPrice, BuildExitSignalName("TP"), entryName);
                     stopOrder = ExitShortStopMarket(0, true, contracts, slPrice, BuildExitSignalName("SL"), entryName);
                 }
@@ -2231,12 +2287,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         #region Take Profit
 
+        private double GetAtrAwareCandleMultiplier(int sid, int dir)
+        {
+            int    atrThresholdTicks = SD_AtrThresholdTicks(sid, dir);
+            double lowMult           = SD_LowAtrCandleMultiplier(sid, dir);
+            double highMult          = SD_HighAtrCandleMultiplier(sid, dir);
+            // If threshold is 0 or ATR was not captured, fall back to standard multiplier
+            if (atrThresholdTicks <= 0 || entryAtr <= 0)
+                return SD_CandleMultiplier(sid, dir);
+            double atrInTicks = entryAtr / TickSize;
+            return atrInTicks < atrThresholdTicks ? lowMult : highMult;
+        }
+
         private double CalculateTPDistanceTicks(int sid, int direction, double candleRange)
         {
             MichalTPMode mode = SD_TakeProfitMode(sid, direction);
             int tpTix = SD_TakeProfitTicks(sid, direction);
             int maxTp = SD_MaxTakeProfitTicks(sid, direction);
-            double mult = SD_CandleMultiplier(sid, direction);
+            double mult = GetAtrAwareCandleMultiplier(sid, direction);
             double tpTicks;
             switch (mode)
             {
@@ -2253,7 +2321,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             MichalTPMode mode = SD_TakeProfitMode(sid, tradeDirection);
             int tpTix = SD_TakeProfitTicks(sid, tradeDirection);
             int maxTp = SD_MaxTakeProfitTicks(sid, tradeDirection);
-            double mult = SD_CandleMultiplier(sid, tradeDirection);
+            double mult = GetAtrAwareCandleMultiplier(sid, tradeDirection);
             double tpDistance;
             switch (mode)
             {
@@ -2366,6 +2434,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return true;
         }
 
+        private double ClampStopToMAE(double proposedStop, bool isLong)
+        {
+            if (tradeEntryPrice == 0) return proposedStop;
+            int maeMaxTicks = SD_MAEMaxTicks(activeSessionId, tradeDirection);
+            if (maeMaxTicks <= 0) return proposedStop;
+            double maeLimit = maeMaxTicks * TickSize;
+            if (isLong)
+            {
+                // For longs: stop can't be lower than entry - MAEMaxTicks
+                double maeFloor = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice - maeLimit);
+                if (proposedStop < maeFloor)
+                {
+                    Print(string.Format("{0} | [{1}] MAE CLAMP LONG: {2:F2} -> {3:F2} ({4}t floor)",
+                        Time[0], S_Label(activeSessionId), proposedStop, maeFloor, maeMaxTicks));
+                    return maeFloor;
+                }
+            }
+            else
+            {
+                // For shorts: stop can't be higher than entry + MAEMaxTicks
+                double maeCeiling = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice + maeLimit);
+                if (proposedStop > maeCeiling)
+                {
+                    Print(string.Format("{0} | [{1}] MAE CLAMP SHORT: {2:F2} -> {3:F2} ({4}t ceiling)",
+                        Time[0], S_Label(activeSessionId), proposedStop, maeCeiling, maeMaxTicks));
+                    return maeCeiling;
+                }
+            }
+            return proposedStop;
+        }
+
         private void ManageBreakeven()
         {
             int sid = activeSessionId;
@@ -2387,6 +2486,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (tradeDirection == 1)
                 {
                     double bePrice = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice + offsetTicks * TickSize);
+                    bePrice = ClampStopToMAE(bePrice, true);
                     if (bePrice > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, bePrice))
                     {
                         ExitLongStopMarket(0, true, contracts, bePrice, BuildExitSignalName("SL"), LongEntrySignal);
@@ -2397,6 +2497,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else
                 {
                     double bePrice = Instrument.MasterInstrument.RoundToTickSize(tradeEntryPrice - offsetTicks * TickSize);
+                    bePrice = ClampStopToMAE(bePrice, false);
                     if (bePrice < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, bePrice))
                     {
                         ExitShortStopMarket(0, true, contracts, bePrice, BuildExitSignalName("SL"), ShortEntrySignal);
@@ -2418,15 +2519,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 double newStop = GetLongLowerMAForTrail(sid) - trailOffsetTicks * TickSize;
                 newStop = Instrument.MasterInstrument.RoundToTickSize(newStop);
+                newStop = ClampStopToMAE(newStop, true);
                 if (newStop > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newStop))
+                {
                     ExitLongStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), LongEntrySignal);
+                    originalStopPrice = newStop;
+                }
             }
             else if (tradeDirection == -1 && Position.MarketPosition == MarketPosition.Short)
             {
                 double newStop = GetShortUpperMAForTrail(sid) + trailOffsetTicks * TickSize;
                 newStop = Instrument.MasterInstrument.RoundToTickSize(newStop);
+                newStop = ClampStopToMAE(newStop, false);
                 if (newStop < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newStop))
+                {
                     ExitShortStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), ShortEntrySignal);
+                    originalStopPrice = newStop;
+                }
             }
         }
 
@@ -2443,12 +2552,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (tradeDirection == 1 && Position.MarketPosition == MarketPosition.Long && entryBarBullish)
             {
                 double newSl = Instrument.MasterInstrument.RoundToTickSize(Low[1] - slExtraTicks * TickSize);
+                newSl = ClampStopToMAE(newSl, true);
                 if (newSl > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newSl))
                 { ExitLongStopMarket(0, true, contracts, newSl, BuildExitSignalName("SL"), LongEntrySignal); originalStopPrice = newSl; }
             }
             else if (tradeDirection == -1 && Position.MarketPosition == MarketPosition.Short && entryBarBearish)
             {
                 double newSl = Instrument.MasterInstrument.RoundToTickSize(High[1] + slExtraTicks * TickSize);
+                newSl = ClampStopToMAE(newSl, false);
                 if (newSl < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newSl))
                 { ExitShortStopMarket(0, true, contracts, newSl, BuildExitSignalName("SL"), ShortEntrySignal); originalStopPrice = newSl; }
             }
@@ -2465,14 +2576,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (tradeDirection == 1 && Position.MarketPosition == MarketPosition.Long)
             {
                 double newStop = Instrument.MasterInstrument.RoundToTickSize(Low[trailCandleOffset] - slExtraTicks * TickSize);
+                newStop = ClampStopToMAE(newStop, true);
                 if (newStop > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newStop))
+                {
                     ExitLongStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), LongEntrySignal);
+                    originalStopPrice = newStop;
+                }
             }
             else if (tradeDirection == -1 && Position.MarketPosition == MarketPosition.Short)
             {
                 double newStop = Instrument.MasterInstrument.RoundToTickSize(High[trailCandleOffset] + slExtraTicks * TickSize);
+                newStop = ClampStopToMAE(newStop, false);
                 if (newStop < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newStop))
+                {
                     ExitShortStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), ShortEntrySignal);
+                    originalStopPrice = newStop;
+                }
             }
         }
 
@@ -2524,8 +2643,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (priceOffsetTrailActive)
                 {
                     double newStop = Instrument.MasterInstrument.RoundToTickSize(Close[0] - priceOffsetTrailDistance);
+                    newStop = ClampStopToMAE(newStop, true);
                     if (newStop > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newStop))
+                    {
                         ExitLongStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), LongEntrySignal);
+                        originalStopPrice = newStop;
+                    }
                 }
             }
             else if (tradeDirection == -1 && Position.MarketPosition == MarketPosition.Short)
@@ -2540,8 +2663,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (priceOffsetTrailActive)
                 {
                     double newStop = Instrument.MasterInstrument.RoundToTickSize(Close[0] + priceOffsetTrailDistance);
+                    newStop = ClampStopToMAE(newStop, false);
                     if (newStop < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newStop))
+                    {
                         ExitShortStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), ShortEntrySignal);
+                        originalStopPrice = newStop;
+                    }
                 }
             }
         }
@@ -2595,6 +2722,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (isLong)
             {
                 double newStop = Instrument.MasterInstrument.RoundToTickSize(rMultipleBestPrice - trailDist);
+                newStop = ClampStopToMAE(newStop, true);
                 if (newStop > originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long, newStop))
                 {
                     ExitLongStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), LongEntrySignal);
@@ -2604,6 +2732,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else
             {
                 double newStop = Instrument.MasterInstrument.RoundToTickSize(rMultipleBestPrice + trailDist);
+                newStop = ClampStopToMAE(newStop, false);
                 if (newStop < originalStopPrice && CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short, newStop))
                 {
                     ExitShortStopMarket(0, true, contracts, newStop, BuildExitSignalName("SL"), ShortEntrySignal);
@@ -3049,7 +3178,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
             int infoSessionId = GetInfoSessionId();
-            lines.Add((string.Format("MICHTesting v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add((string.Format("MICH v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", BuildContractsInfoText(infoSessionId), Brushes.LightGray, InfoValueBrush));
 
             if (!UseNewsSkip)
@@ -3310,6 +3439,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NyLongCandleMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Order = 6, GroupName = "04. Ny: Long: Take Profit")]
+        public int NyLongAtrPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "ATR Threshold (Ticks, 0=off)", Order = 7, GroupName = "04. Ny: Long: Take Profit")]
+        public int NyLongAtrThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "Low ATR Candle Multiplier", Order = 8, GroupName = "04. Ny: Long: Take Profit")]
+        public double NyLongLowAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "High ATR Candle Multiplier", Order = 9, GroupName = "04. Ny: Long: Take Profit")]
+        public double NyLongHighAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "SL Extra Ticks", Order = 1, GroupName = "05. Ny: Long: Stop Loss")]
         public int NyLongSlExtraTicks { get; set; }
@@ -3414,6 +3563,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, 2000)]
         [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "07. Ny: Long: Trade Management")]
         public double NyLongRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "MAE Max Ticks (0=off)", Order = 11, GroupName = "07. Ny: Long: Trade Management")]
+        public int NyLongMAEMaxTicks { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "08. Ny: Long: Entry Filters")]
@@ -3565,6 +3719,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NyShortCandleMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Order = 6, GroupName = "12. Ny: Short: Take Profit")]
+        public int NyShortAtrPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "ATR Threshold (Ticks, 0=off)", Order = 7, GroupName = "12. Ny: Short: Take Profit")]
+        public int NyShortAtrThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "Low ATR Candle Multiplier", Order = 8, GroupName = "12. Ny: Short: Take Profit")]
+        public double NyShortLowAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "High ATR Candle Multiplier", Order = 9, GroupName = "12. Ny: Short: Take Profit")]
+        public double NyShortHighAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "SL Extra Ticks", Order = 1, GroupName = "13. Ny: Short: Stop Loss")]
         public int NyShortSlExtraTicks { get; set; }
@@ -3669,6 +3843,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, 2000)]
         [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "15. Ny: Short: Trade Management")]
         public double NyShortRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "MAE Max Ticks (0=off)", Order = 11, GroupName = "15. Ny: Short: Trade Management")]
+        public int NyShortMAEMaxTicks { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "16. Ny: Short: Entry Filters")]
@@ -3893,6 +4072,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double EuLongCandleMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Order = 6, GroupName = "21. Eu: Long: Take Profit")]
+        public int EuLongAtrPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "ATR Threshold (Ticks, 0=off)", Order = 7, GroupName = "21. Eu: Long: Take Profit")]
+        public int EuLongAtrThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "Low ATR Candle Multiplier", Order = 8, GroupName = "21. Eu: Long: Take Profit")]
+        public double EuLongLowAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "High ATR Candle Multiplier", Order = 9, GroupName = "21. Eu: Long: Take Profit")]
+        public double EuLongHighAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "SL Extra Ticks", Order = 1, GroupName = "22. Eu: Long: Stop Loss")]
         public int EuLongSlExtraTicks { get; set; }
@@ -3997,6 +4196,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, 2000)]
         [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "24. Eu: Long: Trade Management")]
         public double EuLongRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "MAE Max Ticks (0=off)", Order = 11, GroupName = "24. Eu: Long: Trade Management")]
+        public int EuLongMAEMaxTicks { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "25. Eu: Long: Entry Filters")]
@@ -4148,6 +4352,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double EuShortCandleMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Order = 6, GroupName = "29. Eu: Short: Take Profit")]
+        public int EuShortAtrPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "ATR Threshold (Ticks, 0=off)", Order = 7, GroupName = "29. Eu: Short: Take Profit")]
+        public int EuShortAtrThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "Low ATR Candle Multiplier", Order = 8, GroupName = "29. Eu: Short: Take Profit")]
+        public double EuShortLowAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "High ATR Candle Multiplier", Order = 9, GroupName = "29. Eu: Short: Take Profit")]
+        public double EuShortHighAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "SL Extra Ticks", Order = 1, GroupName = "30. Eu: Short: Stop Loss")]
         public int EuShortSlExtraTicks { get; set; }
@@ -4252,6 +4476,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, 2000)]
         [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "32. Eu: Short: Trade Management")]
         public double EuShortRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "MAE Max Ticks (0=off)", Order = 11, GroupName = "32. Eu: Short: Trade Management")]
+        public int EuShortMAEMaxTicks { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "33. Eu: Short: Entry Filters")]
@@ -4476,6 +4705,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double AsLongCandleMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Order = 6, GroupName = "38. As: Long: Take Profit")]
+        public int AsLongAtrPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "ATR Threshold (Ticks, 0=off)", Order = 7, GroupName = "38. As: Long: Take Profit")]
+        public int AsLongAtrThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "Low ATR Candle Multiplier", Order = 8, GroupName = "38. As: Long: Take Profit")]
+        public double AsLongLowAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "High ATR Candle Multiplier", Order = 9, GroupName = "38. As: Long: Take Profit")]
+        public double AsLongHighAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "SL Extra Ticks", Order = 1, GroupName = "39. As: Long: Stop Loss")]
         public int AsLongSlExtraTicks { get; set; }
@@ -4580,6 +4829,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, 2000)]
         [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "41. As: Long: Trade Management")]
         public double AsLongRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "MAE Max Ticks (0=off)", Order = 11, GroupName = "41. As: Long: Trade Management")]
+        public int AsLongMAEMaxTicks { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "42. As: Long: Entry Filters")]
@@ -4731,6 +4985,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double AsShortCandleMultiplier { get; set; }
 
         [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Order = 6, GroupName = "46. As: Short: Take Profit")]
+        public int AsShortAtrPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "ATR Threshold (Ticks, 0=off)", Order = 7, GroupName = "46. As: Short: Take Profit")]
+        public int AsShortAtrThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "Low ATR Candle Multiplier", Order = 8, GroupName = "46. As: Short: Take Profit")]
+        public double AsShortLowAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 50.0)]
+        [Display(Name = "High ATR Candle Multiplier", Order = 9, GroupName = "46. As: Short: Take Profit")]
+        public double AsShortHighAtrCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "SL Extra Ticks", Order = 1, GroupName = "47. As: Short: Stop Loss")]
         public int AsShortSlExtraTicks { get; set; }
@@ -4835,6 +5109,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, 2000)]
         [Display(Name = "R-Trail Lock (%R, 0=off)", Order = 9, GroupName = "49. As: Short: Trade Management")]
         public double AsShortRMultipleLockPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "MAE Max Ticks (0=off)", Order = 11, GroupName = "49. As: Short: Trade Management")]
+        public int AsShortMAEMaxTicks { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require Direction Flip", Order = 1, GroupName = "50. As: Short: Entry Filters")]
