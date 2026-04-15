@@ -100,9 +100,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         private bool beTriggered = false;
         private double beNewStopPrice = 0;
-        private bool trailActivated = false;
-        private bool trailFrozen = false;
-        private double trailBestPrice = 0;
+        // OR Watermark Trail state
+        private bool trailActivated = false;      // true once activation threshold hit
+        private bool trailFrozen = false;          // true once freeze threshold hit
+        private double trailBestPrice = 0;         // high watermark (long) / low watermark (short)
         private bool bracketOrdersPlaced = false;
         private string currentEntrySignal = string.Empty;
         private int entrySignalSequence = 0;
@@ -143,6 +144,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int activeL_BETriggerTicks = 0;
         private double activeL_BETriggerORMultiple = 0;
         private int activeL_BEOffsetTicks = 0;
+        // Watermark Trail - Long
         private bool activeL_TrailEnabled = false;
         private TrailModeEnum activeL_TrailActivationMode = TrailModeEnum.FixedTicks;
         private double activeL_TrailActivationValue = 0;
@@ -150,6 +152,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeL_TrailDistanceValue = 0;
         private TrailModeEnum activeL_TrailFreezeMode = TrailModeEnum.FixedTicks;
         private double activeL_TrailFreezeValue = 0;
+        // Max Initial SL - Long
         private int activeL_MaxInitialSLTicks = 0;
         // Active parameters for matched Short bucket
         private bool activeS_Enabled = false;
@@ -173,6 +176,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int activeS_BETriggerTicks = 0;
         private double activeS_BETriggerORMultiple = 0;
         private int activeS_BEOffsetTicks = 0;
+        // Watermark Trail - Short
         private bool activeS_TrailEnabled = false;
         private TrailModeEnum activeS_TrailActivationMode = TrailModeEnum.FixedTicks;
         private double activeS_TrailActivationValue = 0;
@@ -180,7 +184,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeS_TrailDistanceValue = 0;
         private TrailModeEnum activeS_TrailFreezeMode = TrailModeEnum.FixedTicks;
         private double activeS_TrailFreezeValue = 0;
+        // Max Initial SL filter (skip trade) - Long & Short
+        // activeL_MaxInitialSLTicks already declared above
         private int activeS_MaxInitialSLTicks = 0;
+        // Max SL Clamp (hard cap on bracket stop distance) - Long & Short
+        private int activeL_MaxSLTicks = 0;
+        private int activeS_MaxSLTicks = 0;
+        // ATR TP resolved multiple — locked at OR formation time
+        // When ORMultiple mode: activeL/S_TakeProfitORMultiple holds this resolved value
+        private int activeL_AtrTPThresholdTicks = 0;
+        private double activeL_AtrTPLowMultiple = 0;
+        private double activeL_AtrTPHighMultiple = 0;
+        private int activeS_AtrTPThresholdTicks = 0;
+        private double activeS_AtrTPLowMultiple = 0;
+        private double activeS_AtrTPHighMultiple = 0;
+        // ATR indicator reference
+        private NinjaTrader.NinjaScript.Indicators.ATR atrIndicator;
 
         private static readonly string NewsDatesRaw =
 @"2025-01-08,14:00
@@ -240,27 +259,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ==================== COMMON PARAMETERS ====================
         
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(9, 16)]
         [Display(Name = "Trade Window End Hour", Description = "Hour (EST) to stop taking NEW trades", Order = 1, GroupName = "1. Common Parameters")]
-        [Browsable(false)]
         public int TradeWindowEndHour { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Trade Window End Minute", Description = "Minute to stop taking NEW trades", Order = 2, GroupName = "1. Common Parameters")]
-        [Browsable(false)]
         public int TradeWindowEndMinute { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(9, 16)]
         [Display(Name = "Cut-Off Hour", Description = "Hour (EST) to close any open position", Order = 3, GroupName = "1. Common Parameters")]
-        [Browsable(false)]
         public int CutOffHour { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Cut-Off Minute", Description = "Minute to close any open position", Order = 4, GroupName = "1. Common Parameters")]
-        [Browsable(false)]
         public int CutOffMinute { get; set; }
 
         [NinjaScriptProperty]
@@ -269,27 +288,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int ContractQuantity { get; set; }
         
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(9, 16)]
         [Display(Name = "Forced Close Hour", Description = "Hour (EST) to force close ALL positions", Order = 6, GroupName = "1. Common Parameters")]
-        [Browsable(false)]
         public int ForcedCloseHour { get; set; }
         
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 59)]
         [Display(Name = "Forced Close Minute", Description = "Minute to force close ALL positions", Order = 7, GroupName = "1. Common Parameters")]
-        [Browsable(false)]
         public int ForcedCloseMinute { get; set; }
         
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss Total (Ticks)", Description = "Max total session loss - stops ALL trading (0=disabled)", Order = 8, GroupName = "1. Common Parameters")]
-        [Browsable(false)]
         public int MaxSessionLossTotal { get; set; }
         
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit Total (Ticks)", Description = "Max total session profit - stops ALL trading (0=disabled)", Order = 9, GroupName = "1. Common Parameters")]
-        [Browsable(false)]
         public int MaxSessionProfitTotal { get; set; }
 
         [NinjaScriptProperty]
@@ -309,6 +328,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Max Account Balance", Description = "When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.", Order = 13, GroupName = "1. Common Parameters")]
         public double MaxAccountBalance { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Description = "Period for ATR indicator used by ATRBased TP mode (applied on 30s bars).", Order = 14, GroupName = "1. Common Parameters")]
+        public int AtrPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "TradersPost Webhook URL", Description = "HTTP endpoint for order webhooks. Leave empty to disable TradersPost webhooks.", Order = 0, GroupName = "2. Webhooks")]
@@ -360,126 +385,133 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ==================== BUCKET 1 LONG ====================
 
         [NinjaScriptProperty]
-        [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 1", Order = 1, GroupName = "B1L. Bucket 1 Long")]
         [Browsable(false)]
+        [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 1", Order = 1, GroupName = "B1L. Bucket 1 Long")]
         public bool B1L_Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_ORMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_ORMax { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks above OR High for LONG entry", Order = 4, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Reduce entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing LONG trades", Order = 6, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B1L. Bucket 1 Long")]
         [Browsable(false)]
+        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B1L. Bucket 1 Long")]
         public SLModeEnum B1L_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public double B1L_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B1L. Bucket 1 Long")]
         [Browsable(false)]
+        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B1L. Bucket 1 Long")]
         public TPModeEnum B1L_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B1L. Bucket 1 Long")]
         [Browsable(false)]
-        public double B1L_TakeProfitORMultiple { get; set; }
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (Low ATR)", Description = "OR range multiple for TP when ATRBased threshold is 0 or ATR < threshold (ORMultiple mode).", Order = 12, GroupName = "B1L. Bucket 1 Long")]
+        public double B1L_AtrTPLowMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 13, GroupName = "B1L. Bucket 1 Long")]
         [Browsable(false)]
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (High ATR)", Description = "OR range multiple for TP when ATR >= threshold (ORMultiple mode). Ignored when threshold = 0.", Order = 13, GroupName = "B1L. Bucket 1 Long")]
+        public double B1L_AtrTPHighMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 14, GroupName = "B1L. Bucket 1 Long")]
         public int B1L_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B1L. Bucket 1 Long")]
         [Browsable(false)]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 15, GroupName = "B1L. Bucket 1 Long")]
         public int B1L_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from LONG trades (0=disabled)", Order = 15, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from LONG trades (0=disabled)", Order = 16, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B1L. Bucket 1 Long")]
         [Browsable(false)]
+        [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B1L. Bucket 1 Long")]
         public bool B1L_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B1L. Bucket 1 Long")]
         [Browsable(false)]
+        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B1L. Bucket 1 Long")]
         public BETriggerModeEnum B1L_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public double B1L_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B1L. Bucket 1 Long")]
-        [Browsable(false)]
         public int B1L_BEOffsetTicks { get; set; }
 
+        // ── B1L Watermark Trail ──
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for LONG trades.", Order = 22, GroupName = "B1L. Bucket 1 Long")]
@@ -491,8 +523,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B1L_TrailActivationMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B1L. Bucket 1 Long")]
         public double B1L_TrailActivationValue { get; set; }
 
@@ -502,8 +534,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B1L_TrailDistanceMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, 10000.0)]
         [Browsable(false)]
+        [Range(0.01, 10000.0)]
         [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B1L. Bucket 1 Long")]
         public double B1L_TrailDistanceValue { get; set; }
 
@@ -513,140 +545,160 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B1L_TrailFreezeMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B1L. Bucket 1 Long")]
         public double B1L_TrailFreezeValue { get; set; }
 
+        // ── B1L Max Initial SL ──
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
         [Browsable(false)]
+        [Range(0, int.MaxValue)]
         [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B1L. Bucket 1 Long")]
         public int B1L_MaxInitialSLTicks { get; set; }
 
-        // ==================== BUCKET 1 SHORT ====================
+        // ── B1L Max SL Clamp ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 5000)]
+        [Display(Name = "Max SL Ticks Clamp (0=off)", Description = "Hard cap on the SL distance from entry. If calculated SL is wider, it is clamped to this value. Trade still enters. 0=disabled.", Order = 30, GroupName = "B1L. Bucket 1 Long")]
+        public int B1L_MaxSLTicks { get; set; }
+
+        // ── B1L ATR TP ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATRBased mode: if ATR in ticks is below this value, use Low Multiple; if at or above, use High Multiple. 0=disabled (use ORMultiple).", Order = 31, GroupName = "B1L. Bucket 1 Long")]
+        public int B1L_AtrTPThresholdTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 1", Order = 1, GroupName = "B1S. Bucket 1 Short")]
         [Browsable(false)]
+        [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 1", Order = 1, GroupName = "B1S. Bucket 1 Short")]
         public bool B1S_Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_ORMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_ORMax { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks below OR Low for SHORT entry", Order = 4, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Increase entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing SHORT trades", Order = 6, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B1S. Bucket 1 Short")]
         [Browsable(false)]
+        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B1S. Bucket 1 Short")]
         public SLModeEnum B1S_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public double B1S_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B1S. Bucket 1 Short")]
         [Browsable(false)]
+        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B1S. Bucket 1 Short")]
         public TPModeEnum B1S_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B1S. Bucket 1 Short")]
         [Browsable(false)]
-        public double B1S_TakeProfitORMultiple { get; set; }
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (Low ATR)", Description = "OR range multiple for TP when ATRBased threshold is 0 or ATR < threshold (ORMultiple mode).", Order = 12, GroupName = "B1S. Bucket 1 Short")]
+        public double B1S_AtrTPLowMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 13, GroupName = "B1S. Bucket 1 Short")]
         [Browsable(false)]
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (High ATR)", Description = "OR range multiple for TP when ATR >= threshold (ORMultiple mode). Ignored when threshold = 0.", Order = 13, GroupName = "B1S. Bucket 1 Short")]
+        public double B1S_AtrTPHighMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 14, GroupName = "B1S. Bucket 1 Short")]
         public int B1S_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B1S. Bucket 1 Short")]
         [Browsable(false)]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 15, GroupName = "B1S. Bucket 1 Short")]
         public int B1S_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from SHORT trades (0=disabled)", Order = 15, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from SHORT trades (0=disabled)", Order = 16, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B1S. Bucket 1 Short")]
         [Browsable(false)]
+        [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B1S. Bucket 1 Short")]
         public bool B1S_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B1S. Bucket 1 Short")]
         [Browsable(false)]
+        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B1S. Bucket 1 Short")]
         public BETriggerModeEnum B1S_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public double B1S_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B1S. Bucket 1 Short")]
-        [Browsable(false)]
         public int B1S_BEOffsetTicks { get; set; }
 
+        // ── B1S Watermark Trail ──
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for SHORT trades.", Order = 22, GroupName = "B1S. Bucket 1 Short")]
@@ -658,8 +710,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B1S_TrailActivationMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B1S. Bucket 1 Short")]
         public double B1S_TrailActivationValue { get; set; }
 
@@ -669,8 +721,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B1S_TrailDistanceMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, 10000.0)]
         [Browsable(false)]
+        [Range(0.01, 10000.0)]
         [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B1S. Bucket 1 Short")]
         public double B1S_TrailDistanceValue { get; set; }
 
@@ -680,140 +732,162 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B1S_TrailFreezeMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B1S. Bucket 1 Short")]
         public double B1S_TrailFreezeValue { get; set; }
 
+        // ── B1S Max Initial SL ──
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
         [Browsable(false)]
+        [Range(0, int.MaxValue)]
         [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B1S. Bucket 1 Short")]
         public int B1S_MaxInitialSLTicks { get; set; }
+
+        // ── B1S Max SL Clamp ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 5000)]
+        [Display(Name = "Max SL Ticks Clamp (0=off)", Description = "Hard cap on the SL distance from entry. If calculated SL is wider, it is clamped to this value. Trade still enters. 0=disabled.", Order = 30, GroupName = "B1S. Bucket 1 Short")]
+        public int B1S_MaxSLTicks { get; set; }
+
+        // ── B1S ATR TP ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATRBased mode: if ATR in ticks is below this value, use Low Multiple; if at or above, use High Multiple. 0=disabled.", Order = 31, GroupName = "B1S. Bucket 1 Short")]
+        public int B1S_AtrTPThresholdTicks { get; set; }
 
         // ==================== BUCKET 2 LONG ====================
 
         [NinjaScriptProperty]
-        [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 2", Order = 1, GroupName = "B2L. Bucket 2 Long")]
         [Browsable(false)]
+        [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 2", Order = 1, GroupName = "B2L. Bucket 2 Long")]
         public bool B2L_Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_ORMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_ORMax { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks above OR High for LONG entry", Order = 4, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Reduce entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing LONG trades", Order = 6, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B2L. Bucket 2 Long")]
         [Browsable(false)]
+        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B2L. Bucket 2 Long")]
         public SLModeEnum B2L_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public double B2L_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B2L. Bucket 2 Long")]
         [Browsable(false)]
+        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B2L. Bucket 2 Long")]
         public TPModeEnum B2L_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B2L. Bucket 2 Long")]
         [Browsable(false)]
-        public double B2L_TakeProfitORMultiple { get; set; }
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (Low ATR)", Description = "OR range multiple for TP when ATRBased threshold is 0 or ATR < threshold (ORMultiple mode).", Order = 12, GroupName = "B2L. Bucket 2 Long")]
+        public double B2L_AtrTPLowMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 13, GroupName = "B2L. Bucket 2 Long")]
         [Browsable(false)]
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (High ATR)", Description = "OR range multiple for TP when ATR >= threshold (ORMultiple mode). Ignored when threshold = 0.", Order = 13, GroupName = "B2L. Bucket 2 Long")]
+        public double B2L_AtrTPHighMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 14, GroupName = "B2L. Bucket 2 Long")]
         public int B2L_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B2L. Bucket 2 Long")]
         [Browsable(false)]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 15, GroupName = "B2L. Bucket 2 Long")]
         public int B2L_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from LONG trades (0=disabled)", Order = 15, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from LONG trades (0=disabled)", Order = 16, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B2L. Bucket 2 Long")]
         [Browsable(false)]
+        [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B2L. Bucket 2 Long")]
         public bool B2L_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B2L. Bucket 2 Long")]
         [Browsable(false)]
+        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B2L. Bucket 2 Long")]
         public BETriggerModeEnum B2L_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public double B2L_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B2L. Bucket 2 Long")]
-        [Browsable(false)]
         public int B2L_BEOffsetTicks { get; set; }
 
+        // ── B2L Watermark Trail ──
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for LONG trades.", Order = 22, GroupName = "B2L. Bucket 2 Long")]
@@ -825,8 +899,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B2L_TrailActivationMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B2L. Bucket 2 Long")]
         public double B2L_TrailActivationValue { get; set; }
 
@@ -836,8 +910,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B2L_TrailDistanceMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, 10000.0)]
         [Browsable(false)]
+        [Range(0.01, 10000.0)]
         [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B2L. Bucket 2 Long")]
         public double B2L_TrailDistanceValue { get; set; }
 
@@ -847,140 +921,162 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B2L_TrailFreezeMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B2L. Bucket 2 Long")]
         public double B2L_TrailFreezeValue { get; set; }
 
+        // ── B2L Max Initial SL ──
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
         [Browsable(false)]
+        [Range(0, int.MaxValue)]
         [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B2L. Bucket 2 Long")]
         public int B2L_MaxInitialSLTicks { get; set; }
+
+        // ── B2L Max SL Clamp ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 5000)]
+        [Display(Name = "Max SL Ticks Clamp (0=off)", Description = "Hard cap on the SL distance from entry. If calculated SL is wider, it is clamped to this value. Trade still enters. 0=disabled.", Order = 30, GroupName = "B2L. Bucket 2 Long")]
+        public int B2L_MaxSLTicks { get; set; }
+
+        // ── B2L ATR TP ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATRBased mode: if ATR in ticks is below this value, use Low Multiple; if at or above, use High Multiple. 0=disabled.", Order = 31, GroupName = "B2L. Bucket 2 Long")]
+        public int B2L_AtrTPThresholdTicks { get; set; }
 
         // ==================== BUCKET 2 SHORT ====================
 
         [NinjaScriptProperty]
-        [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 2", Order = 1, GroupName = "B2S. Bucket 2 Short")]
         [Browsable(false)]
+        [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 2", Order = 1, GroupName = "B2S. Bucket 2 Short")]
         public bool B2S_Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_ORMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_ORMax { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks below OR Low for SHORT entry", Order = 4, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Increase entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing SHORT trades", Order = 6, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B2S. Bucket 2 Short")]
         [Browsable(false)]
+        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B2S. Bucket 2 Short")]
         public SLModeEnum B2S_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public double B2S_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B2S. Bucket 2 Short")]
         [Browsable(false)]
+        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B2S. Bucket 2 Short")]
         public TPModeEnum B2S_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B2S. Bucket 2 Short")]
         [Browsable(false)]
-        public double B2S_TakeProfitORMultiple { get; set; }
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (Low ATR)", Description = "OR range multiple for TP when ATRBased threshold is 0 or ATR < threshold (ORMultiple mode).", Order = 12, GroupName = "B2S. Bucket 2 Short")]
+        public double B2S_AtrTPLowMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 13, GroupName = "B2S. Bucket 2 Short")]
         [Browsable(false)]
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (High ATR)", Description = "OR range multiple for TP when ATR >= threshold (ORMultiple mode). Ignored when threshold = 0.", Order = 13, GroupName = "B2S. Bucket 2 Short")]
+        public double B2S_AtrTPHighMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 14, GroupName = "B2S. Bucket 2 Short")]
         public int B2S_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B2S. Bucket 2 Short")]
         [Browsable(false)]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 15, GroupName = "B2S. Bucket 2 Short")]
         public int B2S_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from SHORT trades (0=disabled)", Order = 15, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from SHORT trades (0=disabled)", Order = 16, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B2S. Bucket 2 Short")]
         [Browsable(false)]
+        [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B2S. Bucket 2 Short")]
         public bool B2S_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B2S. Bucket 2 Short")]
         [Browsable(false)]
+        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B2S. Bucket 2 Short")]
         public BETriggerModeEnum B2S_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public double B2S_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B2S. Bucket 2 Short")]
-        [Browsable(false)]
         public int B2S_BEOffsetTicks { get; set; }
 
+        // ── B2S Watermark Trail ──
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for SHORT trades.", Order = 22, GroupName = "B2S. Bucket 2 Short")]
@@ -992,8 +1088,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B2S_TrailActivationMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B2S. Bucket 2 Short")]
         public double B2S_TrailActivationValue { get; set; }
 
@@ -1003,8 +1099,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B2S_TrailDistanceMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, 10000.0)]
         [Browsable(false)]
+        [Range(0.01, 10000.0)]
         [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B2S. Bucket 2 Short")]
         public double B2S_TrailDistanceValue { get; set; }
 
@@ -1014,140 +1110,162 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B2S_TrailFreezeMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B2S. Bucket 2 Short")]
         public double B2S_TrailFreezeValue { get; set; }
 
+        // ── B2S Max Initial SL ──
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
         [Browsable(false)]
+        [Range(0, int.MaxValue)]
         [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B2S. Bucket 2 Short")]
         public int B2S_MaxInitialSLTicks { get; set; }
+
+        // ── B2S Max SL Clamp ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 5000)]
+        [Display(Name = "Max SL Ticks Clamp (0=off)", Description = "Hard cap on the SL distance from entry. If calculated SL is wider, it is clamped to this value. Trade still enters. 0=disabled.", Order = 30, GroupName = "B2S. Bucket 2 Short")]
+        public int B2S_MaxSLTicks { get; set; }
+
+        // ── B2S ATR TP ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATRBased mode: if ATR in ticks is below this value, use Low Multiple; if at or above, use High Multiple. 0=disabled.", Order = 31, GroupName = "B2S. Bucket 2 Short")]
+        public int B2S_AtrTPThresholdTicks { get; set; }
 
         // ==================== BUCKET 3 LONG ====================
 
         [NinjaScriptProperty]
-        [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 3", Order = 1, GroupName = "B3L. Bucket 3 Long")]
         [Browsable(false)]
+        [Display(Name = "Enabled", Description = "Enable LONG trading for Bucket 3", Order = 1, GroupName = "B3L. Bucket 3 Long")]
         public bool B3L_Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_ORMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_ORMax { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks above OR High for LONG entry", Order = 4, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Reduce entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing LONG trades", Order = 6, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B3L. Bucket 3 Long")]
         [Browsable(false)]
+        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B3L. Bucket 3 Long")]
         public SLModeEnum B3L_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public double B3L_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B3L. Bucket 3 Long")]
         [Browsable(false)]
+        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B3L. Bucket 3 Long")]
         public TPModeEnum B3L_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B3L. Bucket 3 Long")]
         [Browsable(false)]
-        public double B3L_TakeProfitORMultiple { get; set; }
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (Low ATR)", Description = "OR range multiple for TP when ATRBased threshold is 0 or ATR < threshold (ORMultiple mode).", Order = 12, GroupName = "B3L. Bucket 3 Long")]
+        public double B3L_AtrTPLowMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 13, GroupName = "B3L. Bucket 3 Long")]
         [Browsable(false)]
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (High ATR)", Description = "OR range multiple for TP when ATR >= threshold (ORMultiple mode). Ignored when threshold = 0.", Order = 13, GroupName = "B3L. Bucket 3 Long")]
+        public double B3L_AtrTPHighMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Trades", Description = "Max LONG trades per session (0=unlimited)", Order = 14, GroupName = "B3L. Bucket 3 Long")]
         public int B3L_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B3L. Bucket 3 Long")]
         [Browsable(false)]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 15, GroupName = "B3L. Bucket 3 Long")]
         public int B3L_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from LONG trades (0=disabled)", Order = 15, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from LONG trades (0=disabled)", Order = 16, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B3L. Bucket 3 Long")]
         [Browsable(false)]
+        [Display(Name = "Break Even Enabled", Description = "Enable break-even for LONG trades", Order = 17, GroupName = "B3L. Bucket 3 Long")]
         public bool B3L_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B3L. Bucket 3 Long")]
         [Browsable(false)]
+        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B3L. Bucket 3 Long")]
         public BETriggerModeEnum B3L_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public double B3L_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks above entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B3L. Bucket 3 Long")]
-        [Browsable(false)]
         public int B3L_BEOffsetTicks { get; set; }
 
+        // ── B3L Watermark Trail ──
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for LONG trades.", Order = 22, GroupName = "B3L. Bucket 3 Long")]
@@ -1159,8 +1277,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B3L_TrailActivationMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B3L. Bucket 3 Long")]
         public double B3L_TrailActivationValue { get; set; }
 
@@ -1170,8 +1288,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B3L_TrailDistanceMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, 10000.0)]
         [Browsable(false)]
+        [Range(0.01, 10000.0)]
         [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B3L. Bucket 3 Long")]
         public double B3L_TrailDistanceValue { get; set; }
 
@@ -1181,140 +1299,162 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B3L_TrailFreezeMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B3L. Bucket 3 Long")]
         public double B3L_TrailFreezeValue { get; set; }
 
+        // ── B3L Max Initial SL ──
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
         [Browsable(false)]
+        [Range(0, int.MaxValue)]
         [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B3L. Bucket 3 Long")]
         public int B3L_MaxInitialSLTicks { get; set; }
+
+        // ── B3L Max SL Clamp ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 5000)]
+        [Display(Name = "Max SL Ticks Clamp (0=off)", Description = "Hard cap on the SL distance from entry. If calculated SL is wider, it is clamped to this value. Trade still enters. 0=disabled.", Order = 30, GroupName = "B3L. Bucket 3 Long")]
+        public int B3L_MaxSLTicks { get; set; }
+
+        // ── B3L ATR TP ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATRBased mode: if ATR in ticks is below this value, use Low Multiple; if at or above, use High Multiple. 0=disabled.", Order = 31, GroupName = "B3L. Bucket 3 Long")]
+        public int B3L_AtrTPThresholdTicks { get; set; }
 
         // ==================== BUCKET 3 SHORT ====================
 
         [NinjaScriptProperty]
-        [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 3", Order = 1, GroupName = "B3S. Bucket 3 Short")]
         [Browsable(false)]
+        [Display(Name = "Enabled", Description = "Enable SHORT trading for Bucket 3", Order = 1, GroupName = "B3S. Bucket 3 Short")]
         public bool B3S_Enabled { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Min Ticks", Description = "Minimum OR size in ticks", Order = 2, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_ORMin { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "OR Max Ticks", Description = "Maximum OR size in ticks", Order = 3, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_ORMax { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Breakout Ticks", Description = "Ticks below OR Low for SHORT entry", Order = 4, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_BreakoutTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "First Trade Offset (Ticks)", Description = "Increase entry level by this many ticks for first trade only (0=disabled)", Order = 5, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_FirstTradeOffset { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 300)]
         [Display(Name = "Trade Window Start (Min after OR)", Description = "Minutes after OR to start allowing SHORT trades", Order = 6, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_TradeWindowStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B3S. Bucket 3 Short")]
         [Browsable(false)]
+        [Display(Name = "Stop Loss Mode", Description = "Fixed ticks or OR multiple for stop loss", Order = 7, GroupName = "B3S. Bucket 3 Short")]
         public SLModeEnum B3S_StopLossMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop Loss Ticks", Description = "Ticks from OR boundary for stop loss (FixedTicks mode)", Order = 8, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_StopLossTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "Stop Loss OR Multiple", Description = "OR range multiple for stop loss (ORMultiple mode)", Order = 9, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public double B3S_StopLossORMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B3S. Bucket 3 Short")]
         [Browsable(false)]
+        [Display(Name = "Take Profit Mode", Description = "Fixed ticks or OR multiple for take profit", Order = 10, GroupName = "B3S. Bucket 3 Short")]
         public TPModeEnum B3S_TakeProfitMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "Take Profit Ticks", Description = "Fixed ticks for take profit (FixedTicks mode)", Order = 11, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_TakeProfitTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "Take Profit OR Multiple", Description = "OR range multiple for take profit (ORMultiple mode)", Order = 12, GroupName = "B3S. Bucket 3 Short")]
         [Browsable(false)]
-        public double B3S_TakeProfitORMultiple { get; set; }
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (Low ATR)", Description = "OR range multiple for TP when ATRBased threshold is 0 or ATR < threshold (ORMultiple mode).", Order = 12, GroupName = "B3S. Bucket 3 Short")]
+        public double B3S_AtrTPLowMultiple { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 13, GroupName = "B3S. Bucket 3 Short")]
         [Browsable(false)]
+        [Range(0.1, 20.0)]
+        [Display(Name = "Take Profit OR Multiple (High ATR)", Description = "OR range multiple for TP when ATR >= threshold (ORMultiple mode). Ignored when threshold = 0.", Order = 13, GroupName = "B3S. Bucket 3 Short")]
+        public double B3S_AtrTPHighMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Max Trades", Description = "Max SHORT trades per session (0=unlimited)", Order = 14, GroupName = "B3S. Bucket 3 Short")]
         public int B3S_MaxTrades { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 14, GroupName = "B3S. Bucket 3 Short")]
         [Browsable(false)]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Max Trades Total", Description = "Max total trades (long+short) for this bucket", Order = 15, GroupName = "B3S. Bucket 3 Short")]
         public int B3S_MaxTradesTotal { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Loss (Ticks)", Description = "Max loss from SHORT trades (0=disabled)", Order = 15, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_MaxSessionLoss { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "Max Session Profit (Ticks)", Description = "Max profit from SHORT trades (0=disabled)", Order = 16, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_MaxSessionProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B3S. Bucket 3 Short")]
         [Browsable(false)]
+        [Display(Name = "Break Even Enabled", Description = "Enable break-even for SHORT trades", Order = 17, GroupName = "B3S. Bucket 3 Short")]
         public bool B3S_BEEnabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B3S. Bucket 3 Short")]
         [Browsable(false)]
+        [Display(Name = "BE Trigger Mode", Description = "Trigger BE after fixed ticks or OR multiple profit", Order = 18, GroupName = "B3S. Bucket 3 Short")]
         public BETriggerModeEnum B3S_BETriggerMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "BE Trigger Ticks", Description = "Ticks in profit to trigger BE (FixedTicks mode)", Order = 19, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_BETriggerTicks { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, double.MaxValue)]
         [Display(Name = "BE Trigger OR Multiple", Description = "OR multiple in profit to trigger BE (ORMultiple mode)", Order = 20, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public double B3S_BETriggerORMultiple { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, int.MaxValue)]
         [Display(Name = "BE Offset Ticks", Description = "Ticks below entry price for BE stop (0=exact entry)", Order = 21, GroupName = "B3S. Bucket 3 Short")]
-        [Browsable(false)]
         public int B3S_BEOffsetTicks { get; set; }
 
+        // ── B3S Watermark Trail ──
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Trail Enabled", Description = "Enable watermark trailing stop for SHORT trades.", Order = 22, GroupName = "B3S. Bucket 3 Short")]
@@ -1326,8 +1466,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B3S_TrailActivationMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Activation Value (0=immediate)", Description = "FixedTicks: ticks in profit. ORPercent: % of OR range (e.g. 50 = 50%). 0=trail from entry.", Order = 24, GroupName = "B3S. Bucket 3 Short")]
         public double B3S_TrailActivationValue { get; set; }
 
@@ -1337,8 +1477,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B3S_TrailDistanceMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.01, 10000.0)]
         [Browsable(false)]
+        [Range(0.01, 10000.0)]
         [Display(Name = "Trail Distance Value", Description = "FixedTicks: ticks behind best price. ORPercent: % of OR range behind best price (e.g. 100 = full OR range).", Order = 26, GroupName = "B3S. Bucket 3 Short")]
         public double B3S_TrailDistanceValue { get; set; }
 
@@ -1348,16 +1488,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TrailModeEnum B3S_TrailFreezeMode { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0.0, 10000.0)]
         [Browsable(false)]
+        [Range(0.0, 10000.0)]
         [Display(Name = "Trail Freeze Value (0=never freeze)", Description = "FixedTicks: ticks profit to freeze. ORPercent: % of OR range profit to freeze. Must be > Activation Value. 0=trail until exit.", Order = 28, GroupName = "B3S. Bucket 3 Short")]
         public double B3S_TrailFreezeValue { get; set; }
 
+        // ── B3S Max Initial SL ──
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
         [Browsable(false)]
+        [Range(0, int.MaxValue)]
         [Display(Name = "Max Initial SL Ticks (0=off)", Description = "If calculated SL distance exceeds this value, entry is skipped but trade counter is incremented. 0=disabled.", Order = 29, GroupName = "B3S. Bucket 3 Short")]
         public int B3S_MaxInitialSLTicks { get; set; }
+
+        // ── B3S Max SL Clamp ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 5000)]
+        [Display(Name = "Max SL Ticks Clamp (0=off)", Description = "Hard cap on the SL distance from entry. If calculated SL is wider, it is clamped to this value. Trade still enters. 0=disabled.", Order = 30, GroupName = "B3S. Bucket 3 Short")]
+        public int B3S_MaxSLTicks { get; set; }
+
+        // ── B3S ATR TP ──
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATRBased mode: if ATR in ticks is below this value, use Low Multiple; if at or above, use High Multiple. 0=disabled.", Order = 31, GroupName = "B3S. Bucket 3 Short")]
+        public int B3S_AtrTPThresholdTicks { get; set; }
 
         
         #endregion
@@ -1381,22 +1536,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
-                IsInstantiatedOnEachOptimizationIteration = false;
+                IsInstantiatedOnEachOptimizationIteration = true;
                 
                 // Common
                 TradeWindowEndHour = 14;
-                TradeWindowEndMinute = 11;
+                TradeWindowEndMinute = 7;
                 CutOffHour = 15;
                 CutOffMinute = 59;
                 ContractQuantity = 1;
                 ForcedCloseHour = 15;
-                ForcedCloseMinute = 18;
-                MaxSessionLossTotal = 1400;
-                MaxSessionProfitTotal = 739;
-                UseNewsSkip = true;
+                ForcedCloseMinute = 23;
+                MaxSessionLossTotal = 1170;
+                MaxSessionProfitTotal = 750;
+                UseNewsSkip = false;
                 NewsBlockMinutes = 1;
                 RequireEntryConfirmation = false;
                 MaxAccountBalance = 0.0;
+                AtrPeriod = 55;
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
@@ -1413,21 +1569,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B1L_ORMin = 0;
                 B1L_ORMax = 125;
                 B1L_BreakoutTicks = 1;
-                B1L_FirstTradeOffset = 38;
+                B1L_FirstTradeOffset = 36;
                 B1L_TradeWindowStart = 21;
                 B1L_StopLossMode = SLModeEnum.ORMultiple;
                 B1L_StopLossTicks = 143;
                 B1L_StopLossORMultiple = 1.87;
                 B1L_TakeProfitMode = TPModeEnum.ORMultiple;
                 B1L_TakeProfitTicks = 567;
-                B1L_TakeProfitORMultiple = 4.51;
+                B1L_AtrTPLowMultiple = 4.51;
+                B1L_AtrTPHighMultiple = 3.53;
                 B1L_MaxTrades = 3;
                 B1L_MaxTradesTotal = 5;
                 B1L_MaxSessionLoss = 0;
                 B1L_MaxSessionProfit = 0;
                 B1L_BEEnabled = true;
                 B1L_BETriggerMode = BETriggerModeEnum.FixedTicks;
-                B1L_BETriggerTicks = 350;
+                B1L_BETriggerTicks = 318;
                 B1L_BETriggerORMultiple = 4.07;
                 B1L_BEOffsetTicks = 126;
                 B1L_TrailEnabled = true;
@@ -1438,12 +1595,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B1L_TrailFreezeMode = TrailModeEnum.FixedTicks;
                 B1L_TrailFreezeValue = 65.0;
                 B1L_MaxInitialSLTicks = 600;
+                B1L_MaxSLTicks = 203;
+                B1L_AtrTPThresholdTicks = 38;
 
                 // Bucket 1 Short
                 B1S_Enabled = true;
                 B1S_ORMin = 0;
                 B1S_ORMax = 125;
-                B1S_BreakoutTicks = 22;
+                B1S_BreakoutTicks = 24;
                 B1S_FirstTradeOffset = 11;
                 B1S_TradeWindowStart = 21;
                 B1S_StopLossMode = SLModeEnum.ORMultiple;
@@ -1451,16 +1610,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B1S_StopLossORMultiple = 1.76;
                 B1S_TakeProfitMode = TPModeEnum.ORMultiple;
                 B1S_TakeProfitTicks = 620;
-                B1S_TakeProfitORMultiple = 3.55;
+                B1S_AtrTPLowMultiple = 3.39;
+                B1S_AtrTPHighMultiple = 5.75;
                 B1S_MaxTrades = 3;
                 B1S_MaxTradesTotal = 6;
                 B1S_MaxSessionLoss = 0;
                 B1S_MaxSessionProfit = 0;
-                B1S_BEEnabled = false;
+                B1S_BEEnabled = true;
                 B1S_BETriggerMode = BETriggerModeEnum.FixedTicks;
-                B1S_BETriggerTicks = 605;
+                B1S_BETriggerTicks = 443;
                 B1S_BETriggerORMultiple = 4.4;
-                B1S_BEOffsetTicks = 10;
+                B1S_BEOffsetTicks = 160;
                 B1S_TrailEnabled = true;
                 B1S_TrailActivationMode = TrailModeEnum.FixedTicks;
                 B1S_TrailActivationValue = 200.0;
@@ -1469,29 +1629,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B1S_TrailFreezeMode = TrailModeEnum.FixedTicks;
                 B1S_TrailFreezeValue = 204.0;
                 B1S_MaxInitialSLTicks = 710;
+                B1S_MaxSLTicks = 194;
+                B1S_AtrTPThresholdTicks = 31;
 
                 // Bucket 2 Long
                 B2L_Enabled = true;
                 B2L_ORMin = 126;
                 B2L_ORMax = 178;
-                B2L_BreakoutTicks = 12;
+                B2L_BreakoutTicks = 2;
                 B2L_FirstTradeOffset = 58;
                 B2L_TradeWindowStart = 22;
-                B2L_StopLossMode = SLModeEnum.FixedTicks;
+                B2L_StopLossMode = SLModeEnum.ORMultiple;
                 B2L_StopLossTicks = 226;
-                B2L_StopLossORMultiple = 1.27;
+                B2L_StopLossORMultiple = 1.69;
                 B2L_TakeProfitMode = TPModeEnum.ORMultiple;
                 B2L_TakeProfitTicks = 500;
-                B2L_TakeProfitORMultiple = 5.3;
+                B2L_AtrTPLowMultiple = 5.66;
+                B2L_AtrTPHighMultiple = 5.94;
                 B2L_MaxTrades = 3;
                 B2L_MaxTradesTotal = 4;
                 B2L_MaxSessionLoss = 0;
                 B2L_MaxSessionProfit = 0;
-                B2L_BEEnabled = false;
+                B2L_BEEnabled = true;
                 B2L_BETriggerMode = BETriggerModeEnum.FixedTicks;
-                B2L_BETriggerTicks = 405;
+                B2L_BETriggerTicks = 355;
                 B2L_BETriggerORMultiple = 4.61;
-                B2L_BEOffsetTicks = 37;
+                B2L_BEOffsetTicks = 39;
                 B2L_TrailEnabled = true;
                 B2L_TrailActivationMode = TrailModeEnum.FixedTicks;
                 B2L_TrailActivationValue = 60.0;
@@ -1500,21 +1663,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B2L_TrailFreezeMode = TrailModeEnum.FixedTicks;
                 B2L_TrailFreezeValue = 93.0;
                 B2L_MaxInitialSLTicks = 740;
+                B2L_MaxSLTicks = 226;
+                B2L_AtrTPThresholdTicks = 37;
 
                 // Bucket 2 Short
                 B2S_Enabled = true;
                 B2S_ORMin = 126;
                 B2S_ORMax = 184;
-                B2S_BreakoutTicks = 30;
-                B2S_FirstTradeOffset = 1;
+                B2S_BreakoutTicks = 20;
+                B2S_FirstTradeOffset = 6;
                 B2S_TradeWindowStart = 24;
                 B2S_StopLossMode = SLModeEnum.FixedTicks;
                 B2S_StopLossTicks = 179;
-                B2S_StopLossORMultiple = 1.59;
+                B2S_StopLossORMultiple = 1.47;
                 B2S_TakeProfitMode = TPModeEnum.ORMultiple;
                 B2S_TakeProfitTicks = 620;
-                B2S_TakeProfitORMultiple = 5.29;
-                B2S_MaxTrades = 2;
+                B2S_AtrTPLowMultiple = 6.28;
+                B2S_AtrTPHighMultiple = 6.65;
+                B2S_MaxTrades = 3;
                 B2S_MaxTradesTotal = 5;
                 B2S_MaxSessionLoss = 0;
                 B2S_MaxSessionProfit = 0;
@@ -1531,29 +1697,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B2S_TrailFreezeMode = TrailModeEnum.FixedTicks;
                 B2S_TrailFreezeValue = 158.0;
                 B2S_MaxInitialSLTicks = 690;
+                B2S_MaxSLTicks = 149;
+                B2S_AtrTPThresholdTicks = 37;
 
                 // Bucket 3 Long
                 B3L_Enabled = true;
                 B3L_ORMin = 179;
                 B3L_ORMax = 233;
-                B3L_BreakoutTicks = 14;
+                B3L_BreakoutTicks = 15;
                 B3L_FirstTradeOffset = 27;
                 B3L_TradeWindowStart = 40;
                 B3L_StopLossMode = SLModeEnum.ORMultiple;
                 B3L_StopLossTicks = 190;
-                B3L_StopLossORMultiple = 0.92;
+                B3L_StopLossORMultiple = 0.83;
                 B3L_TakeProfitMode = TPModeEnum.ORMultiple;
                 B3L_TakeProfitTicks = 396;
-                B3L_TakeProfitORMultiple = 2.69;
+                B3L_AtrTPLowMultiple = 2.97;
+                B3L_AtrTPHighMultiple = 2.18;
                 B3L_MaxTrades = 3;
                 B3L_MaxTradesTotal = 6;
                 B3L_MaxSessionLoss = 0;
                 B3L_MaxSessionProfit = 0;
-                B3L_BEEnabled = false;
+                B3L_BEEnabled = true;
                 B3L_BETriggerMode = BETriggerModeEnum.FixedTicks;
-                B3L_BETriggerTicks = 360;
+                B3L_BETriggerTicks = 335;
                 B3L_BETriggerORMultiple = 4.61;
-                B3L_BEOffsetTicks = 100;
+                B3L_BEOffsetTicks = 135;
                 B3L_TrailEnabled = true;
                 B3L_TrailActivationMode = TrailModeEnum.FixedTicks;
                 B3L_TrailActivationValue = 60.0;
@@ -1562,21 +1731,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B3L_TrailFreezeMode = TrailModeEnum.FixedTicks;
                 B3L_TrailFreezeValue = 245.0;
                 B3L_MaxInitialSLTicks = 540;
+                B3L_MaxSLTicks = 190;
+                B3L_AtrTPThresholdTicks = 36;
 
                 // Bucket 3 Short
                 B3S_Enabled = true;
                 B3S_ORMin = 185;
                 B3S_ORMax = 280;
                 B3S_BreakoutTicks = 0;
-                B3S_FirstTradeOffset = 61;
+                B3S_FirstTradeOffset = 58;
                 B3S_TradeWindowStart = 51;
                 B3S_StopLossMode = SLModeEnum.ORMultiple;
                 B3S_StopLossTicks = 200;
-                B3S_StopLossORMultiple = 0.78;
+                B3S_StopLossORMultiple = 0.8;
                 B3S_TakeProfitMode = TPModeEnum.ORMultiple;
                 B3S_TakeProfitTicks = 620;
-                B3S_TakeProfitORMultiple = 4.06;
-                B3S_MaxTrades = 3;
+                B3S_AtrTPLowMultiple = 3.84;
+                B3S_AtrTPHighMultiple = 4.06;
+                B3S_MaxTrades = 2;
                 B3S_MaxTradesTotal = 6;
                 B3S_MaxSessionLoss = 10;
                 B3S_MaxSessionProfit = 0;
@@ -1593,11 +1765,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 B3S_TrailFreezeMode = TrailModeEnum.FixedTicks;
                 B3S_TrailFreezeValue = 381.0;
                 B3S_MaxInitialSLTicks = 770;
+                B3S_MaxSLTicks = 200;
+                B3S_AtrTPThresholdTicks = 43;
 
             }
             else if (State == State.Configure)
             {
                 AddDataSeries(BarsPeriodType.Second, 30);
+                atrIndicator = ATR(AtrPeriod);
             }
             else if (State == State.DataLoaded)
             {
@@ -1717,6 +1892,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             LoadBucketLongParameters(matchedLong);
                         if (matchedShort > 0)
                             LoadBucketShortParameters(matchedShort);
+
+                        // Resolve ATR-based TP multiples once, now that bucket params are loaded
+                        // and ATR is guaranteed warm (OR bar is well past BarsRequiredToTrade)
+                        ResolveAtrTPMultiples();
                         
                         longEntryLevel = orHigh + (activeL_BreakoutTicks * TickSize);
                         shortEntryLevel = orLow - (activeS_BreakoutTicks * TickSize);
@@ -1871,6 +2050,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
+            // === WATERMARK TRAIL ===
+            // Three-phase system: inactive → active (trailing) → frozen.
+            // Active phase: stop = bestPrice - trailingDistance, only advances, never retreats.
+            // Independent of BE — both can run simultaneously.
             if (Position.MarketPosition != MarketPosition.Flat && entryPrice > 0 && orSet)
             {
                 double orRange = orHigh - orLow;
@@ -1881,21 +2064,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (trailEnabled && !trailFrozen)
                 {
+                    // Update best price watermark
                     if (isLong)
-                    {
-                        if (trailBestPrice == 0 || High[0] > trailBestPrice)
-                            trailBestPrice = High[0];
-                    }
+                    { if (trailBestPrice == 0 || High[0] > trailBestPrice) trailBestPrice = High[0]; }
                     else
-                    {
-                        if (trailBestPrice == 0 || Low[0] < trailBestPrice)
-                            trailBestPrice = Low[0];
-                    }
+                    { if (trailBestPrice == 0 || Low[0] < trailBestPrice) trailBestPrice = Low[0]; }
 
                     double profitTicks = isLong
                         ? Math.Round((currentPrice - entryPrice) / TickSize)
                         : Math.Round((entryPrice - currentPrice) / TickSize);
 
+                    // ── Activation gate ──
                     if (!trailActivated)
                     {
                         TrailModeEnum actMode = isLong ? activeL_TrailActivationMode : activeS_TrailActivationMode;
@@ -1907,60 +2086,66 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         {
                             trailActivated = true;
                             LogDebug(String.Format("{0} | *** TRAIL ACTIVATED {1} *** profit={2:F0}t threshold={3:F0}t",
-                                Time[0].ToString("HH:mm:ss"), isLong ? "LONG" : "SHORT", profitTicks, actThreshold));
+                                Time[0].ToString("HH:mm:ss"), isLong ? "LONG" : "SHORT",
+                                profitTicks, actThreshold));
                         }
                     }
 
+                    // ── Freeze gate ──
                     if (trailActivated)
                     {
-                        TrailModeEnum freezeMode = isLong ? activeL_TrailFreezeMode : activeS_TrailFreezeMode;
-                        double freezeValue = isLong ? activeL_TrailFreezeValue : activeS_TrailFreezeValue;
-                        if (freezeValue > 0)
+                        TrailModeEnum frzMode = isLong ? activeL_TrailFreezeMode : activeS_TrailFreezeMode;
+                        double frzValue = isLong ? activeL_TrailFreezeValue : activeS_TrailFreezeValue;
+                        if (frzValue > 0)
                         {
-                            double freezeThreshold = freezeMode == TrailModeEnum.ORPercent
-                                ? orRangeTicks * (freezeValue / 100.0)
-                                : freezeValue;
-                            if (profitTicks >= freezeThreshold)
+                            double frzThreshold = frzMode == TrailModeEnum.ORPercent
+                                ? orRangeTicks * (frzValue / 100.0)
+                                : frzValue;
+                            if (profitTicks >= frzThreshold)
                             {
                                 trailFrozen = true;
                                 LogDebug(String.Format("{0} | *** TRAIL FROZEN {1} *** profit={2:F0}t >= freeze={3:F0}t | SL locked at {4:F2}",
-                                    Time[0].ToString("HH:mm:ss"), isLong ? "LONG" : "SHORT", profitTicks, freezeThreshold, currentStopPrice));
+                                    Time[0].ToString("HH:mm:ss"), isLong ? "LONG" : "SHORT",
+                                    profitTicks, frzThreshold, currentStopPrice));
                             }
                         }
                     }
 
+                    // ── Trail movement ──
                     if (trailActivated && !trailFrozen)
                     {
-                        TrailModeEnum distanceMode = isLong ? activeL_TrailDistanceMode : activeS_TrailDistanceMode;
-                        double distanceValue = isLong ? activeL_TrailDistanceValue : activeS_TrailDistanceValue;
-                        double trailDistance = distanceMode == TrailModeEnum.ORPercent
-                            ? orRange * (distanceValue / 100.0)
-                            : distanceValue * TickSize;
+                        TrailModeEnum distMode = isLong ? activeL_TrailDistanceMode : activeS_TrailDistanceMode;
+                        double distValue = isLong ? activeL_TrailDistanceValue : activeS_TrailDistanceValue;
+                        double trailDist = distMode == TrailModeEnum.ORPercent
+                            ? orRange * (distValue / 100.0)
+                            : distValue * TickSize;
 
-                        if (trailDistance > 0)
+                        if (trailDist > 0)
                         {
                             if (isLong)
                             {
-                                double newStop = Instrument.MasterInstrument.RoundToTickSize(trailBestPrice - trailDistance);
+                                // Plain round only — sanitizer removed as it clamps valid trail updates
+                                double newStop = Instrument.MasterInstrument.RoundToTickSize(trailBestPrice - trailDist);
                                 if (newStop > currentStopPrice && newStop > 0)
                                 {
                                     currentStopPrice = newStop;
                                     SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
                                     LogDebug(String.Format("{0} | *** TRAIL LONG *** best={1:F2} dist={2:F1}t SL->{3:F2}",
-                                        Time[0].ToString("HH:mm:ss"), trailBestPrice, trailDistance / TickSize, currentStopPrice));
+                                        Time[0].ToString("HH:mm:ss"), trailBestPrice, trailDist / TickSize, currentStopPrice));
                                     UpdateTradeLines();
                                     UpdateInfoPanel();
                                 }
                             }
-                            else if (isShort)
+                            else
                             {
-                                double newStop = Instrument.MasterInstrument.RoundToTickSize(trailBestPrice + trailDistance);
+                                // Plain round only — sanitizer removed as it clamps valid trail updates
+                                double newStop = Instrument.MasterInstrument.RoundToTickSize(trailBestPrice + trailDist);
                                 if (newStop < currentStopPrice && newStop > 0)
                                 {
                                     currentStopPrice = newStop;
                                     SetStopLoss(GetActiveEntrySignal(), CalculationMode.Price, currentStopPrice, false);
                                     LogDebug(String.Format("{0} | *** TRAIL SHORT *** best={1:F2} dist={2:F1}t SL->{3:F2}",
-                                        Time[0].ToString("HH:mm:ss"), trailBestPrice, trailDistance / TickSize, currentStopPrice));
+                                        Time[0].ToString("HH:mm:ss"), trailBestPrice, trailDist / TickSize, currentStopPrice));
                                     UpdateTradeLines();
                                     UpdateInfoPanel();
                                 }
@@ -2067,6 +2252,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     string nextSignal = BuildEntrySignalName(true);
                     double nextStopPrice = CalculateLongStopPrice();
                     int nextTargetTicks = CalculateLongTargetTicks();
+
+                    // === MAX INITIAL SL CHECK (LONG) ===
+                    // Only applies to the first LONG trade of the session.
+                    // If SL distance exceeds limit: skip entry but consume trade slot
                     if (activeL_MaxInitialSLTicks > 0 && sessionTradeCountLong == 0)
                     {
                         int slDistanceTicks = (int)Math.Round(Math.Abs(currentPrice - nextStopPrice) / TickSize);
@@ -2083,6 +2272,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             return;
                         }
                     }
+
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", currentPrice, ContractQuantity))
                     {
                         LogDebug(String.Format("{0} | Entry confirmation declined | LONG.", Time[0].ToString("HH:mm:ss.fff")));
@@ -2115,6 +2305,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     string nextSignal = BuildEntrySignalName(false);
                     double nextStopPrice = CalculateShortStopPrice();
                     int nextTargetTicks = CalculateShortTargetTicks();
+
+                    // === MAX INITIAL SL CHECK (SHORT) ===
+                    // Only applies to the first SHORT trade of the session.
+                    // If SL distance exceeds limit: skip entry but consume trade slot
                     if (activeS_MaxInitialSLTicks > 0 && sessionTradeCountShort == 0)
                     {
                         int slDistanceTicks = (int)Math.Round(Math.Abs(nextStopPrice - currentPrice) / TickSize);
@@ -2131,6 +2325,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             return;
                         }
                     }
+
                     if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", currentPrice, ContractQuantity))
                     {
                         LogDebug(String.Format("{0} | Entry confirmation declined | SHORT.", Time[0].ToString("HH:mm:ss.fff")));
@@ -2203,7 +2398,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_StopLossORMultiple = B1L_StopLossORMultiple;
                     activeL_TakeProfitMode = B1L_TakeProfitMode;
                     activeL_TakeProfitTicks = B1L_TakeProfitTicks;
-                    activeL_TakeProfitORMultiple = B1L_TakeProfitORMultiple;
+                    activeL_AtrTPThresholdTicks = B1L_AtrTPThresholdTicks;
+                    activeL_AtrTPLowMultiple = B1L_AtrTPLowMultiple;
+                    activeL_AtrTPHighMultiple = B1L_AtrTPHighMultiple;
+                    activeL_TakeProfitORMultiple = B1L_AtrTPLowMultiple; // resolved at OR time
                     activeL_MaxTrades = B1L_MaxTrades;
                     activeL_MaxTradesTotal = B1L_MaxTradesTotal;
                     activeL_MaxSessionLoss = B1L_MaxSessionLoss;
@@ -2221,6 +2419,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_TrailFreezeMode = B1L_TrailFreezeMode;
                     activeL_TrailFreezeValue = B1L_TrailFreezeValue;
                     activeL_MaxInitialSLTicks = B1L_MaxInitialSLTicks;
+                    activeL_MaxSLTicks = B1L_MaxSLTicks;
                     break;
                 case 2:
                     activeL_Enabled = B2L_Enabled;
@@ -2234,7 +2433,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_StopLossORMultiple = B2L_StopLossORMultiple;
                     activeL_TakeProfitMode = B2L_TakeProfitMode;
                     activeL_TakeProfitTicks = B2L_TakeProfitTicks;
-                    activeL_TakeProfitORMultiple = B2L_TakeProfitORMultiple;
+                    activeL_AtrTPThresholdTicks = B2L_AtrTPThresholdTicks;
+                    activeL_AtrTPLowMultiple = B2L_AtrTPLowMultiple;
+                    activeL_AtrTPHighMultiple = B2L_AtrTPHighMultiple;
+                    activeL_TakeProfitORMultiple = B2L_AtrTPLowMultiple; // resolved at OR time
                     activeL_MaxTrades = B2L_MaxTrades;
                     activeL_MaxTradesTotal = B2L_MaxTradesTotal;
                     activeL_MaxSessionLoss = B2L_MaxSessionLoss;
@@ -2252,6 +2454,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_TrailFreezeMode = B2L_TrailFreezeMode;
                     activeL_TrailFreezeValue = B2L_TrailFreezeValue;
                     activeL_MaxInitialSLTicks = B2L_MaxInitialSLTicks;
+                    activeL_MaxSLTicks = B2L_MaxSLTicks;
                     break;
                 case 3:
                     activeL_Enabled = B3L_Enabled;
@@ -2265,7 +2468,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_StopLossORMultiple = B3L_StopLossORMultiple;
                     activeL_TakeProfitMode = B3L_TakeProfitMode;
                     activeL_TakeProfitTicks = B3L_TakeProfitTicks;
-                    activeL_TakeProfitORMultiple = B3L_TakeProfitORMultiple;
+                    activeL_AtrTPThresholdTicks = B3L_AtrTPThresholdTicks;
+                    activeL_AtrTPLowMultiple = B3L_AtrTPLowMultiple;
+                    activeL_AtrTPHighMultiple = B3L_AtrTPHighMultiple;
+                    activeL_TakeProfitORMultiple = B3L_AtrTPLowMultiple; // resolved at OR time
                     activeL_MaxTrades = B3L_MaxTrades;
                     activeL_MaxTradesTotal = B3L_MaxTradesTotal;
                     activeL_MaxSessionLoss = B3L_MaxSessionLoss;
@@ -2283,6 +2489,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeL_TrailFreezeMode = B3L_TrailFreezeMode;
                     activeL_TrailFreezeValue = B3L_TrailFreezeValue;
                     activeL_MaxInitialSLTicks = B3L_MaxInitialSLTicks;
+                    activeL_MaxSLTicks = B3L_MaxSLTicks;
                     break;
             }
             LogDebug(String.Format("  LONG -> Bucket {0} | OR:{1}-{2}t SL={3} TP={4} BE={5}",
@@ -2309,7 +2516,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_StopLossORMultiple = B1S_StopLossORMultiple;
                     activeS_TakeProfitMode = B1S_TakeProfitMode;
                     activeS_TakeProfitTicks = B1S_TakeProfitTicks;
-                    activeS_TakeProfitORMultiple = B1S_TakeProfitORMultiple;
+                    activeS_AtrTPThresholdTicks = B1S_AtrTPThresholdTicks;
+                    activeS_AtrTPLowMultiple = B1S_AtrTPLowMultiple;
+                    activeS_AtrTPHighMultiple = B1S_AtrTPHighMultiple;
+                    activeS_TakeProfitORMultiple = B1S_AtrTPLowMultiple; // resolved at OR time
                     activeS_MaxTrades = B1S_MaxTrades;
                     activeS_MaxTradesTotal = B1S_MaxTradesTotal;
                     activeS_MaxSessionLoss = B1S_MaxSessionLoss;
@@ -2327,6 +2537,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_TrailFreezeMode = B1S_TrailFreezeMode;
                     activeS_TrailFreezeValue = B1S_TrailFreezeValue;
                     activeS_MaxInitialSLTicks = B1S_MaxInitialSLTicks;
+                    activeS_MaxSLTicks = B1S_MaxSLTicks;
                     break;
                 case 2:
                     activeS_Enabled = B2S_Enabled;
@@ -2340,7 +2551,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_StopLossORMultiple = B2S_StopLossORMultiple;
                     activeS_TakeProfitMode = B2S_TakeProfitMode;
                     activeS_TakeProfitTicks = B2S_TakeProfitTicks;
-                    activeS_TakeProfitORMultiple = B2S_TakeProfitORMultiple;
+                    activeS_AtrTPThresholdTicks = B2S_AtrTPThresholdTicks;
+                    activeS_AtrTPLowMultiple = B2S_AtrTPLowMultiple;
+                    activeS_AtrTPHighMultiple = B2S_AtrTPHighMultiple;
+                    activeS_TakeProfitORMultiple = B2S_AtrTPLowMultiple; // resolved at OR time
                     activeS_MaxTrades = B2S_MaxTrades;
                     activeS_MaxTradesTotal = B2S_MaxTradesTotal;
                     activeS_MaxSessionLoss = B2S_MaxSessionLoss;
@@ -2358,6 +2572,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_TrailFreezeMode = B2S_TrailFreezeMode;
                     activeS_TrailFreezeValue = B2S_TrailFreezeValue;
                     activeS_MaxInitialSLTicks = B2S_MaxInitialSLTicks;
+                    activeS_MaxSLTicks = B2S_MaxSLTicks;
                     break;
                 case 3:
                     activeS_Enabled = B3S_Enabled;
@@ -2371,7 +2586,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_StopLossORMultiple = B3S_StopLossORMultiple;
                     activeS_TakeProfitMode = B3S_TakeProfitMode;
                     activeS_TakeProfitTicks = B3S_TakeProfitTicks;
-                    activeS_TakeProfitORMultiple = B3S_TakeProfitORMultiple;
+                    activeS_AtrTPThresholdTicks = B3S_AtrTPThresholdTicks;
+                    activeS_AtrTPLowMultiple = B3S_AtrTPLowMultiple;
+                    activeS_AtrTPHighMultiple = B3S_AtrTPHighMultiple;
+                    activeS_TakeProfitORMultiple = B3S_AtrTPLowMultiple; // resolved at OR time
                     activeS_MaxTrades = B3S_MaxTrades;
                     activeS_MaxTradesTotal = B3S_MaxTradesTotal;
                     activeS_MaxSessionLoss = B3S_MaxSessionLoss;
@@ -2389,6 +2607,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeS_TrailFreezeMode = B3S_TrailFreezeMode;
                     activeS_TrailFreezeValue = B3S_TrailFreezeValue;
                     activeS_MaxInitialSLTicks = B3S_MaxInitialSLTicks;
+                    activeS_MaxSLTicks = B3S_MaxSLTicks;
                     break;
             }
             LogDebug(String.Format("  SHORT -> Bucket {0} | OR:{1}-{2}t SL={3} TP={4} BE={5}",
@@ -3037,37 +3256,143 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
         
+        // Called once at OR formation time — reads ATR and locks in the correct TP OR multiple
+        // for both Long and Short before any entry is possible.
+        // This guarantees the ATR is fully warmed up (OR bar is well past BarsRequiredToTrade)
+        // and the multiple never changes mid-session due to ATR drift.
+        private void ResolveAtrTPMultiples()
+        {
+            // Read ATR once — indicator is guaranteed ready at OR time (CurrentBar >> BarsRequiredToTrade)
+            double atrValue = (atrIndicator != null && CurrentBar >= BarsRequiredToTrade)
+                ? atrIndicator[0]
+                : 0.0;
+            int atrTicks = atrValue > 0 ? (int)Math.Round(atrValue / TickSize) : 0;
+
+            // Long resolution
+            if (activeL_TakeProfitMode == TPModeEnum.ORMultiple && activeL_AtrTPThresholdTicks > 0 && atrTicks > 0)
+            {
+                activeL_TakeProfitORMultiple = atrTicks < activeL_AtrTPThresholdTicks
+                    ? activeL_AtrTPLowMultiple
+                    : activeL_AtrTPHighMultiple;
+                LogDebug(String.Format("  ATR TP LONG resolved: ATR={0}t threshold={1}t -> multiple={2}x",
+                    atrTicks, activeL_AtrTPThresholdTicks, activeL_TakeProfitORMultiple));
+            }
+            else
+            {
+                // threshold=0 or ATR unavailable: use Low multiple (identical to old TakeProfitORMultiple)
+                activeL_TakeProfitORMultiple = activeL_AtrTPLowMultiple;
+                if (activeL_AtrTPThresholdTicks == 0)
+                    LogDebug(String.Format("  ATR TP LONG: threshold=0, using fixed multiple={0}x",
+                        activeL_TakeProfitORMultiple));
+                else
+                    LogDebug(String.Format("  ATR TP LONG: ATR unavailable (bar={0}), using Low multiple={1}x",
+                        CurrentBar, activeL_TakeProfitORMultiple));
+            }
+
+            // Short resolution
+            if (activeS_TakeProfitMode == TPModeEnum.ORMultiple && activeS_AtrTPThresholdTicks > 0 && atrTicks > 0)
+            {
+                activeS_TakeProfitORMultiple = atrTicks < activeS_AtrTPThresholdTicks
+                    ? activeS_AtrTPLowMultiple
+                    : activeS_AtrTPHighMultiple;
+                LogDebug(String.Format("  ATR TP SHORT resolved: ATR={0}t threshold={1}t -> multiple={2}x",
+                    atrTicks, activeS_AtrTPThresholdTicks, activeS_TakeProfitORMultiple));
+            }
+            else
+            {
+                activeS_TakeProfitORMultiple = activeS_AtrTPLowMultiple;
+                if (activeS_AtrTPThresholdTicks == 0)
+                    LogDebug(String.Format("  ATR TP SHORT: threshold=0, using fixed multiple={0}x",
+                        activeS_TakeProfitORMultiple));
+                else
+                    LogDebug(String.Format("  ATR TP SHORT: ATR unavailable (bar={0}), using Low multiple={1}x",
+                        CurrentBar, activeS_TakeProfitORMultiple));
+            }
+        }
+
         private double CalculateLongStopPrice()
         {
+            double rawStop;
             if (activeL_StopLossMode == SLModeEnum.ORMultiple)
             {
                 int slTicks = (int)(Math.Round((orHigh - orLow) / TickSize) * activeL_StopLossORMultiple);
-                return orHigh - (slTicks * TickSize);
+                rawStop = orHigh - (slTicks * TickSize);
             }
-            return orHigh - (activeL_StopLossTicks * TickSize);
+            else
+            {
+                rawStop = orHigh - (activeL_StopLossTicks * TickSize);
+            }
+
+            // === MAX SL CLAMP (LONG) ===
+            // If the distance from OR High to the calculated stop exceeds MaxSLTicks,
+            // move the stop up so it is exactly MaxSLTicks below OR High.
+            if (activeL_MaxSLTicks > 0)
+            {
+                double clampedStop = orHigh - (activeL_MaxSLTicks * TickSize);
+                if (rawStop < clampedStop)
+                {
+                    LogDebug(String.Format("  *** MAX SL CLAMP LONG *** raw={0:F2} clamped={1:F2} ({2}t)",
+                        rawStop, clampedStop, activeL_MaxSLTicks));
+                    rawStop = clampedStop;
+                }
+            }
+            return rawStop;
         }
         
         private double CalculateShortStopPrice()
         {
+            double rawStop;
             if (activeS_StopLossMode == SLModeEnum.ORMultiple)
             {
                 int slTicks = (int)(Math.Round((orHigh - orLow) / TickSize) * activeS_StopLossORMultiple);
-                return orLow + (slTicks * TickSize);
+                rawStop = orLow + (slTicks * TickSize);
             }
-            return orLow + (activeS_StopLossTicks * TickSize);
+            else
+            {
+                rawStop = orLow + (activeS_StopLossTicks * TickSize);
+            }
+
+            // === MAX SL CLAMP (SHORT) ===
+            // If the distance from OR Low to the calculated stop exceeds MaxSLTicks,
+            // move the stop down so it is exactly MaxSLTicks above OR Low.
+            if (activeS_MaxSLTicks > 0)
+            {
+                double clampedStop = orLow + (activeS_MaxSLTicks * TickSize);
+                if (rawStop > clampedStop)
+                {
+                    LogDebug(String.Format("  *** MAX SL CLAMP SHORT *** raw={0:F2} clamped={1:F2} ({2}t)",
+                        rawStop, clampedStop, activeS_MaxSLTicks));
+                    rawStop = clampedStop;
+                }
+            }
+            return rawStop;
         }
         
         private int CalculateLongTargetTicks()
         {
+            // activeL_TakeProfitORMultiple is resolved at OR formation time via ResolveAtrTPMultiples()
+            // When threshold=0 it equals AtrTPLowMultiple (same as old TakeProfitORMultiple)
+            // When threshold>0 it is set to Low or High based on ATR reading at OR bar
             if (activeL_TakeProfitMode == TPModeEnum.ORMultiple)
-                return (int)(Math.Round((orHigh - orLow) / TickSize) * activeL_TakeProfitORMultiple);
+            {
+                double multiple = activeL_TakeProfitORMultiple > 0
+                    ? activeL_TakeProfitORMultiple
+                    : activeL_AtrTPLowMultiple; // safety fallback if ResolveAtrTPMultiples not yet called
+                return (int)(Math.Round((orHigh - orLow) / TickSize) * multiple);
+            }
             return activeL_TakeProfitTicks;
         }
         
         private int CalculateShortTargetTicks()
         {
+            // activeS_TakeProfitORMultiple is resolved at OR formation time via ResolveAtrTPMultiples()
             if (activeS_TakeProfitMode == TPModeEnum.ORMultiple)
-                return (int)(Math.Round((orHigh - orLow) / TickSize) * activeS_TakeProfitORMultiple);
+            {
+                double multiple = activeS_TakeProfitORMultiple > 0
+                    ? activeS_TakeProfitORMultiple
+                    : activeS_AtrTPLowMultiple; // safety fallback if ResolveAtrTPMultiples not yet called
+                return (int)(Math.Round((orHigh - orLow) / TickSize) * multiple);
+            }
             return activeS_TakeProfitTicks;
         }
 
@@ -3267,7 +3592,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lastTradingDay = tradingDay;
             lastTradeDirection = MarketPosition.Flat;
             beTriggered = false; beNewStopPrice = 0;
-            trailActivated = false; trailFrozen = false; trailBestPrice = 0;
             bracketOrdersPlaced = false;
             currentEntrySignal = string.Empty;
             activeBucketL = 0; activeBucketS = 0;
