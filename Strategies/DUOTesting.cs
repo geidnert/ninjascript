@@ -1822,6 +1822,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ClearProtectionAuditState();
             }
 
+            bool isManagedFlipCloseExecution = string.Equals(orderName, "Close position", StringComparison.OrdinalIgnoreCase)
+                && suppressProjectXNextExecutionExitWebhook;
+            if (WebhookProviderType == WebhookProvider.ProjectX && isManagedFlipCloseExecution)
+            {
+                suppressProjectXNextExecutionExitWebhook = false;
+                LogDebug(string.Format(
+                    "ProjectX flip close execution consumed suppression | order={0} qty={1} posAfter={2}",
+                    orderName,
+                    quantity,
+                    marketPosition));
+            }
+
             bool shouldSendExitWebhook = ShouldSendExitWebhook(execution, orderName, marketPosition);
             if (shouldSendExitWebhook)
             {
@@ -5270,10 +5282,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lines.Add((string.Format("DUO v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", contractsText, Brushes.LightGray, Brushes.LightGray));
             lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
-            string momentumThresholdText = activeAdxMinSlopePoints > 0.0
+            string configuredMomentumText = activeAdxMinSlopePoints > 0.0
                 ? activeAdxMinSlopePoints.ToString("0.00", CultureInfo.InvariantCulture)
                 : "Off";
-            lines.Add(("Mom:", momentumThresholdText, Brushes.LightGray, Brushes.LightGray));
+            string currentMomentumText = adxSlope.ToString("0.00", CultureInfo.InvariantCulture);
+            lines.Add(("Mom:", configuredMomentumText + "/" + currentMomentumText, Brushes.LightGray, Brushes.LightGray));
             if (!UseNewsSkip)
             {
                 lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.LightGray));
