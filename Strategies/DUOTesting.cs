@@ -1754,6 +1754,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? execution.Order.AverageFillPrice
                 : price;
             double fillPrice = Instrument.MasterInstrument.RoundToTickSize(effectiveFillPrice);
+            bool terminalExitExecution = IsTerminalExitExecution(orderName);
 
             if (IsEntryOrderName(orderName))
             {
@@ -1795,31 +1796,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 ArmProtectionAuditGracePeriod("entry-fill");
             }
+            else if (terminalExitExecution)
+            {
+                ReleasePositionTrackingAfterTerminalExit(time, orderName);
+            }
             else if (marketPosition == MarketPosition.Flat && lockedTradeSession != SessionSlot.None)
             {
                 LogDebug(string.Format("Session lock released from {0} after flat execution ({1}).", FormatSessionLabel(lockedTradeSession), orderName));
                 lockedTradeSession = SessionSlot.None;
-                currentPositionEntrySignal = string.Empty;
-                currentPositionIsFlipEntry = false;
-                flipBreakEvenActivated = false;
-                takeProfitStopTriggered = false;
-                initialStopPrice = 0.0;
-                currentStopPrice = 0.0;
-                adxDdRiskModeApplied = false;
-                currentPositionEntryBar = -1;
-                ClearProtectionAuditState();
+                ResetPositionTrackingState();
             }
             else if (marketPosition == MarketPosition.Flat)
             {
-                currentPositionEntrySignal = string.Empty;
-                currentPositionIsFlipEntry = false;
-                flipBreakEvenActivated = false;
-                takeProfitStopTriggered = false;
-                initialStopPrice = 0.0;
-                currentStopPrice = 0.0;
-                adxDdRiskModeApplied = false;
-                currentPositionEntryBar = -1;
-                ClearProtectionAuditState();
+                ResetPositionTrackingState();
             }
 
             bool isManagedFlipCloseExecution = string.Equals(orderName, "Close position", StringComparison.OrdinalIgnoreCase)
@@ -1938,19 +1927,75 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return IsLongEntryOrderName(orderName) || IsShortEntryOrderName(orderName);
         }
 
-        private bool ShouldFinalizeTradeLinesOnExecution(string orderName)
+        private bool IsTerminalExitExecution(string orderName)
         {
-            if (!tradeLinesActive)
+            if (IsEntryOrderName(orderName))
                 return false;
 
             if (!string.Equals(orderName, "Close position", StringComparison.OrdinalIgnoreCase))
                 return true;
 
+            return !IsFlipTransitionActive();
+        }
+
+        private bool IsFlipTransitionActive()
+        {
+            return pendingLongEntryIsFlip || pendingShortEntryIsFlip || currentPositionIsFlipEntry;
+        }
+
+        private void ResetPositionTrackingState()
+        {
+            currentPositionEntrySignal = string.Empty;
+            currentPositionIsFlipEntry = false;
+            flipBreakEvenActivated = false;
+            takeProfitStopTriggered = false;
+            initialStopPrice = 0.0;
+            currentStopPrice = 0.0;
+            adxDdRiskModeApplied = false;
+            currentPositionEntryBar = -1;
+            ClearProtectionAuditState();
+        }
+
+        private void ReleasePositionTrackingAfterTerminalExit(DateTime time, string orderName)
+        {
+            if (lockedTradeSession != SessionSlot.None)
+            {
+                LogDebug(string.Format(
+                    "Session lock released from {0} after terminal exit execution ({1}).",
+                    FormatSessionLabel(lockedTradeSession),
+                    orderName));
+                lockedTradeSession = SessionSlot.None;
+            }
+
+            ResetPositionTrackingState();
+
+            SessionSlot desired = DetermineSessionForTime(time);
+            if (!sessionInitialized || desired != activeSession)
+            {
+                activeSession = desired;
+                if (activeSession != SessionSlot.None)
+                {
+                    ApplyInputsForSession(activeSession);
+                    LogSessionActivation("switch");
+                }
+
+                sessionInitialized = true;
+                LogDebug(string.Format(
+                    "Active session switched to {0} after terminal exit execution ({1}).",
+                    FormatSessionLabel(activeSession),
+                    orderName));
+            }
+        }
+
+        private bool ShouldFinalizeTradeLinesOnExecution(string orderName)
+        {
+            if (!tradeLinesActive)
+                return false;
+
             // During a managed flip, NinjaTrader emits a synthetic "Close position" execution
             // for the old leg. The new trade lines have already been started for the incoming leg,
             // so finalizing them here would erase the flip's fresh line set before its entry fill arrives.
-            bool flipTransitionActive = pendingLongEntryIsFlip || pendingShortEntryIsFlip || currentPositionIsFlipEntry;
-            return !flipTransitionActive;
+            return IsTerminalExitExecution(orderName);
         }
 
         private double GetEffectiveFlipEmaCrossPoints()
