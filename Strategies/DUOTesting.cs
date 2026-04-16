@@ -7084,7 +7084,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 1 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 1 time window.", GroupName = "Asia 1", Order = 0)]
+        [Display(Name = "Asia 1 Session(18:30-20:00)", Description = "Enable trading logic during the Asia 1 time window.", GroupName = "Asia 1", Order = 0)]
         public bool UseAsiaSession { get; set; }
 
         [NinjaScriptProperty]
@@ -7256,7 +7256,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 2 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 2 time window.", GroupName = "Asia 2", Order = 0)]
+        [Display(Name = "Asia 2 Session(20:00-23:59)", Description = "Enable trading logic during the Asia 2 time window.", GroupName = "Asia 2", Order = 0)]
         public bool UseAsia2Session { get; set; }
 
         [NinjaScriptProperty]
@@ -7428,7 +7428,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 3 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 3 time window.", GroupName = "Asia 3", Order = 0)]
+        [Display(Name = "Asia 3 Session(00:00-02:00)", Description = "Enable trading logic during the Asia 3 time window.", GroupName = "Asia 3", Order = 0)]
         public bool UseAsia3Session { get; set; }
 
         [NinjaScriptProperty]
@@ -7599,7 +7599,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Asia3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "London 1 Session(1:45-6:30)", Description = "Enable trading logic during the London 1 time window.", GroupName = "London 1", Order = 0)]
+        [Display(Name = "London 1 Session(01:45-03:00)", Description = "Enable trading logic during the London 1 time window.", GroupName = "London 1", Order = 0)]
         public bool UseLondonSession { get; set; }
 
         [NinjaScriptProperty]
@@ -7770,7 +7770,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Display(Name = "London 2 Session(1:45-6:30)", Description = "Enable trading logic during the London 2 time window.", GroupName = "London 2", Order = 0)]
+        [Display(Name = "London 2 Session(03:00-05:00)", Description = "Enable trading logic during the London 2 time window.", GroupName = "London 2", Order = 0)]
         public bool UseLondon2Session { get; set; }
 
         [NinjaScriptProperty]
@@ -7941,7 +7941,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Display(Name = "London 3 Session(1:45-6:30)", Description = "Enable trading logic during the London 3 time window.", GroupName = "London 3", Order = 0)]
+        [Display(Name = "London 3 Session(05:00-08:55)", Description = "Enable trading logic during the London 3 time window.", GroupName = "London 3", Order = 0)]
         public bool UseLondon3Session { get; set; }
 
         [NinjaScriptProperty]
@@ -8115,7 +8115,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double London3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "New York 1 Session(9:35-13:30)", Description = "Enable trading logic during the New York 1 time window.", GroupName = "New York 1", Order = 0)]
+        [Display(Name = "New York 1 Session(09:35-11:30)", Description = "Enable trading logic during the New York 1 time window.", GroupName = "New York 1", Order = 0)]
         public bool UseNewYorkSession { get; set; }
 
         [NinjaScriptProperty]
@@ -8304,7 +8304,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Display(Name = "New York 2 Session(9:35-13:30)", Description = "Enable trading logic during the New York 2 time window.", GroupName = "New York 2", Order = 0)]
+        [Display(Name = "New York 2 Session(11:30-14:00)", Description = "Enable trading logic during the New York 2 time window.", GroupName = "New York 2", Order = 0)]
         public bool UseNewYork2Session { get; set; }
 
         [NinjaScriptProperty]
@@ -8493,7 +8493,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Display(Name = "New York 3 Session(9:35-13:30)", Description = "Enable trading logic during the New York 3 time window.", GroupName = "New York 3", Order = 0)]
+        [Display(Name = "New York 3 Session(14:00-17:00)", Description = "Enable trading logic during the New York 3 time window.", GroupName = "New York 3", Order = 0)]
         public bool UseNewYork3Session { get; set; }
 
         [NinjaScriptProperty]
