@@ -905,11 +905,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaSessionBrush = Brushes.DarkCyan;
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
-                ShowEmaOnChart = true;
-                ShowAdxOnChart = true;
-                ShowAdxThresholdLines = true;
-                ShowAtrOnChart = true;
-                ShowAtrThresholdLines = true;
+                ShowEmaOnChart = false;
+                ShowAdxOnChart = false;
+                ShowAdxThresholdLines = false;
+                ShowAtrOnChart = false;
+                ShowAtrThresholdLines = false;
 
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
@@ -8999,11 +8999,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Force Close Time", Description = "Optional. Leave empty to disable. Enter as HH:mm:ss using the 5-minute bar timestamp, for example 04:55:00 to flatten on the 05:00 bar close. After this time, cancel working entries, flatten any open position, and block new trades for the rest of the trading day.", GroupName = "13. Risk", Order = 1)]
         public string ForceCloseTime { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [XmlIgnore]
-        [Display(Name = "Asia Session Fill", Description = "Background color used to highlight Asia session windows.", GroupName = "10. Sessions", Order = 2)]
-        public Brush AsiaSessionBrush { get; set; }
+        // [NinjaScriptProperty]
+        // [XmlIgnore]
+        // [Display(Name = "Asia Session Fill", Description = "Background color used to highlight Asia session windows.", GroupName = "10. Sessions", Order = 2)]
+        internal Brush AsiaSessionBrush { get; set; }
 
         [Browsable(false)]
         public string AsiaSessionBrushSerializable
@@ -9012,11 +9011,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             set { AsiaSessionBrush = Serialize.StringToBrush(value); }
         }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [XmlIgnore]
-        [Display(Name = "London Session Fill", Description = "Background color used to highlight London session windows.", GroupName = "10. Sessions", Order = 3)]
-        public Brush LondonSessionBrush { get; set; }
+        // [NinjaScriptProperty]
+        // [XmlIgnore]
+        // [Display(Name = "London Session Fill", Description = "Background color used to highlight London session windows.", GroupName = "10. Sessions", Order = 3)]
+        internal Brush LondonSessionBrush { get; set; }
 
         [Browsable(false)]
         public string LondonSessionBrushSerializable
@@ -9025,11 +9023,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             set { LondonSessionBrush = Serialize.StringToBrush(value); }
         }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [XmlIgnore]
-        [Display(Name = "New York Session Fill", Description = "Background color used to highlight New York session windows.", GroupName = "10. Sessions", Order = 4)]
-        public Brush NewYorkSessionBrush { get; set; }
+        // [NinjaScriptProperty]
+        // [XmlIgnore]
+        // [Display(Name = "New York Session Fill", Description = "Background color used to highlight New York session windows.", GroupName = "10. Sessions", Order = 4)]
+        internal Brush NewYorkSessionBrush { get; set; }
 
         [Browsable(false)]
         public string NewYorkSessionBrushSerializable
@@ -9038,30 +9035,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             set { NewYorkSessionBrush = Serialize.StringToBrush(value); }
         }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Show EMA On Chart", Description = "Show/hide EMA indicators on chart.", GroupName = "10. Sessions", Order = 5)]
-        public bool ShowEmaOnChart { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Show EMA On Chart", Description = "Show/hide EMA indicators on chart.", GroupName = "10. Sessions", Order = 5)]
+        internal bool ShowEmaOnChart { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "ADX Show On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 6)]
-        public bool ShowAdxOnChart { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "ADX Show On Chart", Description = "Show/hide ADX indicators on chart.", GroupName = "10. Sessions", Order = 6)]
+        internal bool ShowAdxOnChart { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "ADX Show Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 7)]
-        public bool ShowAdxThresholdLines { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "ADX Show Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 7)]
+        internal bool ShowAdxThresholdLines { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Show ATR On Chart", Description = "Show/hide ATR(14) indicator on chart.", GroupName = "10. Sessions", Order = 8)]
-        public bool ShowAtrOnChart { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "Show ATR On Chart", Description = "Show/hide ATR(14) indicator on chart.", GroupName = "10. Sessions", Order = 8)]
+        internal bool ShowAtrOnChart { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "ATR Show Threshold Line", Description = "Show/hide ATR min threshold reference line on chart.", GroupName = "10. Sessions", Order = 9)]
-        public bool ShowAtrThresholdLines { get; set; }
+        // [NinjaScriptProperty]
+        // [Display(Name = "ATR Show Threshold Line", Description = "Show/hide ATR min threshold reference line on chart.", GroupName = "10. Sessions", Order = 9)]
+        internal bool ShowAtrThresholdLines { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip", Description = "Block entries inside the configured minutes before and after listed news events.", GroupName = "11. News", Order = 0)]
