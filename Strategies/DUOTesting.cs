@@ -3876,17 +3876,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (TryRestorePositionProtection(out restoredStopPrice, out restoredTakeProfitPoints))
             {
                 ArmProtectionAuditGracePeriod("restore-" + reason);
-                Print(string.Format(
-                    "{0} | {8} | bar={1} | Protection guard | action=restore reason={2} side={3} hasStop={4} hasTarget={5} stop={6:0.00} tpPts={7:0.00}",
-                    Time[0],
-                    CurrentBar,
+                LogDebug(string.Format(
+                    "Protection guard | action=restore reason={0} side={1} hasStop={2} hasTarget={3} stop={4:0.00} tpPts={5:0.00}",
                     reason,
                     Position.MarketPosition,
                     hasStop,
                     hasTarget,
                     restoredStopPrice,
-                    restoredTakeProfitPoints,
-                    HeartbeatStrategyName));
+                    restoredTakeProfitPoints));
                 return true;
             }
 
@@ -3894,15 +3891,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? GetOpenLongEntrySignal()
                 : GetOpenShortEntrySignal();
 
-            Print(string.Format(
-                "{0} | {6} | bar={1} | Protection guard | action=flatten reason={2} side={3} hasStop={4} hasTarget={5}",
-                Time[0],
-                CurrentBar,
+            LogDebug(string.Format(
+                "Protection guard | action=flatten reason={0} side={1} hasStop={2} hasTarget={3}",
                 reason,
                 Position.MarketPosition,
                 hasStop,
-                hasTarget,
-                HeartbeatStrategyName));
+                hasTarget));
 
             if (Position.MarketPosition == MarketPosition.Long)
                 ExitLong(BuildExitSignalName("ProtectionGuard"), entrySignal);
