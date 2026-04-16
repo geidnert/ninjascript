@@ -746,6 +746,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseLondon3Session = false;
                 London3SessionStart = LondonSessionStart;
                 London3SessionEnd = LondonSessionEnd;
+                London3FlatByTime = string.Empty;
                 AutoShiftLondon3 = AutoShiftLondon;
                 London3EmaPeriod = LondonEmaPeriod;
                 London3Contracts = LondonContracts;
@@ -1170,6 +1171,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (activeEma == null || CurrentBar < activeEmaPeriod)
                 return;
+
+            if (IsLondon3FlatByTimeReached(Time[0]))
+            {
+                CancelWorkingEntryOrders();
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong(BuildExitSignalName("London3FlatByTime"), GetOpenLongEntrySignal());
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort(BuildExitSignalName("London3FlatByTime"), GetOpenShortEntrySignal());
+
+                LogDebug(string.Format(
+                    "London3 flat-by-time reached | now={0:HH:mm} configured={1} side={2}",
+                    Time[0],
+                    string.IsNullOrWhiteSpace(London3FlatByTime) ? "Off" : London3FlatByTime,
+                    Position.MarketPosition));
+                return;
+            }
 
             double emaValue = activeEma[0];
             bool bullish = Close[0] > Open[0];
@@ -3645,6 +3662,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return true;
         }
 
+        private bool IsLondon3FlatByTimeReached(DateTime barTime)
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return false;
+
+            if (lockedTradeSession != SessionSlot.London3)
+                return false;
+
+            TimeSpan flatByTime;
+            if (!TryParseLondon3FlatByTime(out flatByTime))
+                return false;
+
+            return barTime.TimeOfDay >= flatByTime;
+        }
+
         private bool TryParseConfiguredForceCloseTime(out TimeSpan forceCloseTime)
         {
             forceCloseTime = TimeSpan.Zero;
@@ -3655,6 +3687,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             return TimeSpan.TryParse(configured, CultureInfo.InvariantCulture, out forceCloseTime)
                 || TimeSpan.TryParse(configured, out forceCloseTime);
+        }
+
+        private bool TryParseLondon3FlatByTime(out TimeSpan flatByTime)
+        {
+            flatByTime = TimeSpan.Zero;
+
+            string configured = London3FlatByTime;
+            if (string.IsNullOrWhiteSpace(configured))
+                return false;
+
+            return TimeSpan.TryParse(configured, CultureInfo.InvariantCulture, out flatByTime)
+                || TimeSpan.TryParse(configured, out flatByTime);
         }
 
         private bool TryGetTradingDayAnchorSlot(out SessionSlot slot)
@@ -7911,6 +7955,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Auto Shift", Description = "Apply London 3 DST auto-shift for this session window.", GroupName = "London 3", Order = 3)]
         public bool AutoShiftLondon3 { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Flat By Time", Description = "Optional fixed chart time to flatten any open London 3 trade. Leave blank to disable. This does not shift with Auto Shift.", GroupName = "London 3", Order = 4)]
+        public string London3FlatByTime { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
