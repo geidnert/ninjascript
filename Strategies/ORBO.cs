@@ -8,6 +8,7 @@ using System.Linq;
 using System.Reflection;
 using System.Web.Script.Serialization;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -62,6 +63,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TradersPost,
             ProjectX
         }
+
+        private sealed class ProjectXAccountInfo
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public bool CanTrade { get; set; }
+            public bool IsVisible { get; set; }
+        }
+
+        private sealed class ProjectXContractInfo
+        {
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public string Description { get; set; }
+            public string SymbolId { get; set; }
+            public bool ActiveContract { get; set; }
+        }
         #endregion
         
         #region Bucket Parameter Struct
@@ -82,6 +100,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             public double StopLossPercent;
             public int StopLossTicks;
             public int MaxStopLossTicks;
+            // ATR-based TP fields
+            public int AtrTPThresholdTicks;   // 0 = disabled
+            public double AtrTPHighPercent;    // TP % of OR when ATR >= threshold
             public bool UseTrailingStop;
             public double TrailStopPercent;
             public double TrailActivationPercent;
@@ -226,11 +247,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ===== Random for variance =====
         private Random random = new Random();
 
+        // ===== ATR Indicator (for ATR-based TP) =====
+        private NinjaTrader.NinjaScript.Indicators.ATR atrIndicator;
+        // Resolved TP percent locked at OR formation time (Long and Short)
+        private double resolvedLongTPPercent = 0;
+        private double resolvedShortTPPercent = 0;
+
         // ===== Webhooks =====
         private string projectXSessionToken;
         private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
-        private int? projectXLastOrderId;
-        private string projectXLastOrderContractId;
+        private List<ProjectXAccountInfo> projectXAccounts;
+        private readonly Dictionary<string, long> projectXLastOrderIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        private string projectXResolvedContractId;
+        private string projectXResolvedInstrumentKey = string.Empty;
+        private double projectXLastSyncedStopPrice;
+        private double projectXLastSyncedTargetPrice;
 
         // ===== Info Box Overlay =====
         private Border infoBoxContainer;
@@ -253,7 +284,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description = @"ORBO2";
+                Description = @"ORBO2 Updated3 - All buckets + session risk + times optimized";
                 
                 Name = "ORBO2";
                 Calculate = Calculate.OnBarClose;
@@ -270,14 +301,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TraceOrders = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
-                BarsRequiredToTrade = 20;
-                IsInstantiatedOnEachOptimizationIteration = false;
+                BarsRequiredToTrade = 50;
+                IsInstantiatedOnEachOptimizationIteration = true;
                 
                 // ===== A. General Settings =====
                 NumberOfContracts = 1;
                 MaxAccountBalance = 0;
                 RequireEntryConfirmation = false;
                 DebugMode = false;
+                AtrPeriod = 30;
 
                 // ===== B. Long Bucket 1 =====
                 L1_Enabled = true;
@@ -291,25 +323,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L1_EntryOffsetPercent = 9.59;
                 L1_VarianceTicks = 0;
                 L1_TPMode = TargetMode.PercentOfOR;
-                L1_TakeProfitPercent = 46.8;
-                L1_TakeProfitTicks = 331;
+                L1_TakeProfitPercent = 45.67;
+                L1_TakeProfitTicks = 120;
                 L1_SLMode = TargetMode.PercentOfOR;
-                L1_StopLossPercent = 105.05;
+                L1_StopLossPercent = 84;
                 L1_StopLossTicks = 325;
-                L1_MaxStopLossTicks = 178;
+                L1_MaxStopLossTicks = 167;
                 L1_UseTrailingStop = true;
-                L1_TrailStopPercent = 8.46;
-                L1_TrailActivationPercent = 20.11;
+                L1_TrailStopPercent = 7.92;
+                L1_TrailActivationPercent = 19.17;
                 L1_TrailStepTicks = 0;
                 L1_TrailLockOREnabled = false;
-                L1_TrailLockORPercent = 17.0;
+                L1_TrailLockORPercent = 33.6;
                 L1_TrailLockTicksEnabled = false;
                 L1_TrailLockTicks = 20;
                 L1_UseBreakeven = true;
-                L1_BreakevenTriggerPercent = 19;
+                L1_BreakevenTriggerPercent = 26;
                 L1_BreakevenOffsetTicks = 5;
                 L1_MaxBarsInTrade = 88;
                 L1_MaxTradesPerDay = 4;
+                L1_AtrTPThresholdTicks = 41;
+                L1_AtrTPHighPercent = 45.71;
 
                 // ===== C. Long Bucket 2 =====
                 L2_Enabled = true;
@@ -323,18 +357,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L2_EntryOffsetPercent = 15.12;
                 L2_VarianceTicks = 0;
                 L2_TPMode = TargetMode.PercentOfOR;
-                L2_TakeProfitPercent = 82.55;
+                L2_TakeProfitPercent = 72.8;
                 L2_TakeProfitTicks = 331;
                 L2_SLMode = TargetMode.PercentOfOR;
-                L2_StopLossPercent = 100.45;
+                L2_StopLossPercent = 100.5;
                 L2_StopLossTicks = 325;
                 L2_MaxStopLossTicks = 388;
                 L2_UseTrailingStop = true;
-                L2_TrailStopPercent = 70.4;
-                L2_TrailActivationPercent = 36.5;
+                L2_TrailStopPercent = 68.66;
+                L2_TrailActivationPercent = 25.03;
                 L2_TrailStepTicks = 0;
                 L2_TrailLockOREnabled = false;
-                L2_TrailLockORPercent = 14.0;
+                L2_TrailLockORPercent = 10.0;
                 L2_TrailLockTicksEnabled = false;
                 L2_TrailLockTicks = 20;
                 L2_UseBreakeven = true;
@@ -342,6 +376,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L2_BreakevenOffsetTicks = 2;
                 L2_MaxBarsInTrade = 107;
                 L2_MaxTradesPerDay = 6;
+                L2_AtrTPThresholdTicks = 41;
+                L2_AtrTPHighPercent = 82.55;
 
                 // ===== D. Long Bucket 3 =====
                 L3_Enabled = true;
@@ -351,29 +387,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L3_MaxPreMarketRangeTicks = 0;
                 L3_UseBreakoutRearm = true;
                 L3_RequireReturnToZone = true;
-                L3_ConfirmationBars = 8;
+                L3_ConfirmationBars = 7;
                 L3_EntryOffsetPercent = 20.21;
                 L3_VarianceTicks = 0;
                 L3_TPMode = TargetMode.PercentOfOR;
-                L3_TakeProfitPercent = 77.21;
+                L3_TakeProfitPercent = 71.71;
                 L3_TakeProfitTicks = 331;
                 L3_SLMode = TargetMode.PercentOfOR;
-                L3_StopLossPercent = 18.41;
+                L3_StopLossPercent = 26.72;
                 L3_StopLossTicks = 325;
-                L3_MaxStopLossTicks = 180;
+                L3_MaxStopLossTicks = 153;
                 L3_UseTrailingStop = true;
-                L3_TrailStopPercent = 20.84;
-                L3_TrailActivationPercent = 8.9;
+                L3_TrailStopPercent = 18.29;
+                L3_TrailActivationPercent = 9.6;
                 L3_TrailStepTicks = 0;
                 L3_TrailLockOREnabled = true;
-                L3_TrailLockORPercent = 40.0;
+                L3_TrailLockORPercent = 47.0;
                 L3_TrailLockTicksEnabled = false;
-                L3_TrailLockTicks = 20;
+                L3_TrailLockTicks = 14;
                 L3_UseBreakeven = true;
-                L3_BreakevenTriggerPercent = 29;
-                L3_BreakevenOffsetTicks = 20;
+                L3_BreakevenTriggerPercent = 33;
+                L3_BreakevenOffsetTicks = 5;
                 L3_MaxBarsInTrade = 169;
                 L3_MaxTradesPerDay = 4;
+                L3_AtrTPThresholdTicks = 60;
+                L3_AtrTPHighPercent = 77.21;
 
                 // ===== E. Long Bucket 4 =====
                 L4_Enabled = true;
@@ -406,6 +444,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L4_BreakevenOffsetTicks = 40;
                 L4_MaxBarsInTrade = 188;
                 L4_MaxTradesPerDay = 3;
+                L4_AtrTPThresholdTicks = 0;
+                L4_AtrTPHighPercent = 123.3;
 
                 // ===== F. Short Bucket 1 =====
                 S1_Enabled = true;
@@ -419,25 +459,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S1_EntryOffsetPercent = 13.82;
                 S1_VarianceTicks = 0;
                 S1_TPMode = TargetMode.PercentOfOR;
-                S1_TakeProfitPercent = 117.3;
+                S1_TakeProfitPercent = 129.6;
                 S1_TakeProfitTicks = 268;
                 S1_SLMode = TargetMode.PercentOfOR;
-                S1_StopLossPercent = 98.2;
+                S1_StopLossPercent = 97.96;
                 S1_StopLossTicks = 145;
                 S1_MaxStopLossTicks = 213;
                 S1_UseTrailingStop = true;
-                S1_TrailStopPercent = 39.2;
-                S1_TrailActivationPercent = 56.1;
+                S1_TrailStopPercent = 35.5;
+                S1_TrailActivationPercent = 55.9;
                 S1_TrailStepTicks = 0;
                 S1_TrailLockOREnabled = false;
-                S1_TrailLockORPercent = 14.0;
+                S1_TrailLockORPercent = 11.0;
                 S1_TrailLockTicksEnabled = false;
                 S1_TrailLockTicks = 20;
                 S1_UseBreakeven = true;
-                S1_BreakevenTriggerPercent = 32;
+                S1_BreakevenTriggerPercent = 33;
                 S1_BreakevenOffsetTicks = 5;
-                S1_MaxBarsInTrade = 60;
+                S1_MaxBarsInTrade = 69;
                 S1_MaxTradesPerDay = 3;
+                S1_AtrTPThresholdTicks = 46;
+                S1_AtrTPHighPercent = 117.2;
 
                 // ===== G. Short Bucket 2 =====
                 S2_Enabled = true;
@@ -451,7 +493,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S2_EntryOffsetPercent = 27.84;
                 S2_VarianceTicks = 0;
                 S2_TPMode = TargetMode.PercentOfOR;
-                S2_TakeProfitPercent = 154.85;
+                S2_TakeProfitPercent = 180.0;
                 S2_TakeProfitTicks = 268;
                 S2_SLMode = TargetMode.PercentOfOR;
                 S2_StopLossPercent = 65.0;
@@ -470,6 +512,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S2_BreakevenOffsetTicks = 14;
                 S2_MaxBarsInTrade = 116;
                 S2_MaxTradesPerDay = 3;
+                S2_AtrTPThresholdTicks = 50;
+                S2_AtrTPHighPercent = 154.85;
 
                 // ===== H. Short Bucket 3 =====
                 S3_Enabled = true;
@@ -483,25 +527,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S3_EntryOffsetPercent = 14.32;
                 S3_VarianceTicks = 0;
                 S3_TPMode = TargetMode.PercentOfOR;
-                S3_TakeProfitPercent = 57.07;
+                S3_TakeProfitPercent = 96.3;
                 S3_TakeProfitTicks = 268;
                 S3_SLMode = TargetMode.PercentOfOR;
-                S3_StopLossPercent = 97.01;
+                S3_StopLossPercent = 85.1;
                 S3_StopLossTicks = 145;
                 S3_MaxStopLossTicks = 633;
                 S3_UseTrailingStop = true;
-                S3_TrailStopPercent = 97.1;
-                S3_TrailActivationPercent = 7;
+                S3_TrailStopPercent = 97.08;
+                S3_TrailActivationPercent = 3;
                 S3_TrailStepTicks = 0;
                 S3_TrailLockOREnabled = false;
-                S3_TrailLockORPercent = 7.0;
+                S3_TrailLockORPercent = 52.0;
                 S3_TrailLockTicksEnabled = false;
                 S3_TrailLockTicks = 20;
                 S3_UseBreakeven = true;
                 S3_BreakevenTriggerPercent = 44;
-                S3_BreakevenOffsetTicks = 20;
+                S3_BreakevenOffsetTicks = 42;
                 S3_MaxBarsInTrade = 0;
                 S3_MaxTradesPerDay = 2;
+                S3_AtrTPThresholdTicks = 69;
+                S3_AtrTPHighPercent = 53.96;
 
                 // ===== I. Short Bucket 4 =====
                 S4_Enabled = true;
@@ -511,44 +557,46 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S4_MaxPreMarketRangeTicks = 0;
                 S4_UseBreakoutRearm = true;
                 S4_RequireReturnToZone = true;
-                S4_ConfirmationBars = 2;
-                S4_EntryOffsetPercent = 13.62;
+                S4_ConfirmationBars = 1;
+                S4_EntryOffsetPercent = 13.22;
                 S4_VarianceTicks = 0;
                 S4_TPMode = TargetMode.PercentOfOR;
-                S4_TakeProfitPercent = 73.0;
+                S4_TakeProfitPercent = 63.0;
                 S4_TakeProfitTicks = 268;
                 S4_SLMode = TargetMode.PercentOfOR;
-                S4_StopLossPercent = 42.2;
+                S4_StopLossPercent = 41.2;
                 S4_StopLossTicks = 145;
                 S4_MaxStopLossTicks = 277;
                 S4_UseTrailingStop = true;
                 S4_TrailStopPercent = 34.0;
-                S4_TrailActivationPercent = 11.6;
+                S4_TrailActivationPercent = 11.1;
                 S4_TrailStepTicks = 0;
                 S4_TrailLockOREnabled = false;
-                S4_TrailLockORPercent = 50.0;
+                S4_TrailLockORPercent = 40.0;
                 S4_TrailLockTicksEnabled = false;
                 S4_TrailLockTicks = 20;
                 S4_UseBreakeven = true;
-                S4_BreakevenTriggerPercent = 33;
+                S4_BreakevenTriggerPercent = 25;
                 S4_BreakevenOffsetTicks = 5;
                 S4_MaxBarsInTrade = 0;
-                S4_MaxTradesPerDay = 1;
+                S4_MaxTradesPerDay = 2;
+                S4_AtrTPThresholdTicks = 60;
+                S4_AtrTPHighPercent = 73.0;
 
                 // ===== J. Order Management =====
                 CancelOrderPercent = 0;
                 CancelOrderBars = 0;
                 
                 // ===== K. Session Risk Management =====
-                MaxSessionProfitTicks = 1020;
-                MaxSessionLossTicks = 600;
-                MaxTradesPerDay = 7;
+                MaxSessionProfitTicks = 1290;
+                MaxSessionLossTicks = 620;
+                MaxTradesPerDay = 6;
                 
                 // ===== L. Session Time =====
                 ORStartTime = DateTime.Parse("09:30").TimeOfDay;
                 OREndTime = DateTime.Parse("09:45").TimeOfDay;
-                SessionEnd = DateTime.Parse("16:05").TimeOfDay;
-                NoTradesAfter = DateTime.Parse("14:55").TimeOfDay;
+                SessionEnd = DateTime.Parse("16:00").TimeOfDay;
+                NoTradesAfter = DateTime.Parse("15:05").TimeOfDay;
                 
                 // ===== M. Skip Times =====
                 SkipStart = DateTime.Parse("00:00").TimeOfDay;
@@ -558,13 +606,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 PreMarketStart = DateTime.Parse("06:00").TimeOfDay;
                 PreMarketEnd = DateTime.Parse("09:30").TimeOfDay;
 
-                UseNewsSkip = true;
+                UseNewsSkip = false;
                 NewsBlockMinutes = 1;
 
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
-                ProjectXApiBaseUrl = "https://gateway-api-demo.s2f.projectx.com";
+                ProjectXApiBaseUrl = "https://api.topstepx.com";
                 ProjectXUsername = string.Empty;
                 ProjectXApiKey = string.Empty;
                 ProjectXAccountId = string.Empty;
@@ -586,13 +634,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 skipEndTime = SkipEnd;
                 preMarketStartTime = PreMarketStart;
                 preMarketEndTime = PreMarketEnd;
+                // ATR on primary 1m series — with pre-market data loading from 06:00
+                // there are 200+ bars available by OR time (09:45), ATR(30) is fully warm.
+                atrIndicator = ATR(AtrPeriod);
             }
             else if (State == State.DataLoaded)
             {
                 ValidateRequiredPrimaryTimeframe(1);
                 ValidateRequiredPrimaryInstrument();
                 startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                projectXSessionToken = null;
+                projectXTokenAcquiredUtc = Core.Globals.MinDate;
+                projectXAccounts = null;
+                projectXLastOrderIds.Clear();
+                projectXResolvedContractId = null;
+                projectXResolvedInstrumentKey = string.Empty;
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
                 EnsureNewsDatesInitialized();
+            }
+            else if (State == State.Realtime)
+            {
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
+                RunProjectXStartupPreflight();
             }
             else if (State == State.Terminated)
             {
@@ -675,6 +740,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = L1_StopLossPercent;
                     p.StopLossTicks = L1_StopLossTicks;
                     p.MaxStopLossTicks = L1_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = L1_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = L1_AtrTPHighPercent;
                     p.UseTrailingStop = L1_UseTrailingStop;
                     p.TrailStopPercent = L1_TrailStopPercent;
                     p.TrailActivationPercent = L1_TrailActivationPercent;
@@ -707,6 +774,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = L2_StopLossPercent;
                     p.StopLossTicks = L2_StopLossTicks;
                     p.MaxStopLossTicks = L2_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = L2_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = L2_AtrTPHighPercent;
                     p.UseTrailingStop = L2_UseTrailingStop;
                     p.TrailStopPercent = L2_TrailStopPercent;
                     p.TrailActivationPercent = L2_TrailActivationPercent;
@@ -739,6 +808,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = L3_StopLossPercent;
                     p.StopLossTicks = L3_StopLossTicks;
                     p.MaxStopLossTicks = L3_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = L3_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = L3_AtrTPHighPercent;
                     p.UseTrailingStop = L3_UseTrailingStop;
                     p.TrailStopPercent = L3_TrailStopPercent;
                     p.TrailActivationPercent = L3_TrailActivationPercent;
@@ -771,6 +842,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = L4_StopLossPercent;
                     p.StopLossTicks = L4_StopLossTicks;
                     p.MaxStopLossTicks = L4_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = L4_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = L4_AtrTPHighPercent;
                     p.UseTrailingStop = L4_UseTrailingStop;
                     p.TrailStopPercent = L4_TrailStopPercent;
                     p.TrailActivationPercent = L4_TrailActivationPercent;
@@ -812,6 +885,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = S1_StopLossPercent;
                     p.StopLossTicks = S1_StopLossTicks;
                     p.MaxStopLossTicks = S1_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = S1_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = S1_AtrTPHighPercent;
                     p.UseTrailingStop = S1_UseTrailingStop;
                     p.TrailStopPercent = S1_TrailStopPercent;
                     p.TrailActivationPercent = S1_TrailActivationPercent;
@@ -844,6 +919,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = S2_StopLossPercent;
                     p.StopLossTicks = S2_StopLossTicks;
                     p.MaxStopLossTicks = S2_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = S2_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = S2_AtrTPHighPercent;
                     p.UseTrailingStop = S2_UseTrailingStop;
                     p.TrailStopPercent = S2_TrailStopPercent;
                     p.TrailActivationPercent = S2_TrailActivationPercent;
@@ -876,6 +953,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = S3_StopLossPercent;
                     p.StopLossTicks = S3_StopLossTicks;
                     p.MaxStopLossTicks = S3_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = S3_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = S3_AtrTPHighPercent;
                     p.UseTrailingStop = S3_UseTrailingStop;
                     p.TrailStopPercent = S3_TrailStopPercent;
                     p.TrailActivationPercent = S3_TrailActivationPercent;
@@ -908,6 +987,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = S4_StopLossPercent;
                     p.StopLossTicks = S4_StopLossTicks;
                     p.MaxStopLossTicks = S4_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = S4_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = S4_AtrTPHighPercent;
                     p.UseTrailingStop = S4_UseTrailingStop;
                     p.TrailStopPercent = S4_TrailStopPercent;
                     p.TrailActivationPercent = S4_TrailActivationPercent;
@@ -1018,6 +1099,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             DebugPrint($"NO SHORT BUCKET matched for {orSizeInTicks:F0} ticks");
                     }
                     
+                    // Resolve ATR-based TP percents once — locked for the whole session
+                    ResolveAtrTPPercents();
                     DrawORRange();
                 }
             }
@@ -1113,7 +1196,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Draw.Line(this, "LongEntry_" + d, false, t0, entryLvl, t1, entryLvl, Brushes.Orange, DashStyleHelper.Dash, 1);
                 if (ShowTargetLines)
                 {
-                    double tp = activeLongBucket.TPMode == TargetMode.FixedTicks ? activeLongBucket.TakeProfitTicks * TickSize : orRange * (activeLongBucket.TakeProfitPercent / 100.0);
+                    double resolvedLPct = resolvedLongTPPercent > 0 ? resolvedLongTPPercent : activeLongBucket.TakeProfitPercent;
+                    double tp = activeLongBucket.TPMode == TargetMode.FixedTicks ? activeLongBucket.TakeProfitTicks * TickSize : orRange * (resolvedLPct / 100.0);
                     Draw.Line(this, "LongTarget_" + d, false, t0, entryLvl + tp, t1, entryLvl + tp, Brushes.DodgerBlue, DashStyleHelper.Dash, 1);
                 }
                 if (ShowStopLines)
@@ -1131,7 +1215,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Draw.Line(this, "ShortEntry_" + d, false, t0, entryLvl, t1, entryLvl, Brushes.Orange, DashStyleHelper.Dash, 1);
                 if (ShowTargetLines)
                 {
-                    double tp = activeShortBucket.TPMode == TargetMode.FixedTicks ? activeShortBucket.TakeProfitTicks * TickSize : orRange * (activeShortBucket.TakeProfitPercent / 100.0);
+                    double resolvedSPct = resolvedShortTPPercent > 0 ? resolvedShortTPPercent : activeShortBucket.TakeProfitPercent;
+                    double tp = activeShortBucket.TPMode == TargetMode.FixedTicks ? activeShortBucket.TakeProfitTicks * TickSize : orRange * (resolvedSPct / 100.0);
                     Draw.Line(this, "ShortTarget_" + d, false, t0, entryLvl - tp, t1, entryLvl - tp, Brushes.DodgerBlue, DashStyleHelper.Dash, 1);
                 }
                 if (ShowStopLines)
@@ -1249,6 +1334,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (MaxTradesPerDay > 0 && tradeCount >= MaxTradesPerDay) return false;
             return true;
         }
+
+        private void SendPlannedProjectXEntryWebhook(bool isLong, double plannedEntryPrice, int quantity)
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            double stopPx, tpPx;
+            if (!TryBuildInitialStopAndTargetPrices(isLong, plannedEntryPrice, false, out stopPx, out tpPx))
+                return;
+
+            bool webhookSent = SendWebhook(isLong ? "buy" : "sell", plannedEntryPrice, tpPx, stopPx, false, quantity);
+            if (webhookSent)
+            {
+                projectXLastSyncedStopPrice = RoundToInstrumentTick(stopPx);
+                projectXLastSyncedTargetPrice = RoundToInstrumentTick(tpPx);
+            }
+        }
         
         private void PlaceLongLimitEntry(double entryLevel)
         {
@@ -1269,7 +1371,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             
             if (DebugMode)
                 DebugPrint($">>> LONG LIMIT #{tradeCount} (L:{longTradeCount}) [L{activeLongBucketIndex}] @ {entryLevel:F2}");
-            
+
+            SendPlannedProjectXEntryWebhook(true, entryLevel, NumberOfContracts);
             entryOrder = EnterLongLimit(0, true, NumberOfContracts, entryLevel, currentSignalName);
             waitingForConfirmation = false;
             confirmationComplete = false;
@@ -1294,7 +1397,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             
             if (DebugMode)
                 DebugPrint($">>> SHORT LIMIT #{tradeCount} (S:{shortTradeCount}) [S{activeShortBucketIndex}] @ {entryLevel:F2}");
-            
+
+            SendPlannedProjectXEntryWebhook(false, entryLevel, NumberOfContracts);
             entryOrder = EnterShortLimit(0, true, NumberOfContracts, entryLevel, currentSignalName);
             waitingForConfirmation = false;
             confirmationComplete = false;
@@ -1576,8 +1680,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (DebugMode) DebugPrint($"FILLED {(lastTradeWasLong ? "LONG" : "SHORT")} @ {averageFillPrice:F2}");
                 }
                 else if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
-                { entryOrder = null; limitEntryPrice = 0; entryOrderBar = -1; }
+                {
+                    entryOrder = null; limitEntryPrice = 0; entryOrderBar = -1;
+                    projectXLastSyncedStopPrice = 0.0; projectXLastSyncedTargetPrice = 0.0;
+                }
             }
+
+            TrySyncProjectXProtectiveOrder(order, limitPrice, stopPrice, orderState);
         }
 
         private bool IsEntryOrderName(string orderName)
@@ -1610,11 +1719,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             string name = order != null ? (order.Name ?? string.Empty) : string.Empty;
             string state = order != null ? order.OrderState.ToString() : "Unknown";
-            Print(string.Format("{0} | ORBOTesting | bar={1} | Order rejected guard | name={2} state={3} error={4} comment={5}",
+            Print(string.Format("{0} | ORBO | bar={1} | Order rejected guard | name={2} state={3} error={4} comment={5}",
                 Time[0], CurrentBar, name, state, error, nativeError ?? string.Empty));
 
             if (IsEntryOrderName(name))
             {
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
                 CancelAllPendingOrders();
                 ResetForNewSetup();
             }
@@ -1658,6 +1769,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        // Called once at OR formation time — reads ATR and locks the correct TP % for both directions.
+        // Uses Long bucket TakeProfitPercent as the Low-ATR value (same as original).
+        // When threshold=0, ATR filter is off and Low multiple is always used.
+        private void ResolveAtrTPPercents()
+        {
+            // ATR on primary 1m series — pre-market data guarantees 200+ bars by OR time (09:45)
+            // CurrentBar >> AtrPeriod at this point so ATR is fully warm.
+            double atrValue = (atrIndicator != null && CurrentBar >= AtrPeriod)
+                ? atrIndicator[0]
+                : 0.0;
+            int atrTicks = atrValue > 0 ? (int)Math.Round(atrValue / TickSize) : 0;
+
+            // Long bucket
+            if (longBucketFound && activeLongBucket.TPMode == TargetMode.PercentOfOR
+                && activeLongBucket.AtrTPThresholdTicks > 0 && atrTicks > 0)
+            {
+                resolvedLongTPPercent = atrTicks < activeLongBucket.AtrTPThresholdTicks
+                    ? activeLongBucket.TakeProfitPercent      // Low ATR
+                    : activeLongBucket.AtrTPHighPercent;      // High ATR
+                if (DebugMode)
+                    DebugPrint($"ATR TP LONG resolved: ATR={atrTicks}t threshold={activeLongBucket.AtrTPThresholdTicks}t -> {resolvedLongTPPercent:F2}% of OR");
+            }
+            else
+            {
+                resolvedLongTPPercent = longBucketFound ? activeLongBucket.TakeProfitPercent : 0;
+                if (DebugMode && longBucketFound)
+                    DebugPrint($"ATR TP LONG: threshold=0 or ATR unavailable, using {resolvedLongTPPercent:F2}% of OR");
+            }
+
+            // Short bucket
+            if (shortBucketFound && activeShortBucket.TPMode == TargetMode.PercentOfOR
+                && activeShortBucket.AtrTPThresholdTicks > 0 && atrTicks > 0)
+            {
+                resolvedShortTPPercent = atrTicks < activeShortBucket.AtrTPThresholdTicks
+                    ? activeShortBucket.TakeProfitPercent
+                    : activeShortBucket.AtrTPHighPercent;
+                if (DebugMode)
+                    DebugPrint($"ATR TP SHORT resolved: ATR={atrTicks}t threshold={activeShortBucket.AtrTPThresholdTicks}t -> {resolvedShortTPPercent:F2}% of OR");
+            }
+            else
+            {
+                resolvedShortTPPercent = shortBucketFound ? activeShortBucket.TakeProfitPercent : 0;
+                if (DebugMode && shortBucketFound)
+                    DebugPrint($"ATR TP SHORT: threshold=0 or ATR unavailable, using {resolvedShortTPPercent:F2}% of OR");
+            }
+        }
+
         private bool TryBuildInitialStopAndTargetPrices(bool isLong, double baseEntryPrice, bool clampToMarket, out double stopPx, out double tpPx)
         {
             stopPx = 0;
@@ -1670,13 +1828,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (Position.MarketPosition == MarketPosition.Short && isLong) isLong = false;
 
             BucketParams bp = isLong ? activeLongBucket : activeShortBucket;
-            double profitDist = bp.TPMode == TargetMode.FixedTicks ? bp.TakeProfitTicks * TickSize : orRange * (bp.TakeProfitPercent / 100.0);
+
+            // === ATR-based TP resolution ===
+            // resolvedLongTPPercent / resolvedShortTPPercent are locked at OR formation time.
+            // When AtrTPThresholdTicks = 0, they equal TakeProfitPercent (no change in behaviour).
+            double resolvedTPPercent = isLong ? resolvedLongTPPercent : resolvedShortTPPercent;
+            // If not yet resolved (e.g. first bar edge case), fall back to TakeProfitPercent
+            if (resolvedTPPercent <= 0) resolvedTPPercent = bp.TakeProfitPercent;
+
+            double profitDist = bp.TPMode == TargetMode.FixedTicks
+                ? bp.TakeProfitTicks * TickSize
+                : orRange * (resolvedTPPercent / 100.0);
+
             double stopDist = bp.SLMode == TargetMode.FixedTicks ? bp.StopLossTicks * TickSize : orRange * (bp.StopLossPercent / 100.0);
 
+            // === Max SL Clamp ===
+            // If calculated SL distance exceeds MaxStopLossTicks, clamp it.
+            // Trade still enters (clamp only — no skip).
             if (bp.MaxStopLossTicks > 0)
             {
                 double maxStop = bp.MaxStopLossTicks * TickSize;
-                if (stopDist > maxStop) stopDist = maxStop;
+                if (stopDist > maxStop)
+                {
+                    if (DebugMode)
+                        DebugPrint($"*** MAX SL CLAMP {(isLong ? "LONG" : "SHORT")} *** raw={stopDist / TickSize:F0}t clamped={bp.MaxStopLossTicks}t");
+                    stopDist = maxStop;
+                }
             }
 
             if (isLong)
@@ -1735,7 +1912,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool isEntry = IsEntryOrderName(orderName);
             int executionQty = Math.Abs(quantity);
 
-            if (isEntry)
+            if (isEntry && WebhookProviderType != WebhookProvider.ProjectX)
             {
                 string entryAction;
                 bool isMarketEntry;
@@ -1745,7 +1922,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double fillPrice = execution.Price;
                     double stopPx, tpPx;
                     if (TryBuildInitialStopAndTargetPrices(isLongEntry, fillPrice, false, out stopPx, out tpPx))
-                        SendWebhook(entryAction, fillPrice, tpPx, stopPx, isMarketEntry, executionQty);
+                    {
+                        bool webhookSent = SendWebhook(entryAction, fillPrice, tpPx, stopPx, isMarketEntry, executionQty);
+                        if (webhookSent && WebhookProviderType == WebhookProvider.ProjectX)
+                        {
+                            projectXLastSyncedStopPrice = RoundToInstrumentTick(stopPx);
+                            projectXLastSyncedTargetPrice = RoundToInstrumentTick(tpPx);
+                        }
+                    }
                 }
             }
 
@@ -1765,6 +1949,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 beTriggerActive = false;
                 trailStopPrice = 0; bestPriceSinceEntry = 0;
                 trailActivated = false; trailLocked = false;
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
                 bool useRearm = lastTradeWasLong ? activeLongBucket.UseBreakoutRearm : activeShortBucket.UseBreakoutRearm;
                 if (useRearm)
                 {
@@ -1860,6 +2046,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 wasInNoTradesAfterWindow = false; wasInSkipWindow = false; wasInNewsSkipWindow = false;
                 tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
                 sessionRealizedPnL = 0; sessionProfitLimitHit = false; sessionLossLimitHit = false;
+                projectXLastOrderIds.Clear();
+                projectXLastSyncedStopPrice = 0.0; projectXLastSyncedTargetPrice = 0.0;
+                resolvedLongTPPercent = 0; resolvedShortTPPercent = 0;
                 if (DebugMode) DebugPrint($"========== NEW DAY: {Time[0].Date:yyyy-MM-dd} ==========");
             }
         }
@@ -2484,10 +2673,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return date.AddDays(-diff).Date;
         }
 
-        private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
+        private bool SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
         {
             if (State != State.Realtime)
-                return;
+                return false;
 
             if (WebhookProviderType == WebhookProvider.ProjectX)
             {
@@ -2500,14 +2689,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     entryPrice,
                     takeProfit,
                     stopLoss));
-                SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
-                return;
+                return SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
             }
 
             if (string.IsNullOrWhiteSpace(WebhookUrl))
             {
                 WebhookLog(string.Format("Signal skipped | provider=TradersPost event={0} reason=empty-url", eventType));
-                return;
+                return false;
             }
 
             try
@@ -2552,7 +2740,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (string.IsNullOrWhiteSpace(json))
                 {
                     WebhookLog(string.Format("Signal skipped | provider=TradersPost event={0} reason=empty-payload", eventType));
-                    return;
+                    return false;
                 }
 
                 WebhookLog(string.Format(CultureInfo.InvariantCulture,
@@ -2572,10 +2760,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 WebhookLog(string.Format("Signal sent | provider=TradersPost event={0} action={1} qty={2}", eventType, action, orderQty));
+                return true;
             }
             catch (Exception ex)
             {
                 WebhookLog(string.Format("Webhook error: {0}", ex.Message));
+                return false;
             }
         }
 
@@ -2662,120 +2852,908 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return false;
         }
 
-        private void SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        private void LogProjectXDiscovery(string message)
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            WebhookLog(message);
+        }
+
+        private void LogProjectXStatus(string message)
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            Print("[ProjectX] " + (message ?? string.Empty));
+        }
+
+        private bool IsProjectXProtectiveOrderActiveState(OrderState orderState)
+        {
+            return orderState == OrderState.Submitted
+                || orderState == OrderState.Accepted
+                || orderState == OrderState.Working
+                || orderState == OrderState.PartFilled;
+        }
+
+        private double RoundToInstrumentTick(double price)
+        {
+            return Instrument != null && Instrument.MasterInstrument != null
+                ? Instrument.MasterInstrument.RoundToTickSize(price)
+                : price;
+        }
+
+        private bool ArePricesEquivalent(double left, double right)
+        {
+            if (left <= 0.0 || right <= 0.0)
+                return false;
+
+            return Math.Abs(left - right) <= TickSize * 0.5;
+        }
+
+        private bool TryGetProjectXProtectiveOrderKind(Order order, out bool isStopOrder)
+        {
+            isStopOrder = false;
+            if (order == null)
+                return false;
+
+            string orderName = order.Name ?? string.Empty;
+            string fromEntrySignal = order.FromEntrySignal ?? string.Empty;
+            bool belongsToManagedEntry = IsEntryOrderName(fromEntrySignal)
+                || (!string.IsNullOrWhiteSpace(currentSignalName)
+                    && string.Equals(fromEntrySignal, currentSignalName, StringComparison.OrdinalIgnoreCase));
+
+            if (!belongsToManagedEntry
+                && !orderName.Equals("Stop loss", StringComparison.OrdinalIgnoreCase)
+                && !orderName.Equals("Profit target", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (order.OrderType == OrderType.StopMarket
+                || order.OrderType == OrderType.StopLimit
+                || orderName.Equals("Stop loss", StringComparison.OrdinalIgnoreCase))
+            {
+                isStopOrder = true;
+                return true;
+            }
+
+            if (order.OrderType == OrderType.Limit
+                || orderName.Equals("Profit target", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private void TrySyncProjectXProtectiveOrder(Order order, double limitPrice, double stopPrice, OrderState orderState)
+        {
+            if (State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+            if (order == null || Position.MarketPosition == MarketPosition.Flat)
+                return;
+            if (!IsProjectXProtectiveOrderActiveState(orderState))
+                return;
+
+            bool isStopOrder;
+            if (!TryGetProjectXProtectiveOrderKind(order, out isStopOrder))
+                return;
+
+            if (isStopOrder)
+            {
+                double actualStopPrice = stopPrice > 0.0 ? RoundToInstrumentTick(stopPrice) : RoundToInstrumentTick(order.StopPrice);
+                if (actualStopPrice <= 0.0 || ArePricesEquivalent(projectXLastSyncedStopPrice, actualStopPrice))
+                    return;
+
+                if (SyncProjectXProtectivePrice(actualStopPrice, true))
+                    projectXLastSyncedStopPrice = actualStopPrice;
+            }
+            else
+            {
+                double actualTargetPrice = limitPrice > 0.0 ? RoundToInstrumentTick(limitPrice) : RoundToInstrumentTick(order.LimitPrice);
+                if (actualTargetPrice <= 0.0 || ArePricesEquivalent(projectXLastSyncedTargetPrice, actualTargetPrice))
+                    return;
+
+                if (SyncProjectXProtectivePrice(actualTargetPrice, false))
+                    projectXLastSyncedTargetPrice = actualTargetPrice;
+            }
+        }
+
+        private bool SyncProjectXProtectivePrice(double price, bool isStopOrder)
+        {
+            if (price <= 0.0)
+                return false;
+            if (!EnsureProjectXSession())
+                return false;
+
+            List<ProjectXAccountInfo> targetAccounts;
+            string contractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+                return false;
+
+            bool modifiedAny = false;
+            foreach (var account in targetAccounts)
+            {
+                try
+                {
+                    if (ProjectXModifyProtectiveOrders(account.Id, contractId, price, isStopOrder))
+                        modifiedAny = true;
+                }
+                catch (Exception ex)
+                {
+                    WebhookLog(string.Format(
+                        "ProjectX protective sync error | kind={0} accountId={1} contractId={2} price={3:0.00} error={4}",
+                        isStopOrder ? "stop" : "target",
+                        account.Id,
+                        contractId,
+                        price,
+                        ex.Message));
+                }
+            }
+
+            return modifiedAny;
+        }
+
+        private bool ProjectXModifyProtectiveOrders(int accountId, string contractId, double price, bool isStopOrder)
+        {
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return false;
+
+            int expectedSide = Position.MarketPosition == MarketPosition.Long ? 1 : 0;
+            int expectedType = isStopOrder ? 4 : 1;
+            bool modifiedAny = false;
+
+            foreach (var order in ExtractProjectXOrders(searchResponse))
+            {
+                object contractObj;
+                if (!order.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object typeObj;
+                int type;
+                if (!order.TryGetValue("type", out typeObj) || !TryConvertToInt(typeObj, out type) || type != expectedType)
+                    continue;
+
+                object sideObj;
+                int side;
+                if (!order.TryGetValue("side", out sideObj) || !TryConvertToInt(sideObj, out side) || side != expectedSide)
+                    continue;
+
+                object idObj;
+                long orderId;
+                if (!order.TryGetValue("id", out idObj) || !TryConvertToLong(idObj, out orderId) || orderId <= 0)
+                    continue;
+
+                object sizeObj;
+                int size;
+                if (!order.TryGetValue("size", out sizeObj) || !TryConvertToInt(sizeObj, out size) || size <= 0)
+                    size = Math.Max(1, Position.Quantity);
+
+                object existingPriceObj;
+                double existingPrice;
+                if (isStopOrder)
+                {
+                    if (order.TryGetValue("stopPrice", out existingPriceObj)
+                        && existingPriceObj != null
+                        && double.TryParse(existingPriceObj.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out existingPrice)
+                        && ArePricesEquivalent(RoundToInstrumentTick(existingPrice), price))
+                        continue;
+                }
+                else
+                {
+                    if (order.TryGetValue("limitPrice", out existingPriceObj)
+                        && existingPriceObj != null
+                        && double.TryParse(existingPriceObj.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out existingPrice)
+                        && ArePricesEquivalent(RoundToInstrumentTick(existingPrice), price))
+                        continue;
+                }
+
+                string response = ProjectXModifyOrder(accountId, orderId, size, isStopOrder ? (double?)null : price, isStopOrder ? (double?)price : null);
+                if (!string.IsNullOrWhiteSpace(response))
+                    modifiedAny = true;
+            }
+
+            if (!modifiedAny)
+            {
+                WebhookLog(string.Format(
+                    "ProjectX protective sync skipped | kind={0} accountId={1} contractId={2} price={3:0.00} reason=no-open-order",
+                    isStopOrder ? "stop" : "target",
+                    accountId,
+                    contractId,
+                    price));
+            }
+
+            return modifiedAny;
+        }
+
+        private string ProjectXModifyOrder(int accountId, long orderId, int size, double? limitPrice, double? stopPrice)
+        {
+            string json = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"orderId\":{1},\"size\":{2},\"limitPrice\":{3},\"stopPrice\":{4},\"trailPrice\":null}}",
+                accountId,
+                orderId,
+                size > 0 ? size.ToString(CultureInfo.InvariantCulture) : "null",
+                limitPrice.HasValue ? limitPrice.Value.ToString(CultureInfo.InvariantCulture) : "null",
+                stopPrice.HasValue ? stopPrice.Value.ToString(CultureInfo.InvariantCulture) : "null");
+            return ProjectXPost("/api/Order/modify", json, true);
+        }
+
+        private bool SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
         {
             if (!EnsureProjectXSession())
             {
-                WebhookLog("Signal skipped | provider=ProjectX reason=auth-unavailable");
-                return;
+                WebhookLog(string.Format("Signal skipped | provider=ProjectX event={0} reason=auth-unavailable", eventType));
+                return false;
             }
 
-            int accountId;
+            List<ProjectXAccountInfo> targetAccounts;
             string contractId;
-            if (!TryGetProjectXIds(out accountId, out contractId))
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
             {
-                WebhookLog("Signal skipped | provider=ProjectX reason=missing-account-or-contract");
-                return;
+                WebhookLog(string.Format("Signal skipped | provider=ProjectX event={0} reason=account-selection-or-contract-unavailable", eventType));
+                return false;
             }
 
-            try
+            WebhookLog(string.Format(
+                "ProjectX targets | event={0} accounts={1} contractId={2}",
+                eventType,
+                string.Join(", ", targetAccounts.Select(a => string.Format(CultureInfo.InvariantCulture, "{0}:{1}", a.Id, a.Name ?? string.Empty)).ToArray()),
+                contractId));
+
+            foreach (var account in targetAccounts)
             {
-                switch ((eventType ?? string.Empty).ToLowerInvariant())
+                try
                 {
-                    case "buy":
-                    case "sell":
-                        ProjectXPlaceOrder(eventType, accountId, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
-                        break;
-                    case "exit":
-                        ProjectXClosePosition(accountId, contractId);
-                        break;
-                    case "cancel":
-                        ProjectXCancelOrders(accountId, contractId);
-                        break;
+                    switch ((eventType ?? string.Empty).ToLowerInvariant())
+                    {
+                        case "buy":
+                        case "sell":
+                            if (ProjectXPrepareForEntry(account.Id, contractId))
+                                ProjectXPlaceOrder(eventType, account.Id, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+                            break;
+                        case "exit":
+                            ProjectXFlattenPosition(account.Id, contractId);
+                            break;
+                        case "cancel":
+                            ProjectXCancelOrders(account.Id, contractId);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WebhookLog(string.Format(
+                        "ProjectX account error | event={0} accountId={1} accountName={2} error={3}",
+                        eventType,
+                        account.Id,
+                        account.Name ?? string.Empty,
+                        ex.Message));
                 }
             }
-            catch (Exception ex)
+
+            return targetAccounts.Count > 0;
+        }
+
+        private void RunProjectXStartupPreflight()
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            string instrumentKey = GetProjectXInstrumentKey();
+            string selectors = string.Join(", ", ParseProjectXAccountSelectors(ProjectXAccountId).ToArray());
+            LogProjectXDiscovery(string.Format(
+                "ProjectX startup preflight begin | instrument={0} selectors={1} baseUrl={2}",
+                string.IsNullOrWhiteSpace(instrumentKey) ? "<unknown>" : instrumentKey,
+                string.IsNullOrWhiteSpace(selectors) ? "<none>" : selectors,
+                string.IsNullOrWhiteSpace(ProjectXApiBaseUrl) ? "<empty>" : ProjectXApiBaseUrl));
+
+            if (!EnsureProjectXSession())
             {
-                WebhookLog(string.Format("ProjectX error: {0}", ex.Message));
+                LogProjectXDiscovery("ProjectX startup preflight failed | stage=auth");
+                return;
             }
+
+            List<ProjectXAccountInfo> accounts;
+            if (!TryLoadProjectXAccounts(out accounts))
+            {
+                LogProjectXDiscovery("ProjectX startup preflight failed | stage=accounts");
+                return;
+            }
+
+            string contractId;
+            if (!TryResolveProjectXContractId(out contractId))
+            {
+                LogProjectXDiscovery("ProjectX startup preflight failed | stage=contract");
+                return;
+            }
+
+            List<ProjectXAccountInfo> targetAccounts;
+            string targetContractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out targetContractId))
+            {
+                LogProjectXDiscovery("ProjectX startup preflight failed | stage=targets");
+                return;
+            }
+
+            LogProjectXStatus(string.Format(
+                "ProjectX webhook targets | count={0} contractId={1}",
+                targetAccounts.Count,
+                targetContractId ?? string.Empty));
+            foreach (var account in targetAccounts)
+            {
+                LogProjectXStatus(string.Format(
+                    "ProjectX target account | id={0} name={1}",
+                    account.Id,
+                    account.Name ?? string.Empty));
+            }
+
+            LogProjectXDiscovery(string.Format(
+                "ProjectX startup preflight ready | accounts={0} contractId={1}",
+                FormatProjectXAccountsForLog(targetAccounts),
+                targetContractId));
         }
 
         private bool EnsureProjectXSession()
         {
             if (string.IsNullOrWhiteSpace(ProjectXApiBaseUrl))
+            {
+                LogProjectXStatus("ProjectX login failed | reason=empty-base-url");
                 return false;
+            }
 
             if (!string.IsNullOrWhiteSpace(projectXSessionToken) &&
                 (DateTime.UtcNow - projectXTokenAcquiredUtc).TotalHours < 23)
                 return true;
 
             if (string.IsNullOrWhiteSpace(ProjectXUsername) || string.IsNullOrWhiteSpace(ProjectXApiKey))
+            {
+                LogProjectXStatus("ProjectX login failed | reason=missing-credentials");
                 return false;
+            }
 
             string loginJson = string.Format(CultureInfo.InvariantCulture,
-                "{{\"userName\":\"{0}\",\"loginKey\":\"{1}\"}}",
+                "{{\"userName\":\"{0}\",\"apiKey\":\"{1}\"}}",
                 ProjectXUsername,
                 ProjectXApiKey);
 
-            string response = ProjectXPost("/api/Auth/loginKey", loginJson, false);
+            string response = ProjectXPost("/api/Auth/loginKey", loginJson, false, true);
             if (string.IsNullOrWhiteSpace(response))
+            {
+                LogProjectXStatus("ProjectX login failed | reason=empty-response");
                 return false;
+            }
 
             string token;
             if (!TryGetJsonString(response, "token", out token))
+            {
+                LogProjectXStatus("ProjectX login failed | reason=missing-token");
                 return false;
+            }
 
             projectXSessionToken = token;
             projectXTokenAcquiredUtc = DateTime.UtcNow;
+            projectXAccounts = null;
+            projectXLastOrderIds.Clear();
+            projectXResolvedContractId = null;
+            projectXResolvedInstrumentKey = string.Empty;
+            LogProjectXStatus("ProjectX login succeeded");
             return true;
         }
 
-        private bool TryGetProjectXIds(out int accountId, out string contractId)
+        private bool TryGetProjectXTargets(out List<ProjectXAccountInfo> targetAccounts, out string contractId)
         {
-            accountId = 0;
+            targetAccounts = null;
             contractId = null;
 
-            if (!int.TryParse(ProjectXAccountId, out accountId) || accountId <= 0)
-                return false;
-            if (string.IsNullOrWhiteSpace(ProjectXContractId))
+            if (!TryResolveProjectXContractId(out contractId))
                 return false;
 
-            contractId = ProjectXContractId.Trim();
+            List<ProjectXAccountInfo> accounts;
+            if (!TryLoadProjectXAccounts(out accounts))
+                return false;
+
+            var selectors = ParseProjectXAccountSelectors(ProjectXAccountId);
+            if (selectors.Count == 0)
+            {
+                LogProjectXStatus("ProjectX warning | no webhooks will be sent because ProjectX Accounts is empty.");
+                LogProjectXDiscovery("ProjectX account selection failed | reason=no-selection");
+                return false;
+            }
+
+            var matchedAccounts = new List<ProjectXAccountInfo>();
+            var matchedIds = new HashSet<int>();
+            var unmatchedSelectors = new List<string>();
+
+            foreach (string selector in selectors)
+            {
+                int accountId;
+                List<ProjectXAccountInfo> matches = int.TryParse(selector, NumberStyles.Integer, CultureInfo.InvariantCulture, out accountId)
+                    ? accounts.Where(a => a.CanTrade && a.Id == accountId).ToList()
+                    : accounts.Where(a => a.CanTrade && string.Equals(a.Name ?? string.Empty, selector, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (matches.Count == 0)
+                {
+                    unmatchedSelectors.Add(selector);
+                    continue;
+                }
+
+                foreach (var match in matches)
+                {
+                    if (matchedIds.Add(match.Id))
+                        matchedAccounts.Add(match);
+                }
+            }
+
+            if (unmatchedSelectors.Count > 0)
+            {
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX account selection unmatched | selectors={0}",
+                    string.Join(", ", unmatchedSelectors.ToArray())));
+            }
+
+            if (matchedAccounts.Count == 0)
+            {
+                LogProjectXDiscovery("ProjectX account selection failed | reason=no-matching-tradable-accounts");
+                return false;
+            }
+
+            targetAccounts = matchedAccounts;
             return true;
+        }
+
+        private bool TryLoadProjectXAccounts(out List<ProjectXAccountInfo> accounts)
+        {
+            if (projectXAccounts != null && projectXAccounts.Count > 0)
+            {
+                accounts = projectXAccounts;
+                return true;
+            }
+
+            string response = ProjectXPost("/api/Account/search", "{\"onlyActiveAccounts\":true}", true, true);
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                LogProjectXStatus("ProjectX warning | no webhooks will be sent because no ProjectX accounts were found.");
+                LogProjectXDiscovery("ProjectX account load failed | reason=empty-response");
+                accounts = null;
+                return false;
+            }
+
+            accounts = ExtractProjectXAccounts(response).ToList();
+            projectXAccounts = accounts.Count > 0 ? accounts : null;
+
+            LogProjectXStatus(string.Format("ProjectX accounts found | count={0}", accounts.Count));
+            if (accounts.Count == 0)
+            {
+                LogProjectXStatus("ProjectX warning | no webhooks will be sent because no ProjectX accounts were found.");
+                return false;
+            }
+
+            foreach (var account in accounts)
+            {
+                LogProjectXStatus(string.Format(
+                    "ProjectX account | id={0} name={1} canTrade={2} isVisible={3}",
+                    account.Id,
+                    account.Name ?? string.Empty,
+                    account.CanTrade,
+                    account.IsVisible));
+            }
+
+            return true;
+        }
+
+        private bool TryResolveProjectXContractId(out string contractId)
+        {
+            contractId = null;
+
+            string instrumentKey = GetProjectXInstrumentKey();
+            if (!string.IsNullOrWhiteSpace(ProjectXContractId))
+            {
+                contractId = ProjectXContractId.Trim();
+                projectXResolvedContractId = contractId;
+                projectXResolvedInstrumentKey = instrumentKey;
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX contract override | instrument={0} contractId={1}",
+                    instrumentKey,
+                    contractId));
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(projectXResolvedContractId) &&
+                string.Equals(projectXResolvedInstrumentKey, instrumentKey, StringComparison.OrdinalIgnoreCase))
+            {
+                contractId = projectXResolvedContractId;
+                return true;
+            }
+
+            string root = GetProjectXInstrumentRoot();
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                LogProjectXDiscovery("ProjectX contract resolve failed | reason=empty-instrument-root");
+                return false;
+            }
+
+            DateTime expiry;
+            string desiredSuffix = TryGetInstrumentExpiry(out expiry) || TryParseInstrumentExpiryFromFullName(out expiry)
+                ? GetProjectXFuturesMonthCode(expiry.Month) + expiry.ToString("yy", CultureInfo.InvariantCulture)
+                : string.Empty;
+
+            List<ProjectXContractInfo> contracts;
+            if (!TrySearchProjectXContracts(root, desiredSuffix, out contracts))
+                return false;
+
+            ProjectXContractInfo selected = SelectProjectXContract(root, desiredSuffix, contracts);
+            if (selected == null || string.IsNullOrWhiteSpace(selected.Id))
+            {
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX contract resolve failed | root={0} desiredSuffix={1} candidates={2}",
+                    root,
+                    string.IsNullOrWhiteSpace(desiredSuffix) ? "active" : desiredSuffix,
+                    string.Join(", ", contracts.Select(c => c.Id ?? string.Empty).ToArray())));
+                return false;
+            }
+
+            contractId = selected.Id;
+            projectXResolvedContractId = contractId;
+            projectXResolvedInstrumentKey = instrumentKey;
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract resolved | instrument={0} root={1} desiredSuffix={2} contractId={3} name={4} active={5}",
+                instrumentKey,
+                root,
+                string.IsNullOrWhiteSpace(desiredSuffix) ? "active" : desiredSuffix,
+                selected.Id,
+                selected.Name ?? string.Empty,
+                selected.ActiveContract));
+            return true;
+        }
+
+        private bool TrySearchProjectXContracts(string root, string desiredSuffix, out List<ProjectXContractInfo> contracts)
+        {
+            contracts = null;
+
+            string primarySearchText = !string.IsNullOrWhiteSpace(desiredSuffix) ? root + desiredSuffix : root;
+            if (TrySearchProjectXContractsByText(primarySearchText, root, out contracts) && contracts.Count > 0)
+                return true;
+
+            if (!string.Equals(primarySearchText, root, StringComparison.OrdinalIgnoreCase) &&
+                TrySearchProjectXContractsByText(root, root, out contracts) && contracts.Count > 0)
+                return true;
+
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract search failed | root={0} desiredSuffix={1}",
+                root,
+                string.IsNullOrWhiteSpace(desiredSuffix) ? "active" : desiredSuffix));
+            return false;
+        }
+
+        private bool TrySearchProjectXContractsByText(string searchText, string root, out List<ProjectXContractInfo> contracts)
+        {
+            if (TrySearchProjectXContractsByText(searchText, root, true, out contracts) && contracts.Count > 0)
+                return true;
+
+            if (TrySearchProjectXContractsByText(searchText, root, false, out contracts) && contracts.Count > 0)
+                return true;
+
+            contracts = new List<ProjectXContractInfo>();
+            return false;
+        }
+
+        private bool TrySearchProjectXContractsByText(string searchText, string root, bool live, out List<ProjectXContractInfo> contracts)
+        {
+            string requestJson = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"live\":{0},\"searchText\":\"{1}\"}}",
+                live ? "true" : "false",
+                searchText);
+            string response = ProjectXPost("/api/Contract/search", requestJson, true, true);
+            contracts = ExtractProjectXContracts(response)
+                .Where(c => DoesProjectXContractMatchRoot(c, root))
+                .ToList();
+
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract search | searchText={0} live={1} matches={2}",
+                searchText,
+                live,
+                contracts.Count));
+            return !string.IsNullOrWhiteSpace(response);
+        }
+
+        private ProjectXContractInfo SelectProjectXContract(string root, string desiredSuffix, List<ProjectXContractInfo> contracts)
+        {
+            if (contracts == null || contracts.Count == 0)
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(desiredSuffix))
+            {
+                var exactMatches = contracts
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Id) &&
+                        c.Id.EndsWith("." + desiredSuffix, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (exactMatches.Count > 0)
+                    return exactMatches.FirstOrDefault(c => c.ActiveContract) ?? exactMatches[0];
+            }
+
+            var activeMatches = contracts.Where(c => c.ActiveContract).ToList();
+            if (activeMatches.Count > 0)
+                return activeMatches[0];
+
+            return contracts[0];
+        }
+
+        private bool DoesProjectXContractMatchRoot(ProjectXContractInfo contract, string root)
+        {
+            if (contract == null || string.IsNullOrWhiteSpace(root))
+                return false;
+
+            string expectedSymbolId = "F.US." + root;
+            if (!string.IsNullOrWhiteSpace(contract.SymbolId) &&
+                string.Equals(contract.SymbolId, expectedSymbolId, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(contract.Id) &&
+                contract.Id.IndexOf(".US." + root + ".", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(contract.Name) &&
+                contract.Name.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return false;
+        }
+
+        private string GetProjectXInstrumentKey()
+        {
+            if (Instrument == null)
+                return string.Empty;
+
+            string fullName = Instrument.FullName ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(fullName))
+                return fullName.Trim().ToUpperInvariant();
+
+            return GetProjectXInstrumentRoot();
+        }
+
+        private string GetProjectXInstrumentRoot()
+        {
+            return Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+        }
+
+        private bool TryGetInstrumentExpiry(out DateTime expiry)
+        {
+            expiry = Core.Globals.MinDate;
+            if (Instrument == null)
+                return false;
+
+            try
+            {
+                PropertyInfo property = Instrument.GetType().GetProperty("Expiry", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+                if (property == null)
+                    return false;
+
+                object raw = property.GetValue(Instrument, null);
+                if (!(raw is DateTime))
+                    return false;
+
+                DateTime dt = (DateTime)raw;
+                if (dt.Year < 2000)
+                    return false;
+
+                expiry = dt;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryParseInstrumentExpiryFromFullName(out DateTime expiry)
+        {
+            expiry = Core.Globals.MinDate;
+            string fullName = Instrument != null ? (Instrument.FullName ?? string.Empty).Trim().ToUpperInvariant() : string.Empty;
+            if (string.IsNullOrWhiteSpace(fullName))
+                return false;
+
+            Match match = Regex.Match(fullName, @"\b(?<month>\d{1,2})[-/](?<year>\d{2,4})\b");
+            if (!match.Success)
+                return false;
+
+            int month;
+            int year;
+            if (!int.TryParse(match.Groups["month"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out month) ||
+                !int.TryParse(match.Groups["year"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out year))
+                return false;
+
+            if (year < 100)
+                year += 2000;
+            if (month < 1 || month > 12 || year < 2000)
+                return false;
+
+            expiry = new DateTime(year, month, 1);
+            return true;
+        }
+
+        private string GetProjectXFuturesMonthCode(int month)
+        {
+            switch (month)
+            {
+                case 1: return "F";
+                case 2: return "G";
+                case 3: return "H";
+                case 4: return "J";
+                case 5: return "K";
+                case 6: return "M";
+                case 7: return "N";
+                case 8: return "Q";
+                case 9: return "U";
+                case 10: return "V";
+                case 11: return "X";
+                case 12: return "Z";
+                default: return string.Empty;
+            }
+        }
+
+        private List<string> ParseProjectXAccountSelectors(string raw)
+        {
+            return (raw ?? string.Empty)
+                .Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private string FormatProjectXAccountsForLog(IEnumerable<ProjectXAccountInfo> accounts)
+        {
+            if (accounts == null)
+                return "<none>";
+
+            var items = accounts
+                .Select(a => string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}:{1}",
+                    a.Id,
+                    a.Name ?? string.Empty))
+                .ToArray();
+            return items.Length > 0 ? string.Join(", ", items) : "<none>";
+        }
+
+        private string GetProjectXOrderKey(int accountId, string contractId)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
         }
 
         private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
         {
             int orderSide = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             int orderType = isMarketEntry ? 2 : 1;
+            int normalizedQuantity = Math.Max(1, quantity);
             double entry = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
-            int tpTicks = Math.Max(1, PriceToTicks(Math.Abs(takeProfit - entry)));
-            int slTicks = Math.Max(1, PriceToTicks(Math.Abs(entry - stopLoss)));
+            bool isLong = orderSide == 0;
+            int tpTicks = NormalizeProjectXBracketTicks(
+                PriceToTicks(takeProfit - entry),
+                4,
+                isLong ? 1 : -1);
+            int slTicks = NormalizeProjectXBracketTicks(
+                PriceToTicks(stopLoss - entry),
+                1,
+                isLong ? -1 : 1);
 
             string limitPart = isMarketEntry
                 ? string.Empty
                 : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", entry);
 
             string json = string.Format(CultureInfo.InvariantCulture,
-                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":1,\"type\":1,\"ticks\":{6}}},\"stopLossBracket\":{{\"quantity\":1,\"type\":4,\"ticks\":{7}}}}}",
+                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":{6},\"type\":1,\"ticks\":{7}}},\"stopLossBracket\":{{\"quantity\":{6},\"type\":4,\"ticks\":{8}}}}}",
                 accountId,
                 contractId,
                 orderType,
                 orderSide,
-                Math.Max(1, quantity),
+                normalizedQuantity,
                 limitPart,
+                normalizedQuantity,
                 tpTicks,
                 slTicks);
 
             string response = ProjectXPost("/api/Order/place", json, true);
-            int orderId;
-            if (TryGetJsonInt(response, "orderId", out orderId))
-            {
-                projectXLastOrderId = orderId;
-                projectXLastOrderContractId = contractId;
-            }
+            long orderId;
+            if (TryGetJsonLong(response, "orderId", out orderId))
+                projectXLastOrderIds[GetProjectXOrderKey(accountId, contractId)] = orderId;
 
             return response;
+        }
+
+        private int NormalizeProjectXBracketTicks(int rawTicks, int minAbsTicks, int zeroTickDirection)
+        {
+            int direction = rawTicks == 0 ? Math.Sign(zeroTickDirection) : Math.Sign(rawTicks);
+            int absTicks = Math.Abs(rawTicks);
+            if (absTicks < minAbsTicks)
+                absTicks = minAbsTicks;
+            return direction * absTicks;
+        }
+
+        private bool ProjectXPrepareForEntry(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+            {
+                WebhookLog(string.Format(
+                    "ProjectX prepare failed | stage=cancel-clear accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+                return false;
+            }
+
+            int positionSize;
+            if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                {
+                    WebhookLog(string.Format(
+                        "ProjectX prepare failed | stage=flat accountId={0} contractId={1} positionSize={2}",
+                        accountId,
+                        contractId,
+                        positionSize));
+                    return false;
+                }
+
+                ProjectXCancelOrders(accountId, contractId);
+                if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                {
+                    WebhookLog(string.Format(
+                        "ProjectX prepare failed | stage=post-close-cancel accountId={0} contractId={1}",
+                        accountId,
+                        contractId));
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void ProjectXFlattenPosition(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+            {
+                WebhookLog(string.Format(
+                    "ProjectX flatten warning | stage=cancel-clear accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+            }
+
+            int positionSize;
+            if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                {
+                    WebhookLog(string.Format(
+                        "ProjectX flatten warning | stage=flat accountId={0} contractId={1} positionSize={2}",
+                        accountId,
+                        contractId,
+                        positionSize));
+                }
+            }
+
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+            {
+                WebhookLog(string.Format(
+                    "ProjectX flatten warning | stage=post-close-cancel accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+            }
         }
 
         private string ProjectXClosePosition(int accountId, string contractId)
@@ -2787,19 +3765,58 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return ProjectXPost("/api/Position/closeContract", json, true);
         }
 
-        private string ProjectXCancelOrders(int accountId, string contractId)
+        private void ProjectXCancelOrders(int accountId, string contractId)
         {
-            if (projectXLastOrderId.HasValue && string.Equals(projectXLastOrderContractId, contractId, StringComparison.OrdinalIgnoreCase))
+            foreach (long orderId in GetProjectXOpenOrderIds(accountId, contractId))
             {
                 string cancelJson = string.Format(CultureInfo.InvariantCulture,
                     "{{\"accountId\":{0},\"orderId\":{1}}}",
                     accountId,
-                    projectXLastOrderId.Value);
-                return ProjectXPost("/api/Order/cancel", cancelJson, true);
+                    orderId);
+                ProjectXPost("/api/Order/cancel", cancelJson, true);
             }
 
+            projectXLastOrderIds.Remove(GetProjectXOrderKey(accountId, contractId));
+        }
+
+        private bool WaitForProjectXFlat(int accountId, string contractId, int timeoutMs)
+        {
+            DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow <= deadlineUtc)
+            {
+                int positionSize;
+                if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize == 0)
+                    return true;
+
+                System.Threading.Thread.Sleep(150);
+            }
+
+            return false;
+        }
+
+        private bool WaitForProjectXOrdersCleared(int accountId, string contractId, int timeoutMs)
+        {
+            DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow <= deadlineUtc)
+            {
+                if (GetProjectXOpenOrderIds(accountId, contractId).Count == 0)
+                    return true;
+
+                System.Threading.Thread.Sleep(150);
+            }
+
+            return false;
+        }
+
+        private List<long> GetProjectXOpenOrderIds(int accountId, string contractId)
+        {
+            var orderIds = new List<long>();
             string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
             string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return orderIds;
+
             foreach (var order in ExtractProjectXOrders(searchResponse))
             {
                 object contractObj;
@@ -2809,33 +3826,170 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     continue;
 
                 object idObj;
-                int id;
-                if (!order.TryGetValue("id", out idObj) || !int.TryParse(idObj != null ? idObj.ToString() : string.Empty, out id) || id <= 0)
+                long id;
+                if (!order.TryGetValue("id", out idObj) || !TryConvertToLong(idObj, out id) || id <= 0)
                     continue;
 
-                string cancelJson = string.Format(CultureInfo.InvariantCulture,
-                    "{{\"accountId\":{0},\"orderId\":{1}}}",
-                    accountId,
-                    id);
-                ProjectXPost("/api/Order/cancel", cancelJson, true);
+                orderIds.Add(id);
             }
 
-            return searchResponse;
+            return orderIds;
+        }
+
+        private bool TryGetProjectXOpenPositionSize(int accountId, string contractId, out int signedSize)
+        {
+            signedSize = 0;
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Position/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return false;
+
+            foreach (var position in ExtractProjectXPositions(searchResponse))
+            {
+                object contractObj;
+                if (!position.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object typeObj;
+                object sizeObj;
+                int type;
+                int size;
+                if (!position.TryGetValue("type", out typeObj) || !TryConvertToInt(typeObj, out type))
+                    continue;
+                if (!position.TryGetValue("size", out sizeObj) || !TryConvertToInt(sizeObj, out size) || size <= 0)
+                    continue;
+
+                signedSize += type == 2 ? -size : size;
+            }
+
+            return true;
         }
 
         private string ProjectXPost(string path, string json, bool requiresAuth)
+        {
+            return ProjectXPost(path, json, requiresAuth, false);
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuth, bool alwaysLog)
         {
             string baseUrl = ProjectXApiBaseUrl != null ? ProjectXApiBaseUrl.TrimEnd('/') : string.Empty;
             if (string.IsNullOrWhiteSpace(baseUrl))
                 return null;
 
-            using (var client = new System.Net.WebClient())
+            if (alwaysLog)
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX request | url={0}{1} auth={2} payload={3}",
+                    baseUrl,
+                    path,
+                    requiresAuth,
+                    SanitizeProjectXJsonForLog(json)));
+            else
+                WebhookLog(string.Format(
+                    "ProjectX request | url={0}{1} auth={2} payload={3}",
+                    baseUrl,
+                    path,
+                    requiresAuth,
+                    SanitizeProjectXJsonForLog(json)));
+
+            try
             {
-                client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
-                if (requiresAuth && !string.IsNullOrWhiteSpace(projectXSessionToken))
-                    client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
-                return client.UploadString(baseUrl + path, "POST", json);
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    if (requiresAuth && !string.IsNullOrWhiteSpace(projectXSessionToken))
+                        client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
+
+                    string response = client.UploadString(baseUrl + path, "POST", json);
+                    if (alwaysLog)
+                        LogProjectXDiscovery(string.Format(
+                            "ProjectX response | url={0}{1} body={2}",
+                            baseUrl,
+                            path,
+                            SanitizeProjectXJsonForLog(response)));
+                    else
+                        WebhookLog(string.Format(
+                            "ProjectX response | url={0}{1} body={2}",
+                            baseUrl,
+                            path,
+                            SanitizeProjectXJsonForLog(response)));
+                    return response;
+                }
             }
+            catch (System.Net.WebException ex)
+            {
+                string errorBody = ReadWebExceptionResponse(ex);
+                if (alwaysLog)
+                    LogProjectXDiscovery(string.Format(
+                        "ProjectX request failed | url={0}{1} error={2} body={3}",
+                        baseUrl,
+                        path,
+                        ex.Message,
+                        SanitizeProjectXJsonForLog(errorBody)));
+                else
+                    WebhookLog(string.Format(
+                        "ProjectX request failed | url={0}{1} error={2} body={3}",
+                        baseUrl,
+                        path,
+                        ex.Message,
+                        SanitizeProjectXJsonForLog(errorBody)));
+                return errorBody;
+            }
+            catch (Exception ex)
+            {
+                if (alwaysLog)
+                    LogProjectXDiscovery(string.Format("ProjectX request failed | url={0}{1} error={2}", baseUrl, path, ex.Message));
+                else
+                    WebhookLog(string.Format("ProjectX request failed | url={0}{1} error={2}", baseUrl, path, ex.Message));
+                return null;
+            }
+        }
+
+        private string ReadWebExceptionResponse(System.Net.WebException ex)
+        {
+            if (ex == null || ex.Response == null)
+                return null;
+
+            try
+            {
+                using (var stream = ex.Response.GetResponseStream())
+                {
+                    if (stream == null)
+                        return null;
+                    using (var reader = new System.IO.StreamReader(stream))
+                        return reader.ReadToEnd();
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string SanitizeProjectXJsonForLog(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return string.Empty;
+
+            string sanitized = json;
+            sanitized = RedactProjectXJsonValue(sanitized, "apiKey");
+            sanitized = RedactProjectXJsonValue(sanitized, "loginKey");
+            sanitized = RedactProjectXJsonValue(sanitized, "token");
+            sanitized = RedactProjectXJsonValue(sanitized, "newToken");
+            return sanitized;
+        }
+
+        private string RedactProjectXJsonValue(string json, string key)
+        {
+            if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(key))
+                return json ?? string.Empty;
+
+            return Regex.Replace(
+                json,
+                "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"[^\"]*\"",
+                "\"" + key + "\":\"***\"");
         }
 
         private int PriceToTicks(double priceDistance)
@@ -2888,6 +4042,252 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private bool TryGetJsonLong(string json, string key, out long value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return TryConvertToLong(raw, out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetJsonBool(string json, string key, out bool value)
+        {
+            value = false;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return TryConvertToBool(raw, out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private IEnumerable<ProjectXAccountInfo> ExtractProjectXAccounts(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            var serializer = new JavaScriptSerializer();
+            Dictionary<string, object> data;
+            try
+            {
+                data = serializer.Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("accounts", out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict == null)
+                    continue;
+
+                object idObj;
+                int id;
+                if (!dict.TryGetValue("id", out idObj) || !TryConvertToInt(idObj, out id) || id <= 0)
+                    continue;
+
+                object nameObj;
+                object canTradeObj;
+                object isVisibleObj;
+                bool canTrade;
+                bool isVisible;
+
+                dict.TryGetValue("name", out nameObj);
+                dict.TryGetValue("canTrade", out canTradeObj);
+                dict.TryGetValue("isVisible", out isVisibleObj);
+                TryConvertToBool(canTradeObj, out canTrade);
+                TryConvertToBool(isVisibleObj, out isVisible);
+
+                yield return new ProjectXAccountInfo
+                {
+                    Id = id,
+                    Name = nameObj != null ? nameObj.ToString() : string.Empty,
+                    CanTrade = canTrade,
+                    IsVisible = isVisible
+                };
+            }
+        }
+
+        private IEnumerable<ProjectXContractInfo> ExtractProjectXContracts(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            var serializer = new JavaScriptSerializer();
+            Dictionary<string, object> data;
+            try
+            {
+                data = serializer.Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("contracts", out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict == null)
+                    continue;
+
+                object idObj;
+                if (!dict.TryGetValue("id", out idObj) || idObj == null)
+                    continue;
+
+                object nameObj;
+                object descriptionObj;
+                object symbolIdObj;
+                object activeObj;
+                bool activeContract;
+
+                dict.TryGetValue("name", out nameObj);
+                dict.TryGetValue("description", out descriptionObj);
+                dict.TryGetValue("symbolId", out symbolIdObj);
+                dict.TryGetValue("activeContract", out activeObj);
+                TryConvertToBool(activeObj, out activeContract);
+
+                yield return new ProjectXContractInfo
+                {
+                    Id = idObj.ToString(),
+                    Name = nameObj != null ? nameObj.ToString() : string.Empty,
+                    Description = descriptionObj != null ? descriptionObj.ToString() : string.Empty,
+                    SymbolId = symbolIdObj != null ? symbolIdObj.ToString() : string.Empty,
+                    ActiveContract = activeContract
+                };
+            }
+        }
+
+        private bool TryConvertToInt(object raw, out int value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+
+            if (raw is int)
+            {
+                value = (int)raw;
+                return true;
+            }
+
+            if (raw is long)
+            {
+                long longValue = (long)raw;
+                if (longValue < int.MinValue || longValue > int.MaxValue)
+                    return false;
+                value = (int)longValue;
+                return true;
+            }
+
+            if (raw is decimal)
+            {
+                value = (int)(decimal)raw;
+                return true;
+            }
+
+            if (raw is double)
+            {
+                value = (int)(double)raw;
+                return true;
+            }
+
+            return int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToLong(object raw, out long value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+
+            if (raw is int)
+            {
+                value = (int)raw;
+                return true;
+            }
+
+            if (raw is long)
+            {
+                value = (long)raw;
+                return true;
+            }
+
+            if (raw is decimal)
+            {
+                decimal decimalValue = (decimal)raw;
+                if (decimalValue < long.MinValue || decimalValue > long.MaxValue)
+                    return false;
+                value = (long)decimalValue;
+                return true;
+            }
+
+            if (raw is double)
+            {
+                double doubleValue = (double)raw;
+                if (doubleValue < long.MinValue || doubleValue > long.MaxValue)
+                    return false;
+                value = (long)doubleValue;
+                return true;
+            }
+
+            return long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToBool(object raw, out bool value)
+        {
+            value = false;
+            if (raw == null)
+                return false;
+
+            if (raw is bool)
+            {
+                value = (bool)raw;
+                return true;
+            }
+
+            return bool.TryParse(raw.ToString(), out value);
+        }
+
         private IEnumerable<Dictionary<string, object>> ExtractProjectXOrders(string json)
         {
             if (string.IsNullOrWhiteSpace(json))
@@ -2908,13 +4308,45 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (data == null || !data.TryGetValue("orders", out raw) || raw == null)
                 yield break;
 
-            var array = raw as object[];
-            if (array == null)
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
                 yield break;
 
-            for (int i = 0; i < array.Length; i++)
+            foreach (var item in items)
             {
-                var dict = array[i] as Dictionary<string, object>;
+                var dict = item as Dictionary<string, object>;
+                if (dict != null)
+                    yield return dict;
+            }
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXPositions(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            var serializer = new JavaScriptSerializer();
+            Dictionary<string, object> data;
+            try
+            {
+                data = serializer.Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("positions", out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
                 if (dict != null)
                     yield return dict;
             }
@@ -3072,1403 +4504,1505 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Debug Mode", Order = 6, GroupName = "A. General")]
         public bool DebugMode { get; set; }
+
+        [Browsable(false)]
+        [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Description = "Period for ATR indicator used by ATR-based TP mode (applied on 1m bars).", Order = 7, GroupName = "A. General")]
+        public int AtrPeriod { get; set; }
         
         // ==========================================
         // ===== B. Long Bucket 1 =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable L1", Order = 1, GroupName = "B. Long Bucket 1")]
         public bool L1_Enabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "B. Long Bucket 1")]
         public int L1_ORMinTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "B. Long Bucket 1")]
         public int L1_ORMaxTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use PMR Filter", Description = "When enabled, skip this bucket if pre-market range exceeds Max PMR Ticks.", Order = 4, GroupName = "B. Long Bucket 1")]
         public bool L1_UsePreMarketFilter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "Max PMR (Ticks)", Description = "Maximum pre-market range in ticks. 0 = no limit when filter is on.", Order = 5, GroupName = "B. Long Bucket 1")]
         public int L1_MaxPreMarketRangeTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Breakout Rearm", Order = 6, GroupName = "B. Long Bucket 1")]
         public bool L1_UseBreakoutRearm { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Return to Zone", Order = 7, GroupName = "B. Long Bucket 1")]
         public bool L1_RequireReturnToZone { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 8, GroupName = "B. Long Bucket 1")]
         public int L1_ConfirmationBars { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 9, GroupName = "B. Long Bucket 1")]
         public double L1_EntryOffsetPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 10, GroupName = "B. Long Bucket 1")]
         public int L1_VarianceTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TP Mode", Order = 11, GroupName = "B. Long Bucket 1")]
         public TargetMode L1_TPMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "B. Long Bucket 1")]
         public double L1_TakeProfitPercent { get; set; }
-        
-        [Browsable(false)]
+
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "B. Long Bucket 1")]
+        public int L1_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "B. Long Bucket 1")]
+        public double L1_AtrTPHighPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "B. Long Bucket 1")]
         public int L1_TakeProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "B. Long Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "B. Long Bucket 1")]
         public TargetMode L1_SLMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "B. Long Bucket 1")]
         public double L1_StopLossPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "B. Long Bucket 1")]
         public int L1_StopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "B. Long Bucket 1")]
         public int L1_MaxStopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "B. Long Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "B. Long Bucket 1")]
         public bool L1_UseTrailingStop { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "B. Long Bucket 1")]
         public double L1_TrailStopPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "B. Long Bucket 1")]
         public double L1_TrailActivationPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "B. Long Bucket 1")]
         public int L1_TrailStepTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "B. Long Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "B. Long Bucket 1")]
         public bool L1_TrailLockOREnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "B. Long Bucket 1")]
         public double L1_TrailLockORPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "B. Long Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "B. Long Bucket 1")]
         public bool L1_TrailLockTicksEnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "B. Long Bucket 1")]
         public int L1_TrailLockTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "B. Long Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "B. Long Bucket 1")]
         public bool L1_UseBreakeven { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "B. Long Bucket 1")]
         public int L1_BreakevenTriggerPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "B. Long Bucket 1")]
         public int L1_BreakevenOffsetTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "B. Long Bucket 1")]
         public int L1_MaxBarsInTrade { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "B. Long Bucket 1")]
         public int L1_MaxTradesPerDay { get; set; }
         
         // ==========================================
         // ===== C. Long Bucket 2 =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable L2", Order = 1, GroupName = "C. Long Bucket 2")]
         public bool L2_Enabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "C. Long Bucket 2")]
         public int L2_ORMinTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "C. Long Bucket 2")]
         public int L2_ORMaxTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use PMR Filter", Description = "When enabled, skip this bucket if pre-market range exceeds Max PMR Ticks.", Order = 4, GroupName = "C. Long Bucket 2")]
         public bool L2_UsePreMarketFilter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "Max PMR (Ticks)", Description = "Maximum pre-market range in ticks. 0 = no limit when filter is on.", Order = 5, GroupName = "C. Long Bucket 2")]
         public int L2_MaxPreMarketRangeTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Breakout Rearm", Order = 6, GroupName = "C. Long Bucket 2")]
         public bool L2_UseBreakoutRearm { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Return to Zone", Order = 7, GroupName = "C. Long Bucket 2")]
         public bool L2_RequireReturnToZone { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 8, GroupName = "C. Long Bucket 2")]
         public int L2_ConfirmationBars { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 9, GroupName = "C. Long Bucket 2")]
         public double L2_EntryOffsetPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 10, GroupName = "C. Long Bucket 2")]
         public int L2_VarianceTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TP Mode", Order = 11, GroupName = "C. Long Bucket 2")]
         public TargetMode L2_TPMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "C. Long Bucket 2")]
         public double L2_TakeProfitPercent { get; set; }
-        
-        [Browsable(false)]
+
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "C. Long Bucket 2")]
+        public int L2_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "C. Long Bucket 2")]
+        public double L2_AtrTPHighPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "C. Long Bucket 2")]
         public int L2_TakeProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "C. Long Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "C. Long Bucket 2")]
         public TargetMode L2_SLMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "C. Long Bucket 2")]
         public double L2_StopLossPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "C. Long Bucket 2")]
         public int L2_StopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "C. Long Bucket 2")]
         public int L2_MaxStopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "C. Long Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "C. Long Bucket 2")]
         public bool L2_UseTrailingStop { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "C. Long Bucket 2")]
         public double L2_TrailStopPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "C. Long Bucket 2")]
         public double L2_TrailActivationPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "C. Long Bucket 2")]
         public int L2_TrailStepTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "C. Long Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "C. Long Bucket 2")]
         public bool L2_TrailLockOREnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "C. Long Bucket 2")]
         public double L2_TrailLockORPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "C. Long Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "C. Long Bucket 2")]
         public bool L2_TrailLockTicksEnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "C. Long Bucket 2")]
         public int L2_TrailLockTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "C. Long Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "C. Long Bucket 2")]
         public bool L2_UseBreakeven { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "C. Long Bucket 2")]
         public int L2_BreakevenTriggerPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "C. Long Bucket 2")]
         public int L2_BreakevenOffsetTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "C. Long Bucket 2")]
         public int L2_MaxBarsInTrade { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "C. Long Bucket 2")]
         public int L2_MaxTradesPerDay { get; set; }
         
         // ==========================================
         // ===== D. Long Bucket 3 =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable L3", Order = 1, GroupName = "D. Long Bucket 3")]
         public bool L3_Enabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "D. Long Bucket 3")]
         public int L3_ORMinTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "D. Long Bucket 3")]
         public int L3_ORMaxTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use PMR Filter", Description = "When enabled, skip this bucket if pre-market range exceeds Max PMR Ticks.", Order = 4, GroupName = "D. Long Bucket 3")]
         public bool L3_UsePreMarketFilter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "Max PMR (Ticks)", Description = "Maximum pre-market range in ticks. 0 = no limit when filter is on.", Order = 5, GroupName = "D. Long Bucket 3")]
         public int L3_MaxPreMarketRangeTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Breakout Rearm", Order = 6, GroupName = "D. Long Bucket 3")]
         public bool L3_UseBreakoutRearm { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Return to Zone", Order = 7, GroupName = "D. Long Bucket 3")]
         public bool L3_RequireReturnToZone { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 8, GroupName = "D. Long Bucket 3")]
         public int L3_ConfirmationBars { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 9, GroupName = "D. Long Bucket 3")]
         public double L3_EntryOffsetPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 10, GroupName = "D. Long Bucket 3")]
         public int L3_VarianceTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TP Mode", Order = 11, GroupName = "D. Long Bucket 3")]
         public TargetMode L3_TPMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "D. Long Bucket 3")]
         public double L3_TakeProfitPercent { get; set; }
-        
-        [Browsable(false)]
+
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "D. Long Bucket 3")]
+        public int L3_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "D. Long Bucket 3")]
+        public double L3_AtrTPHighPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "D. Long Bucket 3")]
         public int L3_TakeProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "D. Long Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "D. Long Bucket 3")]
         public TargetMode L3_SLMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "D. Long Bucket 3")]
         public double L3_StopLossPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "D. Long Bucket 3")]
         public int L3_StopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "D. Long Bucket 3")]
         public int L3_MaxStopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "D. Long Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "D. Long Bucket 3")]
         public bool L3_UseTrailingStop { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "D. Long Bucket 3")]
         public double L3_TrailStopPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "D. Long Bucket 3")]
         public double L3_TrailActivationPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "D. Long Bucket 3")]
         public int L3_TrailStepTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "D. Long Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "D. Long Bucket 3")]
         public bool L3_TrailLockOREnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "D. Long Bucket 3")]
         public double L3_TrailLockORPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "D. Long Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "D. Long Bucket 3")]
         public bool L3_TrailLockTicksEnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "D. Long Bucket 3")]
         public int L3_TrailLockTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "D. Long Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "D. Long Bucket 3")]
         public bool L3_UseBreakeven { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "D. Long Bucket 3")]
         public int L3_BreakevenTriggerPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "D. Long Bucket 3")]
         public int L3_BreakevenOffsetTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "D. Long Bucket 3")]
         public int L3_MaxBarsInTrade { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "D. Long Bucket 3")]
         public int L3_MaxTradesPerDay { get; set; }
         
         // ==========================================
         // ===== E. Long Bucket 4 =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable L4", Order = 1, GroupName = "E. Long Bucket 4")]
         public bool L4_Enabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "E. Long Bucket 4")]
         public int L4_ORMinTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "E. Long Bucket 4")]
         public int L4_ORMaxTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use PMR Filter", Description = "When enabled, skip this bucket if pre-market range exceeds Max PMR Ticks.", Order = 4, GroupName = "E. Long Bucket 4")]
         public bool L4_UsePreMarketFilter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "Max PMR (Ticks)", Description = "Maximum pre-market range in ticks. 0 = no limit when filter is on.", Order = 5, GroupName = "E. Long Bucket 4")]
         public int L4_MaxPreMarketRangeTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Breakout Rearm", Order = 6, GroupName = "E. Long Bucket 4")]
         public bool L4_UseBreakoutRearm { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Return to Zone", Order = 7, GroupName = "E. Long Bucket 4")]
         public bool L4_RequireReturnToZone { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 8, GroupName = "E. Long Bucket 4")]
         public int L4_ConfirmationBars { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 9, GroupName = "E. Long Bucket 4")]
         public double L4_EntryOffsetPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 10, GroupName = "E. Long Bucket 4")]
         public int L4_VarianceTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TP Mode", Order = 11, GroupName = "E. Long Bucket 4")]
         public TargetMode L4_TPMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "E. Long Bucket 4")]
         public double L4_TakeProfitPercent { get; set; }
-        
-        [Browsable(false)]
+
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "E. Long Bucket 4")]
+        public int L4_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "E. Long Bucket 4")]
+        public double L4_AtrTPHighPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "E. Long Bucket 4")]
         public int L4_TakeProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "E. Long Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "E. Long Bucket 4")]
         public TargetMode L4_SLMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "E. Long Bucket 4")]
         public double L4_StopLossPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "E. Long Bucket 4")]
         public int L4_StopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "E. Long Bucket 4")]
         public int L4_MaxStopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "E. Long Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "E. Long Bucket 4")]
         public bool L4_UseTrailingStop { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "E. Long Bucket 4")]
         public double L4_TrailStopPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "E. Long Bucket 4")]
         public double L4_TrailActivationPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "E. Long Bucket 4")]
         public int L4_TrailStepTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "E. Long Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "E. Long Bucket 4")]
         public bool L4_TrailLockOREnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "E. Long Bucket 4")]
         public double L4_TrailLockORPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "E. Long Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "E. Long Bucket 4")]
         public bool L4_TrailLockTicksEnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "E. Long Bucket 4")]
         public int L4_TrailLockTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "E. Long Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "E. Long Bucket 4")]
         public bool L4_UseBreakeven { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "E. Long Bucket 4")]
         public int L4_BreakevenTriggerPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "E. Long Bucket 4")]
         public int L4_BreakevenOffsetTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "E. Long Bucket 4")]
         public int L4_MaxBarsInTrade { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "E. Long Bucket 4")]
         public int L4_MaxTradesPerDay { get; set; }
         
         // ==========================================
         // ===== F. Short Bucket 1 =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable S1", Order = 1, GroupName = "F. Short Bucket 1")]
         public bool S1_Enabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "F. Short Bucket 1")]
         public int S1_ORMinTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "F. Short Bucket 1")]
         public int S1_ORMaxTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use PMR Filter", Description = "When enabled, skip this bucket if pre-market range exceeds Max PMR Ticks.", Order = 4, GroupName = "F. Short Bucket 1")]
         public bool S1_UsePreMarketFilter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "Max PMR (Ticks)", Description = "Maximum pre-market range in ticks. 0 = no limit when filter is on.", Order = 5, GroupName = "F. Short Bucket 1")]
         public int S1_MaxPreMarketRangeTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Breakout Rearm", Order = 6, GroupName = "F. Short Bucket 1")]
         public bool S1_UseBreakoutRearm { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Return to Zone", Order = 7, GroupName = "F. Short Bucket 1")]
         public bool S1_RequireReturnToZone { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 8, GroupName = "F. Short Bucket 1")]
         public int S1_ConfirmationBars { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 9, GroupName = "F. Short Bucket 1")]
         public double S1_EntryOffsetPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 10, GroupName = "F. Short Bucket 1")]
         public int S1_VarianceTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TP Mode", Order = 11, GroupName = "F. Short Bucket 1")]
         public TargetMode S1_TPMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "F. Short Bucket 1")]
         public double S1_TakeProfitPercent { get; set; }
-        
-        [Browsable(false)]
+
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "F. Short Bucket 1")]
+        public int S1_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "F. Short Bucket 1")]
+        public double S1_AtrTPHighPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "F. Short Bucket 1")]
         public int S1_TakeProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "F. Short Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "F. Short Bucket 1")]
         public TargetMode S1_SLMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "F. Short Bucket 1")]
         public double S1_StopLossPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "F. Short Bucket 1")]
         public int S1_StopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "F. Short Bucket 1")]
         public int S1_MaxStopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "F. Short Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "F. Short Bucket 1")]
         public bool S1_UseTrailingStop { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "F. Short Bucket 1")]
         public double S1_TrailStopPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "F. Short Bucket 1")]
         public double S1_TrailActivationPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "F. Short Bucket 1")]
         public int S1_TrailStepTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "F. Short Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "F. Short Bucket 1")]
         public bool S1_TrailLockOREnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "F. Short Bucket 1")]
         public double S1_TrailLockORPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "F. Short Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "F. Short Bucket 1")]
         public bool S1_TrailLockTicksEnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "F. Short Bucket 1")]
         public int S1_TrailLockTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "F. Short Bucket 1")]
+        [Browsable(false)]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "F. Short Bucket 1")]
         public bool S1_UseBreakeven { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "F. Short Bucket 1")]
         public int S1_BreakevenTriggerPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "F. Short Bucket 1")]
         public int S1_BreakevenOffsetTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "F. Short Bucket 1")]
         public int S1_MaxBarsInTrade { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "F. Short Bucket 1")]
         public int S1_MaxTradesPerDay { get; set; }
         
         // ==========================================
         // ===== G. Short Bucket 2 =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable S2", Order = 1, GroupName = "G. Short Bucket 2")]
         public bool S2_Enabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "G. Short Bucket 2")]
         public int S2_ORMinTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "G. Short Bucket 2")]
         public int S2_ORMaxTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use PMR Filter", Description = "When enabled, skip this bucket if pre-market range exceeds Max PMR Ticks.", Order = 4, GroupName = "G. Short Bucket 2")]
         public bool S2_UsePreMarketFilter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "Max PMR (Ticks)", Description = "Maximum pre-market range in ticks. 0 = no limit when filter is on.", Order = 5, GroupName = "G. Short Bucket 2")]
         public int S2_MaxPreMarketRangeTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Breakout Rearm", Order = 6, GroupName = "G. Short Bucket 2")]
         public bool S2_UseBreakoutRearm { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Return to Zone", Order = 7, GroupName = "G. Short Bucket 2")]
         public bool S2_RequireReturnToZone { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 8, GroupName = "G. Short Bucket 2")]
         public int S2_ConfirmationBars { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 9, GroupName = "G. Short Bucket 2")]
         public double S2_EntryOffsetPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 10, GroupName = "G. Short Bucket 2")]
         public int S2_VarianceTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TP Mode", Order = 11, GroupName = "G. Short Bucket 2")]
         public TargetMode S2_TPMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "G. Short Bucket 2")]
         public double S2_TakeProfitPercent { get; set; }
-        
-        [Browsable(false)]
+
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "G. Short Bucket 2")]
+        public int S2_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "G. Short Bucket 2")]
+        public double S2_AtrTPHighPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "G. Short Bucket 2")]
         public int S2_TakeProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "G. Short Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "G. Short Bucket 2")]
         public TargetMode S2_SLMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "G. Short Bucket 2")]
         public double S2_StopLossPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "G. Short Bucket 2")]
         public int S2_StopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "G. Short Bucket 2")]
         public int S2_MaxStopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "G. Short Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "G. Short Bucket 2")]
         public bool S2_UseTrailingStop { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "G. Short Bucket 2")]
         public double S2_TrailStopPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "G. Short Bucket 2")]
         public double S2_TrailActivationPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "G. Short Bucket 2")]
         public int S2_TrailStepTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "G. Short Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "G. Short Bucket 2")]
         public bool S2_TrailLockOREnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "G. Short Bucket 2")]
         public double S2_TrailLockORPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "G. Short Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "G. Short Bucket 2")]
         public bool S2_TrailLockTicksEnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "G. Short Bucket 2")]
         public int S2_TrailLockTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "G. Short Bucket 2")]
+        [Browsable(false)]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "G. Short Bucket 2")]
         public bool S2_UseBreakeven { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "G. Short Bucket 2")]
         public int S2_BreakevenTriggerPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "G. Short Bucket 2")]
         public int S2_BreakevenOffsetTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "G. Short Bucket 2")]
         public int S2_MaxBarsInTrade { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "G. Short Bucket 2")]
         public int S2_MaxTradesPerDay { get; set; }
         
         // ==========================================
         // ===== H. Short Bucket 3 =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable S3", Order = 1, GroupName = "H. Short Bucket 3")]
         public bool S3_Enabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "H. Short Bucket 3")]
         public int S3_ORMinTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "H. Short Bucket 3")]
         public int S3_ORMaxTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use PMR Filter", Description = "When enabled, skip this bucket if pre-market range exceeds Max PMR Ticks.", Order = 4, GroupName = "H. Short Bucket 3")]
         public bool S3_UsePreMarketFilter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "Max PMR (Ticks)", Description = "Maximum pre-market range in ticks. 0 = no limit when filter is on.", Order = 5, GroupName = "H. Short Bucket 3")]
         public int S3_MaxPreMarketRangeTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Breakout Rearm", Order = 6, GroupName = "H. Short Bucket 3")]
         public bool S3_UseBreakoutRearm { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Return to Zone", Order = 7, GroupName = "H. Short Bucket 3")]
         public bool S3_RequireReturnToZone { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 8, GroupName = "H. Short Bucket 3")]
         public int S3_ConfirmationBars { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 9, GroupName = "H. Short Bucket 3")]
         public double S3_EntryOffsetPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 10, GroupName = "H. Short Bucket 3")]
         public int S3_VarianceTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TP Mode", Order = 11, GroupName = "H. Short Bucket 3")]
         public TargetMode S3_TPMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "H. Short Bucket 3")]
         public double S3_TakeProfitPercent { get; set; }
-        
-        [Browsable(false)]
+
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "H. Short Bucket 3")]
+        public int S3_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "H. Short Bucket 3")]
+        public double S3_AtrTPHighPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "H. Short Bucket 3")]
         public int S3_TakeProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "H. Short Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "H. Short Bucket 3")]
         public TargetMode S3_SLMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "H. Short Bucket 3")]
         public double S3_StopLossPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "H. Short Bucket 3")]
         public int S3_StopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "H. Short Bucket 3")]
         public int S3_MaxStopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "H. Short Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "H. Short Bucket 3")]
         public bool S3_UseTrailingStop { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "H. Short Bucket 3")]
         public double S3_TrailStopPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "H. Short Bucket 3")]
         public double S3_TrailActivationPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "H. Short Bucket 3")]
         public int S3_TrailStepTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "H. Short Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "H. Short Bucket 3")]
         public bool S3_TrailLockOREnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "H. Short Bucket 3")]
         public double S3_TrailLockORPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "H. Short Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "H. Short Bucket 3")]
         public bool S3_TrailLockTicksEnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "H. Short Bucket 3")]
         public int S3_TrailLockTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "H. Short Bucket 3")]
+        [Browsable(false)]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "H. Short Bucket 3")]
         public bool S3_UseBreakeven { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "H. Short Bucket 3")]
         public int S3_BreakevenTriggerPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "H. Short Bucket 3")]
         public int S3_BreakevenOffsetTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "H. Short Bucket 3")]
         public int S3_MaxBarsInTrade { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "H. Short Bucket 3")]
         public int S3_MaxTradesPerDay { get; set; }
         
         // ==========================================
         // ===== I. Short Bucket 4 =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable S4", Order = 1, GroupName = "I. Short Bucket 4")]
         public bool S4_Enabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Min (Ticks)", Order = 2, GroupName = "I. Short Bucket 4")]
         public int S4_ORMinTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "OR Max (Ticks)", Order = 3, GroupName = "I. Short Bucket 4")]
         public int S4_ORMaxTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use PMR Filter", Description = "When enabled, skip this bucket if pre-market range exceeds Max PMR Ticks.", Order = 4, GroupName = "I. Short Bucket 4")]
         public bool S4_UsePreMarketFilter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 99999)]
         [Display(Name = "Max PMR (Ticks)", Description = "Maximum pre-market range in ticks. 0 = no limit when filter is on.", Order = 5, GroupName = "I. Short Bucket 4")]
         public int S4_MaxPreMarketRangeTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Use Breakout Rearm", Order = 6, GroupName = "I. Short Bucket 4")]
         public bool S4_UseBreakoutRearm { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Require Return to Zone", Order = 7, GroupName = "I. Short Bucket 4")]
         public bool S4_RequireReturnToZone { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 30)]
         [Display(Name = "Confirmation Bars", Order = 8, GroupName = "I. Short Bucket 4")]
         public int S4_ConfirmationBars { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Entry Offset % of OR", Order = 9, GroupName = "I. Short Bucket 4")]
         public double S4_EntryOffsetPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
         [Display(Name = "Variance (Ticks)", Order = 10, GroupName = "I. Short Bucket 4")]
         public int S4_VarianceTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "TP Mode", Order = 11, GroupName = "I. Short Bucket 4")]
         public TargetMode S4_TPMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "I. Short Bucket 4")]
         public double S4_TakeProfitPercent { get; set; }
-        
-        [Browsable(false)]
+
         [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "I. Short Bucket 4")]
+        public int S4_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "I. Short Bucket 4")]
+        public double S4_AtrTPHighPercent { get; set; }
+        
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "I. Short Bucket 4")]
         public int S4_TakeProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "I. Short Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "I. Short Bucket 4")]
         public TargetMode S4_SLMode { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "I. Short Bucket 4")]
         public double S4_StopLossPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "I. Short Bucket 4")]
         public int S4_StopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "I. Short Bucket 4")]
         public int S4_MaxStopLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "I. Short Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "I. Short Bucket 4")]
         public bool S4_UseTrailingStop { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "I. Short Bucket 4")]
         public double S4_TrailStopPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "I. Short Bucket 4")]
         public double S4_TrailActivationPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "I. Short Bucket 4")]
         public int S4_TrailStepTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "I. Short Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "I. Short Bucket 4")]
         public bool S4_TrailLockOREnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "I. Short Bucket 4")]
         public double S4_TrailLockORPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "I. Short Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "I. Short Bucket 4")]
         public bool S4_TrailLockTicksEnabled { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "I. Short Bucket 4")]
         public int S4_TrailLockTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "I. Short Bucket 4")]
+        [Browsable(false)]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "I. Short Bucket 4")]
         public bool S4_UseBreakeven { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "I. Short Bucket 4")]
         public int S4_BreakevenTriggerPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "I. Short Bucket 4")]
         public int S4_BreakevenOffsetTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "I. Short Bucket 4")]
         public int S4_MaxBarsInTrade { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "I. Short Bucket 4")]
         public int S4_MaxTradesPerDay { get; set; }
         
 
         // ==========================================
         // ===== J. Order Management =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 200)]
         [Display(Name = "Cancel Order % of OR", Order = 1, GroupName = "J. Orders")]
         public int CancelOrderPercent { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Cancel Order Bars", Order = 2, GroupName = "J. Orders")]
         public int CancelOrderBars { get; set; }
@@ -4476,20 +6010,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ==========================================
         // ===== K. Session Risk Management =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100000)]
         [Display(Name = "Max Session Profit (Ticks)", Order = 1, GroupName = "K. Session Risk")]
         public int MaxSessionProfitTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100000)]
         [Display(Name = "Max Session Loss (Ticks)", Order = 2, GroupName = "K. Session Risk")]
         public int MaxSessionLossTicks { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Range(0, 100)]
         [Display(Name = "Max Total Trades/Day", Order = 3, GroupName = "K. Session Risk")]
         public int MaxTradesPerDay { get; set; }
@@ -4497,43 +6031,43 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ==========================================
         // ===== L. Time Settings =====
         // ==========================================
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "OR Start Time", Order = 1, GroupName = "L. Time")]
         public TimeSpan ORStartTime { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "OR End Time", Order = 2, GroupName = "L. Time")]
         public TimeSpan OREndTime { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Session End", Order = 3, GroupName = "L. Time")]
         public TimeSpan SessionEnd { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "No Trades After", Order = 4, GroupName = "L. Time")]
         public TimeSpan NoTradesAfter { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Pre-Market Start", Order = 5, GroupName = "L. Time")]
         public TimeSpan PreMarketStart { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Pre-Market End", Order = 6, GroupName = "L. Time")]
         public TimeSpan PreMarketEnd { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Skip Start", Order = 7, GroupName = "L. Time")]
         public TimeSpan SkipStart { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Skip End", Order = 8, GroupName = "L. Time")]
         public TimeSpan SkipEnd { get; set; }
 
@@ -4554,41 +6088,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker/instrument name override. Leave empty to use the chart instrument automatically.", GroupName = "O. Webhooks", Order = 1)]
         public string WebhookTickerOverride { get; set; }
 
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "Webhook Provider", Description = "Select webhook target: TradersPost or ProjectX.", GroupName = "O. Webhooks", Order = 1)]
+        [Display(Name = "Webhook Provider", Description = "Select webhook target: TradersPost or ProjectX.", GroupName = "O. Webhooks", Order = 2)]
         public WebhookProvider WebhookProviderType { get; set; }
 
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX API Base URL", Description = "ProjectX gateway base URL.", GroupName = "O. Webhooks", Order = 2)]
+        [Browsable(false)]
+        [Display(Name = "ProjectX API Base URL", Description = "ProjectX gateway base URL. Leave the default ProjectX gateway URL or paste your firm-specific endpoint.", GroupName = "O. Webhooks", Order = 3)]
         public string ProjectXApiBaseUrl { get; set; }
 
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX Username", Description = "ProjectX login username.", GroupName = "O. Webhooks", Order = 3)]
+        [Display(Name = "ProjectX Username", Description = "ProjectX login username for direct ProjectX order routing.", GroupName = "O. Webhooks", Order = 4)]
         public string ProjectXUsername { get; set; }
 
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX API Key", Description = "ProjectX login key.", GroupName = "O. Webhooks", Order = 4)]
+        [Display(Name = "ProjectX API Key", Description = "ProjectX API key used together with the ProjectX username.", GroupName = "O. Webhooks", Order = 5)]
         public string ProjectXApiKey { get; set; }
 
-        [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX Account ID", Description = "ProjectX account id used for order routing.", GroupName = "O. Webhooks", Order = 5)]
+        [Display(Name = "ProjectX Accounts", Description = "Comma-separated ProjectX account ids or exact account names.", GroupName = "O. Webhooks", Order = 6)]
         public string ProjectXAccountId { get; set; }
 
         [Browsable(false)]
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX Contract ID", Description = "ProjectX contract id (for example CON.F.US.DA6.M25).", GroupName = "O. Webhooks", Order = 6)]
+        [Display(Name = "ProjectX Contract ID", Description = "Optional override for support/debug use only.", GroupName = "O. Webhooks", Order = 7)]
         public string ProjectXContractId { get; set; }
         
         // ==========================================
         // ===== M. Visual =====
         // ==========================================
-        [Browsable(false)]
         [XmlIgnore]
+        [Browsable(false)]
         [Display(Name = "Range Box Color", Order = 1, GroupName = "M. Visual")]
         public Brush RangeBoxBrush { get; set; }
         
@@ -4599,18 +6129,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             set { RangeBoxBrush = Serialize.StringToBrush(value); }
         }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Show Entry Lines", Order = 2, GroupName = "M. Visual")]
         public bool ShowEntryLines { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Show Target Lines", Order = 3, GroupName = "M. Visual")]
         public bool ShowTargetLines { get; set; }
         
-        [Browsable(false)]
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Show Stop Lines", Order = 4, GroupName = "M. Visual")]
         public bool ShowStopLines { get; set; }
         
