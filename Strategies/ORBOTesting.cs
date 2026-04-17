@@ -82,6 +82,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             public double StopLossPercent;
             public int StopLossTicks;
             public int MaxStopLossTicks;
+            // ATR-based TP fields
+            public int AtrTPThresholdTicks;   // 0 = disabled
+            public double AtrTPHighPercent;    // TP % of OR when ATR >= threshold
             public bool UseTrailingStop;
             public double TrailStopPercent;
             public double TrailActivationPercent;
@@ -226,6 +229,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ===== Random for variance =====
         private Random random = new Random();
 
+        // ===== ATR Indicator (for ATR-based TP) =====
+        private NinjaTrader.NinjaScript.Indicators.ATR atrIndicator;
+        // Resolved TP percent locked at OR formation time (Long and Short)
+        private double resolvedLongTPPercent = 0;
+        private double resolvedShortTPPercent = 0;
+
         // ===== Webhooks =====
         private string projectXSessionToken;
         private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
@@ -253,9 +262,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description = @"ORBO2Testing";
+                Description = @"ORBO2Testing Updated3 - All buckets + session risk + times optimized";
                 
-                Name = "ORBO2Testing";
+                Name = "ORBOTesting";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.AllEntries;
@@ -270,14 +279,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TraceOrders = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
-                BarsRequiredToTrade = 20;
-                IsInstantiatedOnEachOptimizationIteration = false;
+                BarsRequiredToTrade = 50;
+                IsInstantiatedOnEachOptimizationIteration = true;
                 
                 // ===== A. General Settings =====
                 NumberOfContracts = 1;
                 MaxAccountBalance = 0;
                 RequireEntryConfirmation = false;
                 DebugMode = false;
+                AtrPeriod = 30;
 
                 // ===== B. Long Bucket 1 =====
                 L1_Enabled = true;
@@ -291,25 +301,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L1_EntryOffsetPercent = 9.59;
                 L1_VarianceTicks = 0;
                 L1_TPMode = TargetMode.PercentOfOR;
-                L1_TakeProfitPercent = 46.8;
-                L1_TakeProfitTicks = 331;
+                L1_TakeProfitPercent = 45.67;
+                L1_TakeProfitTicks = 120;
                 L1_SLMode = TargetMode.PercentOfOR;
-                L1_StopLossPercent = 105.05;
+                L1_StopLossPercent = 84;
                 L1_StopLossTicks = 325;
-                L1_MaxStopLossTicks = 178;
+                L1_MaxStopLossTicks = 167;
                 L1_UseTrailingStop = true;
-                L1_TrailStopPercent = 8.46;
-                L1_TrailActivationPercent = 20.11;
+                L1_TrailStopPercent = 7.92;
+                L1_TrailActivationPercent = 19.17;
                 L1_TrailStepTicks = 0;
                 L1_TrailLockOREnabled = false;
-                L1_TrailLockORPercent = 17.0;
+                L1_TrailLockORPercent = 33.6;
                 L1_TrailLockTicksEnabled = false;
                 L1_TrailLockTicks = 20;
                 L1_UseBreakeven = true;
-                L1_BreakevenTriggerPercent = 19;
+                L1_BreakevenTriggerPercent = 26;
                 L1_BreakevenOffsetTicks = 5;
                 L1_MaxBarsInTrade = 88;
                 L1_MaxTradesPerDay = 4;
+                L1_AtrTPThresholdTicks = 41;
+                L1_AtrTPHighPercent = 45.71;
 
                 // ===== C. Long Bucket 2 =====
                 L2_Enabled = true;
@@ -323,18 +335,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L2_EntryOffsetPercent = 15.12;
                 L2_VarianceTicks = 0;
                 L2_TPMode = TargetMode.PercentOfOR;
-                L2_TakeProfitPercent = 82.55;
+                L2_TakeProfitPercent = 72.8;
                 L2_TakeProfitTicks = 331;
                 L2_SLMode = TargetMode.PercentOfOR;
-                L2_StopLossPercent = 100.45;
+                L2_StopLossPercent = 100.5;
                 L2_StopLossTicks = 325;
                 L2_MaxStopLossTicks = 388;
                 L2_UseTrailingStop = true;
-                L2_TrailStopPercent = 70.4;
-                L2_TrailActivationPercent = 36.5;
+                L2_TrailStopPercent = 68.66;
+                L2_TrailActivationPercent = 25.03;
                 L2_TrailStepTicks = 0;
                 L2_TrailLockOREnabled = false;
-                L2_TrailLockORPercent = 14.0;
+                L2_TrailLockORPercent = 10.0;
                 L2_TrailLockTicksEnabled = false;
                 L2_TrailLockTicks = 20;
                 L2_UseBreakeven = true;
@@ -342,6 +354,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L2_BreakevenOffsetTicks = 2;
                 L2_MaxBarsInTrade = 107;
                 L2_MaxTradesPerDay = 6;
+                L2_AtrTPThresholdTicks = 41;
+                L2_AtrTPHighPercent = 82.55;
 
                 // ===== D. Long Bucket 3 =====
                 L3_Enabled = true;
@@ -351,29 +365,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L3_MaxPreMarketRangeTicks = 0;
                 L3_UseBreakoutRearm = true;
                 L3_RequireReturnToZone = true;
-                L3_ConfirmationBars = 8;
+                L3_ConfirmationBars = 7;
                 L3_EntryOffsetPercent = 20.21;
                 L3_VarianceTicks = 0;
                 L3_TPMode = TargetMode.PercentOfOR;
-                L3_TakeProfitPercent = 77.21;
+                L3_TakeProfitPercent = 71.71;
                 L3_TakeProfitTicks = 331;
                 L3_SLMode = TargetMode.PercentOfOR;
-                L3_StopLossPercent = 18.41;
+                L3_StopLossPercent = 26.72;
                 L3_StopLossTicks = 325;
-                L3_MaxStopLossTicks = 180;
+                L3_MaxStopLossTicks = 153;
                 L3_UseTrailingStop = true;
-                L3_TrailStopPercent = 20.84;
-                L3_TrailActivationPercent = 8.9;
+                L3_TrailStopPercent = 18.29;
+                L3_TrailActivationPercent = 9.6;
                 L3_TrailStepTicks = 0;
                 L3_TrailLockOREnabled = true;
-                L3_TrailLockORPercent = 40.0;
+                L3_TrailLockORPercent = 47.0;
                 L3_TrailLockTicksEnabled = false;
-                L3_TrailLockTicks = 20;
+                L3_TrailLockTicks = 14;
                 L3_UseBreakeven = true;
-                L3_BreakevenTriggerPercent = 29;
-                L3_BreakevenOffsetTicks = 20;
+                L3_BreakevenTriggerPercent = 33;
+                L3_BreakevenOffsetTicks = 5;
                 L3_MaxBarsInTrade = 169;
                 L3_MaxTradesPerDay = 4;
+                L3_AtrTPThresholdTicks = 60;
+                L3_AtrTPHighPercent = 77.21;
 
                 // ===== E. Long Bucket 4 =====
                 L4_Enabled = true;
@@ -406,6 +422,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 L4_BreakevenOffsetTicks = 40;
                 L4_MaxBarsInTrade = 188;
                 L4_MaxTradesPerDay = 3;
+                L4_AtrTPThresholdTicks = 0;
+                L4_AtrTPHighPercent = 123.3;
 
                 // ===== F. Short Bucket 1 =====
                 S1_Enabled = true;
@@ -419,25 +437,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S1_EntryOffsetPercent = 13.82;
                 S1_VarianceTicks = 0;
                 S1_TPMode = TargetMode.PercentOfOR;
-                S1_TakeProfitPercent = 117.3;
+                S1_TakeProfitPercent = 129.6;
                 S1_TakeProfitTicks = 268;
                 S1_SLMode = TargetMode.PercentOfOR;
-                S1_StopLossPercent = 98.2;
+                S1_StopLossPercent = 97.96;
                 S1_StopLossTicks = 145;
                 S1_MaxStopLossTicks = 213;
                 S1_UseTrailingStop = true;
-                S1_TrailStopPercent = 39.2;
-                S1_TrailActivationPercent = 56.1;
+                S1_TrailStopPercent = 35.5;
+                S1_TrailActivationPercent = 55.9;
                 S1_TrailStepTicks = 0;
                 S1_TrailLockOREnabled = false;
-                S1_TrailLockORPercent = 14.0;
+                S1_TrailLockORPercent = 11.0;
                 S1_TrailLockTicksEnabled = false;
                 S1_TrailLockTicks = 20;
                 S1_UseBreakeven = true;
-                S1_BreakevenTriggerPercent = 32;
+                S1_BreakevenTriggerPercent = 33;
                 S1_BreakevenOffsetTicks = 5;
-                S1_MaxBarsInTrade = 60;
+                S1_MaxBarsInTrade = 69;
                 S1_MaxTradesPerDay = 3;
+                S1_AtrTPThresholdTicks = 46;
+                S1_AtrTPHighPercent = 117.2;
 
                 // ===== G. Short Bucket 2 =====
                 S2_Enabled = true;
@@ -451,7 +471,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S2_EntryOffsetPercent = 27.84;
                 S2_VarianceTicks = 0;
                 S2_TPMode = TargetMode.PercentOfOR;
-                S2_TakeProfitPercent = 154.85;
+                S2_TakeProfitPercent = 180.0;
                 S2_TakeProfitTicks = 268;
                 S2_SLMode = TargetMode.PercentOfOR;
                 S2_StopLossPercent = 65.0;
@@ -470,6 +490,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S2_BreakevenOffsetTicks = 14;
                 S2_MaxBarsInTrade = 116;
                 S2_MaxTradesPerDay = 3;
+                S2_AtrTPThresholdTicks = 50;
+                S2_AtrTPHighPercent = 154.85;
 
                 // ===== H. Short Bucket 3 =====
                 S3_Enabled = true;
@@ -483,25 +505,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S3_EntryOffsetPercent = 14.32;
                 S3_VarianceTicks = 0;
                 S3_TPMode = TargetMode.PercentOfOR;
-                S3_TakeProfitPercent = 57.07;
+                S3_TakeProfitPercent = 96.3;
                 S3_TakeProfitTicks = 268;
                 S3_SLMode = TargetMode.PercentOfOR;
-                S3_StopLossPercent = 97.01;
+                S3_StopLossPercent = 85.1;
                 S3_StopLossTicks = 145;
                 S3_MaxStopLossTicks = 633;
                 S3_UseTrailingStop = true;
-                S3_TrailStopPercent = 97.1;
-                S3_TrailActivationPercent = 7;
+                S3_TrailStopPercent = 97.08;
+                S3_TrailActivationPercent = 3;
                 S3_TrailStepTicks = 0;
                 S3_TrailLockOREnabled = false;
-                S3_TrailLockORPercent = 7.0;
+                S3_TrailLockORPercent = 52.0;
                 S3_TrailLockTicksEnabled = false;
                 S3_TrailLockTicks = 20;
                 S3_UseBreakeven = true;
                 S3_BreakevenTriggerPercent = 44;
-                S3_BreakevenOffsetTicks = 20;
+                S3_BreakevenOffsetTicks = 42;
                 S3_MaxBarsInTrade = 0;
                 S3_MaxTradesPerDay = 2;
+                S3_AtrTPThresholdTicks = 69;
+                S3_AtrTPHighPercent = 53.96;
 
                 // ===== I. Short Bucket 4 =====
                 S4_Enabled = true;
@@ -511,44 +535,46 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 S4_MaxPreMarketRangeTicks = 0;
                 S4_UseBreakoutRearm = true;
                 S4_RequireReturnToZone = true;
-                S4_ConfirmationBars = 2;
-                S4_EntryOffsetPercent = 13.62;
+                S4_ConfirmationBars = 1;
+                S4_EntryOffsetPercent = 13.22;
                 S4_VarianceTicks = 0;
                 S4_TPMode = TargetMode.PercentOfOR;
-                S4_TakeProfitPercent = 73.0;
+                S4_TakeProfitPercent = 63.0;
                 S4_TakeProfitTicks = 268;
                 S4_SLMode = TargetMode.PercentOfOR;
-                S4_StopLossPercent = 42.2;
+                S4_StopLossPercent = 41.2;
                 S4_StopLossTicks = 145;
                 S4_MaxStopLossTicks = 277;
                 S4_UseTrailingStop = true;
                 S4_TrailStopPercent = 34.0;
-                S4_TrailActivationPercent = 11.6;
+                S4_TrailActivationPercent = 11.1;
                 S4_TrailStepTicks = 0;
                 S4_TrailLockOREnabled = false;
-                S4_TrailLockORPercent = 50.0;
+                S4_TrailLockORPercent = 40.0;
                 S4_TrailLockTicksEnabled = false;
                 S4_TrailLockTicks = 20;
                 S4_UseBreakeven = true;
-                S4_BreakevenTriggerPercent = 33;
+                S4_BreakevenTriggerPercent = 25;
                 S4_BreakevenOffsetTicks = 5;
                 S4_MaxBarsInTrade = 0;
-                S4_MaxTradesPerDay = 1;
+                S4_MaxTradesPerDay = 2;
+                S4_AtrTPThresholdTicks = 60;
+                S4_AtrTPHighPercent = 73.0;
 
                 // ===== J. Order Management =====
                 CancelOrderPercent = 0;
                 CancelOrderBars = 0;
                 
                 // ===== K. Session Risk Management =====
-                MaxSessionProfitTicks = 1020;
-                MaxSessionLossTicks = 600;
-                MaxTradesPerDay = 7;
+                MaxSessionProfitTicks = 1290;
+                MaxSessionLossTicks = 620;
+                MaxTradesPerDay = 6;
                 
                 // ===== L. Session Time =====
                 ORStartTime = DateTime.Parse("09:30").TimeOfDay;
                 OREndTime = DateTime.Parse("09:45").TimeOfDay;
-                SessionEnd = DateTime.Parse("16:05").TimeOfDay;
-                NoTradesAfter = DateTime.Parse("14:55").TimeOfDay;
+                SessionEnd = DateTime.Parse("16:00").TimeOfDay;
+                NoTradesAfter = DateTime.Parse("15:05").TimeOfDay;
                 
                 // ===== M. Skip Times =====
                 SkipStart = DateTime.Parse("00:00").TimeOfDay;
@@ -558,7 +584,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 PreMarketStart = DateTime.Parse("06:00").TimeOfDay;
                 PreMarketEnd = DateTime.Parse("09:30").TimeOfDay;
 
-                UseNewsSkip = true;
+                UseNewsSkip = false;
                 NewsBlockMinutes = 1;
 
                 WebhookUrl = string.Empty;
@@ -585,6 +611,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 skipEndTime = SkipEnd;
                 preMarketStartTime = PreMarketStart;
                 preMarketEndTime = PreMarketEnd;
+                // ATR on primary 1m series — with pre-market data loading from 06:00
+                // there are 200+ bars available by OR time (09:45), ATR(30) is fully warm.
+                atrIndicator = ATR(AtrPeriod);
             }
             else if (State == State.DataLoaded)
             {
@@ -674,6 +703,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = L1_StopLossPercent;
                     p.StopLossTicks = L1_StopLossTicks;
                     p.MaxStopLossTicks = L1_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = L1_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = L1_AtrTPHighPercent;
                     p.UseTrailingStop = L1_UseTrailingStop;
                     p.TrailStopPercent = L1_TrailStopPercent;
                     p.TrailActivationPercent = L1_TrailActivationPercent;
@@ -706,6 +737,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = L2_StopLossPercent;
                     p.StopLossTicks = L2_StopLossTicks;
                     p.MaxStopLossTicks = L2_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = L2_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = L2_AtrTPHighPercent;
                     p.UseTrailingStop = L2_UseTrailingStop;
                     p.TrailStopPercent = L2_TrailStopPercent;
                     p.TrailActivationPercent = L2_TrailActivationPercent;
@@ -738,6 +771,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = L3_StopLossPercent;
                     p.StopLossTicks = L3_StopLossTicks;
                     p.MaxStopLossTicks = L3_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = L3_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = L3_AtrTPHighPercent;
                     p.UseTrailingStop = L3_UseTrailingStop;
                     p.TrailStopPercent = L3_TrailStopPercent;
                     p.TrailActivationPercent = L3_TrailActivationPercent;
@@ -770,6 +805,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = L4_StopLossPercent;
                     p.StopLossTicks = L4_StopLossTicks;
                     p.MaxStopLossTicks = L4_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = L4_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = L4_AtrTPHighPercent;
                     p.UseTrailingStop = L4_UseTrailingStop;
                     p.TrailStopPercent = L4_TrailStopPercent;
                     p.TrailActivationPercent = L4_TrailActivationPercent;
@@ -811,6 +848,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = S1_StopLossPercent;
                     p.StopLossTicks = S1_StopLossTicks;
                     p.MaxStopLossTicks = S1_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = S1_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = S1_AtrTPHighPercent;
                     p.UseTrailingStop = S1_UseTrailingStop;
                     p.TrailStopPercent = S1_TrailStopPercent;
                     p.TrailActivationPercent = S1_TrailActivationPercent;
@@ -843,6 +882,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = S2_StopLossPercent;
                     p.StopLossTicks = S2_StopLossTicks;
                     p.MaxStopLossTicks = S2_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = S2_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = S2_AtrTPHighPercent;
                     p.UseTrailingStop = S2_UseTrailingStop;
                     p.TrailStopPercent = S2_TrailStopPercent;
                     p.TrailActivationPercent = S2_TrailActivationPercent;
@@ -875,6 +916,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = S3_StopLossPercent;
                     p.StopLossTicks = S3_StopLossTicks;
                     p.MaxStopLossTicks = S3_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = S3_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = S3_AtrTPHighPercent;
                     p.UseTrailingStop = S3_UseTrailingStop;
                     p.TrailStopPercent = S3_TrailStopPercent;
                     p.TrailActivationPercent = S3_TrailActivationPercent;
@@ -907,6 +950,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     p.StopLossPercent = S4_StopLossPercent;
                     p.StopLossTicks = S4_StopLossTicks;
                     p.MaxStopLossTicks = S4_MaxStopLossTicks;
+                    p.AtrTPThresholdTicks = S4_AtrTPThresholdTicks;
+                    p.AtrTPHighPercent = S4_AtrTPHighPercent;
                     p.UseTrailingStop = S4_UseTrailingStop;
                     p.TrailStopPercent = S4_TrailStopPercent;
                     p.TrailActivationPercent = S4_TrailActivationPercent;
@@ -1017,6 +1062,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             DebugPrint($"NO SHORT BUCKET matched for {orSizeInTicks:F0} ticks");
                     }
                     
+                    // Resolve ATR-based TP percents once — locked for the whole session
+                    ResolveAtrTPPercents();
                     DrawORRange();
                 }
             }
@@ -1112,7 +1159,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Draw.Line(this, "LongEntry_" + d, false, t0, entryLvl, t1, entryLvl, Brushes.Orange, DashStyleHelper.Dash, 1);
                 if (ShowTargetLines)
                 {
-                    double tp = activeLongBucket.TPMode == TargetMode.FixedTicks ? activeLongBucket.TakeProfitTicks * TickSize : orRange * (activeLongBucket.TakeProfitPercent / 100.0);
+                    double resolvedLPct = resolvedLongTPPercent > 0 ? resolvedLongTPPercent : activeLongBucket.TakeProfitPercent;
+                    double tp = activeLongBucket.TPMode == TargetMode.FixedTicks ? activeLongBucket.TakeProfitTicks * TickSize : orRange * (resolvedLPct / 100.0);
                     Draw.Line(this, "LongTarget_" + d, false, t0, entryLvl + tp, t1, entryLvl + tp, Brushes.DodgerBlue, DashStyleHelper.Dash, 1);
                 }
                 if (ShowStopLines)
@@ -1130,7 +1178,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     Draw.Line(this, "ShortEntry_" + d, false, t0, entryLvl, t1, entryLvl, Brushes.Orange, DashStyleHelper.Dash, 1);
                 if (ShowTargetLines)
                 {
-                    double tp = activeShortBucket.TPMode == TargetMode.FixedTicks ? activeShortBucket.TakeProfitTicks * TickSize : orRange * (activeShortBucket.TakeProfitPercent / 100.0);
+                    double resolvedSPct = resolvedShortTPPercent > 0 ? resolvedShortTPPercent : activeShortBucket.TakeProfitPercent;
+                    double tp = activeShortBucket.TPMode == TargetMode.FixedTicks ? activeShortBucket.TakeProfitTicks * TickSize : orRange * (resolvedSPct / 100.0);
                     Draw.Line(this, "ShortTarget_" + d, false, t0, entryLvl - tp, t1, entryLvl - tp, Brushes.DodgerBlue, DashStyleHelper.Dash, 1);
                 }
                 if (ShowStopLines)
@@ -1657,6 +1706,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        // Called once at OR formation time — reads ATR and locks the correct TP % for both directions.
+        // Uses Long bucket TakeProfitPercent as the Low-ATR value (same as original).
+        // When threshold=0, ATR filter is off and Low multiple is always used.
+        private void ResolveAtrTPPercents()
+        {
+            // ATR on primary 1m series — pre-market data guarantees 200+ bars by OR time (09:45)
+            // CurrentBar >> AtrPeriod at this point so ATR is fully warm.
+            double atrValue = (atrIndicator != null && CurrentBar >= AtrPeriod)
+                ? atrIndicator[0]
+                : 0.0;
+            int atrTicks = atrValue > 0 ? (int)Math.Round(atrValue / TickSize) : 0;
+
+            // Long bucket
+            if (longBucketFound && activeLongBucket.TPMode == TargetMode.PercentOfOR
+                && activeLongBucket.AtrTPThresholdTicks > 0 && atrTicks > 0)
+            {
+                resolvedLongTPPercent = atrTicks < activeLongBucket.AtrTPThresholdTicks
+                    ? activeLongBucket.TakeProfitPercent      // Low ATR
+                    : activeLongBucket.AtrTPHighPercent;      // High ATR
+                if (DebugMode)
+                    DebugPrint($"ATR TP LONG resolved: ATR={atrTicks}t threshold={activeLongBucket.AtrTPThresholdTicks}t -> {resolvedLongTPPercent:F2}% of OR");
+            }
+            else
+            {
+                resolvedLongTPPercent = longBucketFound ? activeLongBucket.TakeProfitPercent : 0;
+                if (DebugMode && longBucketFound)
+                    DebugPrint($"ATR TP LONG: threshold=0 or ATR unavailable, using {resolvedLongTPPercent:F2}% of OR");
+            }
+
+            // Short bucket
+            if (shortBucketFound && activeShortBucket.TPMode == TargetMode.PercentOfOR
+                && activeShortBucket.AtrTPThresholdTicks > 0 && atrTicks > 0)
+            {
+                resolvedShortTPPercent = atrTicks < activeShortBucket.AtrTPThresholdTicks
+                    ? activeShortBucket.TakeProfitPercent
+                    : activeShortBucket.AtrTPHighPercent;
+                if (DebugMode)
+                    DebugPrint($"ATR TP SHORT resolved: ATR={atrTicks}t threshold={activeShortBucket.AtrTPThresholdTicks}t -> {resolvedShortTPPercent:F2}% of OR");
+            }
+            else
+            {
+                resolvedShortTPPercent = shortBucketFound ? activeShortBucket.TakeProfitPercent : 0;
+                if (DebugMode && shortBucketFound)
+                    DebugPrint($"ATR TP SHORT: threshold=0 or ATR unavailable, using {resolvedShortTPPercent:F2}% of OR");
+            }
+        }
+
         private bool TryBuildInitialStopAndTargetPrices(bool isLong, double baseEntryPrice, bool clampToMarket, out double stopPx, out double tpPx)
         {
             stopPx = 0;
@@ -1669,13 +1765,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (Position.MarketPosition == MarketPosition.Short && isLong) isLong = false;
 
             BucketParams bp = isLong ? activeLongBucket : activeShortBucket;
-            double profitDist = bp.TPMode == TargetMode.FixedTicks ? bp.TakeProfitTicks * TickSize : orRange * (bp.TakeProfitPercent / 100.0);
+
+            // === ATR-based TP resolution ===
+            // resolvedLongTPPercent / resolvedShortTPPercent are locked at OR formation time.
+            // When AtrTPThresholdTicks = 0, they equal TakeProfitPercent (no change in behaviour).
+            double resolvedTPPercent = isLong ? resolvedLongTPPercent : resolvedShortTPPercent;
+            // If not yet resolved (e.g. first bar edge case), fall back to TakeProfitPercent
+            if (resolvedTPPercent <= 0) resolvedTPPercent = bp.TakeProfitPercent;
+
+            double profitDist = bp.TPMode == TargetMode.FixedTicks
+                ? bp.TakeProfitTicks * TickSize
+                : orRange * (resolvedTPPercent / 100.0);
+
             double stopDist = bp.SLMode == TargetMode.FixedTicks ? bp.StopLossTicks * TickSize : orRange * (bp.StopLossPercent / 100.0);
 
+            // === Max SL Clamp ===
+            // If calculated SL distance exceeds MaxStopLossTicks, clamp it.
+            // Trade still enters (clamp only — no skip).
             if (bp.MaxStopLossTicks > 0)
             {
                 double maxStop = bp.MaxStopLossTicks * TickSize;
-                if (stopDist > maxStop) stopDist = maxStop;
+                if (stopDist > maxStop)
+                {
+                    if (DebugMode)
+                        DebugPrint($"*** MAX SL CLAMP {(isLong ? "LONG" : "SHORT")} *** raw={stopDist / TickSize:F0}t clamped={bp.MaxStopLossTicks}t");
+                    stopDist = maxStop;
+                }
             }
 
             if (isLong)
@@ -1859,6 +1974,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 wasInNoTradesAfterWindow = false; wasInSkipWindow = false; wasInNewsSkipWindow = false;
                 tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
                 sessionRealizedPnL = 0; sessionProfitLimitHit = false; sessionLossLimitHit = false;
+                resolvedLongTPPercent = 0; resolvedShortTPPercent = 0;
                 if (DebugMode) DebugPrint($"========== NEW DAY: {Time[0].Date:yyyy-MM-dd} ==========");
             }
         }
@@ -3068,6 +3184,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Debug Mode", Order = 6, GroupName = "A. General")]
         public bool DebugMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "ATR Period", Description = "Period for ATR indicator used by ATR-based TP mode (applied on 1m bars).", Order = 7, GroupName = "A. General")]
+        public int AtrPeriod { get; set; }
         
         // ==========================================
         // ===== B. Long Bucket 1 =====
@@ -3124,92 +3245,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "B. Long Bucket 1")]
         public double L1_TakeProfitPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "B. Long Bucket 1")]
+        public int L1_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "B. Long Bucket 1")]
+        public double L1_AtrTPHighPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "B. Long Bucket 1")]
         public int L1_TakeProfitTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "B. Long Bucket 1")]
         public TargetMode L1_SLMode { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "B. Long Bucket 1")]
         public double L1_StopLossPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "B. Long Bucket 1")]
         public int L1_StopLossTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "B. Long Bucket 1")]
         public int L1_MaxStopLossTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "B. Long Bucket 1")]
         public bool L1_UseTrailingStop { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "B. Long Bucket 1")]
         public double L1_TrailStopPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "B. Long Bucket 1")]
         public double L1_TrailActivationPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "B. Long Bucket 1")]
         public int L1_TrailStepTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "B. Long Bucket 1")]
         public bool L1_TrailLockOREnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "B. Long Bucket 1")]
         public double L1_TrailLockORPercent { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "B. Long Bucket 1")]
         public bool L1_TrailLockTicksEnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "B. Long Bucket 1")]
         public int L1_TrailLockTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "B. Long Bucket 1")]
         public bool L1_UseBreakeven { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "B. Long Bucket 1")]
         public int L1_BreakevenTriggerPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "B. Long Bucket 1")]
         public int L1_BreakevenOffsetTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "B. Long Bucket 1")]
         public int L1_MaxBarsInTrade { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "B. Long Bucket 1")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "B. Long Bucket 1")]
         public int L1_MaxTradesPerDay { get; set; }
         
         // ==========================================
@@ -3267,92 +3398,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "C. Long Bucket 2")]
         public double L2_TakeProfitPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "C. Long Bucket 2")]
+        public int L2_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "C. Long Bucket 2")]
+        public double L2_AtrTPHighPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "C. Long Bucket 2")]
         public int L2_TakeProfitTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "C. Long Bucket 2")]
         public TargetMode L2_SLMode { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "C. Long Bucket 2")]
         public double L2_StopLossPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "C. Long Bucket 2")]
         public int L2_StopLossTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "C. Long Bucket 2")]
         public int L2_MaxStopLossTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "C. Long Bucket 2")]
         public bool L2_UseTrailingStop { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "C. Long Bucket 2")]
         public double L2_TrailStopPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "C. Long Bucket 2")]
         public double L2_TrailActivationPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "C. Long Bucket 2")]
         public int L2_TrailStepTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "C. Long Bucket 2")]
         public bool L2_TrailLockOREnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "C. Long Bucket 2")]
         public double L2_TrailLockORPercent { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "C. Long Bucket 2")]
         public bool L2_TrailLockTicksEnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "C. Long Bucket 2")]
         public int L2_TrailLockTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "C. Long Bucket 2")]
         public bool L2_UseBreakeven { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "C. Long Bucket 2")]
         public int L2_BreakevenTriggerPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "C. Long Bucket 2")]
         public int L2_BreakevenOffsetTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "C. Long Bucket 2")]
         public int L2_MaxBarsInTrade { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "C. Long Bucket 2")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "C. Long Bucket 2")]
         public int L2_MaxTradesPerDay { get; set; }
         
         // ==========================================
@@ -3410,92 +3551,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "D. Long Bucket 3")]
         public double L3_TakeProfitPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "D. Long Bucket 3")]
+        public int L3_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "D. Long Bucket 3")]
+        public double L3_AtrTPHighPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "D. Long Bucket 3")]
         public int L3_TakeProfitTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "D. Long Bucket 3")]
         public TargetMode L3_SLMode { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "D. Long Bucket 3")]
         public double L3_StopLossPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "D. Long Bucket 3")]
         public int L3_StopLossTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "D. Long Bucket 3")]
         public int L3_MaxStopLossTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "D. Long Bucket 3")]
         public bool L3_UseTrailingStop { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "D. Long Bucket 3")]
         public double L3_TrailStopPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "D. Long Bucket 3")]
         public double L3_TrailActivationPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "D. Long Bucket 3")]
         public int L3_TrailStepTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "D. Long Bucket 3")]
         public bool L3_TrailLockOREnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "D. Long Bucket 3")]
         public double L3_TrailLockORPercent { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "D. Long Bucket 3")]
         public bool L3_TrailLockTicksEnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "D. Long Bucket 3")]
         public int L3_TrailLockTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "D. Long Bucket 3")]
         public bool L3_UseBreakeven { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "D. Long Bucket 3")]
         public int L3_BreakevenTriggerPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "D. Long Bucket 3")]
         public int L3_BreakevenOffsetTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "D. Long Bucket 3")]
         public int L3_MaxBarsInTrade { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "D. Long Bucket 3")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "D. Long Bucket 3")]
         public int L3_MaxTradesPerDay { get; set; }
         
         // ==========================================
@@ -3553,92 +3704,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "E. Long Bucket 4")]
         public double L4_TakeProfitPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "E. Long Bucket 4")]
+        public int L4_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "E. Long Bucket 4")]
+        public double L4_AtrTPHighPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "E. Long Bucket 4")]
         public int L4_TakeProfitTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "E. Long Bucket 4")]
         public TargetMode L4_SLMode { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "E. Long Bucket 4")]
         public double L4_StopLossPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "E. Long Bucket 4")]
         public int L4_StopLossTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "E. Long Bucket 4")]
         public int L4_MaxStopLossTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "E. Long Bucket 4")]
         public bool L4_UseTrailingStop { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "E. Long Bucket 4")]
         public double L4_TrailStopPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "E. Long Bucket 4")]
         public double L4_TrailActivationPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "E. Long Bucket 4")]
         public int L4_TrailStepTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "E. Long Bucket 4")]
         public bool L4_TrailLockOREnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "E. Long Bucket 4")]
         public double L4_TrailLockORPercent { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "E. Long Bucket 4")]
         public bool L4_TrailLockTicksEnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "E. Long Bucket 4")]
         public int L4_TrailLockTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "E. Long Bucket 4")]
         public bool L4_UseBreakeven { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "E. Long Bucket 4")]
         public int L4_BreakevenTriggerPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "E. Long Bucket 4")]
         public int L4_BreakevenOffsetTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "E. Long Bucket 4")]
         public int L4_MaxBarsInTrade { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "E. Long Bucket 4")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "E. Long Bucket 4")]
         public int L4_MaxTradesPerDay { get; set; }
         
         // ==========================================
@@ -3696,92 +3857,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "F. Short Bucket 1")]
         public double S1_TakeProfitPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "F. Short Bucket 1")]
+        public int S1_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "F. Short Bucket 1")]
+        public double S1_AtrTPHighPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "F. Short Bucket 1")]
         public int S1_TakeProfitTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "F. Short Bucket 1")]
         public TargetMode S1_SLMode { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "F. Short Bucket 1")]
         public double S1_StopLossPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "F. Short Bucket 1")]
         public int S1_StopLossTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "F. Short Bucket 1")]
         public int S1_MaxStopLossTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "F. Short Bucket 1")]
         public bool S1_UseTrailingStop { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "F. Short Bucket 1")]
         public double S1_TrailStopPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "F. Short Bucket 1")]
         public double S1_TrailActivationPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "F. Short Bucket 1")]
         public int S1_TrailStepTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "F. Short Bucket 1")]
         public bool S1_TrailLockOREnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "F. Short Bucket 1")]
         public double S1_TrailLockORPercent { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "F. Short Bucket 1")]
         public bool S1_TrailLockTicksEnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "F. Short Bucket 1")]
         public int S1_TrailLockTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "F. Short Bucket 1")]
         public bool S1_UseBreakeven { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "F. Short Bucket 1")]
         public int S1_BreakevenTriggerPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "F. Short Bucket 1")]
         public int S1_BreakevenOffsetTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "F. Short Bucket 1")]
         public int S1_MaxBarsInTrade { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "F. Short Bucket 1")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "F. Short Bucket 1")]
         public int S1_MaxTradesPerDay { get; set; }
         
         // ==========================================
@@ -3839,92 +4010,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "G. Short Bucket 2")]
         public double S2_TakeProfitPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "G. Short Bucket 2")]
+        public int S2_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "G. Short Bucket 2")]
+        public double S2_AtrTPHighPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "G. Short Bucket 2")]
         public int S2_TakeProfitTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "G. Short Bucket 2")]
         public TargetMode S2_SLMode { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "G. Short Bucket 2")]
         public double S2_StopLossPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "G. Short Bucket 2")]
         public int S2_StopLossTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "G. Short Bucket 2")]
         public int S2_MaxStopLossTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "G. Short Bucket 2")]
         public bool S2_UseTrailingStop { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "G. Short Bucket 2")]
         public double S2_TrailStopPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "G. Short Bucket 2")]
         public double S2_TrailActivationPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "G. Short Bucket 2")]
         public int S2_TrailStepTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "G. Short Bucket 2")]
         public bool S2_TrailLockOREnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "G. Short Bucket 2")]
         public double S2_TrailLockORPercent { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "G. Short Bucket 2")]
         public bool S2_TrailLockTicksEnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "G. Short Bucket 2")]
         public int S2_TrailLockTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "G. Short Bucket 2")]
         public bool S2_UseBreakeven { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "G. Short Bucket 2")]
         public int S2_BreakevenTriggerPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "G. Short Bucket 2")]
         public int S2_BreakevenOffsetTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "G. Short Bucket 2")]
         public int S2_MaxBarsInTrade { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "G. Short Bucket 2")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "G. Short Bucket 2")]
         public int S2_MaxTradesPerDay { get; set; }
         
         // ==========================================
@@ -3982,92 +4163,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "H. Short Bucket 3")]
         public double S3_TakeProfitPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "H. Short Bucket 3")]
+        public int S3_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "H. Short Bucket 3")]
+        public double S3_AtrTPHighPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "H. Short Bucket 3")]
         public int S3_TakeProfitTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "H. Short Bucket 3")]
         public TargetMode S3_SLMode { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "H. Short Bucket 3")]
         public double S3_StopLossPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "H. Short Bucket 3")]
         public int S3_StopLossTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "H. Short Bucket 3")]
         public int S3_MaxStopLossTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "H. Short Bucket 3")]
         public bool S3_UseTrailingStop { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "H. Short Bucket 3")]
         public double S3_TrailStopPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "H. Short Bucket 3")]
         public double S3_TrailActivationPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "H. Short Bucket 3")]
         public int S3_TrailStepTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "H. Short Bucket 3")]
         public bool S3_TrailLockOREnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "H. Short Bucket 3")]
         public double S3_TrailLockORPercent { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "H. Short Bucket 3")]
         public bool S3_TrailLockTicksEnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "H. Short Bucket 3")]
         public int S3_TrailLockTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "H. Short Bucket 3")]
         public bool S3_UseBreakeven { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "H. Short Bucket 3")]
         public int S3_BreakevenTriggerPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "H. Short Bucket 3")]
         public int S3_BreakevenOffsetTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "H. Short Bucket 3")]
         public int S3_MaxBarsInTrade { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "H. Short Bucket 3")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "H. Short Bucket 3")]
         public int S3_MaxTradesPerDay { get; set; }
         
         // ==========================================
@@ -4125,92 +4316,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Take Profit % of OR", Order = 12, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Take Profit % of OR (Low ATR)", Description = "TP as % of OR when ATR < threshold, or always when ATR TP Threshold = 0.", Order = 12, GroupName = "I. Short Bucket 4")]
         public double S4_TakeProfitPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2000)]
+        [Display(Name = "ATR TP Threshold (Ticks, 0=off)", Description = "ATR-based TP mode: if ATR in ticks is below this value, use Low ATR target; if at or above, use High ATR target. 0=disabled.", Order = 13, GroupName = "I. Short Bucket 4")]
+        public int S4_AtrTPThresholdTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 2000)]
+        [Display(Name = "Take Profit % of OR (High ATR)", Description = "TP as % of OR when ATR >= threshold. Ignored when threshold = 0.", Order = 14, GroupName = "I. Short Bucket 4")]
+        public double S4_AtrTPHighPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Take Profit (Ticks)", Order = 13, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Take Profit (Ticks)", Order = 15, GroupName = "I. Short Bucket 4")]
         public int S4_TakeProfitTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "SL Mode", Order = 14, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "SL Mode", Order = 16, GroupName = "I. Short Bucket 4")]
         public TargetMode S4_SLMode { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Stop Loss % of OR", Order = 15, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Stop Loss % of OR", Order = 17, GroupName = "I. Short Bucket 4")]
         public double S4_StopLossPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Stop Loss (Ticks)", Order = 16, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Stop Loss (Ticks)", Order = 18, GroupName = "I. Short Bucket 4")]
         public int S4_StopLossTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 10000)]
-        [Display(Name = "Max Stop Loss (Ticks)", Order = 17, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Max Stop Loss (Ticks)", Order = 19, GroupName = "I. Short Bucket 4")]
         public int S4_MaxStopLossTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 18, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Use Trailing Stop", Description = "Trail the stop loss behind price. Trailing stops when BE trigger fires.", Order = 20, GroupName = "I. Short Bucket 4")]
         public bool S4_UseTrailingStop { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 19, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Stop % of OR", Description = "Trailing distance as percentage of Opening Range.", Order = 21, GroupName = "I. Short Bucket 4")]
         public double S4_TrailStopPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 20, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Activation (% of OR)", Description = "Trail starts moving only after profit reaches this % of OR. 0 = immediate.", Order = 22, GroupName = "I. Short Bucket 4")]
         public double S4_TrailActivationPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 21, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Step (Ticks)", Description = "Trail moves in discrete increments of this size. 0 = continuous.", Order = 23, GroupName = "I. Short Bucket 4")]
         public int S4_TrailStepTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 22, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Lock Trail at % of OR", Description = "Freeze the trailing stop when profit reaches the specified % of OR.", Order = 24, GroupName = "I. Short Bucket 4")]
         public bool S4_TrailLockOREnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(0.01, 500)]
-        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 23, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Lock (% of OR)", Description = "Profit threshold in % of OR at which the trail freezes.", Order = 25, GroupName = "I. Short Bucket 4")]
         public double S4_TrailLockORPercent { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 24, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Lock Trail at Ticks", Description = "Freeze the trailing stop when profit reaches Entry + specified ticks.", Order = 26, GroupName = "I. Short Bucket 4")]
         public bool S4_TrailLockTicksEnabled { get; set; }
         
         [NinjaScriptProperty]
         [Range(1, 10000)]
-        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 25, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Trail Lock (Ticks)", Description = "Profit threshold in ticks from entry at which the trail freezes.", Order = 27, GroupName = "I. Short Bucket 4")]
         public int S4_TrailLockTicks { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 26, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Use Breakeven", Description = "Enable breakeven stop adjustment when profit threshold is reached.", Order = 28, GroupName = "I. Short Bucket 4")]
         public bool S4_UseBreakeven { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "BE Trigger % of OR", Order = 27, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "BE Trigger % of OR", Order = 29, GroupName = "I. Short Bucket 4")]
         public int S4_BreakevenTriggerPercent { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 50)]
-        [Display(Name = "BE Offset (Ticks)", Order = 28, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "BE Offset (Ticks)", Order = 30, GroupName = "I. Short Bucket 4")]
         public int S4_BreakevenOffsetTicks { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 500)]
-        [Display(Name = "Max Bars In Trade", Order = 29, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Max Bars In Trade", Order = 31, GroupName = "I. Short Bucket 4")]
         public int S4_MaxBarsInTrade { get; set; }
         
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "Max Trades/Day", Order = 30, GroupName = "I. Short Bucket 4")]
+        [Display(Name = "Max Trades/Day", Order = 32, GroupName = "I. Short Bucket 4")]
         public int S4_MaxTradesPerDay { get; set; }
         
 
