@@ -387,9 +387,7 @@
     <Compile Include="Strategies\WickTest.cs" />
     <Compile Include="obj\x64\Debug\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
     <Compile Include="NinjaTrader.Vendor.cs" />
-    <Compile Include="OpenEdgeBotV7.cs" />
     <Compile Include="VendorLicensing.cs" />
-    <Compile Include="XBotModel1V18.cs" />
     <Compile Include="Strategies\Heiken.cs" />
     <Compile Include="Strategies\H1M5.cs" />
     <Compile Include="Indicators\VixBingHttpTest.cs" />
@@ -399,7 +397,6 @@
     <Compile Include="Strategies\DMoney.cs" />
     <Compile Include="Strategies\EMA2.cs" />
     <Compile Include="Strategies\EMALimitStrategy.cs" />
-    <Compile Include="Strategies\AutoEdgeTemplate.cs" />
     <Compile Include="Strategies\MultiBot\MultiBotContext.cs" />
     <Compile Include="Strategies\MultiBot\IMultiBotEngine.cs" />
     <Compile Include="Strategies\MultiBot\OrboEngine.cs" />
@@ -409,9 +406,7 @@
     <Compile Include="Strategies\ADAMTesting.cs" />
     <Compile Include="Strategies\Duo.cs" />
     <Compile Include="Strategies\DuoEMA.cs" />
-    <Compile Include="Strategies\DuoTesting.cs" />
     <Compile Include="Strategies\DuoTesting3.cs" />
-    <Compile Include="Strategies\ORBO.cs" />
     <Compile Include="Strategies\ORBOTesting.cs" />
     <Compile Include="Strategies\MultiBot\DuoEngine.cs" />
     <Compile Include="Strategies\MultiBot\TradeIntent.cs" />
@@ -422,8 +417,21 @@
     <Compile Include="Strategies\MultiBot\DuoLogicCore.cs" />
     <Compile Include="Strategies\ADAM.cs" />
     <Compile Include="Strategies\TradeMessenger.cs" />
-    <Compile Include="Strategies\EVETesting.cs" />
     <Compile Include="Strategies\MICHTesting.cs" />
+    <Compile Include="Indicators\ChartAutoReload.cs" />
+    <Compile Include="Indicators\CHARTFORCER.cs" />
+    <Compile Include="Strategies\LeppOpen.cs" />
+    <Compile Include="Strategies\MICH.cs" />
+    <Compile Include="Strategies\EVE.cs" />
+    <Compile Include="Strategies\EVETesting.cs" />
+    <Compile Include="Strategies\ORBO.cs" />
+    <Compile Include="Strategies\ORBOib.cs" />
+    <Compile Include="Strategies\ORBOibTesting.cs" />
+    <Compile Include="AddOns\NRDToCSV.cs" />
+    <Compile Include="Strategies\HUGO.cs" />
+    <Compile Include="Strategies\DuoTesting.cs" />
+    <Compile Include="Strategies\HUGOTesting.cs" />
+    <Compile Include="Indicators\DUOAtrVisual.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">
