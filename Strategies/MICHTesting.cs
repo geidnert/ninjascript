@@ -478,7 +478,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SessionStartTime                = DateTime.Parse("18:00", System.Globalization.CultureInfo.InvariantCulture);
                 UseNewsSkip                     = false;
                 NewsBlockMinutes                = 1;
-                FlattenOnBlockedWindowTransition = true;
+                FlattenOnBlockedWindowTransition = false;
                 DebugLogging                    = true;
                 MaxAccountBalance               = 0.0;
                 UseWebhooks                     = false;
