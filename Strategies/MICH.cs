@@ -1928,8 +1928,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (heartbeatReporter != null)
                     heartbeatReporter.Start();
 
-                if (UseWebhooks)
-                    RunProjectXStartupPreflight();
+                RunProjectXStartupPreflight();
             }
             else if (State == State.Terminated)
             {
@@ -5108,6 +5107,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 originalStopPrice = slPrice;
+                string entryWebhookAction;
+                bool isMarketEntry;
+                if (TryGetEntryWebhookAction(execution, out entryWebhookAction, out isMarketEntry))
+                {
+                    bool entryWebhookSent = SendWebhook(entryWebhookAction, tradeEntryPrice, tpPrice, slPrice, isMarketEntry, executionQty);
+                    if (WebhookProviderType == WebhookProvider.ProjectX && entryWebhookSent)
+                    {
+                        projectXLastSyncedStopPrice = RoundToInstrumentTick(slPrice);
+                        projectXLastSyncedTargetPrice = RoundToInstrumentTick(tpPrice);
+                    }
+                }
+
                 // ── R-Multiple trail initialisation ──
                 rMultipleSlSize      = Math.Abs(tradeEntryPrice - slPrice);
                 rMultipleBestPrice   = tradeEntryPrice;
@@ -5311,7 +5322,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void TrySyncProjectXProtectiveOrder(Order order, double limitPrice, double stopPrice, OrderState orderState)
         {
-            if (!UseWebhooks || State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
+            if (State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
                 return;
             if (order == null || Position.MarketPosition == MarketPosition.Flat)
                 return;
@@ -5537,7 +5548,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
         {
-            if (!UseWebhooks || State != State.Realtime)
+            if (State != State.Realtime)
                 return false;
 
             if (WebhookProviderType == WebhookProvider.ProjectX)
@@ -7152,13 +7163,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (plannedSlPrice <= plannedEntryPrice)
                     plannedSlPrice = plannedEntryPrice + 4 * TickSize;
                 plannedSlPrice = ClampStopToMAEForEntryPrice(plannedSlPrice, false, plannedEntryPrice);
-            }
-
-            bool webhookSent = SendWebhook(direction == 1 ? "buy" : "sell", plannedEntryPrice, plannedTpPrice, plannedSlPrice, useMarketEntry, contracts);
-            if (webhookSent && WebhookProviderType == WebhookProvider.ProjectX)
-            {
-                projectXLastSyncedStopPrice = RoundToInstrumentTick(plannedSlPrice);
-                projectXLastSyncedTargetPrice = RoundToInstrumentTick(plannedTpPrice);
             }
 
             if (entryMode == MichalEntryMode.Market)
