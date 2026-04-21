@@ -174,6 +174,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double newYork3AdxMinSlopePoints;
         private TimeZoneInfo targetTimeZone;
         private TimeZoneInfo londonTimeZone;
+        private TimeZoneInfo newYorkTimeZone;
         private StrategyHeartbeatReporter heartbeatReporter;
 
         private bool asiaSessionClosed;
@@ -318,226 +319,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SessionSlot.NewYork3
         };
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
-        private static readonly string NewsDatesRaw =
-@"2025-01-02,08:30
-2025-01-08,08:30
-2025-01-08,14:00
-2025-01-10,08:30
-2025-01-14,08:30
-2025-01-15,08:30
-2025-01-16,08:30
-2025-01-23,08:30
-2025-01-29,14:00
-2025-01-30,08:30
-2025-01-31,08:30
-2025-02-06,08:30
-2025-02-07,08:30
-2025-02-12,08:30
-2025-02-13,08:30
-2025-02-14,08:30
-2025-02-19,14:00
-2025-02-20,08:30
-2025-02-27,08:30
-2025-02-28,08:30
-2025-03-06,08:30
-2025-03-07,08:30
-2025-03-12,08:30
-2025-03-13,08:30
-2025-03-17,08:30
-2025-03-19,14:00
-2025-03-20,08:30
-2025-03-27,08:30
-2025-03-28,08:30
-2025-04-03,08:30
-2025-04-04,08:30
-2025-04-09,14:00
-2025-04-10,08:30
-2025-04-11,08:30
-2025-04-16,08:30
-2025-04-17,08:30
-2025-04-24,08:30
-2025-04-30,08:30
-2025-05-01,08:30
-2025-05-02,08:30
-2025-05-07,14:00
-2025-05-08,08:30
-2025-05-13,08:30
-2025-05-15,08:30
-2025-05-22,08:30
-2025-05-28,14:00
-2025-05-29,08:30
-2025-05-30,08:30
-2025-06-05,08:30
-2025-06-06,08:30
-2025-06-11,08:30
-2025-06-12,08:30
-2025-06-17,08:30
-2025-06-18,08:30
-2025-06-18,14:00
-2025-06-26,08:30
-2025-06-27,08:30
-2025-07-03,08:30
-2025-07-09,14:00
-2025-07-10,08:30
-2025-07-15,08:30
-2025-07-16,08:30
-2025-07-17,08:30
-2025-07-24,08:30
-2025-07-30,08:30
-2025-07-30,14:00
-2025-07-31,08:30
-2025-08-01,08:30
-2025-08-07,08:30
-2025-08-12,08:30
-2025-08-14,08:30
-2025-08-15,08:30
-2025-08-20,14:00
-2025-08-21,08:30
-2025-08-28,08:30
-2025-08-29,08:30
-2025-09-04,08:30
-2025-09-05,08:30
-2025-09-10,08:30
-2025-09-11,08:30
-2025-09-16,08:30
-2025-09-17,14:00
-2025-09-18,08:30
-2025-09-25,08:30
-2025-09-26,08:30
-2025-10-08,14:00
-2025-10-24,08:30
-2025-10-29,14:00
-2025-11-19,14:00
-2025-11-20,08:30
-2025-11-25,08:30
-2025-11-26,08:30
-2025-12-04,08:30
-2025-12-10,08:30
-2025-12-10,14:00
-2025-12-11,08:30
-2025-12-16,08:30
-2025-12-18,08:30
-2025-12-23,08:30
-2025-12-24,08:30
-2025-12-30,14:00
-2025-12-31,08:30
-2026-01-08,08:30
-2026-01-09,08:30
-2026-01-13,08:30
-2026-01-14,08:30
-2026-01-15,08:30
-2026-01-21,08:30
-2026-01-22,08:30
-2026-01-28,14:00
-2026-01-29,08:30
-2026-01-30,08:30
-2026-02-05,08:30
-2026-02-10,08:30
-2026-02-11,08:30
-2026-02-12,08:30
-2026-02-13,08:30
-2026-02-18,14:00
-2026-02-19,08:30
-2026-02-20,08:30
-2026-02-26,08:30
-2026-02-27,08:30
-2026-03-05,08:30
-2026-03-06,08:30
-2026-03-11,08:30
-2026-03-12,08:30
-2026-03-13,08:30
-2026-03-16,08:30
-2026-03-18,08:30
-2026-03-18,14:00
-2026-03-19,08:30
-2026-03-26,08:30
-2026-04-02,08:30
-2026-04-03,08:30
-2026-04-08,14:00
-2026-04-09,08:30
-2026-04-10,08:30
-2026-04-14,08:30
-2026-04-16,08:30
-2026-04-23,08:30
-2026-04-29,14:00
-2026-04-30,08:30
-2026-05-07,08:30
-2026-05-08,08:30
-2026-05-12,08:30
-2026-05-13,08:30
-2026-05-14,08:30
-2026-05-20,14:00
-2026-05-21,08:30
-2026-05-28,08:30
-2026-06-04,08:30
-2026-06-05,08:30
-2026-06-10,08:30
-2026-06-11,08:30
-2026-06-17,08:30
-2026-06-17,14:00
-2026-06-18,08:30
-2026-06-25,08:30
-2026-07-02,08:30
-2026-07-08,14:00
-2026-07-09,08:30
-2026-07-14,08:30
-2026-07-15,08:30
-2026-07-16,08:30
-2026-07-23,08:30
-2026-07-29,14:00
-2026-07-30,08:30
-2026-07-31,08:30
-2026-08-06,08:30
-2026-08-07,08:30
-2026-08-12,08:30
-2026-08-13,08:30
-2026-08-14,08:30
-2026-08-19,14:00
-2026-08-20,08:30
-2026-08-26,08:30
-2026-08-27,08:30
-2026-09-03,08:30
-2026-09-04,08:30
-2026-09-10,08:30
-2026-09-11,08:30
-2026-09-16,08:30
-2026-09-16,14:00
-2026-09-17,08:30
-2026-09-24,08:30
-2026-09-30,08:30
-2026-10-01,08:30
-2026-10-02,08:30
-2026-10-07,14:00
-2026-10-08,08:30
-2026-10-14,08:30
-2026-10-15,08:30
-2026-10-22,08:30
-2026-10-28,14:00
-2026-10-29,08:30
-2026-10-30,08:30
-2026-11-05,08:30
-2026-11-06,08:30
-2026-11-10,08:30
-2026-11-12,08:30
-2026-11-13,08:30
-2026-11-17,08:30
-2026-11-18,14:00
-2026-11-19,08:30
-2026-11-25,08:30
-2026-12-03,08:30
-2026-12-04,08:30
-2026-12-09,14:00
-2026-12-10,08:30
-2026-12-15,08:30
-2026-12-16,08:30
-2026-12-17,08:30
-2026-12-23,08:30
-2026-12-24,08:30
-2026-12-30,14:00
-2026-12-31,08:30";
-
+        private const string WeeklyNewsJsonUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
+        private const string NewsCacheFilePrefix = "AutoEdge.ff_weekly_news_cache.";
+        private const string NewsCacheWeekPrefix = "# week-start-et=";
+        private const string NewsCacheUpdatedPrefix = "# updated-utc=";
+        private const string NewsTargetCurrency = "USD";
+        private const string NewsTargetImpact = "High";
         private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static readonly object NewsDatesSync = new object();
         private static bool newsDatesInitialized;
+        private static bool newsDatesAvailable;
+        private static DateTime newsDatesWeekStart = DateTime.MinValue;
+        private static string newsDatesSource = "disabled";
+        private static DateTime newsFetchBlockedWeekStart = DateTime.MinValue;
+        private static DateTime newsFetchBlockedUntilUtc = DateTime.MinValue;
+        private static string newsFetchBlockedReason = string.Empty;
+        private DateTime lastPrintedNewsWeekStart = DateTime.MinValue;
         private Border infoBoxContainer;
         private StackPanel infoBoxRowsPanel;
         private bool legacyInfoDrawingsCleared;
@@ -1018,6 +815,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UpdateAtrPlotVisibility();
                 targetTimeZone = null;
                 londonTimeZone = null;
+                newYorkTimeZone = null;
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
                 currentTradePeakAdx = 0.0;
@@ -1049,8 +847,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 londonTradesThisSession = 0;
                 newYorkTradesThisSession = 0;
                 strategyAccountDesyncDetected = false;
+                lastPrintedNewsWeekStart = DateTime.MinValue;
 
-                EnsureNewsDatesInitialized();
+                EnsureNewsDatesInitialized(GetNewsReferenceStrategyTime(), true, true);
                 heartbeatReporter = new StrategyHeartbeatReporter(
                     HeartbeatStrategyName,
                     System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
@@ -1069,6 +868,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.Realtime)
             {
+                EnsureNewsDatesInitialized(GetNewsReferenceStrategyTime(), true, true);
+                UpdateInfo();
+
                 if (heartbeatReporter != null)
                     heartbeatReporter.Start();
 
@@ -1138,7 +940,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
-            bool inNewsSkipPrev = CurrentBar > 0 && TimeInNewsSkip(Time[1]);
+            bool inNewsSkipPrev = CurrentBar > 0 && IsSameNewsWeek(Time[0], Time[1]) && TimeInNewsSkip(Time[1]);
             if (!inNewsSkipPrev && inNewsSkipNow)
             {
                 CancelWorkingEntryOrders();
@@ -4617,6 +4419,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return londonTimeZone;
         }
 
+        private TimeZoneInfo GetNewYorkTimeZone()
+        {
+            if (newYorkTimeZone != null)
+                return newYorkTimeZone;
+
+            try
+            {
+                newYorkTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            }
+            catch
+            {
+                try
+                {
+                    newYorkTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+                }
+                catch
+                {
+                    newYorkTimeZone = TimeZoneInfo.Local;
+                }
+            }
+
+            return newYorkTimeZone;
+        }
+
         private bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
         {
             if (start < end)
@@ -4820,6 +4646,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!UseNewsSkip)
                 return;
 
+            EnsureNewsDatesInitialized(barTime);
+            if (!newsDatesAvailable)
+                return;
+
             for (int i = 0; i < NewsDates.Count; i++)
             {
                 DateTime newsTime = NewsDates[i];
@@ -4859,46 +4689,433 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private void EnsureNewsDatesInitialized()
+        private void EnsureNewsDatesInitialized(DateTime strategyTime, bool announceIfCurrentWeekAlreadyLoaded = false, bool retryCurrentWeekIfUnavailable = false)
         {
-            if (newsDatesInitialized)
-                return;
-
-            NewsDates.Clear();
-            LoadHardcodedNewsDates();
-
-            NewsDates.Sort();
-            newsDatesInitialized = true;
-            AppendNewsFetchLog(string.Format(
-                "Refresh complete | source=hardcoded count={0} events=[{1}]",
-                NewsDates.Count,
-                FormatNewsDatesForLog(NewsDates)));
-        }
-
-        private void LoadHardcodedNewsDates()
-        {
-            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
-                return;
-
-            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < entries.Length; i++)
+            DateTime weekStartEt = GetWeekStart(GetEtDateForNewsReference(strategyTime));
+            lock (NewsDatesSync)
             {
-                string trimmed = entries[i].Trim();
-                if (string.IsNullOrEmpty(trimmed))
-                    continue;
+                bool shouldRetryUnavailableCurrentWeek =
+                    retryCurrentWeekIfUnavailable &&
+                    newsDatesInitialized &&
+                    newsDatesWeekStart == weekStartEt &&
+                    !newsDatesAvailable &&
+                    weekStartEt == GetWeekStart(GetCurrentEtDate()) &&
+                    ShouldUseDynamicNewsSource() &&
+                    IsNewsFetchAllowed(weekStartEt, out _);
 
-                DateTime parsed;
-                if (!DateTime.TryParseExact(trimmed, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out parsed))
+                if (newsDatesInitialized && newsDatesWeekStart == weekStartEt && !shouldRetryUnavailableCurrentWeek)
                 {
-                    LogDebug(string.Format("Invalid news date entry: {0}", trimmed));
-                    continue;
+                    if (announceIfCurrentWeekAlreadyLoaded && ShouldLogNewsWeekSummary(weekStartEt))
+                        LogNewsWeekSummary(weekStartEt, "enable");
+                    return;
                 }
 
-                TimeSpan t = parsed.TimeOfDay;
-                if ((t == new TimeSpan(8, 30, 0) || t == new TimeSpan(14, 0, 0)) && !NewsDates.Contains(parsed))
-                    NewsDates.Add(parsed);
+                RefreshNewsDates(weekStartEt);
             }
+        }
+
+        private void RefreshNewsDates(DateTime weekStartEt)
+        {
+            NewsDates.Clear();
+            newsDatesInitialized = true;
+            newsDatesAvailable = false;
+            newsDatesWeekStart = weekStartEt;
+            newsDatesSource = "disabled";
+
+            var details = new List<string>();
+            List<DateTime> loadedDates;
+            string status = string.Empty;
+            string cacheStatus = string.Empty;
+            DateTime currentWeekEt = GetWeekStart(GetCurrentEtDate());
+            bool canFetchLiveWeek = ShouldUseDynamicNewsSource() && weekStartEt == currentWeekEt;
+            string fetchGateStatus = string.Empty;
+            bool fetchAllowed = canFetchLiveWeek && IsNewsFetchAllowed(weekStartEt, out fetchGateStatus);
+            if (fetchAllowed && TryFetchWeeklyNewsDates(weekStartEt, out loadedDates, out status))
+            {
+                MergeNewsDates(loadedDates);
+                newsDatesAvailable = true;
+                newsDatesSource = "weekly-json";
+                details.Add(status);
+                ClearNewsFetchBlock(weekStartEt);
+
+                string cacheWriteStatus;
+                TryWriteNewsDatesCache(weekStartEt, loadedDates, out cacheWriteStatus);
+                details.Add(cacheWriteStatus);
+            }
+            else
+            {
+                details.Add(canFetchLiveWeek
+                    ? (!string.IsNullOrWhiteSpace(fetchGateStatus) ? fetchGateStatus : status)
+                    : "feed-skip non-current-week-or-disabled");
+
+                List<DateTime> cachedDates;
+                if (TryLoadNewsDatesCache(weekStartEt, out cachedDates, out cacheStatus))
+                {
+                    MergeNewsDates(cachedDates);
+                    newsDatesAvailable = true;
+                    newsDatesSource = "cache";
+                    details.Add(cacheStatus);
+                }
+                else
+                {
+                    details.Add(cacheStatus);
+                }
+            }
+
+            NewsDates.Sort();
+            AppendNewsFetchLog(string.Format(
+                CultureInfo.InvariantCulture,
+                "Refresh complete | source={0} enabled={1} week={2:yyyy-MM-dd} count={3} events=[{4}] details={5}",
+                newsDatesSource,
+                newsDatesAvailable,
+                weekStartEt,
+                NewsDates.Count,
+                FormatNewsDatesForLog(NewsDates),
+                string.Join(" | ", details.ToArray())));
+            if (ShouldLogNewsWeekSummary(weekStartEt))
+            {
+                LogNewsWeekSummary(weekStartEt, "load");
+                if (!newsDatesAvailable)
+                    Print(string.Format("Weekly news error: {0} | {1}", status, cacheStatus));
+            }
+        }
+
+        private void MergeNewsDates(IEnumerable<DateTime> dates)
+        {
+            if (dates == null)
+                return;
+
+            foreach (DateTime date in dates)
+                AddUniqueNewsDate(NewsDates, date);
+        }
+
+        private bool TryFetchWeeklyNewsDates(DateTime weekStartEt, out List<DateTime> loadedDates, out string status)
+        {
+            loadedDates = new List<DateTime>();
+            try
+            {
+                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Encoding = System.Text.Encoding.UTF8;
+                    client.Headers[System.Net.HttpRequestHeader.UserAgent] =
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+                    client.Headers[System.Net.HttpRequestHeader.Accept] = "application/json,text/plain,*/*";
+                    client.Headers[System.Net.HttpRequestHeader.AcceptLanguage] = "en-US,en;q=0.9";
+
+                    string json = client.DownloadString(WeeklyNewsJsonUrl);
+                    var serializer = new JavaScriptSerializer();
+                    List<Dictionary<string, object>> rows = serializer.Deserialize<List<Dictionary<string, object>>>(json);
+                    DateTime weekEndEt = weekStartEt.AddDays(7);
+
+                    if (rows != null)
+                    {
+                        for (int i = 0; i < rows.Count; i++)
+                        {
+                            Dictionary<string, object> row = rows[i];
+                            DateTime newsDate;
+                            if (!TryParseWeeklyNewsDate(row, out newsDate))
+                                continue;
+
+                            if (newsDate < weekStartEt || newsDate >= weekEndEt)
+                                continue;
+
+                            string currency = GetNewsRowString(row, "country");
+                            string impact = GetNewsRowString(row, "impact");
+                            if (!string.Equals(currency, NewsTargetCurrency, StringComparison.OrdinalIgnoreCase) ||
+                                !string.Equals(impact, NewsTargetImpact, StringComparison.OrdinalIgnoreCase))
+                                continue;
+
+                            AddUniqueNewsDate(loadedDates, newsDate);
+                        }
+                    }
+
+                    status = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "feed-ok url={0} rows={1} matches={2}",
+                        WeeklyNewsJsonUrl,
+                        rows != null ? rows.Count : 0,
+                        loadedDates.Count);
+                    return true;
+                }
+            }
+            catch (System.Net.WebException ex)
+            {
+                var response = ex.Response as System.Net.HttpWebResponse;
+                if (response != null && (int)response.StatusCode == 429)
+                {
+                    status = string.Format("feed-error 429 Too Many Requests ({0})", ex.Message);
+                    SetNewsFetchBlock(weekStartEt, TimeSpan.FromMinutes(15), status);
+                    return false;
+                }
+
+                status = string.Format("feed-error {0}", ex.Message);
+                SetNewsFetchBlock(weekStartEt, TimeSpan.FromMinutes(2), status);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                status = string.Format("feed-error {0}", ex.Message);
+                SetNewsFetchBlock(weekStartEt, TimeSpan.FromMinutes(2), status);
+                return false;
+            }
+        }
+
+        private bool TryWriteNewsDatesCache(DateTime weekStartEt, List<DateTime> dates, out string status)
+        {
+            try
+            {
+                string path = GetNewsCachePath(weekStartEt);
+                var lines = new List<string>();
+                lines.Add(NewsCacheWeekPrefix + weekStartEt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                lines.Add(NewsCacheUpdatedPrefix + DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+
+                if (dates != null)
+                {
+                    List<DateTime> orderedDates = dates.OrderBy(d => d).ToList();
+                    for (int i = 0; i < orderedDates.Count; i++)
+                        lines.Add(orderedDates[i].ToString("yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture));
+                }
+
+                System.IO.File.WriteAllLines(path, lines.ToArray());
+                status = string.Format("cache-write-ok file={0}", path);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                status = string.Format("cache-write-error {0}", ex.Message);
+                return false;
+            }
+        }
+
+        private bool TryLoadNewsDatesCache(DateTime weekStartEt, out List<DateTime> cachedDates, out string status)
+        {
+            cachedDates = new List<DateTime>();
+            try
+            {
+                string path = GetNewsCachePath(weekStartEt);
+                if (!System.IO.File.Exists(path))
+                {
+                    status = string.Format("cache-miss file-not-found file={0}", path);
+                    return false;
+                }
+
+                string[] lines = System.IO.File.ReadAllLines(path);
+                if (lines == null || lines.Length == 0)
+                {
+                    status = "cache-miss empty";
+                    return false;
+                }
+
+                string weekLine = lines.FirstOrDefault(line => line.StartsWith(NewsCacheWeekPrefix, StringComparison.Ordinal));
+                if (string.IsNullOrWhiteSpace(weekLine))
+                {
+                    status = "cache-miss missing-week";
+                    return false;
+                }
+
+                DateTime cachedWeekStart;
+                string weekValue = weekLine.Substring(NewsCacheWeekPrefix.Length).Trim();
+                if (!DateTime.TryParseExact(weekValue, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out cachedWeekStart))
+                {
+                    status = string.Format("cache-miss invalid-week {0}", weekValue);
+                    return false;
+                }
+
+                if (cachedWeekStart != weekStartEt)
+                {
+                    status = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "cache-stale cached-week={0:yyyy-MM-dd}",
+                        cachedWeekStart);
+                    return false;
+                }
+
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string line = lines[i] != null ? lines[i].Trim() : string.Empty;
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#", StringComparison.Ordinal))
+                        continue;
+
+                    DateTime parsed;
+                    if (!DateTime.TryParseExact(line, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+                        continue;
+
+                    AddUniqueNewsDate(cachedDates, parsed);
+                }
+
+                status = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "cache-ok file={0} matches={1}",
+                    path,
+                    cachedDates.Count);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                status = string.Format("cache-error {0}", ex.Message);
+                return false;
+            }
+        }
+
+        private bool TryParseWeeklyNewsDate(Dictionary<string, object> row, out DateTime newsDate)
+        {
+            newsDate = DateTime.MinValue;
+            string rawDate = GetNewsRowString(row, "date");
+            if (string.IsNullOrWhiteSpace(rawDate))
+                return false;
+
+            DateTimeOffset timestamp;
+            if (!DateTimeOffset.TryParse(rawDate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out timestamp))
+                return false;
+
+            newsDate = timestamp.DateTime;
+            return true;
+        }
+
+        private static string GetNewsRowString(Dictionary<string, object> row, string key)
+        {
+            object raw;
+            if (row == null || string.IsNullOrWhiteSpace(key) || !row.TryGetValue(key, out raw) || raw == null)
+                return string.Empty;
+
+            return raw.ToString().Trim();
+        }
+
+        private static void AddUniqueNewsDate(List<DateTime> target, DateTime value)
+        {
+            if (target == null || !IsTargetNewsTime(value.TimeOfDay) || target.Contains(value))
+                return;
+
+            target.Add(value);
+        }
+
+        private static bool IsTargetNewsTime(TimeSpan time)
+        {
+            return time == new TimeSpan(8, 30, 0) || time == new TimeSpan(14, 0, 0);
+        }
+
+        private string GetNewsCachePath(DateTime weekStartEt)
+        {
+            string fileName = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}{1:yyyy-MM-dd}.txt",
+                NewsCacheFilePrefix,
+                weekStartEt);
+            return System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, fileName);
+        }
+
+        private bool IsNewsFetchAllowed(DateTime weekStartEt, out string status)
+        {
+            if (newsFetchBlockedWeekStart == weekStartEt && newsFetchBlockedUntilUtc > DateTime.UtcNow)
+            {
+                status = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "feed-skip cooldown-until={0:o} reason={1}",
+                    newsFetchBlockedUntilUtc,
+                    newsFetchBlockedReason);
+                return false;
+            }
+
+            status = string.Empty;
+            return true;
+        }
+
+        private void SetNewsFetchBlock(DateTime weekStartEt, TimeSpan cooldown, string reason)
+        {
+            newsFetchBlockedWeekStart = weekStartEt;
+            newsFetchBlockedUntilUtc = DateTime.UtcNow.Add(cooldown);
+            newsFetchBlockedReason = reason ?? string.Empty;
+        }
+
+        private void ClearNewsFetchBlock(DateTime weekStartEt)
+        {
+            if (newsFetchBlockedWeekStart != weekStartEt)
+                return;
+
+            newsFetchBlockedWeekStart = DateTime.MinValue;
+            newsFetchBlockedUntilUtc = DateTime.MinValue;
+            newsFetchBlockedReason = string.Empty;
+        }
+
+        private DateTime GetCurrentEtDate()
+        {
+            DateTime utcNow = DateTime.UtcNow;
+            try
+            {
+                return TimeZoneInfo.ConvertTimeFromUtc(utcNow, GetNewYorkTimeZone()).Date;
+            }
+            catch
+            {
+                return utcNow.Date;
+            }
+        }
+
+        private DateTime GetEtDateForNewsReference(DateTime strategyTime)
+        {
+            try
+            {
+                TimeZoneInfo sourceTimeZone = GetTargetTimeZone();
+                DateTime unspecifiedTime = DateTime.SpecifyKind(strategyTime, DateTimeKind.Unspecified);
+                DateTime utcTime = TimeZoneInfo.ConvertTimeToUtc(unspecifiedTime, sourceTimeZone);
+                return TimeZoneInfo.ConvertTimeFromUtc(utcTime, GetNewYorkTimeZone()).Date;
+            }
+            catch
+            {
+                return strategyTime.Date;
+            }
+        }
+
+        private DateTime GetNewsReferenceStrategyTime()
+        {
+            DateTime latestLoadedTime;
+            if (TryGetLatestLoadedBarTime(out latestLoadedTime))
+                return latestLoadedTime;
+
+            return GetCurrentEtDate();
+        }
+
+        private bool TryGetLatestLoadedBarTime(out DateTime strategyTime)
+        {
+            strategyTime = DateTime.MinValue;
+            try
+            {
+                var bars = Bars;
+                if (bars == null)
+                    return false;
+
+                var barsType = bars.GetType();
+                var countProp = barsType.GetProperty("Count", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var getTimeMethod = barsType.GetMethod(
+                    "GetTime",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(int) },
+                    null);
+
+                if (countProp == null || getTimeMethod == null)
+                    return false;
+
+                int count = (int)countProp.GetValue(bars, null);
+                if (count <= 0)
+                    return false;
+
+                object raw = getTimeMethod.Invoke(bars, new object[] { count - 1 });
+                if (!(raw is DateTime))
+                    return false;
+
+                strategyTime = (DateTime)raw;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool ShouldUseDynamicNewsSource()
+        {
+            return Account != null && !string.Equals(Account.Name, "Backtest", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatNewsDatesForLog(List<DateTime> dates)
@@ -4914,9 +5131,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             LogDebug(string.Format("NewsFetch | {0}", message ?? string.Empty));
         }
 
+        private bool ShouldLogNewsWeekSummary(DateTime weekStartEt)
+        {
+            return weekStartEt == GetWeekStart(GetCurrentEtDate());
+        }
+
+        private void LogNewsWeekSummary(DateTime weekStartEt, string reason)
+        {
+            if (lastPrintedNewsWeekStart == weekStartEt)
+                return;
+
+            lastPrintedNewsWeekStart = weekStartEt;
+
+            Print("Weekly news");
+            Print("-------------");
+
+            if (!newsDatesAvailable)
+            {
+                Print("unavailable");
+                return;
+            }
+
+            if (NewsDates.Count == 0)
+            {
+                Print("none");
+                return;
+            }
+
+            for (int i = 0; i < NewsDates.Count; i++)
+                Print(NewsDates[i].ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
+        }
+
         private bool TimeInNewsSkip(DateTime time)
         {
             if (!UseNewsSkip)
+                return false;
+
+            EnsureNewsDatesInitialized(time);
+            if (!newsDatesAvailable)
                 return false;
 
             for (int i = 0; i < NewsDates.Count; i++)
@@ -4932,6 +5184,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return false;
+        }
+
+        private bool IsSameNewsWeek(DateTime first, DateTime second)
+        {
+            return GetWeekStart(GetEtDateForNewsReference(first)) == GetWeekStart(GetEtDateForNewsReference(second));
         }
 
         private bool GetSessionClosed(SessionSlot slot)
@@ -5457,22 +5714,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else
             {
-                List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
-                if (weekNews.Count == 0)
+                EnsureNewsDatesInitialized(Time[0]);
+                if (!newsDatesAvailable)
                 {
-                    lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
+                    lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.IndianRed));
                 }
                 else
                 {
-                    for (int i = 0; i < weekNews.Count; i++)
+                    List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
+                    if (weekNews.Count == 0)
                     {
-                        DateTime newsTime = weekNews[i];
-                        bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
-                        string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
-                        string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
-                        string label = "News: " + dayPart + " " + timePart;
-                        Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
-                        lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
+                        lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
+                    }
+                    else
+                    {
+                        for (int i = 0; i < weekNews.Count; i++)
+                        {
+                            DateTime newsTime = weekNews[i];
+                            bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
+                            string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
+                            string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                            string label = "News: " + dayPart + " " + timePart;
+                            Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                            lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
+                        }
                     }
                 }
             }
@@ -5516,10 +5781,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private List<DateTime> GetCurrentWeekNews(DateTime time)
         {
-            EnsureNewsDatesInitialized();
+            EnsureNewsDatesInitialized(time);
 
             var weekNews = new List<DateTime>();
-            DateTime weekStart = GetWeekStart(time.Date);
+            DateTime weekStart = newsDatesWeekStart != DateTime.MinValue ? newsDatesWeekStart : GetWeekStart(time.Date);
             DateTime weekEnd = weekStart.AddDays(7);
             for (int i = 0; i < NewsDates.Count; i++)
             {
@@ -5534,8 +5799,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private DateTime GetWeekStart(DateTime date)
         {
-            DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
-            int diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
+            int diff = (7 + (date.DayOfWeek - DayOfWeek.Sunday)) % 7;
             return date.AddDays(-diff).Date;
         }
 
