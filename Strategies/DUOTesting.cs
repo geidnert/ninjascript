@@ -338,7 +338,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Border infoBoxContainer;
         private StackPanel infoBoxRowsPanel;
         private bool legacyInfoDrawingsCleared;
-        private bool strategyAccountDesyncDetected;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
             Color.FromArgb(240, 0x2A, 0x2F, 0x45),
             Color.FromArgb(240, 0x1E, 0x23, 0x36),
@@ -846,7 +845,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 asiaTradesThisSession = 0;
                 londonTradesThisSession = 0;
                 newYorkTradesThisSession = 0;
-                strategyAccountDesyncDetected = false;
                 lastPrintedNewsWeekStart = DateTime.MinValue;
 
                 EnsureNewsDatesInitialized(GetNewsReferenceStrategyTime(), true, true);
@@ -875,7 +873,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     heartbeatReporter.Start();
 
                 RunProjectXStartupPreflight();
-                CheckAndHandleStrategyAccountDesync("realtime-start");
             }
             else if (State == State.Terminated)
             {
@@ -891,12 +888,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
-            if (CheckAndHandleStrategyAccountDesync("bar"))
-            {
-                UpdateInfo();
-                return;
-            }
-
             if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
             {
                 CancelWorkingEntryOrders();
@@ -1464,9 +1455,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             if (State != State.Realtime || Position.MarketPosition == MarketPosition.Flat)
-                return;
-
-            if (CheckAndHandleStrategyAccountDesync("tick-watchdog"))
                 return;
 
             AuditPositionProtection("tick-watchdog");
@@ -3491,72 +3479,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return barTime.TimeOfDay >= flatByTime;
         }
 
-        private bool CheckAndHandleStrategyAccountDesync(string reason)
-        {
-            if (State != State.Realtime)
-                return false;
-
-            if (strategyAccountDesyncDetected)
-                return true;
-
-            MarketPosition accountMarketPosition;
-            int accountQuantity;
-            if (!TryGetAccountPositionSnapshot(out accountMarketPosition, out accountQuantity))
-                return false;
-
-            MarketPosition strategyMarketPosition = Position.MarketPosition;
-            int strategyQuantity = Math.Abs(Position.Quantity);
-
-            bool marketPositionMatches = strategyMarketPosition == accountMarketPosition;
-            bool quantityMatches = strategyQuantity == accountQuantity;
-            if (marketPositionMatches && quantityMatches)
-                return false;
-
-            strategyAccountDesyncDetected = true;
-            CancelWorkingEntryOrders();
-
-            LogMessage(string.Format(
-                "STRATEGY/ACCOUNT DESYNC DETECTED | reason={0} instrument={1} strategyPos={2} strategyQty={3} accountPos={4} accountQty={5} | Trading is now blocked. Manually disable and re-enable the strategy after verifying the account position.",
-                reason,
-                Instrument != null ? Instrument.FullName : "Unknown",
-                strategyMarketPosition,
-                strategyQuantity,
-                accountMarketPosition,
-                accountQuantity), true);
-            return true;
-        }
-
-        private bool TryGetAccountPositionSnapshot(out MarketPosition accountMarketPosition, out int accountQuantity)
-        {
-            accountMarketPosition = MarketPosition.Flat;
-            accountQuantity = 0;
-
-            if (Account == null || Instrument == null)
-                return false;
-
-            try
-            {
-                foreach (var pos in Account.Positions)
-                {
-                    if (pos == null || pos.Instrument == null)
-                        continue;
-
-                    if (!string.Equals(pos.Instrument.FullName, Instrument.FullName, StringComparison.Ordinal))
-                        continue;
-
-                    accountMarketPosition = pos.MarketPosition;
-                    accountQuantity = Math.Abs(pos.Quantity);
-                    return true;
-                }
-
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         private bool TryParseConfiguredForceCloseTime(out TimeSpan forceCloseTime)
         {
             forceCloseTime = TimeSpan.Zero;
@@ -3729,9 +3651,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool AuditPositionProtection(string reason)
         {
-            if (CheckAndHandleStrategyAccountDesync("protection-" + reason))
-                return false;
-
             if (Position.MarketPosition == MarketPosition.Flat)
             {
                 ClearProtectionAuditState();
