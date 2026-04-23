@@ -34,11 +34,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             VendorLicense(337);
         }
 
-        public enum InitialStopMode
-        {
-            WickExtreme
-        }
-
         public enum SessionTradeDirection
         {
             Both,
@@ -50,6 +45,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             PercentMove,
             AtrTrail
+        }
+
+        public enum InitialStopReferenceMode
+        {
+            PrimaryEma,
+            SecondaryEma,
+            SessionVwap
         }
 
         private sealed class TradeLineSnapshot
@@ -174,6 +176,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double newYork3AdxMinSlopePoints;
         private TimeZoneInfo targetTimeZone;
         private TimeZoneInfo londonTimeZone;
+        private TimeZoneInfo newYorkTimeZone;
         private StrategyHeartbeatReporter heartbeatReporter;
 
         private bool asiaSessionClosed;
@@ -216,6 +219,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private EMA emaNewYork2;
         private EMA emaNewYork3;
         private EMA activeEma;
+        private EMA secondaryEmaAsia;
+        private EMA secondaryEmaAsia2;
+        private EMA secondaryEmaAsia3;
+        private EMA secondaryEmaLondon;
+        private EMA secondaryEmaLondon2;
+        private EMA secondaryEmaLondon3;
+        private EMA secondaryEmaNewYork;
+        private EMA secondaryEmaNewYork2;
+        private EMA secondaryEmaNewYork3;
+        private EMA activeSecondaryEma;
         private ATR takeProfitAtr;
         private DUOAtrVisual atrVisual;
         private DM adxAsia;
@@ -232,7 +245,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int activeEmaPeriod;
         private int activeContracts;
         private SessionTradeDirection activeTradeDirection = SessionTradeDirection.Both;
-        private InitialStopMode activeEntryStopMode;
         private double activeEmaMinSlopePointsPerBar;
         private double activeMaxEntryDistanceFromEmaPoints;
         private double activeExitCrossPoints;
@@ -264,6 +276,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxDdRiskModeTakeProfitPoints;
         private int activeHorizontalExitBars;
         private double activeMaxStopLossPoints;
+        private InitialStopReferenceMode activeStopReferenceMode;
+        private int activeSecondaryEmaPeriod;
+        private double activeSecondaryStopPaddingPoints;
+        private double activeVwapStopPaddingPoints;
+        private OrderFlowVWAP orderFlowVwapIndicator;
 
         private double pendingLongStopForWebhook;
         private double pendingShortStopForWebhook;
@@ -281,6 +298,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int londonTradesThisSession;
         private int newYorkTradesThisSession;
         private string currentPositionEntrySignal = string.Empty;
+        private InitialStopReferenceMode currentPositionStopReferenceMode = InitialStopReferenceMode.PrimaryEma;
         private bool currentPositionIsFlipEntry;
         private bool pendingLongEntryIsFlip;
         private bool pendingShortEntryIsFlip;
@@ -318,226 +336,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SessionSlot.NewYork3
         };
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
-        private static readonly string NewsDatesRaw =
-@"2025-01-02,08:30
-2025-01-08,08:30
-2025-01-08,14:00
-2025-01-10,08:30
-2025-01-14,08:30
-2025-01-15,08:30
-2025-01-16,08:30
-2025-01-23,08:30
-2025-01-29,14:00
-2025-01-30,08:30
-2025-01-31,08:30
-2025-02-06,08:30
-2025-02-07,08:30
-2025-02-12,08:30
-2025-02-13,08:30
-2025-02-14,08:30
-2025-02-19,14:00
-2025-02-20,08:30
-2025-02-27,08:30
-2025-02-28,08:30
-2025-03-06,08:30
-2025-03-07,08:30
-2025-03-12,08:30
-2025-03-13,08:30
-2025-03-17,08:30
-2025-03-19,14:00
-2025-03-20,08:30
-2025-03-27,08:30
-2025-03-28,08:30
-2025-04-03,08:30
-2025-04-04,08:30
-2025-04-09,14:00
-2025-04-10,08:30
-2025-04-11,08:30
-2025-04-16,08:30
-2025-04-17,08:30
-2025-04-24,08:30
-2025-04-30,08:30
-2025-05-01,08:30
-2025-05-02,08:30
-2025-05-07,14:00
-2025-05-08,08:30
-2025-05-13,08:30
-2025-05-15,08:30
-2025-05-22,08:30
-2025-05-28,14:00
-2025-05-29,08:30
-2025-05-30,08:30
-2025-06-05,08:30
-2025-06-06,08:30
-2025-06-11,08:30
-2025-06-12,08:30
-2025-06-17,08:30
-2025-06-18,08:30
-2025-06-18,14:00
-2025-06-26,08:30
-2025-06-27,08:30
-2025-07-03,08:30
-2025-07-09,14:00
-2025-07-10,08:30
-2025-07-15,08:30
-2025-07-16,08:30
-2025-07-17,08:30
-2025-07-24,08:30
-2025-07-30,08:30
-2025-07-30,14:00
-2025-07-31,08:30
-2025-08-01,08:30
-2025-08-07,08:30
-2025-08-12,08:30
-2025-08-14,08:30
-2025-08-15,08:30
-2025-08-20,14:00
-2025-08-21,08:30
-2025-08-28,08:30
-2025-08-29,08:30
-2025-09-04,08:30
-2025-09-05,08:30
-2025-09-10,08:30
-2025-09-11,08:30
-2025-09-16,08:30
-2025-09-17,14:00
-2025-09-18,08:30
-2025-09-25,08:30
-2025-09-26,08:30
-2025-10-08,14:00
-2025-10-24,08:30
-2025-10-29,14:00
-2025-11-19,14:00
-2025-11-20,08:30
-2025-11-25,08:30
-2025-11-26,08:30
-2025-12-04,08:30
-2025-12-10,08:30
-2025-12-10,14:00
-2025-12-11,08:30
-2025-12-16,08:30
-2025-12-18,08:30
-2025-12-23,08:30
-2025-12-24,08:30
-2025-12-30,14:00
-2025-12-31,08:30
-2026-01-08,08:30
-2026-01-09,08:30
-2026-01-13,08:30
-2026-01-14,08:30
-2026-01-15,08:30
-2026-01-21,08:30
-2026-01-22,08:30
-2026-01-28,14:00
-2026-01-29,08:30
-2026-01-30,08:30
-2026-02-05,08:30
-2026-02-10,08:30
-2026-02-11,08:30
-2026-02-12,08:30
-2026-02-13,08:30
-2026-02-18,14:00
-2026-02-19,08:30
-2026-02-20,08:30
-2026-02-26,08:30
-2026-02-27,08:30
-2026-03-05,08:30
-2026-03-06,08:30
-2026-03-11,08:30
-2026-03-12,08:30
-2026-03-13,08:30
-2026-03-16,08:30
-2026-03-18,08:30
-2026-03-18,14:00
-2026-03-19,08:30
-2026-03-26,08:30
-2026-04-02,08:30
-2026-04-03,08:30
-2026-04-08,14:00
-2026-04-09,08:30
-2026-04-10,08:30
-2026-04-14,08:30
-2026-04-16,08:30
-2026-04-23,08:30
-2026-04-29,14:00
-2026-04-30,08:30
-2026-05-07,08:30
-2026-05-08,08:30
-2026-05-12,08:30
-2026-05-13,08:30
-2026-05-14,08:30
-2026-05-20,14:00
-2026-05-21,08:30
-2026-05-28,08:30
-2026-06-04,08:30
-2026-06-05,08:30
-2026-06-10,08:30
-2026-06-11,08:30
-2026-06-17,08:30
-2026-06-17,14:00
-2026-06-18,08:30
-2026-06-25,08:30
-2026-07-02,08:30
-2026-07-08,14:00
-2026-07-09,08:30
-2026-07-14,08:30
-2026-07-15,08:30
-2026-07-16,08:30
-2026-07-23,08:30
-2026-07-29,14:00
-2026-07-30,08:30
-2026-07-31,08:30
-2026-08-06,08:30
-2026-08-07,08:30
-2026-08-12,08:30
-2026-08-13,08:30
-2026-08-14,08:30
-2026-08-19,14:00
-2026-08-20,08:30
-2026-08-26,08:30
-2026-08-27,08:30
-2026-09-03,08:30
-2026-09-04,08:30
-2026-09-10,08:30
-2026-09-11,08:30
-2026-09-16,08:30
-2026-09-16,14:00
-2026-09-17,08:30
-2026-09-24,08:30
-2026-09-30,08:30
-2026-10-01,08:30
-2026-10-02,08:30
-2026-10-07,14:00
-2026-10-08,08:30
-2026-10-14,08:30
-2026-10-15,08:30
-2026-10-22,08:30
-2026-10-28,14:00
-2026-10-29,08:30
-2026-10-30,08:30
-2026-11-05,08:30
-2026-11-06,08:30
-2026-11-10,08:30
-2026-11-12,08:30
-2026-11-13,08:30
-2026-11-17,08:30
-2026-11-18,14:00
-2026-11-19,08:30
-2026-11-25,08:30
-2026-12-03,08:30
-2026-12-04,08:30
-2026-12-09,14:00
-2026-12-10,08:30
-2026-12-15,08:30
-2026-12-16,08:30
-2026-12-17,08:30
-2026-12-23,08:30
-2026-12-24,08:30
-2026-12-30,14:00
-2026-12-31,08:30";
-
+        private const string WeeklyNewsJsonUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
+        private const string NewsCacheFilePrefix = "AutoEdge.ff_weekly_news_cache.";
+        private const string NewsCacheWeekPrefix = "# week-start-et=";
+        private const string NewsCacheUpdatedPrefix = "# updated-utc=";
+        private const string NewsTargetCurrency = "USD";
+        private const string NewsTargetImpact = "High";
         private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static readonly object NewsDatesSync = new object();
         private static bool newsDatesInitialized;
+        private static bool newsDatesAvailable;
+        private static DateTime newsDatesWeekStart = DateTime.MinValue;
+        private static string newsDatesSource = "disabled";
+        private static DateTime newsFetchBlockedWeekStart = DateTime.MinValue;
+        private static DateTime newsFetchBlockedUntilUtc = DateTime.MinValue;
+        private static string newsFetchBlockedReason = string.Empty;
+        private DateTime lastPrintedNewsWeekStart = DateTime.MinValue;
         private Border infoBoxContainer;
         private StackPanel infoBoxRowsPanel;
         private bool legacyInfoDrawingsCleared;
@@ -574,8 +388,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEmaMinSlopePointsPerBar = 0.6;
                 AsiaMaxEntryDistanceFromEmaPoints = 9.0;
                 AsiaAdxPeriod = 14;
-                AsiaAdxThreshold = 18.73;
-                AsiaAdxMaxThreshold = 46.8;
+                AsiaAdxThreshold = 29.93;
+                AsiaAdxMaxThreshold = 46.72;
                 AsiaAdxMinSlopePoints = 1.14;
                 AsiaAdxPeakDrawdownExitUnits = 13.6;
                 AsiaAdxAbsoluteExitLevel = 58.8;
@@ -585,6 +399,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaMaxStopLossPoints = 212.0;
                 AsiaTakeProfitPoints = 94.0;
                 AsiaAtrMinimum = 7.7;
+                AsiaInitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                AsiaSecondaryEmaPeriod = 0;
+                AsiaSecondaryEmaStopPaddingPoints = 0.0;
+                AsiaVwapStopPaddingPoints = 0.0;
                 AsiaEntryOffsetPoints = 0.0;
                 AsiaEnableFlipBreakEven = true;
                 AsiaFlipBreakEvenTriggerPoints = 18.0;
@@ -621,6 +439,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2MaxStopLossPoints = 235.0;
                 Asia2TakeProfitPoints = 83.5;
                 Asia2AtrMinimum = 5.1;
+                Asia2InitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                Asia2SecondaryEmaPeriod = 0;
+                Asia2SecondaryEmaStopPaddingPoints = 0.0;
+                Asia2VwapStopPaddingPoints = 0.0;
                 Asia2EntryOffsetPoints = 1.25;
                 Asia2EnableFlipBreakEven = true;
                 Asia2FlipBreakEvenTriggerPoints = 38.25;
@@ -657,6 +479,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3MaxStopLossPoints = 143.0;
                 Asia3TakeProfitPoints = 108.75;
                 Asia3AtrMinimum = 4.0;
+                Asia3InitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                Asia3SecondaryEmaPeriod = 0;
+                Asia3SecondaryEmaStopPaddingPoints = 0.0;
+                Asia3VwapStopPaddingPoints = 0.0;
                 Asia3EntryOffsetPoints = 0.0;
                 Asia3EnableFlipBreakEven = true;
                 Asia3FlipBreakEvenTriggerPoints = 0.0;
@@ -693,6 +519,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonMaxStopLossPoints = 117.0;
                 LondonTakeProfitPoints = 119.0;
                 LondonAtrMinimum = 7.6;
+                LondonInitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                LondonSecondaryEmaPeriod = 0;
+                LondonSecondaryEmaStopPaddingPoints = 0.0;
+                LondonVwapStopPaddingPoints = 0.0;
                 LondonEntryOffsetPoints = 0.0;
                 LondonEnableFlipBreakEven = true;
                 LondonFlipBreakEvenTriggerPoints = 0.0;
@@ -729,6 +559,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2MaxStopLossPoints = 163.0;
                 London2TakeProfitPoints = 116.5;
                 London2AtrMinimum = 7.8;
+                London2InitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                London2SecondaryEmaPeriod = 0;
+                London2SecondaryEmaStopPaddingPoints = 0.0;
+                London2VwapStopPaddingPoints = 0.0;
                 London2EntryOffsetPoints = 2.75;
                 London2EnableFlipBreakEven = true;
                 London2FlipBreakEvenTriggerPoints = 19.0;
@@ -766,6 +600,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3MaxStopLossPoints = 140.0;
                 London3TakeProfitPoints = 113.0;
                 London3AtrMinimum = 12.0;
+                London3InitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                London3SecondaryEmaPeriod = 0;
+                London3SecondaryEmaStopPaddingPoints = 0.0;
+                London3VwapStopPaddingPoints = 0.0;
                 London3EntryOffsetPoints = 10.75;
                 London3EnableFlipBreakEven = true;
                 London3FlipBreakEvenTriggerPoints = 26.5;
@@ -792,20 +630,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
                 NewYorkMaxEntryDistanceFromEmaPoints = 39.0;
                 NewYorkAdxPeriod = 14;
-                NewYorkAdxThreshold = 16.1;
-                NewYorkAdxMaxThreshold = 65.5;
+                NewYorkAdxThreshold = 20.67;
+                NewYorkAdxMaxThreshold = 60.69;
                 NewYorkAdxMinSlopePoints = 1.63;
-                NewYorkAdxPeakDrawdownExitUnits = 15.25;
-                NewYorkAdxAbsoluteExitLevel = 69.5;
-                NewYorkStopPaddingPoints = 44.25;
+                NewYorkAdxPeakDrawdownExitUnits = 13.6;
+                NewYorkAdxAbsoluteExitLevel = 69.1;
+                NewYorkStopPaddingPoints = 44.0;
                 NewYorkExitCrossPoints = 2.75;
                 NewYorkFlipEmaCrossPoints = 6.25;
                 NewYorkMaxStopLossPoints = 287.5;
-                NewYorkTakeProfitPoints = 127.25;
+                NewYorkTakeProfitPoints = 118.0;
                 NewYorkAtrMinimum = 9.8;
-                NewYorkHvSlPaddingPoints = 34.5;
+                NewYorkHvSlPaddingPoints = 26.0;
                 NewYorkHvSlStartTime = new TimeSpan(9, 35, 0);
                 NewYorkHvSlEndTime = new TimeSpan(10, 00, 0);
+                NewYorkInitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                NewYorkSecondaryEmaPeriod = 0;
+                NewYorkSecondaryEmaStopPaddingPoints = 0.0;
+                NewYorkVwapStopPaddingPoints = 0.0;
                 NewYorkEntryOffsetPoints = 0.0;
                 NewYorkEnableFlipBreakEven = true;
                 NewYorkFlipBreakEvenTriggerPoints = 70.0;
@@ -846,6 +688,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2HvSlPaddingPoints = 0.0;
                 NewYork2HvSlStartTime = TimeSpan.Zero;
                 NewYork2HvSlEndTime = TimeSpan.Zero;
+                NewYork2InitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                NewYork2SecondaryEmaPeriod = 0;
+                NewYork2SecondaryEmaStopPaddingPoints = 0.0;
+                NewYork2VwapStopPaddingPoints = 0.0;
                 NewYork2EntryOffsetPoints = 0.0;
                 NewYork2EnableFlipBreakEven = true;
                 NewYork2FlipBreakEvenTriggerPoints = 42.0;
@@ -886,6 +732,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3HvSlPaddingPoints = 0.0;
                 NewYork3HvSlStartTime = TimeSpan.Zero;
                 NewYork3HvSlEndTime = TimeSpan.Zero;
+                NewYork3InitialStopReference = InitialStopReferenceMode.PrimaryEma;
+                NewYork3SecondaryEmaPeriod = 0;
+                NewYork3SecondaryEmaStopPaddingPoints = 0.0;
+                NewYork3VwapStopPaddingPoints = 0.0;
                 NewYork3EntryOffsetPoints = 17.75;
                 NewYork3EnableFlipBreakEven = false;
                 NewYork3FlipBreakEvenTriggerPoints = 0.0;
@@ -901,7 +751,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3HorizontalExitBars = 27;
 
                 CloseAtSessionEnd = false;
-                ForceCloseTime = string.Empty;
+                ForceCloseTime = "16:55:00";
                 AsiaSessionBrush = Brushes.DarkCyan;
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
@@ -942,6 +792,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 emaNewYork = EMA(NewYorkEmaPeriod);
                 emaNewYork2 = EMA(NewYork2EmaPeriod);
                 emaNewYork3 = EMA(NewYork3EmaPeriod);
+                secondaryEmaAsia = AsiaSecondaryEmaPeriod > 0 ? EMA(AsiaSecondaryEmaPeriod) : null;
+                secondaryEmaAsia2 = Asia2SecondaryEmaPeriod > 0 ? EMA(Asia2SecondaryEmaPeriod) : null;
+                secondaryEmaAsia3 = Asia3SecondaryEmaPeriod > 0 ? EMA(Asia3SecondaryEmaPeriod) : null;
+                secondaryEmaLondon = LondonSecondaryEmaPeriod > 0 ? EMA(LondonSecondaryEmaPeriod) : null;
+                secondaryEmaLondon2 = London2SecondaryEmaPeriod > 0 ? EMA(London2SecondaryEmaPeriod) : null;
+                secondaryEmaLondon3 = London3SecondaryEmaPeriod > 0 ? EMA(London3SecondaryEmaPeriod) : null;
+                secondaryEmaNewYork = NewYorkSecondaryEmaPeriod > 0 ? EMA(NewYorkSecondaryEmaPeriod) : null;
+                secondaryEmaNewYork2 = NewYork2SecondaryEmaPeriod > 0 ? EMA(NewYork2SecondaryEmaPeriod) : null;
+                secondaryEmaNewYork3 = NewYork3SecondaryEmaPeriod > 0 ? EMA(NewYork3SecondaryEmaPeriod) : null;
                 takeProfitAtr = ATR(TakeProfitAtrPeriod);
                 atrVisual = DUOAtrVisual(TakeProfitAtrPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
@@ -953,6 +812,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 adxNewYork = DM(NewYorkAdxPeriod);
                 adxNewYork2 = DM(NewYork2AdxPeriod);
                 adxNewYork3 = DM(NewYork3AdxPeriod);
+                InitializeOrderFlowVwapIndicator();
                 UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
                 UpdateAdxReferenceLines(adxAsia2, Asia2AdxThreshold, Asia2AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxAsia3, Asia3AdxThreshold, Asia3AdxMaxThreshold);
@@ -974,6 +834,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     AddChartIndicator(emaNewYork);
                     AddChartIndicator(emaNewYork2);
                     AddChartIndicator(emaNewYork3);
+
+                    if (secondaryEmaAsia != null)
+                        AddChartIndicator(secondaryEmaAsia);
+                    if (secondaryEmaAsia2 != null)
+                        AddChartIndicator(secondaryEmaAsia2);
+                    if (secondaryEmaAsia3 != null)
+                        AddChartIndicator(secondaryEmaAsia3);
+                    if (secondaryEmaLondon != null)
+                        AddChartIndicator(secondaryEmaLondon);
+                    if (secondaryEmaLondon2 != null)
+                        AddChartIndicator(secondaryEmaLondon2);
+                    if (secondaryEmaLondon3 != null)
+                        AddChartIndicator(secondaryEmaLondon3);
+                    if (secondaryEmaNewYork != null)
+                        AddChartIndicator(secondaryEmaNewYork);
+                    if (secondaryEmaNewYork2 != null)
+                        AddChartIndicator(secondaryEmaNewYork2);
+                    if (secondaryEmaNewYork3 != null)
+                        AddChartIndicator(secondaryEmaNewYork3);
                 }
 
                 if (ShowAdxOnChart)
@@ -991,6 +870,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (ShowAtrOnChart || ShowAtrThresholdLines)
                     AddChartIndicator(atrVisual);
+
+                if (orderFlowVwapIndicator != null)
+                    AddChartIndicator(orderFlowVwapIndicator);
 
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
@@ -1017,6 +899,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UpdateAtrPlotVisibility();
                 targetTimeZone = null;
                 londonTimeZone = null;
+                newYorkTimeZone = null;
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
                 currentTradePeakAdx = 0.0;
@@ -1047,15 +930,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 asiaTradesThisSession = 0;
                 londonTradesThisSession = 0;
                 newYorkTradesThisSession = 0;
+                orderFlowVwapIndicator = null;
+                lastPrintedNewsWeekStart = DateTime.MinValue;
 
-                EnsureNewsDatesInitialized();
+                EnsureNewsDatesInitialized(GetNewsReferenceStrategyTime(), true, true);
                 heartbeatReporter = new StrategyHeartbeatReporter(
                     HeartbeatStrategyName,
                     System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
 
                 LogDebug(
                     string.Format(
-                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} ExitCross={5:0.##} FlipCross={6:0.##} EntryStop={7}",
+                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} ExitCross={5:0.##} FlipCross={6:0.##} StopRef={7}",
                         FormatSessionLabel(activeSession),
                         activeEmaPeriod,
                         activeAdxPeriod,
@@ -1063,10 +948,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         activeContracts,
                         activeExitCrossPoints,
                         GetEffectiveFlipEmaCrossPoints(),
-                        activeEntryStopMode));
+                        activeStopReferenceMode));
             }
             else if (State == State.Realtime)
             {
+                EnsureNewsDatesInitialized(GetNewsReferenceStrategyTime(), true, true);
+                UpdateInfo();
+
                 if (heartbeatReporter != null)
                     heartbeatReporter.Start();
 
@@ -1129,7 +1017,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
-            bool inNewsSkipPrev = CurrentBar > 0 && TimeInNewsSkip(Time[1]);
+            bool inNewsSkipPrev = CurrentBar > 0 && IsSameNewsWeek(Time[0], Time[1]) && TimeInNewsSkip(Time[1]);
             if (!inNewsSkipPrev && inNewsSkipNow)
             {
                 CancelWorkingEntryOrders();
@@ -1204,6 +1092,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
+                TryApplyReferenceTrailingStop();
                 TryApplyFlipBreakEvenStop();
                 TryManageTakeProfitTriggeredStop();
 
@@ -1262,7 +1151,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipSlopePass = emaSlopeShortPass;
                     bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
                     double flipEntryPrice = GetEntryPriceForDirection(Close[0], false, 0.0);
-                    double flipStopPrice = BuildFlipShortStopPrice(flipEntryPrice, emaValue, Time[0]);
+                    double flipStopReferenceValue = GetActiveStopReferenceValue(Time[0]);
+                    double flipStopPrice = BuildFlipShortStopPrice(flipEntryPrice, flipStopReferenceValue, Time[0]);
                     double flipStopLossPoints = GetPlannedStopLossPoints(flipEntryPrice, flipStopPrice);
                     bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
                     bool flipCrossPass = Close[0] <= emaValue - effectiveFlipEmaCrossPoints;
@@ -1342,6 +1232,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
+                TryApplyReferenceTrailingStop();
                 TryApplyFlipBreakEvenStop();
                 TryManageTakeProfitTriggeredStop();
 
@@ -1400,7 +1291,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipSlopePass = emaSlopeLongPass;
                     bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
                     double flipEntryPrice = GetEntryPriceForDirection(Close[0], true, 0.0);
-                    double flipStopPrice = BuildFlipLongStopPrice(flipEntryPrice, emaValue, Time[0]);
+                    double flipStopReferenceValue = GetActiveStopReferenceValue(Time[0]);
+                    double flipStopPrice = BuildFlipLongStopPrice(flipEntryPrice, flipStopReferenceValue, Time[0]);
                     double flipStopLossPoints = GetPlannedStopLossPoints(flipEntryPrice, flipStopPrice);
                     bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
                     bool flipCrossPass = Close[0] >= emaValue + effectiveFlipEmaCrossPoints;
@@ -1555,7 +1447,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     bool useMarketEntry = activeEntryOffsetPoints <= 0.0;
                     double entryPrice = GetEntryPriceForDirection(Close[0], true, activeEntryOffsetPoints);
-                    double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue, Time[0]);
+                    double stopReferenceValue = GetActiveStopReferenceValue(Time[0]);
+                    double stopPrice = BuildLongEntryStopPrice(entryPrice, stopReferenceValue, Time[0]);
                     double stopLossPoints = GetPlannedStopLossPoints(entryPrice, stopPrice);
                     if (!IsWithinMaxStopLossPoints(stopLossPoints))
                     {
@@ -1606,7 +1499,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     bool useMarketEntry = activeEntryOffsetPoints <= 0.0;
                     double entryPrice = GetEntryPriceForDirection(Close[0], false, activeEntryOffsetPoints);
-                    double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue, Time[0]);
+                    double stopReferenceValue = GetActiveStopReferenceValue(Time[0]);
+                    double stopPrice = BuildShortEntryStopPrice(entryPrice, stopReferenceValue, Time[0]);
                     double stopLossPoints = GetPlannedStopLossPoints(entryPrice, stopPrice);
                     if (!IsWithinMaxStopLossPoints(stopLossPoints))
                     {
@@ -1772,10 +1666,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 : price;
             double fillPrice = Instrument.MasterInstrument.RoundToTickSize(effectiveFillPrice);
             bool terminalExitExecution = IsTerminalExitExecution(orderName);
+            string exitContextLabel = GetExitContextLabel(execution, orderName);
 
             if (IsEntryOrderName(orderName))
             {
                 currentPositionEntrySignal = orderName;
+                currentPositionStopReferenceMode = activeStopReferenceMode;
                 currentPositionIsFlipEntry = IsLongEntryOrderName(orderName) ? pendingLongEntryIsFlip : pendingShortEntryIsFlip;
                 pendingLongEntryIsFlip = false;
                 pendingShortEntryIsFlip = false;
@@ -1874,6 +1770,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (tradeLinesActive && ShouldFinalizeTradeLinesOnExecution(orderName))
                     FinalizeTradeLines();
+
+                if (!string.IsNullOrWhiteSpace(exitContextLabel))
+                    DrawExitContextLabel(exitContextLabel, fillPrice);
+
                 EndTradeAttempt("exit-" + orderName);
             }
 
@@ -1963,6 +1863,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void ResetPositionTrackingState()
         {
             currentPositionEntrySignal = string.Empty;
+            currentPositionStopReferenceMode = InitialStopReferenceMode.PrimaryEma;
             currentPositionIsFlipEntry = false;
             flipBreakEvenActivated = false;
             takeProfitStopTriggered = false;
@@ -2057,7 +1958,73 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string BuildExitSignalName(string reason)
         {
-            return "DUO" + reason;
+            return "DUO" + GetExitReasonDisplayName(reason);
+        }
+
+        private string GetExitReasonDisplayName(string reason)
+        {
+            if (string.Equals(reason, "EmaExitLong", StringComparison.Ordinal))
+                return "PrimaryEmaExitLong";
+
+            if (string.Equals(reason, "EmaExitShort", StringComparison.Ordinal))
+                return "PrimaryEmaExitShort";
+
+            return reason;
+        }
+
+        private string GetExitContextLabel(Execution execution, string orderName)
+        {
+            if (!IsStopLossOrderName(orderName))
+                return null;
+
+            string sideSuffix = GetExitSideSuffix(execution);
+            if (sideSuffix.Length == 0)
+                return null;
+
+            return "DUO" + GetStopReferenceDisplayName(currentPositionStopReferenceMode) + "Stop" + sideSuffix;
+        }
+
+        private string GetExitSideSuffix(Execution execution)
+        {
+            string fromEntrySignal = execution != null && execution.Order != null
+                ? execution.Order.FromEntrySignal ?? string.Empty
+                : string.Empty;
+
+            if (IsLongEntryOrderName(fromEntrySignal) || IsLongEntryOrderName(currentPositionEntrySignal))
+                return "Long";
+
+            if (IsShortEntryOrderName(fromEntrySignal) || IsShortEntryOrderName(currentPositionEntrySignal))
+                return "Short";
+
+            return string.Empty;
+        }
+
+        private string GetStopReferenceDisplayName(InitialStopReferenceMode mode)
+        {
+            switch (mode)
+            {
+                case InitialStopReferenceMode.SecondaryEma:
+                    return "SecondaryEma";
+                case InitialStopReferenceMode.SessionVwap:
+                    return "Vwap";
+                default:
+                    return "PrimaryEma";
+            }
+        }
+
+        private void DrawExitContextLabel(string label, double price)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+                return;
+
+            string tag = string.Format(
+                CultureInfo.InvariantCulture,
+                "DUO_ExitContext_{0}_{1}_{2}",
+                CurrentBar,
+                price,
+                DateTime.UtcNow.Ticks);
+
+            Draw.Text(this, tag, label, 0, price, Brushes.White);
         }
 
         private void TryApplyFlipBreakEvenStop()
@@ -2101,6 +2068,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 closePrice,
                 stopValid,
                 stopApplied));
+        }
+
+        private void TryApplyReferenceTrailingStop()
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            double stopReferenceValue = GetActiveStopReferenceValue(Time[0]);
+            if (double.IsNaN(stopReferenceValue) || double.IsInfinity(stopReferenceValue) || stopReferenceValue <= 0.0)
+                return;
+
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
+            string entrySignal = Position.MarketPosition == MarketPosition.Long
+                ? GetOpenLongEntrySignal()
+                : GetOpenShortEntrySignal();
+
+            double stopPrice = Position.MarketPosition == MarketPosition.Long
+                ? BuildManagedLongTrailingStopPrice(stopReferenceValue, Time[0])
+                : BuildManagedShortTrailingStopPrice(stopReferenceValue, Time[0]);
+
+            if (!IsManagedStopPriceValid(stopPrice, closePrice))
+                return;
+
+            bool stopApplied = ApplyManagedStop(entrySignal, stopPrice);
+            if (stopApplied && DebugLogging)
+            {
+                LogDebug(string.Format(
+                    "Reference stop moved | signal={0} reference={1} referenceValue={2:0.00} stop={3:0.00} close={4:0.00}",
+                    entrySignal,
+                    GetStopReferenceDisplayName(activeStopReferenceMode),
+                    stopReferenceValue,
+                    stopPrice,
+                    closePrice));
+            }
         }
 
         private void TryManageTakeProfitTriggeredStop()
@@ -2996,6 +2997,141 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private InitialStopReferenceMode GetSessionInitialStopReference(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Asia:
+                    return AsiaInitialStopReference;
+                case SessionSlot.Asia2:
+                    return Asia2InitialStopReference;
+                case SessionSlot.Asia3:
+                    return Asia3InitialStopReference;
+                case SessionSlot.London:
+                    return LondonInitialStopReference;
+                case SessionSlot.London2:
+                    return London2InitialStopReference;
+                case SessionSlot.London3:
+                    return London3InitialStopReference;
+                case SessionSlot.NewYork:
+                    return NewYorkInitialStopReference;
+                case SessionSlot.NewYork2:
+                    return NewYork2InitialStopReference;
+                case SessionSlot.NewYork3:
+                    return NewYork3InitialStopReference;
+                default:
+                    return InitialStopReferenceMode.PrimaryEma;
+            }
+        }
+
+        private int GetSessionSecondaryEmaPeriod(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Asia:
+                    return AsiaSecondaryEmaPeriod;
+                case SessionSlot.Asia2:
+                    return Asia2SecondaryEmaPeriod;
+                case SessionSlot.Asia3:
+                    return Asia3SecondaryEmaPeriod;
+                case SessionSlot.London:
+                    return LondonSecondaryEmaPeriod;
+                case SessionSlot.London2:
+                    return London2SecondaryEmaPeriod;
+                case SessionSlot.London3:
+                    return London3SecondaryEmaPeriod;
+                case SessionSlot.NewYork:
+                    return NewYorkSecondaryEmaPeriod;
+                case SessionSlot.NewYork2:
+                    return NewYork2SecondaryEmaPeriod;
+                case SessionSlot.NewYork3:
+                    return NewYork3SecondaryEmaPeriod;
+                default:
+                    return 0;
+            }
+        }
+
+        private double GetSessionSecondaryStopPaddingPoints(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Asia:
+                    return AsiaSecondaryEmaStopPaddingPoints;
+                case SessionSlot.Asia2:
+                    return Asia2SecondaryEmaStopPaddingPoints;
+                case SessionSlot.Asia3:
+                    return Asia3SecondaryEmaStopPaddingPoints;
+                case SessionSlot.London:
+                    return LondonSecondaryEmaStopPaddingPoints;
+                case SessionSlot.London2:
+                    return London2SecondaryEmaStopPaddingPoints;
+                case SessionSlot.London3:
+                    return London3SecondaryEmaStopPaddingPoints;
+                case SessionSlot.NewYork:
+                    return NewYorkSecondaryEmaStopPaddingPoints;
+                case SessionSlot.NewYork2:
+                    return NewYork2SecondaryEmaStopPaddingPoints;
+                case SessionSlot.NewYork3:
+                    return NewYork3SecondaryEmaStopPaddingPoints;
+                default:
+                    return 0.0;
+            }
+        }
+
+        private double GetSessionVwapStopPaddingPoints(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Asia:
+                    return AsiaVwapStopPaddingPoints;
+                case SessionSlot.Asia2:
+                    return Asia2VwapStopPaddingPoints;
+                case SessionSlot.Asia3:
+                    return Asia3VwapStopPaddingPoints;
+                case SessionSlot.London:
+                    return LondonVwapStopPaddingPoints;
+                case SessionSlot.London2:
+                    return London2VwapStopPaddingPoints;
+                case SessionSlot.London3:
+                    return London3VwapStopPaddingPoints;
+                case SessionSlot.NewYork:
+                    return NewYorkVwapStopPaddingPoints;
+                case SessionSlot.NewYork2:
+                    return NewYork2VwapStopPaddingPoints;
+                case SessionSlot.NewYork3:
+                    return NewYork3VwapStopPaddingPoints;
+                default:
+                    return 0.0;
+            }
+        }
+
+        private EMA GetSessionSecondaryEma(SessionSlot session)
+        {
+            switch (session)
+            {
+                case SessionSlot.Asia:
+                    return secondaryEmaAsia;
+                case SessionSlot.Asia2:
+                    return secondaryEmaAsia2;
+                case SessionSlot.Asia3:
+                    return secondaryEmaAsia3;
+                case SessionSlot.London:
+                    return secondaryEmaLondon;
+                case SessionSlot.London2:
+                    return secondaryEmaLondon2;
+                case SessionSlot.London3:
+                    return secondaryEmaLondon3;
+                case SessionSlot.NewYork:
+                    return secondaryEmaNewYork;
+                case SessionSlot.NewYork2:
+                    return secondaryEmaNewYork2;
+                case SessionSlot.NewYork3:
+                    return secondaryEmaNewYork3;
+                default:
+                    return null;
+            }
+        }
+
         private void ApplyInputsForSession(SessionSlot session)
         {
             switch (session)
@@ -3014,7 +3150,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = AsiaContracts;
                     activeTradeDirection = AsiaTradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
@@ -3055,7 +3190,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = Asia2Contracts;
                     activeTradeDirection = Asia2TradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = Asia2EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = Asia2MaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = Asia2StopPaddingPoints;
@@ -3096,7 +3230,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = Asia3Contracts;
                     activeTradeDirection = Asia3TradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = Asia3EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = Asia3MaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = Asia3StopPaddingPoints;
@@ -3137,7 +3270,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = LondonContracts;
                     activeTradeDirection = LondonTradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = LondonEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = LondonMaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = LondonStopPaddingPoints;
@@ -3178,7 +3310,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = London2Contracts;
                     activeTradeDirection = London2TradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = London2EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = London2MaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = London2StopPaddingPoints;
@@ -3219,7 +3350,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = London3Contracts;
                     activeTradeDirection = London3TradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = London3EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = London3MaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = London3StopPaddingPoints;
@@ -3260,7 +3390,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYorkContracts;
                     activeTradeDirection = NewYorkTradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
@@ -3301,7 +3430,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork2Contracts;
                     activeTradeDirection = NewYork2TradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = NewYork2EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = NewYork2MaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = NewYork2StopPaddingPoints;
@@ -3342,7 +3470,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork3Contracts;
                     activeTradeDirection = NewYork3TradeDirection;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = NewYork3EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = NewYork3MaxEntryDistanceFromEmaPoints;
                     activeStopPaddingPoints = NewYork3StopPaddingPoints;
@@ -3382,7 +3509,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxAbsoluteExitLevel = 0.0;
                     activeContracts = 0;
                     activeTradeDirection = SessionTradeDirection.Both;
-                    activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = 0.0;
                     activeMaxEntryDistanceFromEmaPoints = 0.0;
                     activeStopPaddingPoints = 0.0;
@@ -3409,33 +3535,57 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHorizontalExitBars = 0;
                     break;
             }
+
+            activeStopReferenceMode = GetSessionInitialStopReference(session);
+            activeSecondaryEmaPeriod = GetSessionSecondaryEmaPeriod(session);
+            activeSecondaryStopPaddingPoints = GetSessionSecondaryStopPaddingPoints(session);
+            activeVwapStopPaddingPoints = GetSessionVwapStopPaddingPoints(session);
+            activeSecondaryEma = GetSessionSecondaryEma(session);
         }
 
         private void UpdateEmaPlotVisibility()
         {
             if (!ShowEmaOnChart)
             {
-                SetEmaVisible(emaAsia, false);
-                SetEmaVisible(emaAsia2, false);
-                SetEmaVisible(emaAsia3, false);
-                SetEmaVisible(emaLondon, false);
-                SetEmaVisible(emaLondon2, false);
-                SetEmaVisible(emaLondon3, false);
-                SetEmaVisible(emaNewYork, false);
-                SetEmaVisible(emaNewYork2, false);
-                SetEmaVisible(emaNewYork3, false);
+                SetEmaVisible(emaAsia, false, Brushes.Gold);
+                SetEmaVisible(emaAsia2, false, Brushes.Gold);
+                SetEmaVisible(emaAsia3, false, Brushes.Gold);
+                SetEmaVisible(emaLondon, false, Brushes.Gold);
+                SetEmaVisible(emaLondon2, false, Brushes.Gold);
+                SetEmaVisible(emaLondon3, false, Brushes.Gold);
+                SetEmaVisible(emaNewYork, false, Brushes.Gold);
+                SetEmaVisible(emaNewYork2, false, Brushes.Gold);
+                SetEmaVisible(emaNewYork3, false, Brushes.Gold);
+                SetEmaVisible(secondaryEmaAsia, false, Brushes.DeepSkyBlue);
+                SetEmaVisible(secondaryEmaAsia2, false, Brushes.DeepSkyBlue);
+                SetEmaVisible(secondaryEmaAsia3, false, Brushes.DeepSkyBlue);
+                SetEmaVisible(secondaryEmaLondon, false, Brushes.DeepSkyBlue);
+                SetEmaVisible(secondaryEmaLondon2, false, Brushes.DeepSkyBlue);
+                SetEmaVisible(secondaryEmaLondon3, false, Brushes.DeepSkyBlue);
+                SetEmaVisible(secondaryEmaNewYork, false, Brushes.DeepSkyBlue);
+                SetEmaVisible(secondaryEmaNewYork2, false, Brushes.DeepSkyBlue);
+                SetEmaVisible(secondaryEmaNewYork3, false, Brushes.DeepSkyBlue);
                 return;
             }
 
-            SetEmaVisible(emaAsia, ShouldShowEmaInstance(emaAsia));
-            SetEmaVisible(emaAsia2, ShouldShowEmaInstance(emaAsia2));
-            SetEmaVisible(emaAsia3, ShouldShowEmaInstance(emaAsia3));
-            SetEmaVisible(emaLondon, ShouldShowEmaInstance(emaLondon));
-            SetEmaVisible(emaLondon2, ShouldShowEmaInstance(emaLondon2));
-            SetEmaVisible(emaLondon3, ShouldShowEmaInstance(emaLondon3));
-            SetEmaVisible(emaNewYork, ShouldShowEmaInstance(emaNewYork));
-            SetEmaVisible(emaNewYork2, ShouldShowEmaInstance(emaNewYork2));
-            SetEmaVisible(emaNewYork3, ShouldShowEmaInstance(emaNewYork3));
+            SetEmaVisible(emaAsia, ShouldShowEmaInstance(emaAsia), Brushes.Gold);
+            SetEmaVisible(emaAsia2, ShouldShowEmaInstance(emaAsia2), Brushes.Gold);
+            SetEmaVisible(emaAsia3, ShouldShowEmaInstance(emaAsia3), Brushes.Gold);
+            SetEmaVisible(emaLondon, ShouldShowEmaInstance(emaLondon), Brushes.Gold);
+            SetEmaVisible(emaLondon2, ShouldShowEmaInstance(emaLondon2), Brushes.Gold);
+            SetEmaVisible(emaLondon3, ShouldShowEmaInstance(emaLondon3), Brushes.Gold);
+            SetEmaVisible(emaNewYork, ShouldShowEmaInstance(emaNewYork), Brushes.Gold);
+            SetEmaVisible(emaNewYork2, ShouldShowEmaInstance(emaNewYork2), Brushes.Gold);
+            SetEmaVisible(emaNewYork3, ShouldShowEmaInstance(emaNewYork3), Brushes.Gold);
+            SetEmaVisible(secondaryEmaAsia, ShouldShowSecondaryEmaInstance(secondaryEmaAsia), Brushes.DeepSkyBlue);
+            SetEmaVisible(secondaryEmaAsia2, ShouldShowSecondaryEmaInstance(secondaryEmaAsia2), Brushes.DeepSkyBlue);
+            SetEmaVisible(secondaryEmaAsia3, ShouldShowSecondaryEmaInstance(secondaryEmaAsia3), Brushes.DeepSkyBlue);
+            SetEmaVisible(secondaryEmaLondon, ShouldShowSecondaryEmaInstance(secondaryEmaLondon), Brushes.DeepSkyBlue);
+            SetEmaVisible(secondaryEmaLondon2, ShouldShowSecondaryEmaInstance(secondaryEmaLondon2), Brushes.DeepSkyBlue);
+            SetEmaVisible(secondaryEmaLondon3, ShouldShowSecondaryEmaInstance(secondaryEmaLondon3), Brushes.DeepSkyBlue);
+            SetEmaVisible(secondaryEmaNewYork, ShouldShowSecondaryEmaInstance(secondaryEmaNewYork), Brushes.DeepSkyBlue);
+            SetEmaVisible(secondaryEmaNewYork2, ShouldShowSecondaryEmaInstance(secondaryEmaNewYork2), Brushes.DeepSkyBlue);
+            SetEmaVisible(secondaryEmaNewYork3, ShouldShowSecondaryEmaInstance(secondaryEmaNewYork3), Brushes.DeepSkyBlue);
         }
 
         private void UpdateAdxPlotVisibility()
@@ -3477,12 +3627,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 || (activeSession == SessionSlot.NewYork3 && ReferenceEquals(ema, emaNewYork3));
         }
 
-        private void SetEmaVisible(EMA ema, bool visible)
+        private bool ShouldShowSecondaryEmaInstance(EMA ema)
+        {
+            if (ema == null || activeStopReferenceMode != InitialStopReferenceMode.SecondaryEma)
+                return false;
+
+            return (activeSession == SessionSlot.Asia && ReferenceEquals(ema, secondaryEmaAsia))
+                || (activeSession == SessionSlot.Asia2 && ReferenceEquals(ema, secondaryEmaAsia2))
+                || (activeSession == SessionSlot.Asia3 && ReferenceEquals(ema, secondaryEmaAsia3))
+                || (activeSession == SessionSlot.London && ReferenceEquals(ema, secondaryEmaLondon))
+                || (activeSession == SessionSlot.London2 && ReferenceEquals(ema, secondaryEmaLondon2))
+                || (activeSession == SessionSlot.London3 && ReferenceEquals(ema, secondaryEmaLondon3))
+                || (activeSession == SessionSlot.NewYork && ReferenceEquals(ema, secondaryEmaNewYork))
+                || (activeSession == SessionSlot.NewYork2 && ReferenceEquals(ema, secondaryEmaNewYork2))
+                || (activeSession == SessionSlot.NewYork3 && ReferenceEquals(ema, secondaryEmaNewYork3));
+        }
+
+        private void SetEmaVisible(EMA ema, bool visible, Brush visibleBrush)
         {
             if (ema == null || ema.Plots == null || ema.Plots.Length == 0)
                 return;
 
-            ema.Plots[0].Brush = visible ? Brushes.Gold : Brushes.Transparent;
+            ema.Plots[0].Brush = visible ? visibleBrush : Brushes.Transparent;
         }
 
         private void SetAdxVisible(DM adx, bool showAdx)
@@ -3562,8 +3728,63 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EmaPeriod,
                 NewYorkEmaPeriod,
                 NewYork2EmaPeriod,
-                NewYork3EmaPeriod
+                NewYork3EmaPeriod,
+                AsiaSecondaryEmaPeriod,
+                Asia2SecondaryEmaPeriod,
+                Asia3SecondaryEmaPeriod,
+                LondonSecondaryEmaPeriod,
+                London2SecondaryEmaPeriod,
+                London3SecondaryEmaPeriod,
+                NewYorkSecondaryEmaPeriod,
+                NewYork2SecondaryEmaPeriod,
+                NewYork3SecondaryEmaPeriod
             }.Max();
+        }
+
+        private void InitializeOrderFlowVwapIndicator()
+        {
+            orderFlowVwapIndicator = null;
+
+            if (!AnySessionUsesVwapStopReference())
+                return;
+
+            try
+            {
+                orderFlowVwapIndicator = OrderFlowVWAP(
+                    VWAPResolution.Standard,
+                    Bars.TradingHours,
+                    VWAPStandardDeviations.Three,
+                    1,
+                    2,
+                    3);
+            }
+            catch
+            {
+                orderFlowVwapIndicator = null;
+                Print("DUOTesting | Order Flow VWAP unavailable; VWAP stop reference will fall back to primary EMA.");
+            }
+        }
+
+        private bool AnySessionUsesVwapStopReference()
+        {
+            foreach (SessionSlot slot in ConfigurableSessionSlots)
+            {
+                if (GetSessionInitialStopReference(slot) == InitialStopReferenceMode.SessionVwap)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private double GetOrderFlowVwapValue()
+        {
+            if (orderFlowVwapIndicator == null)
+                return activeEma != null ? activeEma[0] : 0.0;
+
+            double value = orderFlowVwapIndicator.VWAP[0];
+            return value > 0.0
+                ? value
+                : (activeEma != null ? activeEma[0] : 0.0);
         }
 
         private bool IsFamilyActive(SessionFamily family, DateTime time)
@@ -3876,17 +4097,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (TryRestorePositionProtection(out restoredStopPrice, out restoredTakeProfitPoints))
             {
                 ArmProtectionAuditGracePeriod("restore-" + reason);
-                Print(string.Format(
-                    "{0} | {8} | bar={1} | Protection guard | action=restore reason={2} side={3} hasStop={4} hasTarget={5} stop={6:0.00} tpPts={7:0.00}",
-                    Time[0],
-                    CurrentBar,
+                LogDebug(string.Format(
+                    "Protection guard | action=restore reason={0} side={1} hasStop={2} hasTarget={3} stop={4:0.00} tpPts={5:0.00}",
                     reason,
                     Position.MarketPosition,
                     hasStop,
                     hasTarget,
                     restoredStopPrice,
-                    restoredTakeProfitPoints,
-                    HeartbeatStrategyName));
+                    restoredTakeProfitPoints));
                 return true;
             }
 
@@ -3894,15 +4112,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? GetOpenLongEntrySignal()
                 : GetOpenShortEntrySignal();
 
-            Print(string.Format(
-                "{0} | {6} | bar={1} | Protection guard | action=flatten reason={2} side={3} hasStop={4} hasTarget={5}",
-                Time[0],
-                CurrentBar,
+            LogDebug(string.Format(
+                "Protection guard | action=flatten reason={0} side={1} hasStop={2} hasTarget={3}",
                 reason,
                 Position.MarketPosition,
                 hasStop,
-                hasTarget,
-                HeartbeatStrategyName));
+                hasTarget));
 
             if (Position.MarketPosition == MarketPosition.Long)
                 ExitLong(BuildExitSignalName("ProtectionGuard"), entrySignal);
@@ -4143,9 +4358,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return string.Format("{0}:{1}:{2}", name, id, order.OrderState);
         }
 
-        private double BuildLongEntryStopPrice(double entryPrice, double emaValue, DateTime time)
+        private double BuildLongEntryStopPrice(double entryPrice, double stopReferenceValue, DateTime time)
         {
-            double raw = emaValue - GetActiveLongStopPaddingPoints(time);
+            double raw = stopReferenceValue - GetActiveLongStopPaddingPoints(time);
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
@@ -4153,9 +4368,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return rounded;
         }
 
-        private double BuildShortEntryStopPrice(double entryPrice, double emaValue, DateTime time)
+        private double BuildShortEntryStopPrice(double entryPrice, double stopReferenceValue, DateTime time)
         {
-            double raw = emaValue + GetActiveShortStopPaddingPoints(time);
+            double raw = stopReferenceValue + GetActiveShortStopPaddingPoints(time);
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
@@ -4163,22 +4378,34 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return rounded;
         }
 
-        private double BuildFlipShortStopPrice(double entryPrice, double emaValue, DateTime time)
+        private double BuildFlipShortStopPrice(double entryPrice, double stopReferenceValue, DateTime time)
         {
-            double raw = emaValue + GetActiveShortStopPaddingPoints(time);
+            double raw = stopReferenceValue + GetActiveShortStopPaddingPoints(time);
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
             return rounded;
         }
 
-        private double BuildFlipLongStopPrice(double entryPrice, double emaValue, DateTime time)
+        private double BuildFlipLongStopPrice(double entryPrice, double stopReferenceValue, DateTime time)
         {
-            double raw = emaValue - GetActiveLongStopPaddingPoints(time);
+            double raw = stopReferenceValue - GetActiveLongStopPaddingPoints(time);
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
             return rounded;
+        }
+
+        private double BuildManagedLongTrailingStopPrice(double stopReferenceValue, DateTime time)
+        {
+            double raw = stopReferenceValue - GetActiveLongStopPaddingPoints(time);
+            return Instrument.MasterInstrument.RoundToTickSize(raw);
+        }
+
+        private double BuildManagedShortTrailingStopPrice(double stopReferenceValue, DateTime time)
+        {
+            double raw = stopReferenceValue + GetActiveShortStopPaddingPoints(time);
+            return Instrument.MasterInstrument.RoundToTickSize(raw);
         }
 
         private double GetEntryPriceForDirection(double signalClose, bool isLong, double offsetPoints)
@@ -4210,12 +4437,43 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private double GetActiveLongStopPaddingPoints(DateTime time)
         {
-            return IsHighVolatilitySlWindow(time) ? activeHvSlPaddingPoints : activeStopPaddingPoints;
+            switch (activeStopReferenceMode)
+            {
+                case InitialStopReferenceMode.SecondaryEma:
+                    return activeSecondaryStopPaddingPoints;
+                case InitialStopReferenceMode.SessionVwap:
+                    return activeVwapStopPaddingPoints;
+                default:
+                    return IsHighVolatilitySlWindow(time) ? activeHvSlPaddingPoints : activeStopPaddingPoints;
+            }
         }
 
         private double GetActiveShortStopPaddingPoints(DateTime time)
         {
-            return IsHighVolatilitySlWindow(time) ? activeHvSlPaddingPoints : activeStopPaddingPoints;
+            switch (activeStopReferenceMode)
+            {
+                case InitialStopReferenceMode.SecondaryEma:
+                    return activeSecondaryStopPaddingPoints;
+                case InitialStopReferenceMode.SessionVwap:
+                    return activeVwapStopPaddingPoints;
+                default:
+                    return IsHighVolatilitySlWindow(time) ? activeHvSlPaddingPoints : activeStopPaddingPoints;
+            }
+        }
+
+        private double GetActiveStopReferenceValue(DateTime time)
+        {
+            switch (activeStopReferenceMode)
+            {
+                case InitialStopReferenceMode.SecondaryEma:
+                    if (activeSecondaryEma != null)
+                        return activeSecondaryEma[0];
+                    break;
+                case InitialStopReferenceMode.SessionVwap:
+                    return GetOrderFlowVwapValue();
+            }
+
+            return activeEma != null ? activeEma[0] : 0.0;
         }
 
         private bool IsHighVolatilitySlWindow(DateTime time)
@@ -4542,6 +4800,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return londonTimeZone;
         }
 
+        private TimeZoneInfo GetNewYorkTimeZone()
+        {
+            if (newYorkTimeZone != null)
+                return newYorkTimeZone;
+
+            try
+            {
+                newYorkTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            }
+            catch
+            {
+                try
+                {
+                    newYorkTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+                }
+                catch
+                {
+                    newYorkTimeZone = TimeZoneInfo.Local;
+                }
+            }
+
+            return newYorkTimeZone;
+        }
+
         private bool IsTimeInRange(TimeSpan now, TimeSpan start, TimeSpan end)
         {
             if (start < end)
@@ -4745,6 +5027,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!UseNewsSkip)
                 return;
 
+            EnsureNewsDatesInitialized(barTime);
+            if (!newsDatesAvailable)
+                return;
+
             for (int i = 0; i < NewsDates.Count; i++)
             {
                 DateTime newsTime = NewsDates[i];
@@ -4784,46 +5070,433 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private void EnsureNewsDatesInitialized()
+        private void EnsureNewsDatesInitialized(DateTime strategyTime, bool announceIfCurrentWeekAlreadyLoaded = false, bool retryCurrentWeekIfUnavailable = false)
         {
-            if (newsDatesInitialized)
-                return;
-
-            NewsDates.Clear();
-            LoadHardcodedNewsDates();
-
-            NewsDates.Sort();
-            newsDatesInitialized = true;
-            AppendNewsFetchLog(string.Format(
-                "Refresh complete | source=hardcoded count={0} events=[{1}]",
-                NewsDates.Count,
-                FormatNewsDatesForLog(NewsDates)));
-        }
-
-        private void LoadHardcodedNewsDates()
-        {
-            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
-                return;
-
-            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < entries.Length; i++)
+            DateTime weekStartEt = GetWeekStart(GetEtDateForNewsReference(strategyTime));
+            lock (NewsDatesSync)
             {
-                string trimmed = entries[i].Trim();
-                if (string.IsNullOrEmpty(trimmed))
-                    continue;
+                bool shouldRetryUnavailableCurrentWeek =
+                    retryCurrentWeekIfUnavailable &&
+                    newsDatesInitialized &&
+                    newsDatesWeekStart == weekStartEt &&
+                    !newsDatesAvailable &&
+                    weekStartEt == GetWeekStart(GetCurrentEtDate()) &&
+                    ShouldUseDynamicNewsSource() &&
+                    IsNewsFetchAllowed(weekStartEt, out _);
 
-                DateTime parsed;
-                if (!DateTime.TryParseExact(trimmed, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out parsed))
+                if (newsDatesInitialized && newsDatesWeekStart == weekStartEt && !shouldRetryUnavailableCurrentWeek)
                 {
-                    LogDebug(string.Format("Invalid news date entry: {0}", trimmed));
-                    continue;
+                    if (announceIfCurrentWeekAlreadyLoaded && ShouldLogNewsWeekSummary(weekStartEt))
+                        LogNewsWeekSummary(weekStartEt, "enable");
+                    return;
                 }
 
-                TimeSpan t = parsed.TimeOfDay;
-                if ((t == new TimeSpan(8, 30, 0) || t == new TimeSpan(14, 0, 0)) && !NewsDates.Contains(parsed))
-                    NewsDates.Add(parsed);
+                RefreshNewsDates(weekStartEt);
             }
+        }
+
+        private void RefreshNewsDates(DateTime weekStartEt)
+        {
+            NewsDates.Clear();
+            newsDatesInitialized = true;
+            newsDatesAvailable = false;
+            newsDatesWeekStart = weekStartEt;
+            newsDatesSource = "disabled";
+
+            var details = new List<string>();
+            List<DateTime> loadedDates;
+            string status = string.Empty;
+            string cacheStatus = string.Empty;
+            DateTime currentWeekEt = GetWeekStart(GetCurrentEtDate());
+            bool canFetchLiveWeek = ShouldUseDynamicNewsSource() && weekStartEt == currentWeekEt;
+            string fetchGateStatus = string.Empty;
+            bool fetchAllowed = canFetchLiveWeek && IsNewsFetchAllowed(weekStartEt, out fetchGateStatus);
+            if (fetchAllowed && TryFetchWeeklyNewsDates(weekStartEt, out loadedDates, out status))
+            {
+                MergeNewsDates(loadedDates);
+                newsDatesAvailable = true;
+                newsDatesSource = "weekly-json";
+                details.Add(status);
+                ClearNewsFetchBlock(weekStartEt);
+
+                string cacheWriteStatus;
+                TryWriteNewsDatesCache(weekStartEt, loadedDates, out cacheWriteStatus);
+                details.Add(cacheWriteStatus);
+            }
+            else
+            {
+                details.Add(canFetchLiveWeek
+                    ? (!string.IsNullOrWhiteSpace(fetchGateStatus) ? fetchGateStatus : status)
+                    : "feed-skip non-current-week-or-disabled");
+
+                List<DateTime> cachedDates;
+                if (TryLoadNewsDatesCache(weekStartEt, out cachedDates, out cacheStatus))
+                {
+                    MergeNewsDates(cachedDates);
+                    newsDatesAvailable = true;
+                    newsDatesSource = "cache";
+                    details.Add(cacheStatus);
+                }
+                else
+                {
+                    details.Add(cacheStatus);
+                }
+            }
+
+            NewsDates.Sort();
+            AppendNewsFetchLog(string.Format(
+                CultureInfo.InvariantCulture,
+                "Refresh complete | source={0} enabled={1} week={2:yyyy-MM-dd} count={3} events=[{4}] details={5}",
+                newsDatesSource,
+                newsDatesAvailable,
+                weekStartEt,
+                NewsDates.Count,
+                FormatNewsDatesForLog(NewsDates),
+                string.Join(" | ", details.ToArray())));
+            if (ShouldLogNewsWeekSummary(weekStartEt))
+            {
+                LogNewsWeekSummary(weekStartEt, "load");
+                if (!newsDatesAvailable)
+                    Print(string.Format("Weekly news error: {0} | {1}", status, cacheStatus));
+            }
+        }
+
+        private void MergeNewsDates(IEnumerable<DateTime> dates)
+        {
+            if (dates == null)
+                return;
+
+            foreach (DateTime date in dates)
+                AddUniqueNewsDate(NewsDates, date);
+        }
+
+        private bool TryFetchWeeklyNewsDates(DateTime weekStartEt, out List<DateTime> loadedDates, out string status)
+        {
+            loadedDates = new List<DateTime>();
+            try
+            {
+                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Encoding = System.Text.Encoding.UTF8;
+                    client.Headers[System.Net.HttpRequestHeader.UserAgent] =
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+                    client.Headers[System.Net.HttpRequestHeader.Accept] = "application/json,text/plain,*/*";
+                    client.Headers[System.Net.HttpRequestHeader.AcceptLanguage] = "en-US,en;q=0.9";
+
+                    string json = client.DownloadString(WeeklyNewsJsonUrl);
+                    var serializer = new JavaScriptSerializer();
+                    List<Dictionary<string, object>> rows = serializer.Deserialize<List<Dictionary<string, object>>>(json);
+                    DateTime weekEndEt = weekStartEt.AddDays(7);
+
+                    if (rows != null)
+                    {
+                        for (int i = 0; i < rows.Count; i++)
+                        {
+                            Dictionary<string, object> row = rows[i];
+                            DateTime newsDate;
+                            if (!TryParseWeeklyNewsDate(row, out newsDate))
+                                continue;
+
+                            if (newsDate < weekStartEt || newsDate >= weekEndEt)
+                                continue;
+
+                            string currency = GetNewsRowString(row, "country");
+                            string impact = GetNewsRowString(row, "impact");
+                            if (!string.Equals(currency, NewsTargetCurrency, StringComparison.OrdinalIgnoreCase) ||
+                                !string.Equals(impact, NewsTargetImpact, StringComparison.OrdinalIgnoreCase))
+                                continue;
+
+                            AddUniqueNewsDate(loadedDates, newsDate);
+                        }
+                    }
+
+                    status = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "feed-ok url={0} rows={1} matches={2}",
+                        WeeklyNewsJsonUrl,
+                        rows != null ? rows.Count : 0,
+                        loadedDates.Count);
+                    return true;
+                }
+            }
+            catch (System.Net.WebException ex)
+            {
+                var response = ex.Response as System.Net.HttpWebResponse;
+                if (response != null && (int)response.StatusCode == 429)
+                {
+                    status = string.Format("feed-error 429 Too Many Requests ({0})", ex.Message);
+                    SetNewsFetchBlock(weekStartEt, TimeSpan.FromMinutes(15), status);
+                    return false;
+                }
+
+                status = string.Format("feed-error {0}", ex.Message);
+                SetNewsFetchBlock(weekStartEt, TimeSpan.FromMinutes(2), status);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                status = string.Format("feed-error {0}", ex.Message);
+                SetNewsFetchBlock(weekStartEt, TimeSpan.FromMinutes(2), status);
+                return false;
+            }
+        }
+
+        private bool TryWriteNewsDatesCache(DateTime weekStartEt, List<DateTime> dates, out string status)
+        {
+            try
+            {
+                string path = GetNewsCachePath(weekStartEt);
+                var lines = new List<string>();
+                lines.Add(NewsCacheWeekPrefix + weekStartEt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                lines.Add(NewsCacheUpdatedPrefix + DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+
+                if (dates != null)
+                {
+                    List<DateTime> orderedDates = dates.OrderBy(d => d).ToList();
+                    for (int i = 0; i < orderedDates.Count; i++)
+                        lines.Add(orderedDates[i].ToString("yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture));
+                }
+
+                System.IO.File.WriteAllLines(path, lines.ToArray());
+                status = string.Format("cache-write-ok file={0}", path);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                status = string.Format("cache-write-error {0}", ex.Message);
+                return false;
+            }
+        }
+
+        private bool TryLoadNewsDatesCache(DateTime weekStartEt, out List<DateTime> cachedDates, out string status)
+        {
+            cachedDates = new List<DateTime>();
+            try
+            {
+                string path = GetNewsCachePath(weekStartEt);
+                if (!System.IO.File.Exists(path))
+                {
+                    status = string.Format("cache-miss file-not-found file={0}", path);
+                    return false;
+                }
+
+                string[] lines = System.IO.File.ReadAllLines(path);
+                if (lines == null || lines.Length == 0)
+                {
+                    status = "cache-miss empty";
+                    return false;
+                }
+
+                string weekLine = lines.FirstOrDefault(line => line.StartsWith(NewsCacheWeekPrefix, StringComparison.Ordinal));
+                if (string.IsNullOrWhiteSpace(weekLine))
+                {
+                    status = "cache-miss missing-week";
+                    return false;
+                }
+
+                DateTime cachedWeekStart;
+                string weekValue = weekLine.Substring(NewsCacheWeekPrefix.Length).Trim();
+                if (!DateTime.TryParseExact(weekValue, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out cachedWeekStart))
+                {
+                    status = string.Format("cache-miss invalid-week {0}", weekValue);
+                    return false;
+                }
+
+                if (cachedWeekStart != weekStartEt)
+                {
+                    status = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "cache-stale cached-week={0:yyyy-MM-dd}",
+                        cachedWeekStart);
+                    return false;
+                }
+
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string line = lines[i] != null ? lines[i].Trim() : string.Empty;
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#", StringComparison.Ordinal))
+                        continue;
+
+                    DateTime parsed;
+                    if (!DateTime.TryParseExact(line, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+                        continue;
+
+                    AddUniqueNewsDate(cachedDates, parsed);
+                }
+
+                status = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "cache-ok file={0} matches={1}",
+                    path,
+                    cachedDates.Count);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                status = string.Format("cache-error {0}", ex.Message);
+                return false;
+            }
+        }
+
+        private bool TryParseWeeklyNewsDate(Dictionary<string, object> row, out DateTime newsDate)
+        {
+            newsDate = DateTime.MinValue;
+            string rawDate = GetNewsRowString(row, "date");
+            if (string.IsNullOrWhiteSpace(rawDate))
+                return false;
+
+            DateTimeOffset timestamp;
+            if (!DateTimeOffset.TryParse(rawDate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out timestamp))
+                return false;
+
+            newsDate = timestamp.DateTime;
+            return true;
+        }
+
+        private static string GetNewsRowString(Dictionary<string, object> row, string key)
+        {
+            object raw;
+            if (row == null || string.IsNullOrWhiteSpace(key) || !row.TryGetValue(key, out raw) || raw == null)
+                return string.Empty;
+
+            return raw.ToString().Trim();
+        }
+
+        private static void AddUniqueNewsDate(List<DateTime> target, DateTime value)
+        {
+            if (target == null || !IsTargetNewsTime(value.TimeOfDay) || target.Contains(value))
+                return;
+
+            target.Add(value);
+        }
+
+        private static bool IsTargetNewsTime(TimeSpan time)
+        {
+            return time == new TimeSpan(8, 30, 0) || time == new TimeSpan(14, 0, 0);
+        }
+
+        private string GetNewsCachePath(DateTime weekStartEt)
+        {
+            string fileName = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}{1:yyyy-MM-dd}.txt",
+                NewsCacheFilePrefix,
+                weekStartEt);
+            return System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, fileName);
+        }
+
+        private bool IsNewsFetchAllowed(DateTime weekStartEt, out string status)
+        {
+            if (newsFetchBlockedWeekStart == weekStartEt && newsFetchBlockedUntilUtc > DateTime.UtcNow)
+            {
+                status = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "feed-skip cooldown-until={0:o} reason={1}",
+                    newsFetchBlockedUntilUtc,
+                    newsFetchBlockedReason);
+                return false;
+            }
+
+            status = string.Empty;
+            return true;
+        }
+
+        private void SetNewsFetchBlock(DateTime weekStartEt, TimeSpan cooldown, string reason)
+        {
+            newsFetchBlockedWeekStart = weekStartEt;
+            newsFetchBlockedUntilUtc = DateTime.UtcNow.Add(cooldown);
+            newsFetchBlockedReason = reason ?? string.Empty;
+        }
+
+        private void ClearNewsFetchBlock(DateTime weekStartEt)
+        {
+            if (newsFetchBlockedWeekStart != weekStartEt)
+                return;
+
+            newsFetchBlockedWeekStart = DateTime.MinValue;
+            newsFetchBlockedUntilUtc = DateTime.MinValue;
+            newsFetchBlockedReason = string.Empty;
+        }
+
+        private DateTime GetCurrentEtDate()
+        {
+            DateTime utcNow = DateTime.UtcNow;
+            try
+            {
+                return TimeZoneInfo.ConvertTimeFromUtc(utcNow, GetNewYorkTimeZone()).Date;
+            }
+            catch
+            {
+                return utcNow.Date;
+            }
+        }
+
+        private DateTime GetEtDateForNewsReference(DateTime strategyTime)
+        {
+            try
+            {
+                TimeZoneInfo sourceTimeZone = GetTargetTimeZone();
+                DateTime unspecifiedTime = DateTime.SpecifyKind(strategyTime, DateTimeKind.Unspecified);
+                DateTime utcTime = TimeZoneInfo.ConvertTimeToUtc(unspecifiedTime, sourceTimeZone);
+                return TimeZoneInfo.ConvertTimeFromUtc(utcTime, GetNewYorkTimeZone()).Date;
+            }
+            catch
+            {
+                return strategyTime.Date;
+            }
+        }
+
+        private DateTime GetNewsReferenceStrategyTime()
+        {
+            DateTime latestLoadedTime;
+            if (TryGetLatestLoadedBarTime(out latestLoadedTime))
+                return latestLoadedTime;
+
+            return GetCurrentEtDate();
+        }
+
+        private bool TryGetLatestLoadedBarTime(out DateTime strategyTime)
+        {
+            strategyTime = DateTime.MinValue;
+            try
+            {
+                var bars = Bars;
+                if (bars == null)
+                    return false;
+
+                var barsType = bars.GetType();
+                var countProp = barsType.GetProperty("Count", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var getTimeMethod = barsType.GetMethod(
+                    "GetTime",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(int) },
+                    null);
+
+                if (countProp == null || getTimeMethod == null)
+                    return false;
+
+                int count = (int)countProp.GetValue(bars, null);
+                if (count <= 0)
+                    return false;
+
+                object raw = getTimeMethod.Invoke(bars, new object[] { count - 1 });
+                if (!(raw is DateTime))
+                    return false;
+
+                strategyTime = (DateTime)raw;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool ShouldUseDynamicNewsSource()
+        {
+            return Account != null && !string.Equals(Account.Name, "Backtest", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatNewsDatesForLog(List<DateTime> dates)
@@ -4839,9 +5512,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             LogDebug(string.Format("NewsFetch | {0}", message ?? string.Empty));
         }
 
+        private bool ShouldLogNewsWeekSummary(DateTime weekStartEt)
+        {
+            return weekStartEt == GetWeekStart(GetCurrentEtDate());
+        }
+
+        private void LogNewsWeekSummary(DateTime weekStartEt, string reason)
+        {
+            if (lastPrintedNewsWeekStart == weekStartEt)
+                return;
+
+            lastPrintedNewsWeekStart = weekStartEt;
+
+            Print("Weekly news");
+            Print("-------------");
+
+            if (!newsDatesAvailable)
+            {
+                Print("unavailable");
+                return;
+            }
+
+            if (NewsDates.Count == 0)
+            {
+                Print("none");
+                return;
+            }
+
+            for (int i = 0; i < NewsDates.Count; i++)
+                Print(NewsDates[i].ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
+        }
+
         private bool TimeInNewsSkip(DateTime time)
         {
             if (!UseNewsSkip)
+                return false;
+
+            EnsureNewsDatesInitialized(time);
+            if (!newsDatesAvailable)
                 return false;
 
             for (int i = 0; i < NewsDates.Count; i++)
@@ -4857,6 +5565,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return false;
+        }
+
+        private bool IsSameNewsWeek(DateTime first, DateTime second)
+        {
+            return GetWeekStart(GetEtDateForNewsReference(first)) == GetWeekStart(GetEtDateForNewsReference(second));
         }
 
         private bool GetSessionClosed(SessionSlot slot)
@@ -4957,7 +5670,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} entryStop={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} mode={27} atrMult={28:0.##} stopPct={29:0.##} adxFlipMin={30} adxDdRiskMode={31} adxDdRiskSlPts={32:0.##} adxDdRiskTpPts={33:0.##} horizontal={34} atrMin={35:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} stopRef={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} mode={27} atrMult={28:0.##} stopPct={29:0.##} adxFlipMin={30} adxDdRiskMode={31} adxDdRiskSlPts={32:0.##} adxDdRiskTpPts={33:0.##} horizontal={34} atrMin={35:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -4975,7 +5688,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeContracts,
                 activeExitCrossPoints,
                 GetEffectiveFlipEmaCrossPoints(),
-                activeEntryStopMode,
+                activeStopReferenceMode,
                 activeStopPaddingPoints,
                 activeHvSlPaddingPoints,
                 activeHvSlStartTime,
@@ -5382,22 +6095,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else
             {
-                List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
-                if (weekNews.Count == 0)
+                EnsureNewsDatesInitialized(Time[0]);
+                if (!newsDatesAvailable)
                 {
-                    lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
+                    lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.IndianRed));
                 }
                 else
                 {
-                    for (int i = 0; i < weekNews.Count; i++)
+                    List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
+                    if (weekNews.Count == 0)
                     {
-                        DateTime newsTime = weekNews[i];
-                        bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
-                        string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
-                        string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
-                        string label = "News: " + dayPart + " " + timePart;
-                        Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
-                        lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
+                        lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
+                    }
+                    else
+                    {
+                        for (int i = 0; i < weekNews.Count; i++)
+                        {
+                            DateTime newsTime = weekNews[i];
+                            bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
+                            string dayPart = newsTime.ToString("ddd", CultureInfo.InvariantCulture);
+                            string timePart = newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                            string label = "News: " + dayPart + " " + timePart;
+                            Brush labelBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                            lines.Add((label, string.Empty, labelBrush, Brushes.Transparent));
+                        }
                     }
                 }
             }
@@ -5441,10 +6162,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private List<DateTime> GetCurrentWeekNews(DateTime time)
         {
-            EnsureNewsDatesInitialized();
+            EnsureNewsDatesInitialized(time);
 
             var weekNews = new List<DateTime>();
-            DateTime weekStart = GetWeekStart(time.Date);
+            DateTime weekStart = newsDatesWeekStart != DateTime.MinValue ? newsDatesWeekStart : GetWeekStart(time.Date);
             DateTime weekEnd = weekStart.AddDays(7);
             for (int i = 0; i < NewsDates.Count; i++)
             {
@@ -5459,8 +6180,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private DateTime GetWeekStart(DateTime date)
         {
-            DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
-            int diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
+            int diff = (7 + (date.DayOfWeek - DayOfWeek.Sunday)) % 7;
             return date.AddDays(-diff).Date;
         }
 
@@ -7084,7 +7804,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 1 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 1 time window.", GroupName = "Asia 1", Order = 0)]
+        [Display(Name = "Asia 1 Session(18:30-20:00)", Description = "Enable trading logic during the Asia 1 time window.", GroupName = "Asia 1", Order = 0)]
         public bool UseAsiaSession { get; set; }
 
         [NinjaScriptProperty]
@@ -7254,9 +7974,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 1 entries and flips while ATR(14) is below this value.", GroupName = "Asia 1", Order = 37)]
         public double AsiaAtrMinimum { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "Asia 1", Order = 38)]
+        public InitialStopReferenceMode AsiaInitialStopReference { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 2 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 2 time window.", GroupName = "Asia 2", Order = 0)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "Asia 1", Order = 39)]
+        public int AsiaSecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "Asia 1", Order = 40)]
+        public double AsiaSecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "Asia 1", Order = 41)]
+        public double AsiaVwapStopPaddingPoints { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "Asia 2 Session(20:00-23:59)", Description = "Enable trading logic during the Asia 2 time window.", GroupName = "Asia 2", Order = 0)]
         public bool UseAsia2Session { get; set; }
 
         [NinjaScriptProperty]
@@ -7426,9 +8165,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 2 entries and flips while ATR(14) is below this value.", GroupName = "Asia 2", Order = 37)]
         public double Asia2AtrMinimum { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "Asia 2", Order = 38)]
+        public InitialStopReferenceMode Asia2InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 3 Session(18:30-2:00)", Description = "Enable trading logic during the Asia 3 time window.", GroupName = "Asia 3", Order = 0)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "Asia 2", Order = 39)]
+        public int Asia2SecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "Asia 2", Order = 40)]
+        public double Asia2SecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "Asia 2", Order = 41)]
+        public double Asia2VwapStopPaddingPoints { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "Asia 3 Session(00:00-02:00)", Description = "Enable trading logic during the Asia 3 time window.", GroupName = "Asia 3", Order = 0)]
         public bool UseAsia3Session { get; set; }
 
         [NinjaScriptProperty]
@@ -7599,7 +8357,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Asia3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "London 1 Session(1:45-6:30)", Description = "Enable trading logic during the London 1 time window.", GroupName = "London 1", Order = 0)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "Asia 3", Order = 38)]
+        public InitialStopReferenceMode Asia3InitialStopReference { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "Asia 3", Order = 39)]
+        public int Asia3SecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "Asia 3", Order = 40)]
+        public double Asia3SecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "Asia 3", Order = 41)]
+        public double Asia3VwapStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "London 1 Session(01:45-03:00)", Description = "Enable trading logic during the London 1 time window.", GroupName = "London 1", Order = 0)]
         public bool UseLondonSession { get; set; }
 
         [NinjaScriptProperty]
@@ -7768,9 +8545,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 1 entries and flips while ATR(14) is below this value.", GroupName = "London 1", Order = 37)]
         public double LondonAtrMinimum { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "London 1", Order = 38)]
+        public InitialStopReferenceMode LondonInitialStopReference { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "London 2 Session(1:45-6:30)", Description = "Enable trading logic during the London 2 time window.", GroupName = "London 2", Order = 0)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "London 1", Order = 39)]
+        public int LondonSecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "London 1", Order = 40)]
+        public double LondonSecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "London 1", Order = 41)]
+        public double LondonVwapStopPaddingPoints { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "London 2 Session(03:00-05:00)", Description = "Enable trading logic during the London 2 time window.", GroupName = "London 2", Order = 0)]
         public bool UseLondon2Session { get; set; }
 
         [NinjaScriptProperty]
@@ -7939,9 +8735,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 2 entries and flips while ATR(14) is below this value.", GroupName = "London 2", Order = 37)]
         public double London2AtrMinimum { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "London 2", Order = 38)]
+        public InitialStopReferenceMode London2InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "London 3 Session(1:45-6:30)", Description = "Enable trading logic during the London 3 time window.", GroupName = "London 3", Order = 0)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "London 2", Order = 39)]
+        public int London2SecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "London 2", Order = 40)]
+        public double London2SecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "London 2", Order = 41)]
+        public double London2VwapStopPaddingPoints { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "London 3 Session(05:00-08:55)", Description = "Enable trading logic during the London 3 time window.", GroupName = "London 3", Order = 0)]
         public bool UseLondon3Session { get; set; }
 
         [NinjaScriptProperty]
@@ -8115,7 +8930,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double London3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "New York 1 Session(9:35-13:30)", Description = "Enable trading logic during the New York 1 time window.", GroupName = "New York 1", Order = 0)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "London 3", Order = 38)]
+        public InitialStopReferenceMode London3InitialStopReference { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "London 3", Order = 39)]
+        public int London3SecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "London 3", Order = 40)]
+        public double London3SecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "London 3", Order = 41)]
+        public double London3VwapStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York 1 Session(09:35-11:30)", Description = "Enable trading logic during the New York 1 time window.", GroupName = "New York 1", Order = 0)]
         public bool UseNewYorkSession { get; set; }
 
         [NinjaScriptProperty]
@@ -8302,9 +9136,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 1 entries and flips while ATR(14) is below this value.", GroupName = "New York 1", Order = 38)]
         public double NewYorkAtrMinimum { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "New York 1", Order = 39)]
+        public InitialStopReferenceMode NewYorkInitialStopReference { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "New York 2 Session(9:35-13:30)", Description = "Enable trading logic during the New York 2 time window.", GroupName = "New York 2", Order = 0)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "New York 1", Order = 40)]
+        public int NewYorkSecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "New York 1", Order = 41)]
+        public double NewYorkSecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "New York 1", Order = 42)]
+        public double NewYorkVwapStopPaddingPoints { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York 2 Session(11:30-14:00)", Description = "Enable trading logic during the New York 2 time window.", GroupName = "New York 2", Order = 0)]
         public bool UseNewYork2Session { get; set; }
 
         [NinjaScriptProperty]
@@ -8491,9 +9344,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 2 entries and flips while ATR(14) is below this value.", GroupName = "New York 2", Order = 38)]
         public double NewYork2AtrMinimum { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "New York 2", Order = 39)]
+        public InitialStopReferenceMode NewYork2InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "New York 3 Session(9:35-13:30)", Description = "Enable trading logic during the New York 3 time window.", GroupName = "New York 3", Order = 0)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "New York 2", Order = 40)]
+        public int NewYork2SecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "New York 2", Order = 41)]
+        public double NewYork2SecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "New York 2", Order = 42)]
+        public double NewYork2VwapStopPaddingPoints { get; set; }
+
+
+        [NinjaScriptProperty]
+        [Display(Name = "New York 3 Session(14:00-17:00)", Description = "Enable trading logic during the New York 3 time window.", GroupName = "New York 3", Order = 0)]
         public bool UseNewYork3Session { get; set; }
 
         [NinjaScriptProperty]
@@ -8679,6 +9551,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 3 entries and flips while ATR(14) is below this value.", GroupName = "New York 3", Order = 38)]
         public double NewYork3AtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "New York 3", Order = 39)]
+        public InitialStopReferenceMode NewYork3InitialStopReference { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary EMA Period", Description = "Only used when Initial Stop Reference is Secondary EMA. 0 leaves the secondary EMA unused.", GroupName = "New York 3", Order = 40)]
+        public int NewYork3SecondaryEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary EMA SL Padding", Description = "Only used when Initial Stop Reference is Secondary EMA.", GroupName = "New York 3", Order = 41)]
+        public double NewYork3SecondaryEmaStopPaddingPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "VWAP SL Padding", Description = "Only used when Initial Stop Reference is Session VWAP.", GroupName = "New York 3", Order = 42)]
+        public double NewYork3VwapStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Session End", Description = "If true, flatten positions and cancel entries at each configured session end.", GroupName = "10. Sessions", Order = 0)]
