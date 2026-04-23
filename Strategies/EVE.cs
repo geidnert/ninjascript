@@ -1206,6 +1206,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (exec.Order.OrderState != OrderState.Filled) return;
             string orderName = exec.Order != null ? (exec.Order.Name ?? string.Empty) : string.Empty;
             int executionQty = Math.Max(1, qty);
+            int entryOrderQty = exec.Order != null && exec.Order.Quantity > 0 ? exec.Order.Quantity : executionQty;
 
             // ── Long entry filled ─────────────────────────────────────────────
             if (IsLongEntryOrderName(orderName))
@@ -1246,7 +1247,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Draw.Line(this, "LongSL_" + (++_drawSeq), false,
                           slT1, sl, slT2, sl, Brushes.Red, DashStyleHelper.Dash, 2);
 
-                bool longWebhookSent = SendWebhook("buy", price, _pendingLongTP, sl, exec.Order.OrderType == OrderType.Market, executionQty);
+                bool longWebhookSent = SendWebhook("buy", price, _pendingLongTP, sl, exec.Order.OrderType == OrderType.Market, entryOrderQty);
                 if (WebhookProviderType == WebhookProvider.ProjectX && longWebhookSent)
                 {
                     projectXLastSyncedStopPrice = RoundToInstrumentTick(_pendingLongSL);
@@ -1297,7 +1298,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Draw.Line(this, "ShortSL_" + (++_drawSeq), false,
                           slT1, sl, slT2, sl, Brushes.Red, DashStyleHelper.Dash, 2);
 
-                bool shortWebhookSent = SendWebhook("sell", price, _pendingShortTP, sl, exec.Order.OrderType == OrderType.Market, executionQty);
+                bool shortWebhookSent = SendWebhook("sell", price, _pendingShortTP, sl, exec.Order.OrderType == OrderType.Market, entryOrderQty);
                 if (WebhookProviderType == WebhookProvider.ProjectX && shortWebhookSent)
                 {
                     projectXLastSyncedStopPrice = RoundToInstrumentTick(_pendingShortSL);

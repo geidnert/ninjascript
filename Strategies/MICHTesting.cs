@@ -5064,6 +5064,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (execution.Order == null) return;
             string orderName = execution.Order.Name;
             int executionQty = Math.Abs(quantity);
+            int entryOrderQty = execution.Order.Quantity > 0 ? execution.Order.Quantity : Math.Max(1, executionQty);
 
             if ((orderName == LongEntrySignal || orderName == ShortEntrySignal)
                 && execution.Order.OrderState == OrderState.Filled
@@ -5116,7 +5117,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 bool isMarketEntry;
                 if (TryGetEntryWebhookAction(execution, out entryWebhookAction, out isMarketEntry))
                 {
-                    bool entryWebhookSent = SendWebhook(entryWebhookAction, tradeEntryPrice, tpPrice, slPrice, isMarketEntry, executionQty);
+                    bool entryWebhookSent = SendWebhook(entryWebhookAction, tradeEntryPrice, tpPrice, slPrice, isMarketEntry, entryOrderQty);
                     if (WebhookProviderType == WebhookProvider.ProjectX && entryWebhookSent)
                     {
                         projectXLastSyncedStopPrice = RoundToInstrumentTick(slPrice);
