@@ -43,15 +43,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         public enum TakeProfitStopMode
         {
-            PercentMove,
-            AtrTrail
+            PercentMove
         }
 
         public enum InitialStopReferenceMode
         {
             PrimaryEma,
-            SecondaryEma,
-            SessionVwap
+            SecondaryEma
         }
 
         private sealed class TradeLineSnapshot
@@ -268,7 +266,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeFlipTakeProfitPoints;
         private double activeTakeProfitPercentTriggerPercent;
         private TakeProfitStopMode activeTakeProfitStopMode = TakeProfitStopMode.PercentMove;
-        private double activeTakeProfitAtrTrailMultiplier;
         private double activeTakeProfitPercentStopMovePercent;
         private bool activeRequireMinAdxForFlips;
         private bool activeEnableAdxDdRiskMode;
@@ -279,8 +276,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private InitialStopReferenceMode activeStopReferenceMode;
         private int activeSecondaryEmaPeriod;
         private double activeSecondaryStopPaddingPoints;
-        private double activeVwapStopPaddingPoints;
-        private OrderFlowVWAP orderFlowVwapIndicator;
 
         private double pendingLongStopForWebhook;
         private double pendingShortStopForWebhook;
@@ -810,7 +805,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 adxNewYork = DM(NewYorkAdxPeriod);
                 adxNewYork2 = DM(NewYork2AdxPeriod);
                 adxNewYork3 = DM(NewYork3AdxPeriod);
-                InitializeOrderFlowVwapIndicator();
                 UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
                 UpdateAdxReferenceLines(adxAsia2, Asia2AdxThreshold, Asia2AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxAsia3, Asia3AdxThreshold, Asia3AdxMaxThreshold);
@@ -852,7 +846,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (ShowAtrOnChart || ShowAtrThresholdLines)
                     AddChartIndicator(atrVisual);
 
-                // Closed DUO does not add the VWAP stop reference indicator to the chart.
+                // Closed DUO does not add extra stop-reference indicators to the chart.
 
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
@@ -910,7 +904,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 asiaTradesThisSession = 0;
                 londonTradesThisSession = 0;
                 newYorkTradesThisSession = 0;
-                orderFlowVwapIndicator = null;
                 lastPrintedNewsWeekStart = DateTime.MinValue;
 
                 EnsureNewsDatesInitialized(GetNewsReferenceStrategyTime(), true, true);
@@ -1687,7 +1680,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         GetTradesThisSession(entrySession)));
                 }
 
-                ArmProtectionAuditGracePeriod("entry-fill");
+                ArmProtectionAuditGracePeriod("entry-fill", 60000);
             }
             else if (terminalExitExecution)
             {
@@ -1985,8 +1978,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case InitialStopReferenceMode.SecondaryEma:
                     return "SecondaryEma";
-                case InitialStopReferenceMode.SessionVwap:
-                    return "Vwap";
                 default:
                     return "PrimaryEma";
             }
@@ -2004,7 +1995,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 price,
                 DateTime.UtcNow.Ticks);
 
-            Draw.Text(this, tag, label, 0, price, Brushes.White);
+            Draw.Text(
+                this,
+                tag,
+                false,
+                label,
+                0,
+                price,
+                0,
+                Brushes.Gainsboro,
+                new SimpleFont("Segoe UI", 11),
+                TextAlignment.Center,
+                Brushes.Transparent,
+                Brushes.Transparent,
+                0);
         }
 
         private void TryApplyFlipBreakEvenStop()
@@ -2120,12 +2124,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activePositionTakeProfitPoints));
             }
 
-            if (activeTakeProfitStopMode == TakeProfitStopMode.AtrTrail)
-            {
-                TryApplyTakeProfitAtrTrailStop(entrySignal, closePrice);
-                return;
-            }
-
             double stopMovePoints = activePositionTakeProfitPoints * (activeTakeProfitPercentStopMovePercent / 100.0);
             double stopPrice = Position.MarketPosition == MarketPosition.Long
                 ? averagePrice + stopMovePoints
@@ -2145,38 +2143,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTakeProfitPercentStopMovePercent,
                     stopPrice,
                     averagePrice,
-                    closePrice));
-            }
-        }
-
-        private void TryApplyTakeProfitAtrTrailStop(string entrySignal, double closePrice)
-        {
-            if (takeProfitAtr == null || activeTakeProfitAtrTrailMultiplier <= 0.0)
-                return;
-
-            double atrValue = Instrument.MasterInstrument.RoundToTickSize(takeProfitAtr[0]);
-            if (atrValue <= 0.0)
-                return;
-
-            double trailDistance = atrValue * activeTakeProfitAtrTrailMultiplier;
-            double stopPrice = Position.MarketPosition == MarketPosition.Long
-                ? closePrice - trailDistance
-                : closePrice + trailDistance;
-            stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
-
-            if (!IsManagedStopPriceValid(stopPrice, closePrice))
-                return;
-
-            bool stopApplied = ApplyManagedStop(entrySignal, stopPrice);
-            if (stopApplied)
-            {
-                LogDebug(string.Format(
-                    "TP ATR trail moved | signal={0} atrPeriod={1} atr={2:0.00} multiplier={3:0.##} stop={4:0.00} close={5:0.00}",
-                    entrySignal,
-                    TakeProfitAtrPeriod,
-                    atrValue,
-                    activeTakeProfitAtrTrailMultiplier,
-                    stopPrice,
                     closePrice));
             }
         }
@@ -3058,33 +3024,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private double GetSessionVwapStopPaddingPoints(SessionSlot session)
-        {
-            switch (session)
-            {
-                case SessionSlot.Asia:
-                    return AsiaVwapStopPaddingPoints;
-                case SessionSlot.Asia2:
-                    return Asia2VwapStopPaddingPoints;
-                case SessionSlot.Asia3:
-                    return Asia3VwapStopPaddingPoints;
-                case SessionSlot.London:
-                    return LondonVwapStopPaddingPoints;
-                case SessionSlot.London2:
-                    return London2VwapStopPaddingPoints;
-                case SessionSlot.London3:
-                    return London3VwapStopPaddingPoints;
-                case SessionSlot.NewYork:
-                    return NewYorkVwapStopPaddingPoints;
-                case SessionSlot.NewYork2:
-                    return NewYork2VwapStopPaddingPoints;
-                case SessionSlot.NewYork3:
-                    return NewYork3VwapStopPaddingPoints;
-                default:
-                    return 0.0;
-            }
-        }
-
         private EMA GetSessionSecondaryEma(SessionSlot session)
         {
             switch (session)
@@ -3147,7 +3086,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = AsiaFlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = AsiaTakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = AsiaTakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = AsiaTakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = AsiaTakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = AsiaRequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = AsiaEnableAdxDdRiskMode;
@@ -3187,7 +3125,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = Asia2FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = Asia2TakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = Asia2TakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = Asia2TakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = Asia2TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = Asia2RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = Asia2EnableAdxDdRiskMode;
@@ -3227,7 +3164,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = Asia3FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = Asia3TakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = Asia3TakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = Asia3TakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = Asia3TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = Asia3RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = Asia3EnableAdxDdRiskMode;
@@ -3267,7 +3203,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = LondonFlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = LondonTakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = LondonTakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = LondonTakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = LondonTakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = LondonRequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = LondonEnableAdxDdRiskMode;
@@ -3307,7 +3242,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = London2FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = London2TakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = London2TakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = London2TakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = London2TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = London2RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = London2EnableAdxDdRiskMode;
@@ -3347,7 +3281,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = London3FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = London3TakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = London3TakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = London3TakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = London3TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = London3RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = London3EnableAdxDdRiskMode;
@@ -3387,7 +3320,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = NewYorkFlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = NewYorkTakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = NewYorkTakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = NewYorkTakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = NewYorkTakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = NewYorkRequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = NewYorkEnableAdxDdRiskMode;
@@ -3427,7 +3359,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = NewYork2FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = NewYork2TakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = NewYork2TakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = NewYork2TakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = NewYork2TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = NewYork2RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = NewYork2EnableAdxDdRiskMode;
@@ -3467,7 +3398,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = NewYork3FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = NewYork3TakeProfitPercentTriggerPercent;
                     activeTakeProfitStopMode = NewYork3TakeProfitStopMode;
-                    activeTakeProfitAtrTrailMultiplier = NewYork3TakeProfitAtrTrailMultiplier;
                     activeTakeProfitPercentStopMovePercent = NewYork3TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = NewYork3RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = NewYork3EnableAdxDdRiskMode;
@@ -3506,7 +3436,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipTakeProfitPoints = 0.0;
                     activeTakeProfitPercentTriggerPercent = 0.0;
                     activeTakeProfitStopMode = TakeProfitStopMode.PercentMove;
-                    activeTakeProfitAtrTrailMultiplier = 0.0;
                     activeTakeProfitPercentStopMovePercent = 0.0;
                     activeRequireMinAdxForFlips = false;
                     activeEnableAdxDdRiskMode = false;
@@ -3519,7 +3448,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             activeStopReferenceMode = GetSessionInitialStopReference(session);
             activeSecondaryEmaPeriod = GetSessionSecondaryEmaPeriod(session);
             activeSecondaryStopPaddingPoints = GetSessionSecondaryStopPaddingPoints(session);
-            activeVwapStopPaddingPoints = GetSessionVwapStopPaddingPoints(session);
             activeSecondaryEma = GetSessionSecondaryEma(session);
         }
 
@@ -3719,52 +3647,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2SecondaryEmaPeriod,
                 NewYork3SecondaryEmaPeriod
             }.Max();
-        }
-
-        private void InitializeOrderFlowVwapIndicator()
-        {
-            orderFlowVwapIndicator = null;
-
-            if (!AnySessionUsesVwapStopReference())
-                return;
-
-            try
-            {
-                orderFlowVwapIndicator = OrderFlowVWAP(
-                    VWAPResolution.Standard,
-                    Bars.TradingHours,
-                    VWAPStandardDeviations.Three,
-                    1,
-                    2,
-                    3);
-            }
-            catch
-            {
-                orderFlowVwapIndicator = null;
-                Print("DUO | Order Flow VWAP unavailable; VWAP stop reference will fall back to primary EMA.");
-            }
-        }
-
-        private bool AnySessionUsesVwapStopReference()
-        {
-            foreach (SessionSlot slot in ConfigurableSessionSlots)
-            {
-                if (GetSessionInitialStopReference(slot) == InitialStopReferenceMode.SessionVwap)
-                    return true;
-            }
-
-            return false;
-        }
-
-        private double GetOrderFlowVwapValue()
-        {
-            if (orderFlowVwapIndicator == null)
-                return activeEma != null ? activeEma[0] : 0.0;
-
-            double value = orderFlowVwapIndicator.VWAP[0];
-            return value > 0.0
-                ? value
-                : (activeEma != null ? activeEma[0] : 0.0);
         }
 
         private bool IsFamilyActive(SessionFamily family, DateTime time)
@@ -4421,8 +4303,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case InitialStopReferenceMode.SecondaryEma:
                     return activeSecondaryStopPaddingPoints;
-                case InitialStopReferenceMode.SessionVwap:
-                    return activeVwapStopPaddingPoints;
                 default:
                     return IsHighVolatilitySlWindow(time) ? activeHvSlPaddingPoints : activeStopPaddingPoints;
             }
@@ -4434,8 +4314,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case InitialStopReferenceMode.SecondaryEma:
                     return activeSecondaryStopPaddingPoints;
-                case InitialStopReferenceMode.SessionVwap:
-                    return activeVwapStopPaddingPoints;
                 default:
                     return IsHighVolatilitySlWindow(time) ? activeHvSlPaddingPoints : activeStopPaddingPoints;
             }
@@ -4449,8 +4327,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (activeSecondaryEma != null)
                         return activeSecondaryEma[0];
                     break;
-                case InitialStopReferenceMode.SessionVwap:
-                    return GetOrderFlowVwapValue();
             }
 
             return activeEma != null ? activeEma[0] : 0.0;
@@ -5650,7 +5526,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} stopRef={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} mode={27} atrMult={28:0.##} stopPct={29:0.##} adxFlipMin={30} adxDdRiskMode={31} adxDdRiskSlPts={32:0.##} adxDdRiskTpPts={33:0.##} horizontal={34} atrMin={35:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} stopRef={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} mode={27} stopPct={28:0.##} adxFlipMin={29} adxDdRiskMode={30} adxDdRiskSlPts={31:0.##} adxDdRiskTpPts={32:0.##} horizontal={33} atrMin={34:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -5679,7 +5555,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeFlipTakeProfitPoints,
                 activeTakeProfitPercentTriggerPercent,
                 activeTakeProfitStopMode,
-                activeTakeProfitAtrTrailMultiplier,
                 activeTakeProfitPercentStopMovePercent,
                 activeRequireMinAdxForFlips,
                 activeEnableAdxDdRiskMode,
@@ -7932,7 +7807,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia 1", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Asia 1", Order = 28)]
         public TakeProfitStopMode AsiaTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -7989,7 +7864,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "Asia 1", Order = 38)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "Asia 1", Order = 38)]
         public InitialStopReferenceMode AsiaInitialStopReference { get; set; }
 
         [NinjaScriptProperty]
@@ -8160,7 +8035,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia 2", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Asia 2", Order = 28)]
         public TakeProfitStopMode Asia2TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -8217,7 +8092,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "Asia 2", Order = 38)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "Asia 2", Order = 38)]
         public InitialStopReferenceMode Asia2InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
@@ -8388,7 +8263,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "Asia 3", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Asia 3", Order = 28)]
         public TakeProfitStopMode Asia3TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -8445,7 +8320,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "Asia 3", Order = 38)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "Asia 3", Order = 38)]
         public InitialStopReferenceMode Asia3InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
@@ -8614,7 +8489,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London 1", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "London 1", Order = 28)]
         public TakeProfitStopMode LondonTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -8671,7 +8546,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "London 1", Order = 38)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "London 1", Order = 38)]
         public InitialStopReferenceMode LondonInitialStopReference { get; set; }
 
         [NinjaScriptProperty]
@@ -8841,7 +8716,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London 2", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "London 2", Order = 28)]
         public TakeProfitStopMode London2TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -8898,7 +8773,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "London 2", Order = 38)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "London 2", Order = 38)]
         public InitialStopReferenceMode London2InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
@@ -9073,7 +8948,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "London 3", Order = 28)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "London 3", Order = 28)]
         public TakeProfitStopMode London3TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -9130,7 +9005,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "London 3", Order = 38)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "London 3", Order = 38)]
         public InitialStopReferenceMode London3InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
@@ -9321,7 +9196,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York 1", Order = 29)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "New York 1", Order = 29)]
         public TakeProfitStopMode NewYorkTakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -9378,7 +9253,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "New York 1", Order = 39)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "New York 1", Order = 39)]
         public InitialStopReferenceMode NewYorkInitialStopReference { get; set; }
 
         [NinjaScriptProperty]
@@ -9570,7 +9445,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York 2", Order = 29)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "New York 2", Order = 29)]
         public TakeProfitStopMode NewYork2TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -9627,7 +9502,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "New York 2", Order = 39)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "New York 2", Order = 39)]
         public InitialStopReferenceMode NewYork2InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
@@ -9819,7 +9694,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, either move the stop to TP % Stop Move once or trail by ATR(14) x multiplier.", GroupName = "New York 3", Order = 29)]
+        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "New York 3", Order = 29)]
         public TakeProfitStopMode NewYork3TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
@@ -9876,7 +9751,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA, secondary EMA, or session VWAP.", GroupName = "New York 3", Order = 39)]
+        [Display(Name = "Initial Stop Reference", Description = "Choose the anchor used for the initial and flip stop: primary EMA or secondary EMA.", GroupName = "New York 3", Order = 39)]
         public InitialStopReferenceMode NewYork3InitialStopReference { get; set; }
 
         [NinjaScriptProperty]
