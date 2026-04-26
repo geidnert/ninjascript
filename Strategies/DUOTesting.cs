@@ -426,7 +426,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2EnableAdxDdRiskMode = true;
                 Asia2AdxDdRiskModeStopLossPoints = 6.25;
                 Asia2AdxDdRiskModeTakeProfitPoints = 44.0;
-                Asia2HorizontalExitBars = 29;
+                Asia2HorizontalExitBars = 60;
 
                 UseAsia3Session = true;
                 Asia3SessionStart = TimeSpan.Zero;
@@ -531,11 +531,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EnableAdxDdRiskMode = true;
                 London2AdxDdRiskModeStopLossPoints = 0.25;
                 London2AdxDdRiskModeTakeProfitPoints = 87.5;
-                London2HorizontalExitBars = 58;
+                London2HorizontalExitBars = 52;
 
                 UseLondon3Session = true;
                 London3SessionStart = new TimeSpan(5, 00, 0);
-                London3SessionEnd = new TimeSpan(8, 55, 0);
+                London3SessionEnd = new TimeSpan(8, 00, 0);
                 London3FlatByTime = "09:00:00";
                 AutoShiftLondon3 = true;
                 London3EmaPeriod = 21;
@@ -567,7 +567,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EnableAdxDdRiskMode = true;
                 London3AdxDdRiskModeStopLossPoints = 0.0;
                 London3AdxDdRiskModeTakeProfitPoints = 56.75;
-                London3HorizontalExitBars = 43;
+                London3HorizontalExitBars = 50;
 
                 UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 35, 0);
@@ -606,7 +606,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEnableAdxDdRiskMode = true;
                 NewYorkAdxDdRiskModeStopLossPoints = 35.0;
                 NewYorkAdxDdRiskModeTakeProfitPoints = 72.5;
-                NewYorkHorizontalExitBars = 36;
+                NewYorkHorizontalExitBars = 34;
 
                 UseNewYork2Session = true;
                 NewYork2SessionStart = new TimeSpan(11, 30, 0);
@@ -645,7 +645,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EnableAdxDdRiskMode = true;
                 NewYork2AdxDdRiskModeStopLossPoints = 43.0;
                 NewYork2AdxDdRiskModeTakeProfitPoints = 53.5;
-                NewYork2HorizontalExitBars = 35;
+                NewYork2HorizontalExitBars = 43;
 
                 UseNewYork3Session = true;
                 NewYork3SessionStart = new TimeSpan(14, 00, 0);
@@ -684,7 +684,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3EnableAdxDdRiskMode = true;
                 NewYork3AdxDdRiskModeStopLossPoints = 11.0;
                 NewYork3AdxDdRiskModeTakeProfitPoints = 30.0;
-                NewYork3HorizontalExitBars = 27;
+                NewYork3HorizontalExitBars = 26;
 
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
