@@ -350,7 +350,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Name = "DUO2060";
+                Name = "DUO2061";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
@@ -415,7 +415,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2MaxStopLossPoints = 235.0;
                 Asia2TakeProfitPoints = 83.5;
                 Asia2AtrMinimum = 5.1;
-                Asia2EntryOffsetPoints = 1.25;
+                Asia2EntryOffsetPoints = 0.0;
                 Asia2EnableFlipBreakEven = true;
                 Asia2FlipBreakEvenTriggerPoints = 38.25;
                 Asia2FlipTakeProfitPoints = 80.75;
@@ -520,7 +520,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2MaxStopLossPoints = 163.0;
                 London2TakeProfitPoints = 116.5;
                 London2AtrMinimum = 7.8;
-                London2EntryOffsetPoints = 2.75;
+                London2EntryOffsetPoints = 0.0;
                 London2EnableFlipBreakEven = true;
                 London2FlipBreakEvenTriggerPoints = 19.0;
                 London2FlipTakeProfitPoints = 122.0;
@@ -556,7 +556,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3MaxStopLossPoints = 140.0;
                 London3TakeProfitPoints = 113.0;
                 London3AtrMinimum = 12.0;
-                London3EntryOffsetPoints = 10.75;
+                London3EntryOffsetPoints = 0.0;
                 London3EnableFlipBreakEven = true;
                 London3FlipBreakEvenTriggerPoints = 26.5;
                 London3FlipTakeProfitPoints = 151.0;
@@ -673,7 +673,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3HvSlPaddingPoints = 0.0;
                 NewYork3HvSlStartTime = TimeSpan.Zero;
                 NewYork3HvSlEndTime = TimeSpan.Zero;
-                NewYork3EntryOffsetPoints = 17.75;
+                NewYork3EntryOffsetPoints = 0.0;
                 NewYork3EnableFlipBreakEven = false;
                 NewYork3FlipBreakEvenTriggerPoints = 0.0;
                 NewYork3FlipTakeProfitPoints = 158.0;
