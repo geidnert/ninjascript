@@ -59,8 +59,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             public double StopPrice;
             public double TakeProfitPrice;
             public double TakeProfitTriggerPrice;
+            public double TakeProfitProximityPrice;
             public bool HasTakeProfit;
             public bool HasTakeProfitTrigger;
+            public bool HasTakeProfitProximity;
         }
 
         // Commercial (closed list) option: uncomment these converters and the [TypeConverter(...)] lines
@@ -198,11 +200,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool tradeLinesActive;
         private bool tradeLineHasTp;
         private bool tradeLineHasTpTrigger;
+        private bool tradeLineHasTpProximity;
         private int tradeLineSignalBar = -1;
         private int tradeLineExitBar = -1;
         private double tradeLineEntryPrice;
         private double tradeLineTpPrice;
         private double tradeLineTpTriggerPrice;
+        private double tradeLineTpProximityPrice;
         private double tradeLineSlPrice;
         private readonly List<TradeLineSnapshot> historicalTradeLines = new List<TradeLineSnapshot>();
 
@@ -286,6 +290,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool suppressProjectXNextExecutionExitWebhook;
         private bool flipBreakEvenActivated;
         private bool takeProfitStopTriggered;
+        private bool takeProfitProximityTimerArmed;
+        private int takeProfitProximityTriggerBar = -1;
+        private MarketPosition takeProfitProximityTriggerPosition = MarketPosition.Flat;
+        private double takeProfitProximityTriggerPrice;
         private double initialStopPrice;
         private double currentStopPrice;
         private bool adxDdRiskModeApplied;
@@ -350,7 +358,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Name = "DUOTesting2060";
+                Name = "DUOTesting2061";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
@@ -415,7 +423,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2MaxStopLossPoints = 235.0;
                 Asia2TakeProfitPoints = 83.5;
                 Asia2AtrMinimum = 5.1;
-                Asia2EntryOffsetPoints = 1.25;
+                Asia2EntryOffsetPoints = 0.0;
                 Asia2EnableFlipBreakEven = true;
                 Asia2FlipBreakEvenTriggerPoints = 38.25;
                 Asia2FlipTakeProfitPoints = 80.75;
@@ -520,7 +528,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2MaxStopLossPoints = 163.0;
                 London2TakeProfitPoints = 116.5;
                 London2AtrMinimum = 7.8;
-                London2EntryOffsetPoints = 2.75;
+                London2EntryOffsetPoints = 0.0;
                 London2EnableFlipBreakEven = true;
                 London2FlipBreakEvenTriggerPoints = 19.0;
                 London2FlipTakeProfitPoints = 122.0;
@@ -556,7 +564,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3MaxStopLossPoints = 140.0;
                 London3TakeProfitPoints = 113.0;
                 London3AtrMinimum = 12.0;
-                London3EntryOffsetPoints = 10.75;
+                London3EntryOffsetPoints = 0.0;
                 London3EnableFlipBreakEven = true;
                 London3FlipBreakEvenTriggerPoints = 26.5;
                 London3FlipTakeProfitPoints = 151.0;
@@ -673,7 +681,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3HvSlPaddingPoints = 0.0;
                 NewYork3HvSlStartTime = TimeSpan.Zero;
                 NewYork3HvSlEndTime = TimeSpan.Zero;
-                NewYork3EntryOffsetPoints = 17.75;
+                NewYork3EntryOffsetPoints = 0.0;
                 NewYork3EnableFlipBreakEven = false;
                 NewYork3FlipBreakEvenTriggerPoints = 0.0;
                 NewYork3FlipTakeProfitPoints = 158.0;
@@ -710,6 +718,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXAccountId = string.Empty;
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0.0;
+                TakeProfitProximityTimerPercent = 0.0;
+                TakeProfitProximityTimerBars = 0;
                 RequireEntryConfirmation = false;
 
                 DebugLogging = false;
@@ -1031,6 +1041,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return;
                 }
 
+                TryArmTakeProfitProximityTimerFromBar();
+                if (TryExitTakeProfitProximityTimeout())
+                    return;
+
                 if (TryExitStaleTrade())
                     return;
 
@@ -1168,6 +1182,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         Close[0], Position.AveragePrice, activePositionTakeProfitPoints, adxDdRiskModeApplied && activeAdxDdRiskModeTakeProfitPoints > 0.0 ? "AdxDdRiskMode" : "Session"));
                     return;
                 }
+
+                TryArmTakeProfitProximityTimerFromBar();
+                if (TryExitTakeProfitProximityTimeout())
+                    return;
 
                 if (TryExitStaleTrade())
                     return;
@@ -1446,7 +1464,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (State != State.Realtime || Position.MarketPosition == MarketPosition.Flat)
                 return;
 
-            AuditPositionProtection("tick-watchdog");
+            if (AuditPositionProtection("tick-watchdog"))
+                return;
+
+            TryArmTakeProfitProximityTimer(marketDataUpdate.Price, "tick");
         }
 
         protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
@@ -1575,6 +1596,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeExitOrder = null;
                 flipBreakEvenActivated = false;
                 takeProfitStopTriggered = false;
+                ResetTakeProfitProximityTimer();
                 initialStopPrice = marketPosition == MarketPosition.Long
                     ? pendingLongStopForWebhook
                     : marketPosition == MarketPosition.Short
@@ -1689,6 +1711,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             using (var entryBrush = Brushes.Gold.ToDxBrush(RenderTarget))
             using (var stopBrush = Brushes.Red.ToDxBrush(RenderTarget))
             using (var targetBrush = Brushes.LimeGreen.ToDxBrush(RenderTarget))
+            using (var proximityBrush = Brushes.MediumSpringGreen.ToDxBrush(RenderTarget))
             {
                 foreach (TradeLineSnapshot snapshot in historicalTradeLines)
                 {
@@ -1703,9 +1726,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         snapshot.TakeProfitPrice,
                         snapshot.HasTakeProfitTrigger,
                         snapshot.TakeProfitTriggerPrice,
+                        snapshot.HasTakeProfitProximity,
+                        snapshot.TakeProfitProximityPrice,
                         entryBrush,
                         stopBrush,
-                        targetBrush);
+                        targetBrush,
+                        proximityBrush);
                 }
 
                 if (hasActiveSegment)
@@ -1721,9 +1747,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         tradeLineTpPrice,
                         tradeLineHasTpTrigger,
                         tradeLineTpTriggerPrice,
+                        tradeLineHasTpProximity,
+                        tradeLineTpProximityPrice,
                         entryBrush,
                         stopBrush,
-                        targetBrush);
+                        targetBrush,
+                        proximityBrush);
                 }
             }
 
@@ -1757,6 +1786,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             currentPositionIsFlipEntry = false;
             flipBreakEvenActivated = false;
             takeProfitStopTriggered = false;
+            ResetTakeProfitProximityTimer();
             initialStopPrice = 0.0;
             currentStopPrice = 0.0;
             adxDdRiskModeApplied = false;
@@ -1951,6 +1981,122 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     averagePrice,
                     closePrice));
             }
+        }
+
+        private bool IsTakeProfitProximityTimerEnabled()
+        {
+            return TakeProfitProximityTimerBars > 0
+                && TakeProfitProximityTimerPercent > 0.0;
+        }
+
+        private void ResetTakeProfitProximityTimer()
+        {
+            takeProfitProximityTimerArmed = false;
+            takeProfitProximityTriggerBar = -1;
+            takeProfitProximityTriggerPosition = MarketPosition.Flat;
+            takeProfitProximityTriggerPrice = 0.0;
+        }
+
+        private double GetTakeProfitProximityTriggerPrice()
+        {
+            if (!IsTakeProfitProximityTimerEnabled() || Position.MarketPosition == MarketPosition.Flat)
+                return 0.0;
+
+            double activePositionTakeProfitPoints = GetActivePositionTakeProfitPoints();
+            if (activePositionTakeProfitPoints <= 0.0 || Position.AveragePrice <= 0.0)
+                return 0.0;
+
+            double triggerPoints = activePositionTakeProfitPoints * (TakeProfitProximityTimerPercent / 100.0);
+            double triggerPrice = Position.MarketPosition == MarketPosition.Long
+                ? Position.AveragePrice + triggerPoints
+                : Position.AveragePrice - triggerPoints;
+            return Instrument.MasterInstrument.RoundToTickSize(triggerPrice);
+        }
+
+        private void TryArmTakeProfitProximityTimerFromBar()
+        {
+            if (!IsTakeProfitProximityTimerEnabled() || takeProfitProximityTimerArmed || Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            double referencePrice = Position.MarketPosition == MarketPosition.Long
+                ? High[0]
+                : Low[0];
+            TryArmTakeProfitProximityTimer(referencePrice, "bar");
+        }
+
+        private void TryArmTakeProfitProximityTimer(double price, string source)
+        {
+            if (!IsTakeProfitProximityTimerEnabled() || takeProfitProximityTimerArmed || Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            double triggerPrice = GetTakeProfitProximityTriggerPrice();
+            if (triggerPrice <= 0.0)
+                return;
+
+            bool triggerReached = Position.MarketPosition == MarketPosition.Long
+                ? price >= triggerPrice
+                : price <= triggerPrice;
+            if (!triggerReached)
+                return;
+
+            takeProfitProximityTimerArmed = true;
+            takeProfitProximityTriggerBar = CurrentBar;
+            takeProfitProximityTriggerPosition = Position.MarketPosition;
+            takeProfitProximityTriggerPrice = triggerPrice;
+
+            LogDebug(string.Format(
+                "TP proximity timer armed | source={0} side={1} pct={2:0.##} bars={3} price={4:0.00} trigger={5:0.00}",
+                source,
+                Position.MarketPosition,
+                TakeProfitProximityTimerPercent,
+                TakeProfitProximityTimerBars,
+                price,
+                triggerPrice));
+        }
+
+        private bool TryExitTakeProfitProximityTimeout()
+        {
+            if (!takeProfitProximityTimerArmed)
+                return false;
+
+            if (!IsTakeProfitProximityTimerEnabled() || Position.MarketPosition == MarketPosition.Flat)
+            {
+                ResetTakeProfitProximityTimer();
+                return false;
+            }
+
+            if (Position.MarketPosition != takeProfitProximityTriggerPosition)
+            {
+                ResetTakeProfitProximityTimer();
+                return false;
+            }
+
+            int closedBarsSinceTrigger = CurrentBar - takeProfitProximityTriggerBar + 1;
+            if (closedBarsSinceTrigger < TakeProfitProximityTimerBars)
+                return false;
+
+            double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
+
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong(BuildExitSignalName("TpProximityTimeout"), GetOpenLongEntrySignal());
+            else if (Position.MarketPosition == MarketPosition.Short)
+                ExitShort(BuildExitSignalName("TpProximityTimeout"), GetOpenShortEntrySignal());
+            else
+                return false;
+
+            LogDebug(string.Format(
+                "Exit {0} | reason=TpProximityTimeout pct={1:0.##} bars={2} closedBars={3} avg={4:0.00} close={5:0.00} trigger={6:0.00}",
+                Position.MarketPosition,
+                TakeProfitProximityTimerPercent,
+                TakeProfitProximityTimerBars,
+                closedBarsSinceTrigger,
+                averagePrice,
+                closePrice,
+                takeProfitProximityTriggerPrice));
+
+            ResetTakeProfitProximityTimer();
+            return true;
         }
 
         private bool ApplyManagedStop(string entrySignal, double stopPrice)
@@ -2211,6 +2357,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? Math.Max(0, CurrentBar - tradeLineExitBar)
                 : 0;
 
+            RefreshTradeLineDerivedTakeProfitLines();
             DrawTradeLinesAtBarsAgo(startBarsAgo, endBarsAgo);
 
             if (ShouldRenderActiveTradeLinesCustom())
@@ -2232,7 +2379,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 HasTakeProfit = tradeLineHasTp,
                 TakeProfitPrice = tradeLineTpPrice,
                 HasTakeProfitTrigger = tradeLineHasTpTrigger,
-                TakeProfitTriggerPrice = tradeLineTpTriggerPrice
+                TakeProfitTriggerPrice = tradeLineTpTriggerPrice,
+                HasTakeProfitProximity = tradeLineHasTpProximity,
+                TakeProfitProximityPrice = tradeLineTpProximityPrice
             });
             UpdateTradeLines();
             tradeLinesActive = false;
@@ -2244,11 +2393,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             tradeLineHasTp = false;
             tradeLineHasTpTrigger = false;
+            tradeLineHasTpProximity = false;
             tradeLineSignalBar = -1;
             tradeLineExitBar = -1;
             tradeLineEntryPrice = 0.0;
             tradeLineTpPrice = 0.0;
             tradeLineTpTriggerPrice = 0.0;
+            tradeLineTpProximityPrice = 0.0;
             tradeLineSlPrice = 0.0;
         }
 
@@ -2432,19 +2583,36 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             tradeLineTpPrice = hasTakeProfit
                 ? Instrument.MasterInstrument.RoundToTickSize(takeProfitPrice)
                 : 0.0;
+            RefreshTradeLineDerivedTakeProfitLines();
+        }
+
+        private void RefreshTradeLineDerivedTakeProfitLines()
+        {
             tradeLineHasTpTrigger = false;
             tradeLineTpTriggerPrice = 0.0;
+            tradeLineHasTpProximity = false;
+            tradeLineTpProximityPrice = 0.0;
 
-            if (!hasTakeProfit || activeTakeProfitPercentTriggerPercent <= 0.0)
+            if (!tradeLineHasTp)
                 return;
 
             double tpDistance = tradeLineTpPrice - tradeLineEntryPrice;
             if (Math.Abs(tpDistance) < TickSize * 0.5)
                 return;
 
-            double triggerPrice = tradeLineEntryPrice + tpDistance * (activeTakeProfitPercentTriggerPercent / 100.0);
-            tradeLineTpTriggerPrice = Instrument.MasterInstrument.RoundToTickSize(triggerPrice);
-            tradeLineHasTpTrigger = true;
+            if (activeTakeProfitPercentTriggerPercent > 0.0)
+            {
+                double triggerPrice = tradeLineEntryPrice + tpDistance * (activeTakeProfitPercentTriggerPercent / 100.0);
+                tradeLineTpTriggerPrice = Instrument.MasterInstrument.RoundToTickSize(triggerPrice);
+                tradeLineHasTpTrigger = true;
+            }
+
+            if (IsTakeProfitProximityTimerEnabled())
+            {
+                double proximityPrice = tradeLineEntryPrice + tpDistance * (TakeProfitProximityTimerPercent / 100.0);
+                tradeLineTpProximityPrice = Instrument.MasterInstrument.RoundToTickSize(proximityPrice);
+                tradeLineHasTpProximity = true;
+            }
         }
 
         private void DrawTradeLinesAtBarsAgo(int startBarsAgo, int endBarsAgo)
@@ -2479,6 +2647,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     startBarsAgo, tradeLineTpTriggerPrice,
                     endBarsAgo, tradeLineTpTriggerPrice,
                     Brushes.LimeGreen, DashStyleHelper.Dot, 2);
+            }
+
+            if (tradeLineHasTpProximity)
+            {
+                Draw.Line(this, tradeLineTagPrefix + "TPProximityTimer", false,
+                    startBarsAgo, tradeLineTpProximityPrice,
+                    endBarsAgo, tradeLineTpProximityPrice,
+                    Brushes.MediumSpringGreen, DashStyleHelper.Dot, 3);
             }
         }
 
@@ -2527,9 +2703,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double takeProfitPrice,
             bool hasTakeProfitTrigger,
             double takeProfitTriggerPrice,
+            bool hasTakeProfitProximity,
+            double takeProfitProximityPrice,
             SharpDX.Direct2D1.Brush entryBrush,
             SharpDX.Direct2D1.Brush stopBrush,
-            SharpDX.Direct2D1.Brush targetBrush)
+            SharpDX.Direct2D1.Brush targetBrush,
+            SharpDX.Direct2D1.Brush proximityBrush)
         {
             int visibleStartBarIndex = Math.Max(ChartBars.FromIndex, startBarIndex);
             int visibleEndBarIndex = Math.Min(ChartBars.ToIndex, endBarIndex);
@@ -2553,6 +2732,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (hasTakeProfitTrigger)
                 DrawPixelSnappedDottedHorizontalLine(chartScale, startX, endX, takeProfitTriggerPrice, targetBrush, 2f);
+
+            if (hasTakeProfitProximity)
+                DrawPixelSnappedDottedHorizontalLine(chartScale, startX, endX, takeProfitProximityPrice, proximityBrush, 3f, 2f, 8f);
         }
 
         private void DrawPixelSnappedHorizontalLine(ChartScale chartScale, float startX, float endX, double price, SharpDX.Direct2D1.Brush brush, float width)
@@ -2564,14 +2746,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             RenderTarget.DrawLine(new SharpDX.Vector2(startX, y), new SharpDX.Vector2(endX, y), brush, width);
         }
 
-        private void DrawPixelSnappedDottedHorizontalLine(ChartScale chartScale, float startX, float endX, double price, SharpDX.Direct2D1.Brush brush, float width)
+        private void DrawPixelSnappedDottedHorizontalLine(ChartScale chartScale, float startX, float endX, double price, SharpDX.Direct2D1.Brush brush, float width, float dashLength = 4f, float gapLength = 4f)
         {
             if (price <= 0.0 || endX <= startX)
                 return;
 
             float y = GetSnappedTradeLineY(chartScale, price);
-            const float dashLength = 4f;
-            const float gapLength = 4f;
 
             for (float x = startX; x < endX; x += dashLength + gapLength)
             {
@@ -8958,6 +9138,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "13. Risk", Order = 2)]
         public bool RequireEntryConfirmation { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "% Distance To TP Timer", Description = "0 disables. Percent of active TP distance that arms the bar-count flatten timer when touched intrabar.", GroupName = "13. Risk", Order = 3)]
+        public double TakeProfitProximityTimerPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "TP Timer Exit Bars", Description = "0 disables. After the TP distance timer is armed, flatten after this many closed bars. 1 = current bar close after touch.", GroupName = "13. Risk", Order = 4)]
+        public int TakeProfitProximityTimerBars { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
