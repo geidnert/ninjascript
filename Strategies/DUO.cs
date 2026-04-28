@@ -350,7 +350,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Name = "DUO2061";
+                Name = GetVersionedStrategyName("DUO");
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
@@ -5667,6 +5667,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             var assembly = Assembly.GetExecutingAssembly();
             Version version = assembly.GetName().Version;
             return version != null ? version.ToString() : "0.0.0.0";
+        }
+
+        private string GetVersionedStrategyName(string baseName)
+        {
+            return baseName + GetAddOnVersion().Replace(".", string.Empty);
         }
 
         private int GetMaxConfiguredAdxPeriod()
