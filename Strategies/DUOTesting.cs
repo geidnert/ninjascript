@@ -266,6 +266,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxDdRiskModeStopLossPoints;
         private double activeAdxDdRiskModeTakeProfitPoints;
         private int activeHorizontalExitBars;
+        private int activeCandleReversalExitBars;
         private double activeMaxStopLossPoints;
 
         private double pendingLongStopForWebhook;
@@ -400,6 +401,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxDdRiskModeStopLossPoints = 15.25;
                 AsiaAdxDdRiskModeTakeProfitPoints = 80.75;
                 AsiaHorizontalExitBars = 70;
+                AsiaCandleReversalExitBars = 0;
 
                 UseAsia2Session = true;
                 Asia2SessionStart = new TimeSpan(20, 00, 0);
@@ -435,6 +437,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2AdxDdRiskModeStopLossPoints = 6.25;
                 Asia2AdxDdRiskModeTakeProfitPoints = 44.0;
                 Asia2HorizontalExitBars = 60;
+                Asia2CandleReversalExitBars = 0;
 
                 UseAsia3Session = true;
                 Asia3SessionStart = TimeSpan.Zero;
@@ -470,6 +473,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3AdxDdRiskModeStopLossPoints = 4.25;
                 Asia3AdxDdRiskModeTakeProfitPoints = 31.0;
                 Asia3HorizontalExitBars = 63;
+                Asia3CandleReversalExitBars = 0;
 
                 UseLondonSession = true;
                 LondonSessionStart = new TimeSpan(1, 45, 0);
@@ -505,6 +509,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonAdxDdRiskModeStopLossPoints = 0.75;
                 LondonAdxDdRiskModeTakeProfitPoints = 10.0;
                 LondonHorizontalExitBars = 54;
+                LondonCandleReversalExitBars = 0;
 
                 UseLondon2Session = true;
                 London2SessionStart = new TimeSpan(3, 00, 0);
@@ -540,6 +545,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2AdxDdRiskModeStopLossPoints = 0.25;
                 London2AdxDdRiskModeTakeProfitPoints = 87.5;
                 London2HorizontalExitBars = 52;
+                London2CandleReversalExitBars = 0;
 
                 UseLondon3Session = true;
                 London3SessionStart = new TimeSpan(5, 00, 0);
@@ -576,6 +582,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3AdxDdRiskModeStopLossPoints = 0.0;
                 London3AdxDdRiskModeTakeProfitPoints = 56.75;
                 London3HorizontalExitBars = 50;
+                London3CandleReversalExitBars = 0;
 
                 UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 35, 0);
@@ -615,6 +622,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxDdRiskModeStopLossPoints = 35.0;
                 NewYorkAdxDdRiskModeTakeProfitPoints = 72.5;
                 NewYorkHorizontalExitBars = 34;
+                NewYorkCandleReversalExitBars = 0;
 
                 UseNewYork2Session = true;
                 NewYork2SessionStart = new TimeSpan(11, 30, 0);
@@ -654,6 +662,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2AdxDdRiskModeStopLossPoints = 43.0;
                 NewYork2AdxDdRiskModeTakeProfitPoints = 53.5;
                 NewYork2HorizontalExitBars = 43;
+                NewYork2CandleReversalExitBars = 0;
 
                 UseNewYork3Session = true;
                 NewYork3SessionStart = new TimeSpan(14, 00, 0);
@@ -693,6 +702,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3AdxDdRiskModeStopLossPoints = 11.0;
                 NewYork3AdxDdRiskModeTakeProfitPoints = 30.0;
                 NewYork3HorizontalExitBars = 26;
+                NewYork3CandleReversalExitBars = 0;
 
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
@@ -1045,6 +1055,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (TryExitTakeProfitProximityTimeout())
                     return;
 
+                if (TryExitCandleReversal())
+                    return;
+
                 if (TryExitStaleTrade())
                     return;
 
@@ -1185,6 +1198,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 TryArmTakeProfitProximityTimerFromBar();
                 if (TryExitTakeProfitProximityTimeout())
+                    return;
+
+                if (TryExitCandleReversal())
                     return;
 
                 if (TryExitStaleTrade())
@@ -2147,6 +2163,104 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return false;
         }
 
+        private bool TryExitCandleReversal()
+        {
+            if (activeCandleReversalExitBars <= 0 || Position.MarketPosition == MarketPosition.Flat || currentPositionEntryBar < 0)
+                return false;
+
+            int barsHeld = CurrentBar - currentPositionEntryBar;
+            if (barsHeld < activeCandleReversalExitBars)
+                return false;
+
+            if (Position.MarketPosition == MarketPosition.Short)
+            {
+                if (Close[0] <= Open[0])
+                    return false;
+
+                double referenceHigh;
+                int referenceBarsAgo;
+                if (!TryGetMostRecentBearishCandleHighSinceEntry(out referenceHigh, out referenceBarsAgo))
+                    return false;
+
+                if (Close[0] <= referenceHigh)
+                    return false;
+
+                ExitShort(BuildExitSignalName("CandleReversalExit"), GetOpenShortEntrySignal());
+                LogDebug(string.Format(
+                    "Exit SHORT | reason=CandleReversal barsHeld={0} threshold={1} close={2:0.00} bearishHigh={3:0.00} refBarsAgo={4}",
+                    barsHeld,
+                    activeCandleReversalExitBars,
+                    Close[0],
+                    referenceHigh,
+                    referenceBarsAgo));
+                return true;
+            }
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                if (Close[0] >= Open[0])
+                    return false;
+
+                double referenceLow;
+                int referenceBarsAgo;
+                if (!TryGetMostRecentBullishCandleLowSinceEntry(out referenceLow, out referenceBarsAgo))
+                    return false;
+
+                if (Close[0] >= referenceLow)
+                    return false;
+
+                ExitLong(BuildExitSignalName("CandleReversalExit"), GetOpenLongEntrySignal());
+                LogDebug(string.Format(
+                    "Exit LONG | reason=CandleReversal barsHeld={0} threshold={1} close={2:0.00} bullishLow={3:0.00} refBarsAgo={4}",
+                    barsHeld,
+                    activeCandleReversalExitBars,
+                    Close[0],
+                    referenceLow,
+                    referenceBarsAgo));
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryGetMostRecentBearishCandleHighSinceEntry(out double high, out int barsAgo)
+        {
+            high = 0.0;
+            barsAgo = -1;
+
+            int maxBarsAgo = CurrentBar - Math.Max(0, currentPositionEntryBar);
+            for (int i = 1; i <= maxBarsAgo; i++)
+            {
+                if (Close[i] < Open[i])
+                {
+                    high = High[i];
+                    barsAgo = i;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryGetMostRecentBullishCandleLowSinceEntry(out double low, out int barsAgo)
+        {
+            low = 0.0;
+            barsAgo = -1;
+
+            int maxBarsAgo = CurrentBar - Math.Max(0, currentPositionEntryBar);
+            for (int i = 1; i <= maxBarsAgo; i++)
+            {
+                if (Close[i] > Open[i])
+                {
+                    low = Low[i];
+                    barsAgo = i;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private bool TryExitStaleTrade()
         {
             if (activeHorizontalExitBars <= 0 || Position.MarketPosition == MarketPosition.Flat || currentPositionEntryBar < 0)
@@ -2971,6 +3085,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = AsiaAdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = AsiaAdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = AsiaHorizontalExitBars;
+                    activeCandleReversalExitBars = AsiaCandleReversalExitBars;
                     break;
 
                 case SessionSlot.Asia2:
@@ -3011,6 +3126,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = Asia2AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = Asia2AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = Asia2HorizontalExitBars;
+                    activeCandleReversalExitBars = Asia2CandleReversalExitBars;
                     break;
 
                 case SessionSlot.Asia3:
@@ -3051,6 +3167,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = Asia3AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = Asia3AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = Asia3HorizontalExitBars;
+                    activeCandleReversalExitBars = Asia3CandleReversalExitBars;
                     break;
 
                 case SessionSlot.London:
@@ -3091,6 +3208,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = LondonAdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = LondonAdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = LondonHorizontalExitBars;
+                    activeCandleReversalExitBars = LondonCandleReversalExitBars;
                     break;
 
                 case SessionSlot.London2:
@@ -3131,6 +3249,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = London2AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = London2AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = London2HorizontalExitBars;
+                    activeCandleReversalExitBars = London2CandleReversalExitBars;
                     break;
 
                 case SessionSlot.London3:
@@ -3171,6 +3290,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = London3AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = London3AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = London3HorizontalExitBars;
+                    activeCandleReversalExitBars = London3CandleReversalExitBars;
                     break;
 
                 case SessionSlot.NewYork:
@@ -3211,6 +3331,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = NewYorkAdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = NewYorkAdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = NewYorkHorizontalExitBars;
+                    activeCandleReversalExitBars = NewYorkCandleReversalExitBars;
                     break;
 
                 case SessionSlot.NewYork2:
@@ -3251,6 +3372,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = NewYork2AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = NewYork2AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = NewYork2HorizontalExitBars;
+                    activeCandleReversalExitBars = NewYork2CandleReversalExitBars;
                     break;
 
                 case SessionSlot.NewYork3:
@@ -3291,6 +3413,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = NewYork3AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = NewYork3AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = NewYork3HorizontalExitBars;
+                    activeCandleReversalExitBars = NewYork3CandleReversalExitBars;
                     break;
 
                 default:
@@ -3330,6 +3453,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = 0.0;
                     activeAdxDdRiskModeTakeProfitPoints = 0.0;
                     activeHorizontalExitBars = 0;
+                    activeCandleReversalExitBars = 0;
                     break;
             }
         }
@@ -5329,7 +5453,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} entryStop={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} mode={27} stopPct={28:0.##} adxFlipMin={29} adxDdRiskMode={30} adxDdRiskSlPts={31:0.##} adxDdRiskTpPts={32:0.##} horizontal={33} atrMin={34:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} entryStop={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} mode={27} stopPct={28:0.##} adxFlipMin={29} adxDdRiskMode={30} adxDdRiskSlPts={31:0.##} adxDdRiskTpPts={32:0.##} horizontal={33} candleRev={34} atrMin={35:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -5364,6 +5488,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeAdxDdRiskModeStopLossPoints,
                 activeAdxDdRiskModeTakeProfitPoints,
                 activeHorizontalExitBars,
+                activeCandleReversalExitBars,
                 activeMinimumAtrForEntry));
 
             int adxPlotCount = activeAdx != null && activeAdx.Plots != null ? activeAdx.Plots.Length : 0;
@@ -7618,13 +7743,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int AsiaHorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 1", Order = 36)]
+        public int AsiaCandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 1", Order = 36)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 1", Order = 37)]
         public double AsiaMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 1 entries and flips while ATR(14) is below this value.", GroupName = "Asia 1", Order = 37)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 1 entries and flips while ATR(14) is below this value.", GroupName = "Asia 1", Order = 38)]
         public double AsiaAtrMinimum { get; set; }
 
 
@@ -7785,13 +7915,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int Asia2HorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 2", Order = 36)]
+        public int Asia2CandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 2", Order = 36)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 2", Order = 37)]
         public double Asia2MaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 2 entries and flips while ATR(14) is below this value.", GroupName = "Asia 2", Order = 37)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 2 entries and flips while ATR(14) is below this value.", GroupName = "Asia 2", Order = 38)]
         public double Asia2AtrMinimum { get; set; }
 
 
@@ -7952,13 +8087,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int Asia3HorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 3", Order = 36)]
+        public int Asia3CandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 3", Order = 36)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "Asia 3", Order = 37)]
         public double Asia3MaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 3 entries and flips while ATR(14) is below this value.", GroupName = "Asia 3", Order = 37)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 3 entries and flips while ATR(14) is below this value.", GroupName = "Asia 3", Order = 38)]
         public double Asia3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
@@ -8117,13 +8257,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int LondonHorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "London 1", Order = 36)]
+        public int LondonCandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 1", Order = 36)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 1", Order = 37)]
         public double LondonMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 1 entries and flips while ATR(14) is below this value.", GroupName = "London 1", Order = 37)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 1 entries and flips while ATR(14) is below this value.", GroupName = "London 1", Order = 38)]
         public double LondonAtrMinimum { get; set; }
 
 
@@ -8283,13 +8428,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int London2HorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "London 2", Order = 36)]
+        public int London2CandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 2", Order = 36)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 2", Order = 37)]
         public double London2MaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 2 entries and flips while ATR(14) is below this value.", GroupName = "London 2", Order = 37)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 2 entries and flips while ATR(14) is below this value.", GroupName = "London 2", Order = 38)]
         public double London2AtrMinimum { get; set; }
 
 
@@ -8453,13 +8603,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int London3HorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "London 3", Order = 36)]
+        public int London3CandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 3", Order = 36)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "London 3", Order = 37)]
         public double London3MaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 3 entries and flips while ATR(14) is below this value.", GroupName = "London 3", Order = 37)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 3 entries and flips while ATR(14) is below this value.", GroupName = "London 3", Order = 38)]
         public double London3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
@@ -8636,13 +8791,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYorkHorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 1", Order = 37)]
+        public int NewYorkCandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 1", Order = 37)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 1", Order = 38)]
         public double NewYorkMaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 1 entries and flips while ATR(14) is below this value.", GroupName = "New York 1", Order = 38)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 1 entries and flips while ATR(14) is below this value.", GroupName = "New York 1", Order = 39)]
         public double NewYorkAtrMinimum { get; set; }
 
 
@@ -8820,13 +8980,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYork2HorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 2", Order = 37)]
+        public int NewYork2CandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 2", Order = 37)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 2", Order = 38)]
         public double NewYork2MaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 2 entries and flips while ATR(14) is below this value.", GroupName = "New York 2", Order = 38)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 2 entries and flips while ATR(14) is below this value.", GroupName = "New York 2", Order = 39)]
         public double NewYork2AtrMinimum { get; set; }
 
 
@@ -9004,13 +9169,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYork3HorizontalExitBars { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 3", Order = 37)]
+        public int NewYork3CandleReversalExitBars { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 3", Order = 37)]
+        [Display(Name = "Max SL Points", Description = "0 disables. If the planned entry-to-stop distance is greater than this value, the trade is not placed.", GroupName = "New York 3", Order = 38)]
         public double NewYork3MaxStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 3 entries and flips while ATR(14) is below this value.", GroupName = "New York 3", Order = 38)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 3 entries and flips while ATR(14) is below this value.", GroupName = "New York 3", Order = 39)]
         public double NewYork3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
