@@ -341,6 +341,200 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SessionSlot.NewYork3
         };
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
+        private static readonly string NewsDatesRaw =
+@"2025-01-02,08:30
+2025-01-08,08:30
+2025-01-08,14:00
+2025-01-10,08:30
+2025-01-14,08:30
+2025-01-15,08:30
+2025-01-16,08:30
+2025-01-23,08:30
+2025-01-29,14:00
+2025-01-30,08:30
+2025-01-31,08:30
+2025-02-06,08:30
+2025-02-07,08:30
+2025-02-12,08:30
+2025-02-13,08:30
+2025-02-14,08:30
+2025-02-19,14:00
+2025-02-20,08:30
+2025-02-27,08:30
+2025-02-28,08:30
+2025-03-06,08:30
+2025-03-07,08:30
+2025-03-12,08:30
+2025-03-13,08:30
+2025-03-17,08:30
+2025-03-19,14:00
+2025-03-20,08:30
+2025-03-27,08:30
+2025-03-28,08:30
+2025-04-03,08:30
+2025-04-04,08:30
+2025-04-09,14:00
+2025-04-10,08:30
+2025-04-11,08:30
+2025-04-16,08:30
+2025-04-17,08:30
+2025-04-24,08:30
+2025-04-30,08:30
+2025-05-01,08:30
+2025-05-02,08:30
+2025-05-07,14:00
+2025-05-08,08:30
+2025-05-13,08:30
+2025-05-15,08:30
+2025-05-22,08:30
+2025-05-28,14:00
+2025-05-29,08:30
+2025-05-30,08:30
+2025-06-05,08:30
+2025-06-06,08:30
+2025-06-11,08:30
+2025-06-12,08:30
+2025-06-17,08:30
+2025-06-18,08:30
+2025-06-18,14:00
+2025-06-26,08:30
+2025-06-27,08:30
+2025-07-03,08:30
+2025-07-09,14:00
+2025-07-10,08:30
+2025-07-15,08:30
+2025-07-16,08:30
+2025-07-17,08:30
+2025-07-24,08:30
+2025-07-30,08:30
+2025-07-30,14:00
+2025-07-31,08:30
+2025-08-01,08:30
+2025-08-07,08:30
+2025-08-12,08:30
+2025-08-14,08:30
+2025-08-15,08:30
+2025-08-20,14:00
+2025-08-21,08:30
+2025-08-28,08:30
+2025-08-29,08:30
+2025-09-04,08:30
+2025-09-05,08:30
+2025-09-10,08:30
+2025-09-11,08:30
+2025-09-16,08:30
+2025-09-17,14:00
+2025-09-18,08:30
+2025-09-25,08:30
+2025-09-26,08:30
+2025-10-08,14:00
+2025-10-24,08:30
+2025-10-29,14:00
+2025-11-19,14:00
+2025-11-20,08:30
+2025-11-25,08:30
+2025-11-26,08:30
+2025-12-04,08:30
+2025-12-10,08:30
+2025-12-10,14:00
+2025-12-11,08:30
+2025-12-16,08:30
+2025-12-18,08:30
+2025-12-23,08:30
+2025-12-24,08:30
+2025-12-30,14:00
+2025-12-31,08:30
+2026-01-08,08:30
+2026-01-09,08:30
+2026-01-13,08:30
+2026-01-14,08:30
+2026-01-15,08:30
+2026-01-21,08:30
+2026-01-22,08:30
+2026-01-28,14:00
+2026-01-29,08:30
+2026-01-30,08:30
+2026-02-05,08:30
+2026-02-10,08:30
+2026-02-11,08:30
+2026-02-12,08:30
+2026-02-13,08:30
+2026-02-18,14:00
+2026-02-19,08:30
+2026-02-20,08:30
+2026-02-26,08:30
+2026-02-27,08:30
+2026-03-05,08:30
+2026-03-06,08:30
+2026-03-11,08:30
+2026-03-12,08:30
+2026-03-13,08:30
+2026-03-18,08:30
+2026-03-18,14:00
+2026-03-19,08:30
+2026-03-26,08:30
+2026-04-01,08:30
+2026-04-02,08:30
+2026-04-03,08:30
+2026-04-08,14:00
+2026-04-09,08:30
+2026-04-10,08:30
+2026-04-14,08:30
+2026-04-21,08:30
+2026-04-29,14:00
+2026-04-30,08:30
+2026-05-08,08:30
+2026-05-12,08:30
+2026-05-13,08:30
+2026-05-14,08:30
+2026-05-20,14:00
+2026-05-28,08:30
+2026-06-05,08:30
+2026-06-10,08:30
+2026-06-11,08:30
+2026-06-17,08:30
+2026-06-17,14:00
+2026-06-25,08:30
+2026-07-02,08:30
+2026-07-08,14:00
+2026-07-14,08:30
+2026-07-15,08:30
+2026-07-16,08:30
+2026-07-29,14:00
+2026-07-30,08:30
+2026-07-31,08:30
+2026-08-07,08:30
+2026-08-12,08:30
+2026-08-13,08:30
+2026-08-14,08:30
+2026-08-19,14:00
+2026-08-26,08:30
+2026-09-04,08:30
+2026-09-10,08:30
+2026-09-11,08:30
+2026-09-16,08:30
+2026-09-16,14:00
+2026-09-30,08:30
+2026-10-02,08:30
+2026-10-07,14:00
+2026-10-14,08:30
+2026-10-15,08:30
+2026-10-28,14:00
+2026-10-29,08:30
+2026-10-30,08:30
+2026-11-06,08:30
+2026-11-10,08:30
+2026-11-13,08:30
+2026-11-17,08:30
+2026-11-18,14:00
+2026-11-25,08:30
+2026-12-04,08:30
+2026-12-09,14:00
+2026-12-10,08:30
+2026-12-15,08:30
+2026-12-16,08:30
+2026-12-23,08:30
+2026-12-30,14:00";
         private const string WeeklyNewsJsonUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
         private const string NewsCacheFilePrefix = "AutoEdge.ff_weekly_news_cache.";
         private const string NewsCacheWeekPrefix = "# week-start-et=";
@@ -5418,6 +5612,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             List<DateTime> loadedDates;
             string status = string.Empty;
             string cacheStatus = string.Empty;
+            string hardcodedStatus = string.Empty;
             DateTime currentWeekEt = GetWeekStart(GetCurrentEtDate());
             bool canFetchLiveWeek = ShouldUseDynamicNewsSource() && weekStartEt == currentWeekEt;
             string fetchGateStatus = string.Empty;
@@ -5451,6 +5646,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else
                 {
                     details.Add(cacheStatus);
+
+                    List<DateTime> hardcodedDates;
+                    if (TryLoadHardcodedNewsDates(weekStartEt, out hardcodedDates, out hardcodedStatus))
+                    {
+                        MergeNewsDates(hardcodedDates);
+                        newsDatesAvailable = true;
+                        newsDatesSource = "hardcoded";
+                        details.Add(hardcodedStatus);
+                    }
+                    else
+                    {
+                        details.Add(hardcodedStatus);
+                    }
                 }
             }
 
@@ -5468,7 +5676,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 LogNewsWeekSummary(weekStartEt, "load");
                 if (!newsDatesAvailable)
-                    Print(string.Format("Weekly news error: {0} | {1}", status, cacheStatus));
+                    Print(string.Format("Weekly news error: {0} | {1} | {2}", status, cacheStatus, hardcodedStatus));
             }
         }
 
@@ -5648,6 +5856,64 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 status = string.Format("cache-error {0}", ex.Message);
                 return false;
             }
+        }
+
+        private bool TryLoadHardcodedNewsDates(DateTime weekStartEt, out List<DateTime> hardcodedDates, out string status)
+        {
+            hardcodedDates = new List<DateTime>();
+            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
+            {
+                status = "hardcoded-empty";
+                return false;
+            }
+
+            DateTime weekEndEt = weekStartEt.AddDays(7);
+            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            int parsedCount = 0;
+            int invalidCount = 0;
+            DateTime firstParsed = DateTime.MaxValue;
+            DateTime lastParsed = DateTime.MinValue;
+
+            for (int i = 0; i < entries.Length; i++)
+            {
+                string trimmed = entries[i] != null ? entries[i].Trim() : string.Empty;
+                if (string.IsNullOrWhiteSpace(trimmed))
+                    continue;
+
+                DateTime parsed;
+                if (!DateTime.TryParseExact(trimmed, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+                {
+                    invalidCount++;
+                    LogDebug(string.Format("Invalid hardcoded news date entry: {0}", trimmed));
+                    continue;
+                }
+
+                parsedCount++;
+                if (parsed < firstParsed)
+                    firstParsed = parsed;
+                if (parsed > lastParsed)
+                    lastParsed = parsed;
+
+                if (parsed < weekStartEt || parsed >= weekEndEt)
+                    continue;
+
+                AddUniqueNewsDate(hardcodedDates, parsed);
+            }
+
+            bool inCoverage = parsedCount > 0 &&
+                weekStartEt >= GetWeekStart(firstParsed) &&
+                weekStartEt <= GetWeekStart(lastParsed);
+
+            status = string.Format(
+                CultureInfo.InvariantCulture,
+                "hardcoded-{0} parsed={1} matches={2} invalid={3} coverage={4:yyyy-MM-dd}..{5:yyyy-MM-dd}",
+                inCoverage ? "ok" : "miss",
+                parsedCount,
+                hardcodedDates.Count,
+                invalidCount,
+                parsedCount > 0 ? GetWeekStart(firstParsed) : DateTime.MinValue,
+                parsedCount > 0 ? GetWeekStart(lastParsed) : DateTime.MinValue);
+            return inCoverage;
         }
 
         private bool TryParseWeeklyNewsDate(Dictionary<string, object> row, out DateTime newsDate)
