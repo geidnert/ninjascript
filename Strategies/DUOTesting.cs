@@ -141,6 +141,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ProjectX
         }
 
+        private enum ProjectXProtectionOrderKind
+        {
+            StopLoss,
+            TakeProfit
+        }
+
         private sealed class ProjectXAccountInfo
         {
             public int Id { get; set; }
@@ -2166,7 +2172,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool stopValid = IsManagedStopPriceValid(averagePrice, closePrice);
-            bool stopApplied = stopValid && ApplyManagedStop(entrySignal, averagePrice);
+            bool stopApplied = stopValid && ApplyManagedStop(entrySignal, averagePrice, "flip-break-even");
             flipBreakEvenActivated = true;
 
             LogDebug(string.Format(
@@ -2224,7 +2230,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsManagedStopPriceValid(stopPrice, closePrice))
                 return;
 
-            bool stopApplied = ApplyManagedStop(entrySignal, stopPrice);
+            bool stopApplied = ApplyManagedStop(entrySignal, stopPrice, "tp-percent-stop");
             if (stopApplied)
             {
                 LogDebug(string.Format(
@@ -2458,6 +2464,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool ApplyManagedStop(string entrySignal, double stopPrice)
         {
+            return ApplyManagedStop(entrySignal, stopPrice, "managed-stop");
+        }
+
+        private bool ApplyManagedStop(string entrySignal, double stopPrice, string reason)
+        {
             stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
             if (!ShouldTightenManagedStop(stopPrice))
                 return false;
@@ -2465,6 +2476,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SetStopLoss(entrySignal, CalculationMode.Price, stopPrice, false);
             currentStopPrice = stopPrice;
             UpdateTradeLineStopPrice(stopPrice);
+            SyncProjectXProtectionUpdate(ProjectXProtectionOrderKind.StopLoss, stopPrice, reason);
             return true;
         }
 
@@ -2695,7 +2707,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (stopValid)
                 {
-                    slApplied = ApplyManagedStop(entrySignal, stopPrice);
+                    slApplied = ApplyManagedStop(entrySignal, stopPrice, "adx-dd-risk-sl");
                 }
                 else
                 {
@@ -2721,6 +2733,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         targetTicks = 1;
                     SetProfitTarget(entrySignal, CalculationMode.Ticks, targetTicks);
                     UpdateTradeLineTakeProfitPrice(targetPrice);
+                    SyncProjectXProtectionUpdate(ProjectXProtectionOrderKind.TakeProfit, targetPrice, "adx-dd-risk-tp");
                     tpApplied = true;
                 }
                 else
@@ -7163,6 +7176,174 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return items.Length > 0 ? string.Join(", ", items) : "<none>";
         }
 
+        private void SyncProjectXProtectionUpdate(ProjectXProtectionOrderKind kind, double price, string reason)
+        {
+            if (State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            price = Instrument.MasterInstrument.RoundToTickSize(price);
+            if (price <= 0.0)
+                return;
+
+            if (!EnsureProjectXSession())
+            {
+                LogDebug(string.Format(
+                    "ProjectX protection sync skipped | reason={0} kind={1} cause=auth-unavailable",
+                    reason,
+                    FormatProjectXProtectionKind(kind)));
+                return;
+            }
+
+            List<ProjectXAccountInfo> targetAccounts;
+            string contractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+            {
+                LogDebug(string.Format(
+                    "ProjectX protection sync skipped | reason={0} kind={1} cause=account-selection-or-contract-unavailable",
+                    reason,
+                    FormatProjectXProtectionKind(kind)));
+                return;
+            }
+
+            int expectedOrderSide = Position.MarketPosition == MarketPosition.Long ? 1 : 0;
+            int fallbackSize = Math.Max(1, Math.Abs(Position.Quantity));
+
+            foreach (var account in targetAccounts)
+            {
+                try
+                {
+                    var order = SelectProjectXProtectionOrder(account.Id, contractId, kind, expectedOrderSide);
+                    if (order == null)
+                    {
+                        LogDebug(string.Format(
+                            "ProjectX protection sync skipped | reason={0} accountId={1} kind={2} price={3:0.00} cause=no-unique-open-order",
+                            reason,
+                            account.Id,
+                            FormatProjectXProtectionKind(kind),
+                            price));
+                        continue;
+                    }
+
+                    long orderId;
+                    if (!TryGetProjectXOrderLong(order, "id", out orderId) || orderId <= 0)
+                    {
+                        LogDebug(string.Format(
+                            "ProjectX protection sync skipped | reason={0} accountId={1} kind={2} price={3:0.00} cause=missing-order-id",
+                            reason,
+                            account.Id,
+                            FormatProjectXProtectionKind(kind),
+                            price));
+                        continue;
+                    }
+
+                    int size;
+                    if (!TryGetProjectXOrderInt(order, "size", out size) || size <= 0)
+                        size = fallbackSize;
+
+                    string response = ProjectXModifyProtectionOrder(account.Id, orderId, size, kind, price);
+                    bool success;
+                    if (TryGetJsonBool(response, "success", out success) && !success)
+                    {
+                        LogDebug(string.Format(
+                            "ProjectX protection sync failed | reason={0} accountId={1} orderId={2} kind={3} price={4:0.00}",
+                            reason,
+                            account.Id,
+                            orderId,
+                            FormatProjectXProtectionKind(kind),
+                            price));
+                    }
+                    else
+                    {
+                        LogDebug(string.Format(
+                            "ProjectX protection sync sent | reason={0} accountId={1} orderId={2} kind={3} price={4:0.00}",
+                            reason,
+                            account.Id,
+                            orderId,
+                            FormatProjectXProtectionKind(kind),
+                            price));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogDebug(string.Format(
+                        "ProjectX protection sync error | reason={0} accountId={1} kind={2} price={3:0.00} error={4}",
+                        reason,
+                        account.Id,
+                        FormatProjectXProtectionKind(kind),
+                        price,
+                        ex.Message));
+                }
+            }
+        }
+
+        private Dictionary<string, object> SelectProjectXProtectionOrder(int accountId, string contractId, ProjectXProtectionOrderKind kind, int expectedOrderSide)
+        {
+            var matches = GetProjectXOpenOrders(accountId, contractId)
+                .Where(o => IsProjectXProtectionOrderMatch(o, kind, expectedOrderSide))
+                .ToList();
+
+            return matches.Count == 1 ? matches[0] : null;
+        }
+
+        private bool IsProjectXProtectionOrderMatch(Dictionary<string, object> order, ProjectXProtectionOrderKind kind, int expectedOrderSide)
+        {
+            if (order == null)
+                return false;
+
+            int side;
+            if (TryGetProjectXOrderInt(order, "side", out side) && side != expectedOrderSide)
+                return false;
+
+            int type;
+            if (TryGetProjectXOrderInt(order, "type", out type))
+            {
+                if (kind == ProjectXProtectionOrderKind.StopLoss)
+                    return type == 4;
+
+                if (kind == ProjectXProtectionOrderKind.TakeProfit)
+                    return type == 1;
+            }
+
+            double price;
+            if (kind == ProjectXProtectionOrderKind.StopLoss)
+                return TryGetProjectXOrderDouble(order, "stopPrice", out price) && price > 0.0;
+
+            return TryGetProjectXOrderDouble(order, "limitPrice", out price) && price > 0.0;
+        }
+
+        private string ProjectXModifyProtectionOrder(int accountId, long orderId, int size, ProjectXProtectionOrderKind kind, double price)
+        {
+            string limitPrice = kind == ProjectXProtectionOrderKind.TakeProfit
+                ? FormatProjectXPrice(price)
+                : "null";
+            string stopPrice = kind == ProjectXProtectionOrderKind.StopLoss
+                ? FormatProjectXPrice(price)
+                : "null";
+
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"orderId\":{1},\"size\":{2},\"limitPrice\":{3},\"stopPrice\":{4},\"trailPrice\":null}}",
+                accountId,
+                orderId,
+                Math.Max(1, size),
+                limitPrice,
+                stopPrice);
+
+            return ProjectXPost("/api/Order/modify", json, true);
+        }
+
+        private string FormatProjectXPrice(double price)
+        {
+            return Instrument.MasterInstrument.RoundToTickSize(price).ToString("0.########", CultureInfo.InvariantCulture);
+        }
+
+        private string FormatProjectXProtectionKind(ProjectXProtectionOrderKind kind)
+        {
+            return kind == ProjectXProtectionOrderKind.StopLoss ? "stop-loss" : "take-profit";
+        }
+
         private string GetProjectXOrderKey(int accountId, string contractId)
         {
             return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
@@ -7349,11 +7530,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private List<long> GetProjectXOpenOrderIds(int accountId, string contractId)
         {
             var orderIds = new List<long>();
+            foreach (var order in GetProjectXOpenOrders(accountId, contractId))
+            {
+                long id;
+                if (TryGetProjectXOrderLong(order, "id", out id) && id > 0)
+                    orderIds.Add(id);
+            }
+
+            return orderIds;
+        }
+
+        private List<Dictionary<string, object>> GetProjectXOpenOrders(int accountId, string contractId)
+        {
+            var orders = new List<Dictionary<string, object>>();
             string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
             string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
             bool success;
             if (TryGetJsonBool(searchResponse, "success", out success) && !success)
-                return orderIds;
+                return orders;
 
             foreach (var order in ExtractProjectXOrders(searchResponse))
             {
@@ -7363,15 +7557,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                object idObj;
-                long id;
-                if (!order.TryGetValue("id", out idObj) || !TryConvertToLong(idObj, out id) || id <= 0)
-                    continue;
-
-                orderIds.Add(id);
+                orders.Add(order);
             }
 
-            return orderIds;
+            return orders;
+        }
+
+        private bool TryGetProjectXOrderInt(Dictionary<string, object> order, string key, out int value)
+        {
+            value = 0;
+            object raw;
+            return order != null
+                && order.TryGetValue(key, out raw)
+                && TryConvertToInt(raw, out value);
+        }
+
+        private bool TryGetProjectXOrderLong(Dictionary<string, object> order, string key, out long value)
+        {
+            value = 0;
+            object raw;
+            return order != null
+                && order.TryGetValue(key, out raw)
+                && TryConvertToLong(raw, out value);
+        }
+
+        private bool TryGetProjectXOrderDouble(Dictionary<string, object> order, string key, out double value)
+        {
+            value = 0.0;
+            object raw;
+            return order != null
+                && order.TryGetValue(key, out raw)
+                && TryConvertToDouble(raw, out value);
         }
 
         private bool TryGetProjectXOpenPositionSize(int accountId, string contractId, out int signedSize)
@@ -7809,6 +8025,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToDouble(object raw, out double value)
+        {
+            value = 0.0;
+            if (raw == null)
+                return false;
+
+            if (raw is double)
+            {
+                value = (double)raw;
+                return true;
+            }
+
+            if (raw is decimal)
+            {
+                value = (double)(decimal)raw;
+                return true;
+            }
+
+            if (raw is int)
+            {
+                value = (int)raw;
+                return true;
+            }
+
+            if (raw is long)
+            {
+                value = (long)raw;
+                return true;
+            }
+
+            string text = raw.ToString();
+            return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                || double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
         }
 
         private bool TryConvertToBool(object raw, out bool value)
