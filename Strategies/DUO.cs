@@ -912,6 +912,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProcessSessionTransitions(slot);
             ReconcileTrackedEntryOrders();
             ReconcileTrackedProtectiveOrders();
+            CancelWrongSideProtectiveOrders("bar-watchdog");
             SyncTradeLinesToLivePositionAndOrders();
 
             if (CheckTerminalExitOverfill("bar-watchdog"))
@@ -1483,6 +1484,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CheckTerminalExitOverfill("tick-watchdog"))
                 return;
 
+            CancelWrongSideProtectiveOrders("tick-watchdog");
+
             AuditPositionProtection("tick-watchdog");
         }
 
@@ -1516,6 +1519,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TrackProtectiveAndExitOrders(order, orderState);
             SyncTradeLinesToProtectiveOrder(order, limitPrice, stopPrice);
             SyncTradeLinesToFilledEntryOrder(order, orderState, averageFillPrice);
+            CancelWrongSideProtectiveOrders("order-update");
 
             if (orderState == OrderState.Rejected)
                 HandleOrderRejected(order, error, comment);
@@ -1640,6 +1644,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 ArmProtectionAuditGracePeriod("entry-fill", 60000);
+                CancelWrongSideProtectiveOrders("entry-fill");
             }
             else if (terminalExitExecution)
             {
@@ -1713,6 +1718,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EndTradeAttempt("exit-" + orderName);
             }
 
+            CancelWrongSideProtectiveOrders("execution-" + orderName);
             UpdateInfo();
         }
 
@@ -3931,6 +3937,74 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             activeStopLossOrder = foundStop;
             activeProfitTargetOrder = foundTarget;
             activeExitOrder = foundExit;
+        }
+
+        private void CancelWrongSideProtectiveOrders(string reason)
+        {
+            if (Position.MarketPosition == MarketPosition.Flat || Account == null)
+                return;
+
+            MarketPosition staleProtectionSide = GetOppositeMarketPosition(Position.MarketPosition);
+            if (staleProtectionSide == MarketPosition.Flat)
+                return;
+
+            try
+            {
+                foreach (Order accountOrder in Account.Orders)
+                {
+                    if (!IsOrderActive(accountOrder) || !IsOrderForThisInstrument(accountOrder) || !IsDuoProtectiveOrder(accountOrder))
+                        continue;
+
+                    if (IsProtectiveOrderForPositionSide(accountOrder, staleProtectionSide))
+                        CancelLocalOrderIfActive(accountOrder, "StaleProtection-" + reason);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (DebugLogging)
+                    LogDebug(string.Format("Stale protection scan failed | reason={0} error={1}", reason, ex.Message));
+            }
+        }
+
+        private MarketPosition GetOppositeMarketPosition(MarketPosition side)
+        {
+            if (side == MarketPosition.Long)
+                return MarketPosition.Short;
+            if (side == MarketPosition.Short)
+                return MarketPosition.Long;
+            return MarketPosition.Flat;
+        }
+
+        private bool IsProtectiveOrderForPositionSide(Order order, MarketPosition side)
+        {
+            if (order == null)
+                return false;
+
+            if (side == MarketPosition.Long)
+                return order.OrderAction == OrderAction.Sell;
+            if (side == MarketPosition.Short)
+                return order.OrderAction == OrderAction.BuyToCover;
+
+            return false;
+        }
+
+        private void CancelLocalOrderIfActive(Order order, string reason)
+        {
+            if (!IsOrderActive(order))
+                return;
+
+            LogDebug(string.Format("CancelLocalOrder | name={0} reason={1} state={2}", order.Name, reason, order.OrderState));
+            CancelOrder(order);
+        }
+
+        private bool IsDuoProtectiveOrder(Order order)
+        {
+            if (order == null || !IsProtectiveOrderName(order.Name))
+                return false;
+
+            string fromEntrySignal = order.FromEntrySignal ?? string.Empty;
+            // Ninja managed stop/target orders can report an empty entry signal, so keep that fallback.
+            return fromEntrySignal.Length == 0 || IsEntryOrderName(fromEntrySignal);
         }
 
         private bool IsStopLossOrderName(string orderName)
