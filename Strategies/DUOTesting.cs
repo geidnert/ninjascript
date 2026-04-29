@@ -360,6 +360,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Border infoBoxContainer;
         private StackPanel infoBoxRowsPanel;
         private bool legacyInfoDrawingsCleared;
+        private DateTime lastRealtimeInfoRefreshUtc = DateTime.MinValue;
+        private bool useRealtimeInfoPreview;
+        private DateTime realtimeInfoPreviewBarTime = DateTime.MinValue;
+        private double realtimeInfoPreviewHigh = double.NaN;
+        private double realtimeInfoPreviewLow = double.NaN;
+        private const double RealtimeInfoRefreshSeconds = 1.0;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
             Color.FromArgb(240, 0x2A, 0x2F, 0x45),
             Color.FromArgb(240, 0x1E, 0x23, 0x36),
@@ -1528,6 +1534,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (marketDataUpdate == null || marketDataUpdate.MarketDataType != MarketDataType.Last)
                 return;
 
+            TrackRealtimeInfoPreview(marketDataUpdate.Price);
+            RefreshInfoFromRealtimeTick();
+
             if (State != State.Realtime || Position.MarketPosition == MarketPosition.Flat)
                 return;
 
@@ -1540,6 +1549,45 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             TryArmTakeProfitProximityTimer(marketDataUpdate.Price, "tick");
+        }
+
+        private void TrackRealtimeInfoPreview(double price)
+        {
+            if (State != State.Realtime || CurrentBar < 0)
+                return;
+
+            DateTime barTime = Time[0];
+            if (barTime != realtimeInfoPreviewBarTime || double.IsNaN(realtimeInfoPreviewHigh) || double.IsNaN(realtimeInfoPreviewLow))
+            {
+                realtimeInfoPreviewBarTime = barTime;
+                realtimeInfoPreviewHigh = Math.Max(High[0], price);
+                realtimeInfoPreviewLow = Math.Min(Low[0], price);
+                return;
+            }
+
+            realtimeInfoPreviewHigh = Math.Max(realtimeInfoPreviewHigh, price);
+            realtimeInfoPreviewLow = Math.Min(realtimeInfoPreviewLow, price);
+        }
+
+        private void RefreshInfoFromRealtimeTick()
+        {
+            if (State != State.Realtime || ChartControl == null)
+                return;
+
+            DateTime nowUtc = DateTime.UtcNow;
+            if ((nowUtc - lastRealtimeInfoRefreshUtc).TotalSeconds < RealtimeInfoRefreshSeconds)
+                return;
+
+            lastRealtimeInfoRefreshUtc = nowUtc;
+            useRealtimeInfoPreview = true;
+            try
+            {
+                UpdateInfo();
+            }
+            finally
+            {
+                useRealtimeInfoPreview = false;
+            }
         }
 
         protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
@@ -4663,6 +4711,101 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return activeAdx[0] - activeAdx[1];
         }
 
+        private void GetInfoAdxValues(out double adxValue, out double adxSlope)
+        {
+            adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+            adxSlope = GetAdxSlopePoints();
+
+            double previewAdx;
+            double previewSlope;
+            if (useRealtimeInfoPreview && TryCalculateRealtimeAdxPreview(out previewAdx, out previewSlope))
+            {
+                adxValue = previewAdx;
+                adxSlope = previewSlope;
+            }
+        }
+
+        private bool TryCalculateRealtimeAdxPreview(out double adxValue, out double adxSlope)
+        {
+            adxValue = 0.0;
+            adxSlope = 0.0;
+
+            if (activeAdx == null || activeAdxPeriod <= 0 || CurrentBar < 1)
+                return false;
+
+            int oldestBarsAgo = Math.Min(CurrentBar, Math.Max(200, activeAdxPeriod * 20));
+            double sumTr = 0.0;
+            double sumDmPlus = 0.0;
+            double sumDmMinus = 0.0;
+            double calculatedAdx = 50.0;
+            double calculatedClosedAdx = 50.0;
+            int localIndex = 0;
+
+            for (int barsAgo = oldestBarsAgo; barsAgo >= 0; barsAgo--, localIndex++)
+            {
+                double high0 = High[barsAgo];
+                double low0 = Low[barsAgo];
+                if (barsAgo == 0 && realtimeInfoPreviewBarTime == Time[0])
+                {
+                    if (!double.IsNaN(realtimeInfoPreviewHigh))
+                        high0 = Math.Max(high0, realtimeInfoPreviewHigh);
+                    if (!double.IsNaN(realtimeInfoPreviewLow))
+                        low0 = Math.Min(low0, realtimeInfoPreviewLow);
+                }
+
+                double trueRange = high0 - low0;
+                double tr = trueRange;
+                double dmPlus = 0.0;
+                double dmMinus = 0.0;
+
+                if (localIndex > 0)
+                {
+                    double low1 = Low[barsAgo + 1];
+                    double high1 = High[barsAgo + 1];
+                    double close1 = Close[barsAgo + 1];
+
+                    tr = Math.Max(Math.Abs(low0 - close1), Math.Max(trueRange, Math.Abs(high0 - close1)));
+                    dmPlus = high0 - high1 > low1 - low0 ? Math.Max(high0 - high1, 0.0) : 0.0;
+                    dmMinus = low1 - low0 > high0 - high1 ? Math.Max(low1 - low0, 0.0) : 0.0;
+                }
+
+                if (localIndex == 0)
+                {
+                    sumTr = tr;
+                    sumDmPlus = dmPlus;
+                    sumDmMinus = dmMinus;
+                    calculatedAdx = 50.0;
+                    continue;
+                }
+
+                if (localIndex < activeAdxPeriod)
+                {
+                    sumTr += tr;
+                    sumDmPlus += dmPlus;
+                    sumDmMinus += dmMinus;
+                }
+                else
+                {
+                    sumTr = sumTr - sumTr / activeAdxPeriod + tr;
+                    sumDmPlus = sumDmPlus - sumDmPlus / activeAdxPeriod + dmPlus;
+                    sumDmMinus = sumDmMinus - sumDmMinus / activeAdxPeriod + dmMinus;
+                }
+
+                double diPlus = 100.0 * (sumTr == 0.0 ? 0.0 : sumDmPlus / sumTr);
+                double diMinus = 100.0 * (sumTr == 0.0 ? 0.0 : sumDmMinus / sumTr);
+                double diff = Math.Abs(diPlus - diMinus);
+                double sum = diPlus + diMinus;
+                calculatedAdx = sum == 0.0 ? 50.0 : ((activeAdxPeriod - 1) * calculatedAdx + 100.0 * diff / sum) / activeAdxPeriod;
+                if (barsAgo == 1)
+                    calculatedClosedAdx = calculatedAdx;
+            }
+
+            adxValue = activeAdx[0] + (calculatedAdx - calculatedClosedAdx);
+            adxSlope = adxValue - activeAdx[0];
+            return !double.IsNaN(adxValue) && !double.IsInfinity(adxValue)
+                && !double.IsNaN(adxSlope) && !double.IsInfinity(adxSlope);
+        }
+
         private double GetEmaSlopePoints()
         {
             if (activeEma == null || CurrentBar < 1)
@@ -6217,8 +6360,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
             string contractsText = Math.Max(1, activeContracts).ToString(CultureInfo.InvariantCulture);
-            double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
-            double adxSlope = GetAdxSlopePoints();
+            double adxValue;
+            double adxSlope;
+            GetInfoAdxValues(out adxValue, out adxSlope);
             bool adxMinEnabled = activeAdxThreshold > 0.0;
             bool adxMaxEnabled = activeAdxMaxThreshold > 0.0;
             bool slopeEnabled = activeAdxMinSlopePoints > 0.0;
@@ -6231,22 +6375,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Brush paBrush;
             if (overMax)
             {
-                paState = "Peaking";
+                paState = FormatInfoStateMetric("Peaking", adxValue, activeAdxMaxThreshold);
                 paBrush = Brushes.OrangeRed;
             }
             else if (belowMin)
             {
-                paState = "Weak";
+                paState = FormatInfoStateMetric("Weak", adxValue, activeAdxThreshold);
                 paBrush = Brushes.IndianRed;
             }
             else if (aboveMin && slopeValid)
             {
-                paState = "Trending";
+                paState = slopeEnabled
+                    ? FormatInfoStateMetric("Trending", adxSlope, activeAdxMinSlopePoints)
+                    : FormatInfoStateMetric("Trending", adxValue, activeAdxThreshold);
                 paBrush = Brushes.LimeGreen;
             }
             else
             {
-                paState = "Ranging";
+                paState = slopeEnabled
+                    ? FormatInfoStateMetric("Ranging", adxSlope, activeAdxMinSlopePoints)
+                    : "Ranging";
                 paBrush = Brushes.Gold;
             }
 
@@ -6296,6 +6444,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
 
             return lines;
+        }
+
+        private string FormatInfoStateMetric(string state, double currentValue, double thresholdValue)
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} {1}/{2}",
+                state,
+                FormatInfoMetric(currentValue),
+                FormatInfoMetric(thresholdValue));
+        }
+
+        private string FormatInfoMetric(double value)
+        {
+            return value.ToString("0.##", CultureInfo.InvariantCulture);
         }
 
         private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
