@@ -6983,47 +6983,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             GetInfoAdxValues(out adxValue, out adxSlope);
             bool adxMinEnabled = activeAdxThreshold > 0.0;
             bool adxMaxEnabled = activeAdxMaxThreshold > 0.0;
-            bool slopeEnabled = activeAdxMinSlopePoints > 0.0;
-            bool aboveMin = !adxMinEnabled || adxValue >= activeAdxThreshold;
             bool belowMin = adxMinEnabled && adxValue < activeAdxThreshold;
             bool overMax = adxMaxEnabled && adxValue > activeAdxMaxThreshold;
-            bool slopeValid = !slopeEnabled || adxSlope >= activeAdxMinSlopePoints;
+            double atrValue = GetCurrentAtrValue();
+            bool atrMinEnabled = activeMinimumAtrForEntry > 0.0;
+            bool atrBelowMin = atrMinEnabled && atrValue < activeMinimumAtrForEntry;
 
-            string paState;
-            Brush paBrush;
+            string adxState;
+            Brush adxBrush;
             if (overMax)
             {
-                paState = FormatInfoStateMetric("Peaking", adxValue, activeAdxMaxThreshold);
-                paBrush = Brushes.OrangeRed;
+                adxState = FormatInfoThresholdMetric("Max", activeAdxMaxThreshold, adxValue);
+                adxBrush = Brushes.OrangeRed;
             }
             else if (belowMin)
             {
-                paState = FormatInfoStateMetric("Weak", adxValue, activeAdxThreshold);
-                paBrush = Brushes.IndianRed;
-            }
-            else if (aboveMin && slopeValid)
-            {
-                paState = slopeEnabled
-                    ? FormatInfoStateMetric("Trending", adxSlope, activeAdxMinSlopePoints)
-                    : FormatInfoStateMetric("Trending", adxValue, activeAdxThreshold);
-                paBrush = Brushes.LimeGreen;
+                adxState = FormatInfoThresholdMetric("Weak", activeAdxThreshold, adxValue);
+                adxBrush = Brushes.IndianRed;
             }
             else
             {
-                paState = slopeEnabled
-                    ? FormatInfoStateMetric("Ranging", adxSlope, activeAdxMinSlopePoints)
-                    : "Ranging";
-                paBrush = Brushes.Gold;
+                double normalThreshold = adxMinEnabled ? activeAdxThreshold : (adxMaxEnabled ? activeAdxMaxThreshold : 0.0);
+                adxState = FormatInfoThresholdMetric("Normal", normalThreshold, adxValue);
+                adxBrush = Brushes.LimeGreen;
             }
+
+            string atrState = atrBelowMin
+                ? FormatInfoThresholdMetric("Weak", activeMinimumAtrForEntry, atrValue)
+                : FormatInfoThresholdMetric("Normal", activeMinimumAtrForEntry, atrValue);
+            Brush atrBrush = atrBelowMin ? Brushes.IndianRed : Brushes.LimeGreen;
 
             lines.Add((string.Format("DUO v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", contractsText, Brushes.LightGray, Brushes.LightGray));
-            lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
-            string configuredMomentumText = activeAdxMinSlopePoints > 0.0
-                ? activeAdxMinSlopePoints.ToString("0.00", CultureInfo.InvariantCulture)
-                : "Off";
-            string currentMomentumText = adxSlope.ToString("0.00", CultureInfo.InvariantCulture);
-            lines.Add(("Mom:", configuredMomentumText + "/" + currentMomentumText, Brushes.LightGray, Brushes.LightGray));
+            lines.Add(("ADX:", adxState, Brushes.LightGray, adxBrush));
+            lines.Add(("ATR:", atrState, Brushes.LightGray, atrBrush));
             if (!UseNewsSkip)
             {
                 lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.LightGray));
@@ -7064,14 +7057,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return lines;
         }
 
-        private string FormatInfoStateMetric(string state, double currentValue, double thresholdValue)
+        private string FormatInfoThresholdMetric(string state, double thresholdValue, double currentValue)
         {
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "{0} {1}/{2}",
                 state,
-                FormatInfoMetric(currentValue),
-                FormatInfoMetric(thresholdValue));
+                thresholdValue > 0.0 ? FormatInfoMetric(thresholdValue) : "Off",
+                FormatInfoMetric(currentValue));
         }
 
         private string FormatInfoMetric(double value)
