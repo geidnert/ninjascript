@@ -166,6 +166,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private Order longEntryOrder;
         private Order shortEntryOrder;
+        private bool pendingOpenLimitEntryResubmit;
+        private bool pendingOpenLimitEntryIsLong;
+        private double pendingOpenLimitEntryPrice;
+        private double pendingOpenLimitStopPrice;
+        private double pendingOpenLimitTakeProfitPoints;
+        private double pendingOpenLimitTakeProfitPrice;
+        private int pendingOpenLimitEntryQuantity;
+        private int pendingOpenLimitEntryBar;
         private int missingLongEntryOrderBars;
         private int missingShortEntryOrderBars;
         private string webhookUrl = string.Empty;
@@ -263,6 +271,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private TimeSpan activeHvSlStartTime;
         private TimeSpan activeHvSlEndTime;
         private double activeEntryOffsetPoints;
+        private bool activeEntryOpenLimit;
         private bool activeEnableFlipBreakEven;
         private double activeFlipBreakEvenTriggerPoints;
         private double activeFlipTakeProfitPoints;
@@ -611,6 +620,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaTakeProfitPoints = 94.0;
                 AsiaAtrMinimum = 7.7;
                 AsiaEntryOffsetPoints = 0.0;
+                AsiaEntryOpenLimit = false;
                 AsiaEnableFlipBreakEven = true;
                 AsiaFlipBreakEvenTriggerPoints = 18.0;
                 AsiaFlipTakeProfitPoints = 98.5;
@@ -651,6 +661,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2TakeProfitPoints = 83.5;
                 Asia2AtrMinimum = 5.1;
                 Asia2EntryOffsetPoints = 0.0;
+                Asia2EntryOpenLimit = false;
                 Asia2EnableFlipBreakEven = true;
                 Asia2FlipBreakEvenTriggerPoints = 38.25;
                 Asia2FlipTakeProfitPoints = 80.75;
@@ -691,6 +702,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3TakeProfitPoints = 108.75;
                 Asia3AtrMinimum = 4.0;
                 Asia3EntryOffsetPoints = 0.0;
+                Asia3EntryOpenLimit = false;
                 Asia3EnableFlipBreakEven = true;
                 Asia3FlipBreakEvenTriggerPoints = 0.0;
                 Asia3FlipTakeProfitPoints = 130.75;
@@ -731,6 +743,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonTakeProfitPoints = 119.0;
                 LondonAtrMinimum = 7.6;
                 LondonEntryOffsetPoints = 0.0;
+                LondonEntryOpenLimit = false;
                 LondonEnableFlipBreakEven = true;
                 LondonFlipBreakEvenTriggerPoints = 0.0;
                 LondonFlipTakeProfitPoints = 155.0;
@@ -771,6 +784,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2TakeProfitPoints = 116.5;
                 London2AtrMinimum = 7.8;
                 London2EntryOffsetPoints = 0.0;
+                London2EntryOpenLimit = false;
                 London2EnableFlipBreakEven = true;
                 London2FlipBreakEvenTriggerPoints = 19.0;
                 London2FlipTakeProfitPoints = 122.0;
@@ -812,6 +826,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3TakeProfitPoints = 113.0;
                 London3AtrMinimum = 12.0;
                 London3EntryOffsetPoints = 0.0;
+                London3EntryOpenLimit = false;
                 London3EnableFlipBreakEven = true;
                 London3FlipBreakEvenTriggerPoints = 26.5;
                 London3FlipTakeProfitPoints = 151.0;
@@ -856,6 +871,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkHvSlStartTime = new TimeSpan(9, 35, 0);
                 NewYorkHvSlEndTime = new TimeSpan(10, 00, 0);
                 NewYorkEntryOffsetPoints = 0.0;
+                NewYorkEntryOpenLimit = false;
                 NewYorkEnableFlipBreakEven = true;
                 NewYorkFlipBreakEvenTriggerPoints = 70.0;
                 NewYorkFlipTakeProfitPoints = 146.5;
@@ -900,6 +916,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2HvSlStartTime = TimeSpan.Zero;
                 NewYork2HvSlEndTime = TimeSpan.Zero;
                 NewYork2EntryOffsetPoints = 0.0;
+                NewYork2EntryOpenLimit = false;
                 NewYork2EnableFlipBreakEven = true;
                 NewYork2FlipBreakEvenTriggerPoints = 42.0;
                 NewYork2FlipTakeProfitPoints = 69.25;
@@ -944,6 +961,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3HvSlStartTime = TimeSpan.Zero;
                 NewYork3HvSlEndTime = TimeSpan.Zero;
                 NewYork3EntryOffsetPoints = 0.0;
+                NewYork3EntryOpenLimit = false;
                 NewYork3EnableFlipBreakEven = false;
                 NewYork3FlipBreakEvenTriggerPoints = 0.0;
                 NewYork3FlipTakeProfitPoints = 158.0;
@@ -1086,6 +1104,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 newYorkTimeZone = null;
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
+                ClearPendingOpenLimitEntryResubmit();
                 currentTradePeakAdx = 0.0;
                 trackedAdxPeakPosition = MarketPosition.Flat;
                 flipBreakEvenActivated = false;
@@ -1690,43 +1709,47 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
                 bool longOrderActive = IsOrderActive(longEntryOrder);
+                bool useOpenLimitEntry = IsEntryOpenLimitEnabled();
+                bool useMarketEntry = !useOpenLimitEntry && activeEntryOffsetPoints <= 0.0;
+                double entryPrice = GetInitialEntryPrice(true, useOpenLimitEntry);
+                double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue, Time[0]);
+                double stopLossPoints = GetPlannedStopLossPoints(entryPrice, stopPrice);
+                int qty = GetEntryQuantity();
+                double takeProfitPoints = GetConfiguredEntryTakeProfitPoints(false);
+                double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, true);
+
+                if (!IsWithinMaxStopLossPoints(stopLossPoints))
+                {
+                    LogDebug(string.Format(
+                        "Entry blocked | reason=MaxSL side=Long session={0} entry={1:0.00} stop={2:0.00} slPts={3:0.00} maxSlPts={4:0.00}",
+                        FormatSessionLabel(activeSession),
+                        entryPrice,
+                        stopPrice,
+                        stopLossPoints,
+                        activeMaxStopLossPoints));
+                    if (useOpenLimitEntry && longOrderActive)
+                        CancelOrderIfActive(longEntryOrder, "OpenLimitLongMaxSL");
+                    EndTradeAttempt("max-stop");
+                    return;
+                }
+
+                if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
+                {
+                    LogDebug("Entry confirmation declined | LONG.");
+                    EndTradeAttempt("confirmation-declined");
+                    return;
+                }
 
                 if (!longOrderActive)
                 {
-                    bool useMarketEntry = activeEntryOffsetPoints <= 0.0;
-                    double entryPrice = GetEntryPriceForDirection(Close[0], true, activeEntryOffsetPoints);
-                    double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue, Time[0]);
-                    double stopLossPoints = GetPlannedStopLossPoints(entryPrice, stopPrice);
-                    if (!IsWithinMaxStopLossPoints(stopLossPoints))
-                    {
-                        LogDebug(string.Format(
-                            "Entry blocked | reason=MaxSL side=Long session={0} entry={1:0.00} stop={2:0.00} slPts={3:0.00} maxSlPts={4:0.00}",
-                            FormatSessionLabel(activeSession),
-                            entryPrice,
-                            stopPrice,
-                            stopLossPoints,
-                            activeMaxStopLossPoints));
-                        EndTradeAttempt("max-stop");
-                        return;
-                    }
-                    int qty = GetEntryQuantity();
-                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
-                    {
-                        LogDebug("Entry confirmation declined | LONG.");
-                        EndTradeAttempt("confirmation-declined");
-                        return;
-                    }
-
-                    double takeProfitPoints = GetConfiguredEntryTakeProfitPoints(false);
-                    double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, true);
-                    pendingLongStopForWebhook = stopPrice;
-                    pendingLongEntryIsFlip = false;
-                    SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
-                    SetProfitTargetByDistanceTicks(LongEntrySignal, takeProfitPoints);
-                    SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, qty);
-                    StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice + takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                    SubmitLongEntryOrder(qty, entryPrice, useMarketEntry, LongEntrySignal);
-                    LogDebug(string.Format("Place LONG {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useMarketEntry ? "market" : "limit", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
+                    SubmitPreparedInitialEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, useMarketEntry);
+                    LogDebug(string.Format("Place LONG {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useOpenLimitEntry ? "open-limit" : (useMarketEntry ? "market" : "limit"), FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
+                }
+                else if (useOpenLimitEntry)
+                {
+                    QueueOpenLimitEntryResubmit(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
+                    CancelOrderIfActive(longEntryOrder, "ChaseOpenLimitLong");
+                    LogDebug(string.Format("LONG open-limit chase queued | session={0} entry={1:0.00} stop={2:0.00} qty={3} tracked={4}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty, FormatOrderRef(longEntryOrder)));
                 }
                 else if (DebugLogging)
                 {
@@ -1741,43 +1764,47 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
                 bool shortOrderActive = IsOrderActive(shortEntryOrder);
+                bool useOpenLimitEntry = IsEntryOpenLimitEnabled();
+                bool useMarketEntry = !useOpenLimitEntry && activeEntryOffsetPoints <= 0.0;
+                double entryPrice = GetInitialEntryPrice(false, useOpenLimitEntry);
+                double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue, Time[0]);
+                double stopLossPoints = GetPlannedStopLossPoints(entryPrice, stopPrice);
+                int qty = GetEntryQuantity();
+                double takeProfitPoints = GetConfiguredEntryTakeProfitPoints(false);
+                double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, false);
+
+                if (!IsWithinMaxStopLossPoints(stopLossPoints))
+                {
+                    LogDebug(string.Format(
+                        "Entry blocked | reason=MaxSL side=Short session={0} entry={1:0.00} stop={2:0.00} slPts={3:0.00} maxSlPts={4:0.00}",
+                        FormatSessionLabel(activeSession),
+                        entryPrice,
+                        stopPrice,
+                        stopLossPoints,
+                        activeMaxStopLossPoints));
+                    if (useOpenLimitEntry && shortOrderActive)
+                        CancelOrderIfActive(shortEntryOrder, "OpenLimitShortMaxSL");
+                    EndTradeAttempt("max-stop");
+                    return;
+                }
+
+                if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
+                {
+                    LogDebug("Entry confirmation declined | SHORT.");
+                    EndTradeAttempt("confirmation-declined");
+                    return;
+                }
 
                 if (!shortOrderActive)
                 {
-                    bool useMarketEntry = activeEntryOffsetPoints <= 0.0;
-                    double entryPrice = GetEntryPriceForDirection(Close[0], false, activeEntryOffsetPoints);
-                    double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue, Time[0]);
-                    double stopLossPoints = GetPlannedStopLossPoints(entryPrice, stopPrice);
-                    if (!IsWithinMaxStopLossPoints(stopLossPoints))
-                    {
-                        LogDebug(string.Format(
-                            "Entry blocked | reason=MaxSL side=Short session={0} entry={1:0.00} stop={2:0.00} slPts={3:0.00} maxSlPts={4:0.00}",
-                            FormatSessionLabel(activeSession),
-                            entryPrice,
-                            stopPrice,
-                            stopLossPoints,
-                            activeMaxStopLossPoints));
-                        EndTradeAttempt("max-stop");
-                        return;
-                    }
-                    int qty = GetEntryQuantity();
-                    if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
-                    {
-                        LogDebug("Entry confirmation declined | SHORT.");
-                        EndTradeAttempt("confirmation-declined");
-                        return;
-                    }
-
-                    double takeProfitPoints = GetConfiguredEntryTakeProfitPoints(false);
-                    double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, false);
-                    pendingShortStopForWebhook = stopPrice;
-                    pendingShortEntryIsFlip = false;
-                    SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
-                    SetProfitTargetByDistanceTicks(ShortEntrySignal, takeProfitPoints);
-                    SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, qty);
-                    StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice - takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                    SubmitShortEntryOrder(qty, entryPrice, useMarketEntry, ShortEntrySignal);
-                    LogDebug(string.Format("Place SHORT {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useMarketEntry ? "market" : "limit", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
+                    SubmitPreparedInitialEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, useMarketEntry);
+                    LogDebug(string.Format("Place SHORT {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useOpenLimitEntry ? "open-limit" : (useMarketEntry ? "market" : "limit"), FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
+                }
+                else if (useOpenLimitEntry)
+                {
+                    QueueOpenLimitEntryResubmit(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
+                    CancelOrderIfActive(shortEntryOrder, "ChaseOpenLimitShort");
+                    LogDebug(string.Format("SHORT open-limit chase queued | session={0} entry={1:0.00} stop={2:0.00} qty={3} tracked={4}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty, FormatOrderRef(shortEntryOrder)));
                 }
                 else if (DebugLogging)
                 {
@@ -1909,9 +1936,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool isEntryOrder = IsEntryOrderName(order.Name);
+            if (isEntryOrder && orderState == OrderState.Filled)
+                ClearPendingOpenLimitEntryResubmit();
+
+            bool queuedOpenLimitResubmitted = false;
+            if (isEntryOrder && orderState == OrderState.Cancelled && Position.MarketPosition == MarketPosition.Flat)
+                queuedOpenLimitResubmitted = TrySubmitQueuedOpenLimitEntryAfterCancel(order.Name);
+
             if (isEntryOrder && orderState != OrderState.Filled &&
                 (orderState == OrderState.Cancelled || orderState == OrderState.Rejected) &&
-                Position.MarketPosition == MarketPosition.Flat)
+                Position.MarketPosition == MarketPosition.Flat &&
+                !queuedOpenLimitResubmitted)
             {
                 if (tradeLinesActive)
                     FinalizeTradeLines();
@@ -3804,6 +3839,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = TimeSpan.Zero;
                     activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = AsiaEntryOffsetPoints;
+                    activeEntryOpenLimit = AsiaEntryOpenLimit;
                     activeEnableFlipBreakEven = AsiaEnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = AsiaFlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = AsiaFlipTakeProfitPoints;
@@ -3849,6 +3885,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = TimeSpan.Zero;
                     activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = Asia2EntryOffsetPoints;
+                    activeEntryOpenLimit = Asia2EntryOpenLimit;
                     activeEnableFlipBreakEven = Asia2EnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = Asia2FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = Asia2FlipTakeProfitPoints;
@@ -3894,6 +3931,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = TimeSpan.Zero;
                     activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = Asia3EntryOffsetPoints;
+                    activeEntryOpenLimit = Asia3EntryOpenLimit;
                     activeEnableFlipBreakEven = Asia3EnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = Asia3FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = Asia3FlipTakeProfitPoints;
@@ -3939,6 +3977,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = TimeSpan.Zero;
                     activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = LondonEntryOffsetPoints;
+                    activeEntryOpenLimit = LondonEntryOpenLimit;
                     activeEnableFlipBreakEven = LondonEnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = LondonFlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = LondonFlipTakeProfitPoints;
@@ -3984,6 +4023,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = TimeSpan.Zero;
                     activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = London2EntryOffsetPoints;
+                    activeEntryOpenLimit = London2EntryOpenLimit;
                     activeEnableFlipBreakEven = London2EnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = London2FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = London2FlipTakeProfitPoints;
@@ -4029,6 +4069,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = TimeSpan.Zero;
                     activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = London3EntryOffsetPoints;
+                    activeEntryOpenLimit = London3EntryOpenLimit;
                     activeEnableFlipBreakEven = London3EnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = London3FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = London3FlipTakeProfitPoints;
@@ -4074,6 +4115,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = NewYorkHvSlStartTime;
                     activeHvSlEndTime = NewYorkHvSlEndTime;
                     activeEntryOffsetPoints = NewYorkEntryOffsetPoints;
+                    activeEntryOpenLimit = NewYorkEntryOpenLimit;
                     activeEnableFlipBreakEven = NewYorkEnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = NewYorkFlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = NewYorkFlipTakeProfitPoints;
@@ -4119,6 +4161,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = NewYork2HvSlStartTime;
                     activeHvSlEndTime = NewYork2HvSlEndTime;
                     activeEntryOffsetPoints = NewYork2EntryOffsetPoints;
+                    activeEntryOpenLimit = NewYork2EntryOpenLimit;
                     activeEnableFlipBreakEven = NewYork2EnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = NewYork2FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = NewYork2FlipTakeProfitPoints;
@@ -4164,6 +4207,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = NewYork3HvSlStartTime;
                     activeHvSlEndTime = NewYork3HvSlEndTime;
                     activeEntryOffsetPoints = NewYork3EntryOffsetPoints;
+                    activeEntryOpenLimit = NewYork3EntryOpenLimit;
                     activeEnableFlipBreakEven = NewYork3EnableFlipBreakEven;
                     activeFlipBreakEvenTriggerPoints = NewYork3FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = NewYork3FlipTakeProfitPoints;
@@ -4208,6 +4252,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeHvSlStartTime = TimeSpan.Zero;
                     activeHvSlEndTime = TimeSpan.Zero;
                     activeEntryOffsetPoints = 0.0;
+                    activeEntryOpenLimit = false;
                     activeEnableFlipBreakEven = false;
                     activeFlipBreakEvenTriggerPoints = 0.0;
                     activeFlipTakeProfitPoints = 0.0;
@@ -4594,6 +4639,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void CancelWorkingEntryOrders()
         {
+            ClearPendingOpenLimitEntryResubmit();
             CancelOrderIfActive(longEntryOrder, "CancelWorkingEntries");
             CancelOrderIfActive(shortEntryOrder, "CancelWorkingEntries");
         }
@@ -5022,6 +5068,102 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? signalClose - offsetPoints
                 : signalClose + offsetPoints;
             return Instrument.MasterInstrument.RoundToTickSize(raw);
+        }
+
+        private bool IsEntryOpenLimitEnabled()
+        {
+            return activeEntryOpenLimit;
+        }
+
+        private double GetInitialEntryPrice(bool isLong, bool useOpenLimitEntry)
+        {
+            if (useOpenLimitEntry)
+                return Instrument.MasterInstrument.RoundToTickSize(Open[0]);
+
+            return GetEntryPriceForDirection(Close[0], isLong, activeEntryOffsetPoints);
+        }
+
+        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, bool useMarketEntry)
+        {
+            if (isLong)
+            {
+                pendingLongStopForWebhook = stopPrice;
+                pendingLongEntryIsFlip = false;
+                SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
+                SetProfitTargetByDistanceTicks(LongEntrySignal, takeProfitPoints);
+                SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, quantity);
+                StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice + takeProfitPoints : 0.0, takeProfitPoints > 0.0);
+                SubmitLongEntryOrder(quantity, entryPrice, useMarketEntry, LongEntrySignal);
+            }
+            else
+            {
+                pendingShortStopForWebhook = stopPrice;
+                pendingShortEntryIsFlip = false;
+                SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
+                SetProfitTargetByDistanceTicks(ShortEntrySignal, takeProfitPoints);
+                SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, quantity);
+                StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice - takeProfitPoints : 0.0, takeProfitPoints > 0.0);
+                SubmitShortEntryOrder(quantity, entryPrice, useMarketEntry, ShortEntrySignal);
+            }
+        }
+
+        private void QueueOpenLimitEntryResubmit(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
+        {
+            pendingOpenLimitEntryResubmit = true;
+            pendingOpenLimitEntryIsLong = isLong;
+            pendingOpenLimitEntryQuantity = quantity;
+            pendingOpenLimitEntryPrice = entryPrice;
+            pendingOpenLimitStopPrice = stopPrice;
+            pendingOpenLimitTakeProfitPoints = takeProfitPoints;
+            pendingOpenLimitTakeProfitPrice = takeProfitPrice;
+            pendingOpenLimitEntryBar = CurrentBar;
+        }
+
+        private void ClearPendingOpenLimitEntryResubmit()
+        {
+            pendingOpenLimitEntryResubmit = false;
+            pendingOpenLimitEntryIsLong = false;
+            pendingOpenLimitEntryQuantity = 0;
+            pendingOpenLimitEntryPrice = 0.0;
+            pendingOpenLimitStopPrice = 0.0;
+            pendingOpenLimitTakeProfitPoints = 0.0;
+            pendingOpenLimitTakeProfitPrice = 0.0;
+            pendingOpenLimitEntryBar = -1;
+        }
+
+        private bool TrySubmitQueuedOpenLimitEntryAfterCancel(string cancelledOrderName)
+        {
+            if (!pendingOpenLimitEntryResubmit)
+                return false;
+
+            bool cancelledLong = IsLongEntryOrderName(cancelledOrderName);
+            bool cancelledShort = IsShortEntryOrderName(cancelledOrderName);
+            if ((pendingOpenLimitEntryIsLong && !cancelledLong) || (!pendingOpenLimitEntryIsLong && !cancelledShort))
+                return false;
+
+            if (Position.MarketPosition != MarketPosition.Flat || pendingOpenLimitEntryBar != CurrentBar || !IsEntryOpenLimitEnabled())
+            {
+                ClearPendingOpenLimitEntryResubmit();
+                return false;
+            }
+
+            bool isLong = pendingOpenLimitEntryIsLong;
+            int quantity = pendingOpenLimitEntryQuantity;
+            double entryPrice = pendingOpenLimitEntryPrice;
+            double stopPrice = pendingOpenLimitStopPrice;
+            double takeProfitPoints = pendingOpenLimitTakeProfitPoints;
+            double takeProfitPrice = pendingOpenLimitTakeProfitPrice;
+            ClearPendingOpenLimitEntryResubmit();
+
+            SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, false);
+            LogDebug(string.Format(
+                "Open-limit entry replaced | side={0} session={1} entry={2:0.00} stop={3:0.00} qty={4}",
+                isLong ? "Long" : "Short",
+                FormatSessionLabel(activeSession),
+                entryPrice,
+                stopPrice,
+                quantity));
+            return true;
         }
 
         private void SubmitLongEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
@@ -8922,6 +9064,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double AsiaEntryOffsetPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 1", Order = 23)]
+        public bool AsiaEntryOpenLimit { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "Asia 1", Order = 23)]
         public bool AsiaEnableFlipBreakEven { get; set; }
 
@@ -9111,6 +9257,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "Asia 2", Order = 22)]
         public double Asia2EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 2", Order = 23)]
+        public bool Asia2EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "Asia 2", Order = 23)]
@@ -9304,6 +9454,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Asia3EntryOffsetPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 3", Order = 23)]
+        public bool Asia3EntryOpenLimit { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "Asia 3", Order = 23)]
         public bool Asia3EnableFlipBreakEven { get; set; }
 
@@ -9491,6 +9645,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "London 1", Order = 22)]
         public double LondonEntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 1", Order = 23)]
+        public bool LondonEntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "London 1", Order = 23)]
@@ -9681,6 +9839,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "London 2", Order = 22)]
         public double London2EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 2", Order = 23)]
+        public bool London2EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "London 2", Order = 23)]
@@ -9875,6 +10037,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "London 3", Order = 22)]
         public double London3EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 3", Order = 23)]
+        public bool London3EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "London 3", Order = 23)]
@@ -10082,6 +10248,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "New York 1", Order = 23)]
         public double NewYorkEntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 1", Order = 24)]
+        public bool NewYorkEntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "New York 1", Order = 24)]
@@ -10292,6 +10462,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NewYork2EntryOffsetPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 2", Order = 24)]
+        public bool NewYork2EntryOpenLimit { get; set; }
+
+        [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "New York 2", Order = 24)]
         public bool NewYork2EnableFlipBreakEven { get; set; }
 
@@ -10498,6 +10672,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Offset Points", Description = "0 = market entry at signal close. Positive value = limit entry offset from signal close (long: close-offset, short: close+offset).", GroupName = "New York 3", Order = 23)]
         public double NewYork3EntryOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 3", Order = 24)]
+        public bool NewYork3EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Flip BE Trigger", Description = "If enabled, flip entries can move stop loss to break-even after the configured profit threshold is reached.", GroupName = "New York 3", Order = 24)]
