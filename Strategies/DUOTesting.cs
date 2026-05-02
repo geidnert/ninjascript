@@ -478,7 +478,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaBlockSundayTrades = false;
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
-                AsiaEntryMinBodyPoints = 0.0;
+                AsiaEntryMinBodyPoints = 0.25;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 29.58;
                 AsiaAdxMaxThreshold = 44.86;
@@ -491,14 +491,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEntryOpenLimit = false;
                 AsiaCandleReversalExitBars = 14;
                 AsiaCandleReversalCloseBeyondPoints = 9.0;
-                AsiaCandleReversalMinBodyPoints = 0.25;
+                AsiaCandleReversalMinBodyPoints = 0.0;
 
                 Asia2SessionStart = new TimeSpan(20, 00, 0);
                 Asia2SessionEnd = TimeSpan.Zero;
                 Asia2BlockSundayTrades = false;
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
-                Asia2EntryMinBodyPoints = 0.0;
+                Asia2EntryMinBodyPoints = 0.25;
                 Asia2AdxPeriod = 14;
                 Asia2AdxThreshold = 15.3;
                 Asia2AdxMaxThreshold = 32.0;
@@ -518,14 +518,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3BlockSundayTrades = false;
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
-                Asia3EntryMinBodyPoints = 0.0;
+                Asia3EntryMinBodyPoints = 0.25;
                 Asia3AdxPeriod = 14;
                 Asia3AdxThreshold = 21.4;
                 Asia3AdxMaxThreshold = 50.2;
                 Asia3AdxPeakDrawdownExitUnits = 3.9;
                 Asia3AdxAbsoluteExitLevel = 59.6;
-                Asia3StopPaddingPoints = 28.5;
-                Asia3TrailHardStop = true;
+                Asia3StopPaddingPoints = 30.75;
+                Asia3TrailHardStop = false;
                 Asia3TakeProfitPoints = 41.5;
                 Asia3AtrMinimum = 5.6;
                 Asia3EntryOpenLimit = false;
@@ -538,27 +538,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AutoShiftLondon = true;
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
-                LondonEntryMinBodyPoints = 0.0;
+                LondonEntryMinBodyPoints = 0.5;
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 19.37;
                 LondonAdxMaxThreshold = 29.34;
                 LondonAdxPeakDrawdownExitUnits = 4.26;
                 LondonAdxAbsoluteExitLevel = 45.3;
-                LondonStopPaddingPoints = 99.5;
+                LondonStopPaddingPoints = 99.25;
                 LondonTrailHardStop = true;
                 LondonTakeProfitPoints = 213.75;
                 LondonAtrMinimum = 6.23;
                 LondonEntryOpenLimit = false;
                 LondonCandleReversalExitBars = 11;
                 LondonCandleReversalCloseBeyondPoints = 2.25;
-                LondonCandleReversalMinBodyPoints = 1.75;
+                LondonCandleReversalMinBodyPoints = 6.5;
 
                 London2SessionStart = new TimeSpan(3, 00, 0);
                 London2SessionEnd = new TimeSpan(5, 00, 0);
                 AutoShiftLondon2 = true;
                 London2EmaPeriod = 21;
                 London2Contracts = 1;
-                London2EntryMinBodyPoints = 0.0;
+                London2EntryMinBodyPoints = 0.75;
                 London2AdxPeriod = 14;
                 London2AdxThreshold = 15.45;
                 London2AdxMaxThreshold = 31.35;
@@ -575,11 +575,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 London3SessionStart = new TimeSpan(5, 00, 0);
                 London3SessionEnd = new TimeSpan(8, 00, 0);
-                London3FlatByTime = "08:25:00";
+                London3FlatByTime = "08:25";
                 AutoShiftLondon3 = true;
                 London3EmaPeriod = 21;
                 London3Contracts = 1;
-                London3EntryMinBodyPoints = 0.0;
+                London3EntryMinBodyPoints = 0.75;
                 London3AdxPeriod = 14;
                 London3AdxThreshold = 21.18;
                 London3AdxMaxThreshold = 21.96;
@@ -598,7 +598,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkSessionEnd = new TimeSpan(12, 00, 0);
                 NewYorkEmaPeriod = 15;
                 NewYorkContracts = 1;
-                NewYorkEntryMinBodyPoints = 0.0;
+                NewYorkEntryMinBodyPoints = 0.5;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 33.0;
                 NewYorkAdxMaxThreshold = 52.2;
@@ -617,7 +617,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2SessionEnd = new TimeSpan(14, 00, 0);
                 NewYork2EmaPeriod = 19;
                 NewYork2Contracts = 1;
-                NewYork2EntryMinBodyPoints = 0.0;
+                NewYork2EntryMinBodyPoints = 0.5;
                 NewYork2AdxPeriod = 14;
                 NewYork2AdxThreshold = 16.9;
                 NewYork2AdxMaxThreshold = 58.9;
@@ -633,23 +633,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2CandleReversalMinBodyPoints = 1.75;
 
                 NewYork3SessionStart = new TimeSpan(14, 00, 0);
-                NewYork3SessionEnd = new TimeSpan(17, 00, 0);
-                NewYork3EmaPeriod = 21;
+                NewYork3SessionEnd = new TimeSpan(16, 00, 0);
+                NewYork3EmaPeriod = 18;
                 NewYork3Contracts = 1;
-                NewYork3EntryMinBodyPoints = 0.0;
+                NewYork3EntryMinBodyPoints = 3.25;
                 NewYork3AdxPeriod = 14;
-                NewYork3AdxThreshold = 18.5;
-                NewYork3AdxMaxThreshold = 42.0;
-                NewYork3AdxPeakDrawdownExitUnits = 7.3;
-                NewYork3AdxAbsoluteExitLevel = 55.0;
-                NewYork3StopPaddingPoints = 42.5;
+                NewYork3AdxThreshold = 23.1;
+                NewYork3AdxMaxThreshold = 37.5;
+                NewYork3AdxPeakDrawdownExitUnits = 13.3;
+                NewYork3AdxAbsoluteExitLevel = 63.0;
+                NewYork3StopPaddingPoints = 57.0;
                 NewYork3TrailHardStop = false;
-                NewYork3TakeProfitPoints = 153.0;
-                NewYork3AtrMinimum = 0.0;
+                NewYork3TakeProfitPoints = 175.75;
+                NewYork3AtrMinimum = 15.9;
                 NewYork3EntryOpenLimit = false;
-                NewYork3CandleReversalExitBars = 0;
-                NewYork3CandleReversalCloseBeyondPoints = 0.0;
-                NewYork3CandleReversalMinBodyPoints = 0.0;
+                NewYork3CandleReversalExitBars = 7;
+                NewYork3CandleReversalCloseBeyondPoints = 6.25;
+                NewYork3CandleReversalMinBodyPoints = 1.25;
 
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
@@ -663,7 +663,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ShowAtrThresholdLines = true;
 
                 UseNewsSkip = false;
-                NewsBlockMinutes = 1;
+                NewsBlockMinutes = 2;
 
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
