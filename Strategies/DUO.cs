@@ -223,7 +223,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private EMA emaNewYork3;
         private EMA activeEma;
         private ATR takeProfitAtr;
-        private DUOAtrVisual atrVisual;
         private DM adxAsia;
         private DM adxAsia2;
         private DM adxAsia3;
@@ -907,8 +906,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ShowEmaOnChart = false;
                 ShowAdxOnChart = false;
                 ShowAdxThresholdLines = false;
-                ShowAtrOnChart = false;
-                ShowAtrThresholdLines = false;
 
                 UseNewsSkip = true;
                 NewsBlockMinutes = 1;
@@ -942,7 +939,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 emaNewYork2 = EMA(NewYork2EmaPeriod);
                 emaNewYork3 = EMA(NewYork3EmaPeriod);
                 takeProfitAtr = ATR(TakeProfitAtrPeriod);
-                atrVisual = DUOAtrVisual(TakeProfitAtrPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
                 adxAsia2 = DM(Asia2AdxPeriod);
                 adxAsia3 = DM(Asia3AdxPeriod);
@@ -988,9 +984,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     AddChartIndicator(adxNewYork3);
                 }
 
-                if (ShowAtrOnChart || ShowAtrThresholdLines)
-                    AddChartIndicator(atrVisual);
-
                 sessionInitialized = false;
                 activeSession = GetFirstConfiguredSession();
                 lockedTradeSession = SessionSlot.None;
@@ -1013,7 +1006,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
                 UpdateAdxPlotVisibility();
-                UpdateAtrPlotVisibility();
                 targetTimeZone = null;
                 londonTimeZone = null;
                 newYorkTimeZone = null;
@@ -1121,7 +1113,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             UpdateActiveSession(Time[0]);
             UpdateEmaPlotVisibility();
             UpdateAdxPlotVisibility();
-            UpdateAtrPlotVisibility();
 
             if (AuditPositionProtection("bar-watchdog"))
                 return;
@@ -3680,16 +3671,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SetAdxVisible(adxNewYork3, ShowAdxOnChart);
         }
 
-        private void UpdateAtrPlotVisibility()
-        {
-            if (atrVisual == null)
-                return;
-
-            atrVisual.ShowAtrLine = ShowAtrOnChart;
-            atrVisual.ShowThresholdLine = ShowAtrThresholdLines;
-            atrVisual.Threshold = activeMinimumAtrForEntry;
-        }
-
         private bool ShouldShowEmaInstance(EMA ema)
         {
             if (ema == null)
@@ -5875,16 +5856,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 adxPlotCount,
                 adxValueCount));
 
-            int atrPlotCount = atrVisual != null && atrVisual.Plots != null ? atrVisual.Plots.Length : 0;
-            string atrType = atrVisual != null ? atrVisual.GetType().Name : "null";
             LogDebug(string.Format(
-                "AtrVisuals ({0}) | session={1} type={2} showAtr={3} showThresholds={4} plots={5} threshold={6:0.##}",
+                "AtrFilter ({0}) | session={1} type=ATR period={2} threshold={3:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
-                atrType,
-                ShowAtrOnChart,
-                ShowAtrThresholdLines,
-                atrPlotCount,
+                TakeProfitAtrPeriod,
                 activeMinimumAtrForEntry));
         }
 
@@ -10129,14 +10105,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // [NinjaScriptProperty]
         // [Display(Name = "ADX Show Threshold Lines", Description = "Show/hide ADX min/max threshold reference lines on chart.", GroupName = "10. Sessions", Order = 7)]
         internal bool ShowAdxThresholdLines { get; set; }
-
-        // [NinjaScriptProperty]
-        // [Display(Name = "Show ATR On Chart", Description = "Show/hide ATR(14) indicator on chart.", GroupName = "10. Sessions", Order = 8)]
-        internal bool ShowAtrOnChart { get; set; }
-
-        // [NinjaScriptProperty]
-        // [Display(Name = "ATR Show Threshold Line", Description = "Show/hide ATR min threshold reference line on chart.", GroupName = "10. Sessions", Order = 9)]
-        internal bool ShowAtrThresholdLines { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip", Description = "Block entries inside the configured minutes before and after listed news events.", GroupName = "11. News", Order = 0)]
