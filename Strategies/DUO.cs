@@ -7435,7 +7435,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia 1 entries.", GroupName = "Asia 1", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 1 entries.", GroupName = "Asia 1 Session(18:30-20:00)", Order = 5)]
         public int AsiaContracts { get; set; }
 
         [NinjaScriptProperty]
@@ -7544,7 +7544,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia 2 entries.", GroupName = "Asia 2", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 2 entries.", GroupName = "Asia 2 Session(20:00-00:00)", Order = 5)]
         public int Asia2Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -7653,7 +7653,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia 3 entries.", GroupName = "Asia 3", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 3 entries.", GroupName = "Asia 3 Session(00:00-02:00)", Order = 5)]
         public int Asia3Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -7761,7 +7761,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for London 1 entries.", GroupName = "London 1", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 1 entries.", GroupName = "London 1 Session(01:00-03:00)", Order = 5)]
         public int LondonContracts { get; set; }
 
         [NinjaScriptProperty]
@@ -7870,7 +7870,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for London 2 entries.", GroupName = "London 2", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 2 entries.", GroupName = "London 2 Session(03:00-05:00)", Order = 5)]
         public int London2Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -7984,7 +7984,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for London 3 entries.", GroupName = "London 3", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 3 entries.", GroupName = "London 3 Session(05:00-06:00)", Order = 5)]
         public int London3Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8087,7 +8087,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 1 entries.", GroupName = "New York 1", Order = 6)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 1 entries.", GroupName = "New York 1 Session(09:30-10:00)", Order = 6)]
         public int NewYorkContracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8191,7 +8191,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 2 entries.", GroupName = "New York 2", Order = 6)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 2 entries.", GroupName = "New York 2 Session(10:00-11:00)", Order = 6)]
         public int NewYork2Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8295,7 +8295,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 3 entries.", GroupName = "New York 3", Order = 6)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 3 entries.", GroupName = "New York 3 Session(11:00-12:00)", Order = 6)]
         public int NewYork3Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8398,7 +8398,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 4 entries.", GroupName = "New York 4", Order = 6)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 4 entries.", GroupName = "New York 4 Session(12:00-13:30)", Order = 6)]
         public int NewYork4Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8501,7 +8501,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 5 entries.", GroupName = "New York 5", Order = 6)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 5 entries.", GroupName = "New York 5 Session(13:30-15:00)", Order = 6)]
         public int NewYork5Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8605,7 +8605,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 6 entries.", GroupName = "New York 6", Order = 6)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 6 entries.", GroupName = "New York 6 Session(15:00-16:00)", Order = 6)]
         public int NewYork6Contracts { get; set; }
 
         [NinjaScriptProperty]
