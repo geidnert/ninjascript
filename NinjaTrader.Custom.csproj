@@ -385,7 +385,6 @@
     <Compile Include="Strategies\TestDuo.cs" />
     <Compile Include="Strategies\ThreeBarWickTestScalping.cs" />
     <Compile Include="Strategies\WickTest.cs" />
-    <Compile Include="obj\x64\Debug\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
     <Compile Include="NinjaTrader.Vendor.cs" />
     <Compile Include="VendorLicensing.cs" />
     <Compile Include="Strategies\Heiken.cs" />
@@ -406,7 +405,6 @@
     <Compile Include="Strategies\ADAMTesting.cs" />
     <Compile Include="Strategies\Duo.cs" />
     <Compile Include="Strategies\DuoEMA.cs" />
-    <Compile Include="Strategies\DuoTesting3.cs" />
     <Compile Include="Strategies\ORBOTesting.cs" />
     <Compile Include="Strategies\MultiBot\DuoEngine.cs" />
     <Compile Include="Strategies\MultiBot\TradeIntent.cs" />
@@ -428,10 +426,13 @@
     <Compile Include="Strategies\ORBOib.cs" />
     <Compile Include="Strategies\ORBOibTesting.cs" />
     <Compile Include="AddOns\NRDToCSV.cs" />
-    <Compile Include="Strategies\HUGO.cs" />
     <Compile Include="Strategies\DuoTesting.cs" />
-    <Compile Include="Strategies\HUGOTesting.cs" />
     <Compile Include="Indicators\DUOAtrVisual.cs" />
+    <Compile Include="Strategies\AnalyzerBarsExporter.cs" />
+    <Compile Include="Strategies\AnalyzerDuoStateExporter.cs" />
+    <Compile Include="Strategies\HUGO.cs" />
+    <Compile Include="Strategies\HUGOTesting.cs" />
+    <Compile Include="obj\x64\Release\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">
