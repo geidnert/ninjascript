@@ -587,120 +587,120 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2CandleReversalMinBodyPoints = 2;
 
                 London3SessionStart = new TimeSpan(5, 00, 0);
-                London3SessionEnd = new TimeSpan(6, 00, 0);
+                London3SessionEnd = new TimeSpan(8, 00, 0);
                 London3FlatByTime = "08:25";
                 AutoShiftLondon3 = true;
                 London3EmaPeriod = 21;
                 London3Contracts = 1;
-                London3EntryMinBodyPoints = 1;
+                London3EntryMinBodyPoints = 0.25;
                 London3AdxPeriod = 14;
-                London3AdxThreshold = 12.5;
-                London3AdxMaxThreshold = 18.7;
-                London3AdxPeakDrawdownExitUnits = 6.3;
-                London3AdxAbsoluteExitLevel = 38.6;
-                London3StopPaddingPoints = 82.75;
-                London3TrailHardStop = true;
-                London3TakeProfitPoints = 456;
-                London3AtrMinimum = 7.4;
+                London3AdxThreshold = 27.7;
+                London3AdxMaxThreshold = 31.1;
+                London3AdxPeakDrawdownExitUnits = 7;
+                London3AdxAbsoluteExitLevel = 45;
+                London3StopPaddingPoints = 70;
+                London3TrailHardStop = false;
+                London3TakeProfitPoints = 270;
+                London3AtrMinimum = 8.9;
                 London3EntryOpenLimit = false;
-                London3CandleReversalExitBars = 0;
-                London3CandleReversalCloseBeyondPoints = 0;
-                London3CandleReversalMinBodyPoints = 0.5;
+                London3CandleReversalExitBars = 12;
+                London3CandleReversalCloseBeyondPoints = 0.25;
+                London3CandleReversalMinBodyPoints = 7.5;
 
                 NewYorkSessionStart = new TimeSpan(9, 30, 0);
                 NewYorkSessionEnd = new TimeSpan(10, 00, 0);
                 NewYorkEmaPeriod = 21;
                 NewYorkContracts = 1;
-                NewYorkEntryMinBodyPoints = 3.75;
+                NewYorkEntryMinBodyPoints = 4.25;
                 NewYorkAdxPeriod = 14;
-                NewYorkAdxThreshold = 32;
-                NewYorkAdxMaxThreshold = 49;
-                NewYorkAdxPeakDrawdownExitUnits = 40.6;
-                NewYorkAdxAbsoluteExitLevel = 53;
-                NewYorkStopPaddingPoints = 211;
+                NewYorkAdxThreshold = 19.9;
+                NewYorkAdxMaxThreshold = 48.6;
+                NewYorkAdxPeakDrawdownExitUnits = 16.1;
+                NewYorkAdxAbsoluteExitLevel = 58.3;
+                NewYorkStopPaddingPoints = 191.75;
                 NewYorkTrailHardStop = true;
-                NewYorkTakeProfitPoints = 220;
-                NewYorkAtrMinimum = 17.7;
+                NewYorkTakeProfitPoints = 214;
+                NewYorkAtrMinimum = 15.4;
                 NewYorkEntryOpenLimit = false;
-                NewYorkCandleReversalExitBars = 0;
+                NewYorkCandleReversalExitBars = 5;
                 NewYorkCandleReversalCloseBeyondPoints = 0;
-                NewYorkCandleReversalMinBodyPoints = 0;
+                NewYorkCandleReversalMinBodyPoints = 0.75;
 
                 NewYork2SessionStart = new TimeSpan(10, 00, 0);
                 NewYork2SessionEnd = new TimeSpan(11, 00, 0);
                 NewYork2EmaPeriod = 21;
                 NewYork2Contracts = 1;
-                NewYork2EntryMinBodyPoints = 1.5;
+                NewYork2EntryMinBodyPoints = 0;
                 NewYork2AdxPeriod = 14;
-                NewYork2AdxThreshold = 34.8;
-                NewYork2AdxMaxThreshold = 40.8;
-                NewYork2AdxPeakDrawdownExitUnits = 35.5;
-                NewYork2AdxAbsoluteExitLevel = 53.5;
-                NewYork2StopPaddingPoints = 68;
-                NewYork2TrailHardStop = false;
-                NewYork2TakeProfitPoints = 111.5;
-                NewYork2AtrMinimum = 0;
+                NewYork2AdxThreshold = 15;
+                NewYork2AdxMaxThreshold = 26;
+                NewYork2AdxPeakDrawdownExitUnits = 9.9;
+                NewYork2AdxAbsoluteExitLevel = 45.3;
+                NewYork2StopPaddingPoints = 114;
+                NewYork2TrailHardStop = true;
+                NewYork2TakeProfitPoints = 156.25;
+                NewYork2AtrMinimum = 18.4;
                 NewYork2EntryOpenLimit = false;
-                NewYork2CandleReversalExitBars = 0;
-                NewYork2CandleReversalCloseBeyondPoints = 0;
-                NewYork2CandleReversalMinBodyPoints = 0;
+                NewYork2CandleReversalExitBars = 10;
+                NewYork2CandleReversalCloseBeyondPoints = 6.5;
+                NewYork2CandleReversalMinBodyPoints = 2;
 
                 NewYork3SessionStart = new TimeSpan(11, 00, 0);
                 NewYork3SessionEnd = new TimeSpan(12, 00, 0);
                 NewYork3EmaPeriod = 21;
                 NewYork3Contracts = 1;
-                NewYork3EntryMinBodyPoints = 6.5;
+                NewYork3EntryMinBodyPoints = 0;
                 NewYork3AdxPeriod = 14;
-                NewYork3AdxThreshold = 39;
-                NewYork3AdxMaxThreshold = 49.9;
-                NewYork3AdxPeakDrawdownExitUnits = 44.7;
-                NewYork3AdxAbsoluteExitLevel = 66.3;
-                NewYork3StopPaddingPoints = 105.25;
+                NewYork3AdxThreshold = 20;
+                NewYork3AdxMaxThreshold = 25;
+                NewYork3AdxPeakDrawdownExitUnits = 1.2;
+                NewYork3AdxAbsoluteExitLevel = 23.9;
+                NewYork3StopPaddingPoints = 73.75;
                 NewYork3TrailHardStop = true;
-                NewYork3TakeProfitPoints = 368.25;
-                NewYork3AtrMinimum = 0;
+                NewYork3TakeProfitPoints = 138;
+                NewYork3AtrMinimum = 20.6;
                 NewYork3EntryOpenLimit = false;
-                NewYork3CandleReversalExitBars = 0;
+                NewYork3CandleReversalExitBars = 11;
                 NewYork3CandleReversalCloseBeyondPoints = 0;
-                NewYork3CandleReversalMinBodyPoints = 0;
+                NewYork3CandleReversalMinBodyPoints = 1.75;
 
                 NewYork4SessionStart = new TimeSpan(12, 00, 0);
                 NewYork4SessionEnd = new TimeSpan(13, 30, 0);
                 NewYork4EmaPeriod = 21;
                 NewYork4Contracts = 1;
-                NewYork4EntryMinBodyPoints = 3.25;
+                NewYork4EntryMinBodyPoints = 4.75;
                 NewYork4AdxPeriod = 14;
-                NewYork4AdxThreshold = 37.2;
-                NewYork4AdxMaxThreshold = 50;
-                NewYork4AdxPeakDrawdownExitUnits = 4.3;
-                NewYork4AdxAbsoluteExitLevel = 56.6;
-                NewYork4StopPaddingPoints = 102;
+                NewYork4AdxThreshold = 14;
+                NewYork4AdxMaxThreshold = 30.4;
+                NewYork4AdxPeakDrawdownExitUnits = 1.4;
+                NewYork4AdxAbsoluteExitLevel = 53.2;
+                NewYork4StopPaddingPoints = 91.75;
                 NewYork4TrailHardStop = true;
-                NewYork4TakeProfitPoints = 183;
-                NewYork4AtrMinimum = 0;
+                NewYork4TakeProfitPoints = 219.5;
+                NewYork4AtrMinimum = 22.9;
                 NewYork4EntryOpenLimit = false;
-                NewYork4CandleReversalExitBars = 0;
-                NewYork4CandleReversalCloseBeyondPoints = 0;
+                NewYork4CandleReversalExitBars = 11;
+                NewYork4CandleReversalCloseBeyondPoints = 4.25;
                 NewYork4CandleReversalMinBodyPoints = 0;
 
                 NewYork5SessionStart = new TimeSpan(13, 30, 0);
                 NewYork5SessionEnd = new TimeSpan(15, 00, 0);
                 NewYork5EmaPeriod = 21;
                 NewYork5Contracts = 1;
-                NewYork5EntryMinBodyPoints = 2.5;
-                NewYork5AdxPeriod = 14;
-                NewYork5AdxThreshold = 41.7;
-                NewYork5AdxMaxThreshold = 54;
-                NewYork5AdxPeakDrawdownExitUnits = 15;
-                NewYork5AdxAbsoluteExitLevel = 51.9;
-                NewYork5StopPaddingPoints = 131;
+                NewYork5EntryMinBodyPoints = 3;
+                NewYork5AdxPeriod = 21;
+                NewYork5AdxThreshold = 18.3;
+                NewYork5AdxMaxThreshold = 42.2;
+                NewYork5AdxPeakDrawdownExitUnits = 6.4;
+                NewYork5AdxAbsoluteExitLevel = 22.4;
+                NewYork5StopPaddingPoints = 131.5;
                 NewYork5TrailHardStop = true;
-                NewYork5TakeProfitPoints = 175.75;
-                NewYork5AtrMinimum = 0;
+                NewYork5TakeProfitPoints = 180;
+                NewYork5AtrMinimum = 24.5;
                 NewYork5EntryOpenLimit = false;
-                NewYork5CandleReversalExitBars = 0;
-                NewYork5CandleReversalCloseBeyondPoints = 0;
-                NewYork5CandleReversalMinBodyPoints = 0;
+                NewYork5CandleReversalExitBars = 16;
+                NewYork5CandleReversalCloseBeyondPoints = 2.25;
+                NewYork5CandleReversalMinBodyPoints = 2.75;
 
                 NewYork6SessionStart = new TimeSpan(15, 00, 0);
                 NewYork6SessionEnd = new TimeSpan(16, 00, 0);
@@ -731,7 +731,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ShowAdxThresholdLines = false;
 
                 UseNewsSkip = false;
-                NewsBlockMinutes = 2;
+                NewsBlockMinutes = 1;
 
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
@@ -7984,7 +7984,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for London 3 entries.", GroupName = "London 3 Session(05:00-06:00)", Order = 5)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 3 entries.", GroupName = "London 3 Session(05:00-08:00)", Order = 5)]
         public int London3Contracts { get; set; }
 
         [NinjaScriptProperty]
