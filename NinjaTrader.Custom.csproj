@@ -433,6 +433,8 @@
     <Compile Include="Strategies\HUGO.cs" />
     <Compile Include="Strategies\HUGOTesting.cs" />
     <Compile Include="obj\x64\Release\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
+    <Compile Include="Strategies\DUOrc.cs" />
+    <Compile Include="Strategies\DUOrcTesting.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">
