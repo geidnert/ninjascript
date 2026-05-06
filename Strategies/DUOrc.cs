@@ -176,6 +176,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxAbsoluteExitLevel;
         private double activeStopPaddingPoints;
         private bool activeTrailHardStop;
+        private bool activeEmaCrossSlEnabled;
+        private double activeEmaCrossSlPoints;
         private int activeCandleReversalExitBars;
         private double activeCandleReversalCloseBeyondPoints;
         private double activeCandleReversalMinBodyPoints;
@@ -683,6 +685,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ShowEmaOnChart = false;
                 ShowAdxOnChart = false;
                 ShowAdxThresholdLines = false;
+                UseEmaCrossSl = false;
+                EmaCrossSlPoints = 0.0;
 
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
@@ -979,6 +983,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
+                if (TryExitOnEmaCrossSl(Close[0], emaValue))
+                    return;
+
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
                     if (TrySubmitTerminalExit("AdxLevelExit"))
@@ -1021,6 +1028,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
+                if (TryExitOnEmaCrossSl(Close[0], emaValue))
+                    return;
+
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
                     if (TrySubmitTerminalExit("AdxLevelExit"))
@@ -1810,6 +1820,43 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     closePrice,
                     activeStopPaddingPoints));
             }
+        }
+
+        private bool TryExitOnEmaCrossSl(double closePrice, double emaValue)
+        {
+            if (!activeEmaCrossSlEnabled || Position.MarketPosition == MarketPosition.Flat || activeEma == null || IsTerminalExitInFlight())
+                return false;
+
+            double roundedClose = Instrument.MasterInstrument.RoundToTickSize(closePrice);
+            double crossPoints = Math.Max(0.0, activeEmaCrossSlPoints);
+
+            if (Position.MarketPosition == MarketPosition.Long && roundedClose <= emaValue - crossPoints)
+            {
+                if (TrySubmitTerminalExit("EmaCrossSlLong"))
+                {
+                    LogDebug(string.Format(
+                        "Exit LONG | reason=EmaCrossSL close={0:0.00} ema={1:0.00} points={2:0.##}",
+                        roundedClose,
+                        emaValue,
+                        crossPoints));
+                }
+                return true;
+            }
+
+            if (Position.MarketPosition == MarketPosition.Short && roundedClose >= emaValue + crossPoints)
+            {
+                if (TrySubmitTerminalExit("EmaCrossSlShort"))
+                {
+                    LogDebug(string.Format(
+                        "Exit SHORT | reason=EmaCrossSL close={0:0.00} ema={1:0.00} points={2:0.##}",
+                        roundedClose,
+                        emaValue,
+                        crossPoints));
+                }
+                return true;
+            }
+
+            return false;
         }
 
         private bool ApplyManagedStop(string entrySignal, double stopPrice)
@@ -2801,6 +2848,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeCandleReversalMinBodyPoints = 0.0;
                     break;
             }
+
+            activeEmaCrossSlEnabled = UseEmaCrossSl;
+            activeEmaCrossSlPoints = Math.Max(0.0, EmaCrossSlPoints);
         }
 
         private void UpdateEmaPlotVisibility()
@@ -4841,7 +4891,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} slPad={14:0.##} trailHardSl={15} entryMinBody={16:0.##} candleRev={17}/{18:0.##}/{19:0.##} atrMin={20:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} slPad={14:0.##} trailHardSl={15} emaCrossSl={16}/{17:0.##} entryMinBody={18:0.##} candleRev={19}/{20:0.##}/{21:0.##} atrMin={22:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -4858,6 +4908,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeContracts,
                 activeStopPaddingPoints,
                 activeTrailHardStop,
+                activeEmaCrossSlEnabled,
+                activeEmaCrossSlPoints,
                 activeEntryMinBodyPoints,
                 activeCandleReversalExitBars,
                 activeCandleReversalCloseBeyondPoints,
@@ -8333,6 +8385,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         internal bool ShowAdxOnChart { get; set; }
 
         internal bool ShowAdxThresholdLines { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EMA Cross SL Enabled", Description = "Exit on bar close when close is on the wrong side of the active EMA by EMA Cross SL Points.", GroupName = "10. Sessions", Order = 10)]
+        public bool UseEmaCrossSl { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "EMA Cross SL Points", Description = "0 exits on EMA touch/cross. Positive values require this many points beyond EMA on the wrong side.", GroupName = "10. Sessions", Order = 11)]
+        public double EmaCrossSlPoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use News Skip", Description = "Block entries inside the configured minutes before and after listed news events.", GroupName = "11. News", Order = 0)]
