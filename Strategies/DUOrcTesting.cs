@@ -218,6 +218,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const int EntryAtrPeriod = 14;
         private const string LongEntrySignal = "DUOrcTestingLong";
         private const string ShortEntrySignal = "DUOrcTestingShort";
+        // TEMP: Remove this date block after the April 7, 2026 backtest isolation is no longer needed.
+        private static readonly DateTime TemporaryBlockedTradingDate = new DateTime(2026, 4, 7);
         private static readonly SessionSlot[] ConfigurableSessionSlots = new[]
         {
             SessionSlot.Asia,
@@ -923,6 +925,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     TrySubmitTerminalExit("ForceClose");
                 else if (Position.MarketPosition == MarketPosition.Short)
                     TrySubmitTerminalExit("ForceClose");
+                return;
+            }
+
+            if (IsTemporaryBlockedTradingDate(Time[0]))
+            {
+                CancelWorkingEntryOrders();
+                if (Position.MarketPosition == MarketPosition.Long)
+                    TrySubmitTerminalExit("TemporaryDateBlock");
+                else if (Position.MarketPosition == MarketPosition.Short)
+                    TrySubmitTerminalExit("TemporaryDateBlock");
+                LogDebug("Temporary date block active | date=2026-04-07");
                 return;
             }
 
@@ -3053,6 +3066,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
 
             return barTime >= forceCloseDateTime;
+        }
+
+        private bool IsTemporaryBlockedTradingDate(DateTime barTime)
+        {
+            return barTime.Date == TemporaryBlockedTradingDate;
         }
 
         private bool TryGetForceCloseDateTime(DateTime referenceTime, out DateTime forceCloseDateTime)
