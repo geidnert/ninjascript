@@ -58,7 +58,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             NewYork3,
             NewYork4,
             NewYork5,
-            NewYork6
         }
 
         private enum SessionFamily
@@ -100,14 +99,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private Order longEntryOrder;
         private Order shortEntryOrder;
-        private bool pendingOpenLimitEntryResubmit;
-        private bool pendingOpenLimitEntryIsLong;
-        private double pendingOpenLimitEntryPrice;
-        private double pendingOpenLimitStopPrice;
-        private double pendingOpenLimitTakeProfitPoints;
-        private double pendingOpenLimitTakeProfitPrice;
-        private int pendingOpenLimitEntryQuantity;
-        private int pendingOpenLimitEntryBar;
         private int missingLongEntryOrderBars;
         private int missingShortEntryOrderBars;
         private string webhookUrl = string.Empty;
@@ -128,7 +119,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool newYork3SessionClosed;
         private bool newYork4SessionClosed;
         private bool newYork5SessionClosed;
-        private bool newYork6SessionClosed;
 
         private bool sessionInitialized;
         private SessionSlot activeSession = SessionSlot.None;
@@ -148,19 +138,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double tradeLineSlPrice;
         private readonly List<TradeLineSnapshot> historicalTradeLines = new List<TradeLineSnapshot>();
 
-        private EMA emaAsia;
-        private EMA emaAsia2;
-        private EMA emaAsia3;
-        private EMA emaLondon;
-        private EMA emaLondon2;
-        private EMA emaLondon3;
-        private EMA emaNewYork;
-        private EMA emaNewYork2;
-        private EMA emaNewYork3;
-        private EMA emaNewYork4;
-        private EMA emaNewYork5;
-        private EMA emaNewYork6;
-        private EMA activeEma;
         private ATR entryAtr;
         private DM adxAsia;
         private DM adxAsia2;
@@ -173,10 +150,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DM adxNewYork3;
         private DM adxNewYork4;
         private DM adxNewYork5;
-        private DM adxNewYork6;
         private DM activeAdx;
 
-        private int activeEmaPeriod;
         private int activeContracts;
         private double activeEntryMinBodyPoints;
         private double activeTakeProfitPoints;
@@ -188,7 +163,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxAbsoluteExitLevel;
         private double activeStopPaddingPoints;
         private bool activeTrailHardStop;
-        private bool activeEntryOpenLimit;
         private int activeCandleReversalExitBars;
         private double activeCandleReversalCloseBeyondPoints;
         private double activeCandleReversalMinBodyPoints;
@@ -488,8 +462,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 AsiaSessionStart = new TimeSpan(18, 30, 0);
                 AsiaSessionEnd = new TimeSpan(20, 00, 0);
-                AsiaBlockSundayTrades = false;
-                AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaEntryMinBodyPoints = 0;
                 AsiaAdxPeriod = 14;
@@ -501,15 +473,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaTrailHardStop = true;
                 AsiaTakeProfitPoints = 146.25;
                 AsiaAtrMinimum = 11.11;
-                AsiaEntryOpenLimit = false;
                 AsiaCandleReversalExitBars = 14;
                 AsiaCandleReversalCloseBeyondPoints = 7.75;
                 AsiaCandleReversalMinBodyPoints = 0;
 
                 Asia2SessionStart = new TimeSpan(20, 00, 0);
                 Asia2SessionEnd = TimeSpan.Zero;
-                Asia2BlockSundayTrades = false;
-                Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2EntryMinBodyPoints = 0;
                 Asia2AdxPeriod = 14;
@@ -521,15 +490,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2TrailHardStop = false;
                 Asia2TakeProfitPoints = 66.5;
                 Asia2AtrMinimum = 10.1;
-                Asia2EntryOpenLimit = false;
                 Asia2CandleReversalExitBars = 11;
                 Asia2CandleReversalCloseBeyondPoints = 14.25;
                 Asia2CandleReversalMinBodyPoints = 8;
 
                 Asia3SessionStart = TimeSpan.Zero;
                 Asia3SessionEnd = new TimeSpan(2, 00, 0);
-                Asia3BlockSundayTrades = false;
-                Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
                 Asia3EntryMinBodyPoints = 1.5;
                 Asia3AdxPeriod = 14;
@@ -541,7 +507,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3TrailHardStop = true;
                 Asia3TakeProfitPoints = 47.75;
                 Asia3AtrMinimum = 5.93;
-                Asia3EntryOpenLimit = false;
                 Asia3CandleReversalExitBars = 8;
                 Asia3CandleReversalCloseBeyondPoints = 10.25;
                 Asia3CandleReversalMinBodyPoints = 1.5;
@@ -549,7 +514,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonSessionStart = new TimeSpan(1, 00, 0);
                 LondonSessionEnd = new TimeSpan(3, 00, 0);
                 AutoShiftLondon = true;
-                LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonEntryMinBodyPoints = 0.5;
                 LondonAdxPeriod = 14;
@@ -561,7 +525,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonTrailHardStop = true;
                 LondonTakeProfitPoints = 155.5;
                 LondonAtrMinimum = 4.27;
-                LondonEntryOpenLimit = false;
                 LondonCandleReversalExitBars = 6;
                 LondonCandleReversalCloseBeyondPoints = 3.25;
                 LondonCandleReversalMinBodyPoints = 14;
@@ -569,7 +532,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2SessionStart = new TimeSpan(3, 00, 0);
                 London2SessionEnd = new TimeSpan(5, 00, 0);
                 AutoShiftLondon2 = true;
-                London2EmaPeriod = 21;
                 London2Contracts = 1;
                 London2EntryMinBodyPoints = 1.5;
                 London2AdxPeriod = 14;
@@ -581,7 +543,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2TrailHardStop = true;
                 London2TakeProfitPoints = 191.5;
                 London2AtrMinimum = 8.14;
-                London2EntryOpenLimit = false;
                 London2CandleReversalExitBars = 7;
                 London2CandleReversalCloseBeyondPoints = 7;
                 London2CandleReversalMinBodyPoints = 2;
@@ -590,7 +551,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3SessionEnd = new TimeSpan(7, 30, 0);
                 London3FlatByTime = "08:25";
                 AutoShiftLondon3 = true;
-                London3EmaPeriod = 21;
                 London3Contracts = 1;
                 London3EntryMinBodyPoints = 0.25;
                 London3AdxPeriod = 14;
@@ -602,14 +562,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3TrailHardStop = false;
                 London3TakeProfitPoints = 270;
                 London3AtrMinimum = 8.9;
-                London3EntryOpenLimit = false;
                 London3CandleReversalExitBars = 12;
                 London3CandleReversalCloseBeyondPoints = 0.25;
                 London3CandleReversalMinBodyPoints = 7.5;
 
                 NewYorkSessionStart = new TimeSpan(9, 30, 0);
                 NewYorkSessionEnd = new TimeSpan(10, 00, 0);
-                NewYorkEmaPeriod = 21;
                 NewYorkContracts = 1;
                 NewYorkEntryMinBodyPoints = 4.25;
                 NewYorkAdxPeriod = 14;
@@ -621,14 +579,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkTrailHardStop = true;
                 NewYorkTakeProfitPoints = 214;
                 NewYorkAtrMinimum = 15.4;
-                NewYorkEntryOpenLimit = false;
                 NewYorkCandleReversalExitBars = 5;
                 NewYorkCandleReversalCloseBeyondPoints = 0;
                 NewYorkCandleReversalMinBodyPoints = 0.75;
 
                 NewYork2SessionStart = new TimeSpan(10, 00, 0);
                 NewYork2SessionEnd = new TimeSpan(11, 00, 0);
-                NewYork2EmaPeriod = 21;
                 NewYork2Contracts = 1;
                 NewYork2EntryMinBodyPoints = 0;
                 NewYork2AdxPeriod = 14;
@@ -640,14 +596,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2TrailHardStop = true;
                 NewYork2TakeProfitPoints = 156.25;
                 NewYork2AtrMinimum = 18.4;
-                NewYork2EntryOpenLimit = false;
                 NewYork2CandleReversalExitBars = 10;
                 NewYork2CandleReversalCloseBeyondPoints = 6.5;
                 NewYork2CandleReversalMinBodyPoints = 2;
 
                 NewYork3SessionStart = new TimeSpan(11, 00, 0);
                 NewYork3SessionEnd = new TimeSpan(12, 00, 0);
-                NewYork3EmaPeriod = 21;
                 NewYork3Contracts = 1;
                 NewYork3EntryMinBodyPoints = 0;
                 NewYork3AdxPeriod = 14;
@@ -659,14 +613,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3TrailHardStop = true;
                 NewYork3TakeProfitPoints = 138;
                 NewYork3AtrMinimum = 20.6;
-                NewYork3EntryOpenLimit = false;
                 NewYork3CandleReversalExitBars = 11;
                 NewYork3CandleReversalCloseBeyondPoints = 0;
                 NewYork3CandleReversalMinBodyPoints = 1.75;
 
                 NewYork4SessionStart = new TimeSpan(12, 00, 0);
                 NewYork4SessionEnd = new TimeSpan(13, 30, 0);
-                NewYork4EmaPeriod = 21;
                 NewYork4Contracts = 1;
                 NewYork4EntryMinBodyPoints = 4.75;
                 NewYork4AdxPeriod = 14;
@@ -678,14 +630,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4TrailHardStop = true;
                 NewYork4TakeProfitPoints = 219.5;
                 NewYork4AtrMinimum = 22.9;
-                NewYork4EntryOpenLimit = false;
                 NewYork4CandleReversalExitBars = 11;
                 NewYork4CandleReversalCloseBeyondPoints = 4.25;
                 NewYork4CandleReversalMinBodyPoints = 0;
 
                 NewYork5SessionStart = new TimeSpan(13, 30, 0);
                 NewYork5SessionEnd = new TimeSpan(15, 00, 0);
-                NewYork5EmaPeriod = 21;
                 NewYork5Contracts = 1;
                 NewYork5EntryMinBodyPoints = 3;
                 NewYork5AdxPeriod = 21;
@@ -697,36 +647,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5TrailHardStop = true;
                 NewYork5TakeProfitPoints = 180;
                 NewYork5AtrMinimum = 15.8;
-                NewYork5EntryOpenLimit = false;
                 NewYork5CandleReversalExitBars = 16;
                 NewYork5CandleReversalCloseBeyondPoints = 2.25;
                 NewYork5CandleReversalMinBodyPoints = 2.75;
 
-                NewYork6SessionStart = new TimeSpan(15, 00, 0);
-                NewYork6SessionEnd = new TimeSpan(16, 00, 0);
-                NewYork6EmaPeriod = 21;
-                NewYork6Contracts = 0;
-                NewYork6EntryMinBodyPoints = 0;
-                NewYork6AdxPeriod = 14;
-                NewYork6AdxThreshold = 0;
-                NewYork6AdxMaxThreshold = 0;
-                NewYork6AdxPeakDrawdownExitUnits = 0;
-                NewYork6AdxAbsoluteExitLevel = 0;
-                NewYork6StopPaddingPoints = 0;
-                NewYork6TrailHardStop = false;
-                NewYork6TakeProfitPoints = 0;
-                NewYork6AtrMinimum = 0;
-                NewYork6EntryOpenLimit = false;
-                NewYork6CandleReversalExitBars = 0;
-                NewYork6CandleReversalCloseBeyondPoints = 0;
-                NewYork6CandleReversalMinBodyPoints = 0;
 
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
                 AsiaSessionBrush = Brushes.DarkCyan;
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
-                ShowEmaOnChart = false;
                 ShowAdxOnChart = false;
                 ShowAdxThresholdLines = false;
 
@@ -752,18 +682,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ValidateRequiredPrimaryTimeframe(5);
                 ValidateRequiredPrimaryInstrument();
 
-                emaAsia = EMA(AsiaEmaPeriod);
-                emaAsia2 = EMA(Asia2EmaPeriod);
-                emaAsia3 = EMA(Asia3EmaPeriod);
-                emaLondon = EMA(LondonEmaPeriod);
-                emaLondon2 = EMA(London2EmaPeriod);
-                emaLondon3 = EMA(London3EmaPeriod);
-                emaNewYork = EMA(NewYorkEmaPeriod);
-                emaNewYork2 = EMA(NewYork2EmaPeriod);
-                emaNewYork3 = EMA(NewYork3EmaPeriod);
-                emaNewYork4 = EMA(NewYork4EmaPeriod);
-                emaNewYork5 = EMA(NewYork5EmaPeriod);
-                emaNewYork6 = EMA(NewYork6EmaPeriod);
                 entryAtr = ATR(EntryAtrPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
                 adxAsia2 = DM(Asia2AdxPeriod);
@@ -776,7 +694,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 adxNewYork3 = DM(NewYork3AdxPeriod);
                 adxNewYork4 = DM(NewYork4AdxPeriod);
                 adxNewYork5 = DM(NewYork5AdxPeriod);
-                adxNewYork6 = DM(NewYork6AdxPeriod);
                 UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
                 UpdateAdxReferenceLines(adxAsia2, Asia2AdxThreshold, Asia2AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxAsia3, Asia3AdxThreshold, Asia3AdxMaxThreshold);
@@ -788,23 +705,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UpdateAdxReferenceLines(adxNewYork3, NewYork3AdxThreshold, NewYork3AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxNewYork4, NewYork4AdxThreshold, NewYork4AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxNewYork5, NewYork5AdxThreshold, NewYork5AdxMaxThreshold);
-                UpdateAdxReferenceLines(adxNewYork6, NewYork6AdxThreshold, NewYork6AdxMaxThreshold);
 
-                if (ShowEmaOnChart)
-                {
-                    AddChartIndicator(emaAsia);
-                    AddChartIndicator(emaAsia2);
-                    AddChartIndicator(emaAsia3);
-                    AddChartIndicator(emaLondon);
-                    AddChartIndicator(emaLondon2);
-                    AddChartIndicator(emaLondon3);
-                    AddChartIndicator(emaNewYork);
-                    AddChartIndicator(emaNewYork2);
-                    AddChartIndicator(emaNewYork3);
-                    AddChartIndicator(emaNewYork4);
-                    AddChartIndicator(emaNewYork5);
-                    AddChartIndicator(emaNewYork6);
-                }
 
                 if (ShowAdxOnChart)
                 {
@@ -819,7 +720,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     AddChartIndicator(adxNewYork3);
                     AddChartIndicator(adxNewYork4);
                     AddChartIndicator(adxNewYork5);
-                    AddChartIndicator(adxNewYork6);
                 }
 
                 sessionInitialized = false;
@@ -840,14 +740,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tradeLineSlPrice = 0.0;
                 historicalTradeLines.Clear();
                 ApplyInputsForSession(activeSession);
-                UpdateEmaPlotVisibility();
                 UpdateAdxPlotVisibility();
                 targetTimeZone = null;
                 londonTimeZone = null;
                 newYorkTimeZone = null;
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
-                ClearPendingOpenLimitEntryResubmit();
                 currentTradePeakAdx = 0.0;
                 trackedAdxPeakPosition = MarketPosition.Flat;
                 initialStopPrice = 0.0;
@@ -864,7 +762,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 newYork3SessionClosed = false;
                 newYork4SessionClosed = false;
                 newYork5SessionClosed = false;
-                newYork6SessionClosed = false;
                 projectXSessionToken = null;
                 projectXTokenAcquiredUtc = Core.Globals.MinDate;
                 projectXAccounts = null;
@@ -885,9 +782,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 LogDebug(
                     string.Format(
-                        "DataLoaded | ActiveSession={0} EMA={1} ADX={2}/{3:0.##} Contracts={4} TP={5:0.##} SLPad={6:0.##} ATRMin={7:0.##}",
+                        "DataLoaded | ActiveSession={0} ADX={1}/{2:0.##} Contracts={3} TP={4:0.##} SLPad={5:0.##} ATRMin={6:0.##}",
                         FormatSessionLabel(activeSession),
-                        activeEmaPeriod,
                         activeAdxPeriod,
                         activeAdxThreshold,
                         activeContracts,
@@ -932,7 +828,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())))
+            if (CurrentBar < Math.Max(1, GetMaxConfiguredAdxPeriod()))
                 return;
 
             DrawSessionBackgrounds();
@@ -951,7 +847,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             UpdateActiveSession(Time[0]);
-            UpdateEmaPlotVisibility();
             UpdateAdxPlotVisibility();
 
             if (AuditPositionProtection("bar-watchdog"))
@@ -984,7 +879,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
-            bool isAsiaSundayBlockedNow = IsAsiaSundayBlocked(activeSession, Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double atrValue = GetCurrentAtrValue();
@@ -993,16 +887,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
             bool adxThresholdPass = adxMinPass && adxMaxPass;
             bool atrMinPass = !inActiveSessionNow || activeMinimumAtrForEntry <= 0.0 || atrValue >= activeMinimumAtrForEntry;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxThresholdPass && atrMinPass;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !accountBlocked && adxThresholdPass && atrMinPass;
 
             if (!inActiveSessionNow)
+            {
                 CancelWorkingEntryOrders();
-
-            if (isAsiaSundayBlockedNow)
-                CancelWorkingEntryOrders();
-
-            if (activeEma == null || CurrentBar < activeEmaPeriod)
                 return;
+            }
 
             if (IsLondon3FlatByTimeReached(Time[0]))
             {
@@ -1020,15 +911,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            double emaValue = activeEma[0];
             bool bullish = Close[0] > Open[0];
             bool bearish = Close[0] < Open[0];
-            double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
-            double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
             double entryBodyPoints = Math.Abs(Close[0] - Open[0]);
             bool entryBodyPasses = activeEntryMinBodyPoints <= 0.0 || entryBodyPoints >= activeEntryMinBodyPoints;
-            bool longSignalBase = bullish && bodyAbovePercent > 0.0;
-            bool shortSignalBase = bearish && bodyBelowPercent > 0.0;
+            bool longSignalBase = bullish;
+            bool shortSignalBase = bearish;
             bool longSignalRaw = longSignalBase && entryBodyPasses;
             bool shortSignalRaw = shortSignalBase && entryBodyPasses;
             bool longSignal = longSignalRaw;
@@ -1071,7 +959,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (TryExitCandleReversal())
                     return;
 
-                TryTrailHardStop(emaValue);
+                TryTrailHardStop();
 
                 return;
             }
@@ -1113,7 +1001,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (TryExitCandleReversal())
                     return;
 
-                TryTrailHardStop(emaValue);
+                TryTrailHardStop();
 
                 return;
             }
@@ -1129,8 +1017,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         reasons.Add(string.Format("OutOfSession active={0}", FormatSessionLabel(activeSession)));
                     if (inNewsSkipNow)
                         reasons.Add(string.Format("NewsSkip minutes={0}", NewsBlockMinutes));
-                    if (isAsiaSundayBlockedNow)
-                        reasons.Add("AsiaSundayBlock");
                     if (accountBlocked)
                         reasons.Add(string.Format("AccountBlocked maxBalance={0:0.##}", MaxAccountBalance));
                     if (!adxMinPass)
@@ -1143,10 +1029,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         reasons.Add("UnknownGate");
 
                     LogDebug(string.Format(
-                        "Setup blocked | side={0} close={1:0.00} ema={2:0.00} reasons={3}",
+                        "Setup blocked | side={0} close={1:0.00} reasons={2}",
                         setupSide,
                         Close[0],
-                        emaValue,
                         string.Join(" | ", reasons)));
                 }
                 return;
@@ -1159,10 +1044,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (DebugLogging && Position.MarketPosition == MarketPosition.Flat && (bodyBlockedLong || bodyBlockedShort))
                 {
                     LogDebug(string.Format(
-                        "Setup blocked | side={0} close={1:0.00} ema={2:0.00} reasons=EntryBodyBelowMin body={3:0.00} min={4:0.00}",
+                        "Setup blocked | side={0} close={1:0.00} reasons=EntryBodyBelowMin body={2:0.00} min={3:0.00}",
                         bodyBlockedLong ? "Long" : "Short",
                         Close[0],
-                        emaValue,
                         entryBodyPoints,
                         activeEntryMinBodyPoints));
                 }
@@ -1172,14 +1056,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (longSignal)
             {
                 BeginTradeAttempt("Long");
-                LogDebug(string.Format("Setup ready | side=Long session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
+                LogDebug(string.Format("Setup ready | side=Long session={0} close={1:0.00}", FormatSessionLabel(activeSession), Close[0]));
 
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
                 bool longOrderActive = IsOrderActive(longEntryOrder);
-                bool useOpenLimitEntry = IsEntryOpenLimitEnabled();
-                bool useMarketEntry = !useOpenLimitEntry;
-                double entryPrice = GetInitialEntryPrice(useOpenLimitEntry);
-                double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue);
+                double entryPrice = GetInitialEntryPrice();
+                double stopPrice = BuildLongEntryStopPrice(entryPrice);
                 int qty = GetEntryQuantity();
                 if (qty <= 0)
                 {
@@ -1200,14 +1082,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!longOrderActive)
                 {
-                    SubmitPreparedInitialEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, useMarketEntry);
-                    LogDebug(string.Format("Place LONG {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useOpenLimitEntry ? "open-limit" : (useMarketEntry ? "market" : "limit"), FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
-                }
-                else if (useOpenLimitEntry)
-                {
-                    QueueOpenLimitEntryResubmit(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
-                    CancelOrderIfActive(longEntryOrder, "ChaseOpenLimitLong");
-                    LogDebug(string.Format("LONG open-limit chase queued | session={0} entry={1:0.00} stop={2:0.00} qty={3} tracked={4}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty, FormatOrderRef(longEntryOrder)));
+                    SubmitPreparedInitialEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
+                    LogDebug(string.Format("Place LONG market | session={0} entry={1:0.00} stop={2:0.00} qty={3}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1218,14 +1094,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (shortSignal)
             {
                 BeginTradeAttempt("Short");
-                LogDebug(string.Format("Setup ready | side=Short session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
+                LogDebug(string.Format("Setup ready | side=Short session={0} close={1:0.00}", FormatSessionLabel(activeSession), Close[0]));
 
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
                 bool shortOrderActive = IsOrderActive(shortEntryOrder);
-                bool useOpenLimitEntry = IsEntryOpenLimitEnabled();
-                bool useMarketEntry = !useOpenLimitEntry;
-                double entryPrice = GetInitialEntryPrice(useOpenLimitEntry);
-                double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue);
+                double entryPrice = GetInitialEntryPrice();
+                double stopPrice = BuildShortEntryStopPrice(entryPrice);
                 int qty = GetEntryQuantity();
                 if (qty <= 0)
                 {
@@ -1246,14 +1120,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!shortOrderActive)
                 {
-                    SubmitPreparedInitialEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, useMarketEntry);
-                    LogDebug(string.Format("Place SHORT {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useOpenLimitEntry ? "open-limit" : (useMarketEntry ? "market" : "limit"), FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
-                }
-                else if (useOpenLimitEntry)
-                {
-                    QueueOpenLimitEntryResubmit(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
-                    CancelOrderIfActive(shortEntryOrder, "ChaseOpenLimitShort");
-                    LogDebug(string.Format("SHORT open-limit chase queued | session={0} entry={1:0.00} stop={2:0.00} qty={3} tracked={4}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty, FormatOrderRef(shortEntryOrder)));
+                    SubmitPreparedInitialEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
+                    LogDebug(string.Format("Place SHORT market | session={0} entry={1:0.00} stop={2:0.00} qty={3}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1379,17 +1247,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool isEntryOrder = IsEntryOrderName(order.Name);
-            if (isEntryOrder && orderState == OrderState.Filled)
-                ClearPendingOpenLimitEntryResubmit();
-
-            bool queuedOpenLimitResubmitted = false;
-            if (isEntryOrder && orderState == OrderState.Cancelled && Position.MarketPosition == MarketPosition.Flat)
-                queuedOpenLimitResubmitted = TrySubmitQueuedOpenLimitEntryAfterCancel(order.Name);
-
             if (isEntryOrder && orderState != OrderState.Filled &&
                 (orderState == OrderState.Cancelled || orderState == OrderState.Rejected) &&
-                Position.MarketPosition == MarketPosition.Flat &&
-                !queuedOpenLimitResubmitted)
+                Position.MarketPosition == MarketPosition.Flat)
             {
                 if (tradeLinesActive)
                     FinalizeTradeLines();
@@ -1502,7 +1362,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool shouldSendExitWebhook = ShouldSendExitWebhook(execution, orderName, marketPosition);
             if (shouldSendExitWebhook)
-                SendWebhook("exit", 0, 0, 0, true, quantity);
+                SendWebhook("exit", 0, 0, 0, quantity);
 
             if (DebugLogging)
             {
@@ -1849,10 +1709,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (Position.MarketPosition == MarketPosition.Short)
                 ExitShort(BuildExitSignalName("EmergencyOverfill"));
         }
-
-        private void TryTrailHardStop(double emaValue)
+        private void TryTrailHardStop()
         {
-            if (!activeTrailHardStop || Position.MarketPosition == MarketPosition.Flat || activeEma == null || IsTerminalExitInFlight())
+            if (!activeTrailHardStop || Position.MarketPosition == MarketPosition.Flat || IsTerminalExitInFlight())
                 return;
 
             double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
@@ -1872,9 +1731,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double stopPrice;
 
             if (Position.MarketPosition == MarketPosition.Long)
-                stopPrice = emaValue - activeStopPaddingPoints;
+                stopPrice = closePrice - activeStopPaddingPoints;
             else if (Position.MarketPosition == MarketPosition.Short)
-                stopPrice = emaValue + activeStopPaddingPoints;
+                stopPrice = closePrice + activeStopPaddingPoints;
             else
                 return;
 
@@ -1885,15 +1744,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (ApplyManagedStop(entrySignal, stopPrice, "hard-sl-trail"))
             {
                 LogDebug(string.Format(
-                    "Hard SL trailed | side={0} signal={1} stop={2:0.00} ema={3:0.00} close={4:0.00} pad={5:0.00}",
+                    "Hard SL trailed | side={0} signal={1} stop={2:0.00} close={3:0.00} pad={4:0.00}",
                     Position.MarketPosition,
                     entrySignal,
                     stopPrice,
-                    emaValue,
                     closePrice,
                     activeStopPaddingPoints));
             }
         }
+
 
         private bool ApplyManagedStop(string entrySignal, double stopPrice)
         {
@@ -2090,8 +1949,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 || normalized.Equals("SessionEnd", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("ExitLong", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("ExitShort", StringComparison.OrdinalIgnoreCase)
-                || normalized.Equals("EmaExitLong", StringComparison.OrdinalIgnoreCase)
-                || normalized.Equals("EmaExitShort", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("AdxDrawdownExit", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("AdxLevelExit", StringComparison.OrdinalIgnoreCase)
                 || normalized.Equals("TakeProfitExit", StringComparison.OrdinalIgnoreCase)
@@ -2533,9 +2390,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case SessionSlot.NewYork3:
                 case SessionSlot.NewYork4:
                 case SessionSlot.NewYork5:
-                case SessionSlot.NewYork6:
-                    return SessionFamily.NewYork;
-
                 default:
                     return SessionFamily.None;
             }
@@ -2625,8 +2479,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return NewYork4Contracts > 0 && NewYork4SessionStart != NewYork4SessionEnd;
                 case SessionSlot.NewYork5:
                     return NewYork5Contracts > 0 && NewYork5SessionStart != NewYork5SessionEnd;
-                case SessionSlot.NewYork6:
-                    return false;
                 default:
                     return false;
             }
@@ -2637,9 +2489,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (session)
             {
                 case SessionSlot.Asia:
-                    activeEma = emaAsia;
                     activeAdx = adxAsia;
-                    activeEmaPeriod = AsiaEmaPeriod;
                     activeAdxPeriod = AsiaAdxPeriod;
                     activeAdxThreshold = AsiaAdxThreshold;
                     activeAdxMaxThreshold = AsiaAdxMaxThreshold;
@@ -2652,16 +2502,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = AsiaTrailHardStop;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
                     activeMinimumAtrForEntry = AsiaAtrMinimum;
-                    activeEntryOpenLimit = AsiaEntryOpenLimit;
                     activeCandleReversalExitBars = AsiaCandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = AsiaCandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = AsiaCandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.Asia2:
-                    activeEma = emaAsia2;
                     activeAdx = adxAsia2;
-                    activeEmaPeriod = Asia2EmaPeriod;
                     activeAdxPeriod = Asia2AdxPeriod;
                     activeAdxThreshold = Asia2AdxThreshold;
                     activeAdxMaxThreshold = Asia2AdxMaxThreshold;
@@ -2674,16 +2521,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = Asia2TrailHardStop;
                     activeTakeProfitPoints = Asia2TakeProfitPoints;
                     activeMinimumAtrForEntry = Asia2AtrMinimum;
-                    activeEntryOpenLimit = Asia2EntryOpenLimit;
                     activeCandleReversalExitBars = Asia2CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = Asia2CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = Asia2CandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.Asia3:
-                    activeEma = emaAsia3;
                     activeAdx = adxAsia3;
-                    activeEmaPeriod = Asia3EmaPeriod;
                     activeAdxPeriod = Asia3AdxPeriod;
                     activeAdxThreshold = Asia3AdxThreshold;
                     activeAdxMaxThreshold = Asia3AdxMaxThreshold;
@@ -2696,16 +2540,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = Asia3TrailHardStop;
                     activeTakeProfitPoints = Asia3TakeProfitPoints;
                     activeMinimumAtrForEntry = Asia3AtrMinimum;
-                    activeEntryOpenLimit = Asia3EntryOpenLimit;
                     activeCandleReversalExitBars = Asia3CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = Asia3CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = Asia3CandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.London:
-                    activeEma = emaLondon;
                     activeAdx = adxLondon;
-                    activeEmaPeriod = LondonEmaPeriod;
                     activeAdxPeriod = LondonAdxPeriod;
                     activeAdxThreshold = LondonAdxThreshold;
                     activeAdxMaxThreshold = LondonAdxMaxThreshold;
@@ -2718,16 +2559,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = LondonTrailHardStop;
                     activeTakeProfitPoints = LondonTakeProfitPoints;
                     activeMinimumAtrForEntry = LondonAtrMinimum;
-                    activeEntryOpenLimit = LondonEntryOpenLimit;
                     activeCandleReversalExitBars = LondonCandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = LondonCandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = LondonCandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.London2:
-                    activeEma = emaLondon2;
                     activeAdx = adxLondon2;
-                    activeEmaPeriod = London2EmaPeriod;
                     activeAdxPeriod = London2AdxPeriod;
                     activeAdxThreshold = London2AdxThreshold;
                     activeAdxMaxThreshold = London2AdxMaxThreshold;
@@ -2740,16 +2578,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = London2TrailHardStop;
                     activeTakeProfitPoints = London2TakeProfitPoints;
                     activeMinimumAtrForEntry = London2AtrMinimum;
-                    activeEntryOpenLimit = London2EntryOpenLimit;
                     activeCandleReversalExitBars = London2CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = London2CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = London2CandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.London3:
-                    activeEma = emaLondon3;
                     activeAdx = adxLondon3;
-                    activeEmaPeriod = London3EmaPeriod;
                     activeAdxPeriod = London3AdxPeriod;
                     activeAdxThreshold = London3AdxThreshold;
                     activeAdxMaxThreshold = London3AdxMaxThreshold;
@@ -2762,16 +2597,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = London3TrailHardStop;
                     activeTakeProfitPoints = London3TakeProfitPoints;
                     activeMinimumAtrForEntry = London3AtrMinimum;
-                    activeEntryOpenLimit = London3EntryOpenLimit;
                     activeCandleReversalExitBars = London3CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = London3CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = London3CandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.NewYork:
-                    activeEma = emaNewYork;
                     activeAdx = adxNewYork;
-                    activeEmaPeriod = NewYorkEmaPeriod;
                     activeAdxPeriod = NewYorkAdxPeriod;
                     activeAdxThreshold = NewYorkAdxThreshold;
                     activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
@@ -2784,16 +2616,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYorkTrailHardStop;
                     activeTakeProfitPoints = NewYorkTakeProfitPoints;
                     activeMinimumAtrForEntry = NewYorkAtrMinimum;
-                    activeEntryOpenLimit = NewYorkEntryOpenLimit;
                     activeCandleReversalExitBars = NewYorkCandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYorkCandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYorkCandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.NewYork2:
-                    activeEma = emaNewYork2;
                     activeAdx = adxNewYork2;
-                    activeEmaPeriod = NewYork2EmaPeriod;
                     activeAdxPeriod = NewYork2AdxPeriod;
                     activeAdxThreshold = NewYork2AdxThreshold;
                     activeAdxMaxThreshold = NewYork2AdxMaxThreshold;
@@ -2806,16 +2635,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork2TrailHardStop;
                     activeTakeProfitPoints = NewYork2TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork2AtrMinimum;
-                    activeEntryOpenLimit = NewYork2EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork2CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork2CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork2CandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.NewYork3:
-                    activeEma = emaNewYork3;
                     activeAdx = adxNewYork3;
-                    activeEmaPeriod = NewYork3EmaPeriod;
                     activeAdxPeriod = NewYork3AdxPeriod;
                     activeAdxThreshold = NewYork3AdxThreshold;
                     activeAdxMaxThreshold = NewYork3AdxMaxThreshold;
@@ -2828,16 +2654,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork3TrailHardStop;
                     activeTakeProfitPoints = NewYork3TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork3AtrMinimum;
-                    activeEntryOpenLimit = NewYork3EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork3CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork3CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork3CandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.NewYork4:
-                    activeEma = emaNewYork4;
                     activeAdx = adxNewYork4;
-                    activeEmaPeriod = NewYork4EmaPeriod;
                     activeAdxPeriod = NewYork4AdxPeriod;
                     activeAdxThreshold = NewYork4AdxThreshold;
                     activeAdxMaxThreshold = NewYork4AdxMaxThreshold;
@@ -2850,16 +2673,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork4TrailHardStop;
                     activeTakeProfitPoints = NewYork4TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork4AtrMinimum;
-                    activeEntryOpenLimit = NewYork4EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork4CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork4CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork4CandleReversalMinBodyPoints;
                     break;
 
                 case SessionSlot.NewYork5:
-                    activeEma = emaNewYork5;
                     activeAdx = adxNewYork5;
-                    activeEmaPeriod = NewYork5EmaPeriod;
                     activeAdxPeriod = NewYork5AdxPeriod;
                     activeAdxThreshold = NewYork5AdxThreshold;
                     activeAdxMaxThreshold = NewYork5AdxMaxThreshold;
@@ -2872,38 +2692,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork5TrailHardStop;
                     activeTakeProfitPoints = NewYork5TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork5AtrMinimum;
-                    activeEntryOpenLimit = NewYork5EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork5CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork5CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork5CandleReversalMinBodyPoints;
                     break;
 
-                case SessionSlot.NewYork6:
-                    activeEma = emaNewYork6;
-                    activeAdx = adxNewYork6;
-                    activeEmaPeriod = NewYork6EmaPeriod;
-                    activeAdxPeriod = NewYork6AdxPeriod;
-                    activeAdxThreshold = NewYork6AdxThreshold;
-                    activeAdxMaxThreshold = NewYork6AdxMaxThreshold;
-                    activeAdxPeakDrawdownExitUnits = NewYork6AdxPeakDrawdownExitUnits;
-                    activeAdxAbsoluteExitLevel = NewYork6AdxAbsoluteExitLevel;
-                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
-                    activeContracts = NewYork6Contracts;
-                    activeEntryMinBodyPoints = NewYork6EntryMinBodyPoints;
-                    activeStopPaddingPoints = NewYork6StopPaddingPoints;
-                    activeTrailHardStop = NewYork6TrailHardStop;
-                    activeTakeProfitPoints = NewYork6TakeProfitPoints;
-                    activeMinimumAtrForEntry = NewYork6AtrMinimum;
-                    activeEntryOpenLimit = NewYork6EntryOpenLimit;
-                    activeCandleReversalExitBars = NewYork6CandleReversalExitBars;
-                    activeCandleReversalCloseBeyondPoints = NewYork6CandleReversalCloseBeyondPoints;
-                    activeCandleReversalMinBodyPoints = NewYork6CandleReversalMinBodyPoints;
-                    break;
-
                 default:
-                    activeEma = null;
                     activeAdx = null;
-                    activeEmaPeriod = 0;
                     activeAdxPeriod = 0;
                     activeAdxThreshold = 0.0;
                     activeAdxMaxThreshold = 0.0;
@@ -2915,45 +2710,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = false;
                     activeTakeProfitPoints = 0.0;
                     activeMinimumAtrForEntry = 0.0;
-                    activeEntryOpenLimit = false;
                     activeCandleReversalExitBars = 0;
                     activeCandleReversalCloseBeyondPoints = 0.0;
                     activeCandleReversalMinBodyPoints = 0.0;
                     break;
             }
-        }
-
-        private void UpdateEmaPlotVisibility()
-        {
-            if (!ShowEmaOnChart)
-            {
-                SetEmaVisible(emaAsia, false);
-                SetEmaVisible(emaAsia2, false);
-                SetEmaVisible(emaAsia3, false);
-                SetEmaVisible(emaLondon, false);
-                SetEmaVisible(emaLondon2, false);
-                SetEmaVisible(emaLondon3, false);
-                SetEmaVisible(emaNewYork, false);
-                SetEmaVisible(emaNewYork2, false);
-                SetEmaVisible(emaNewYork3, false);
-                SetEmaVisible(emaNewYork4, false);
-                SetEmaVisible(emaNewYork5, false);
-                SetEmaVisible(emaNewYork6, false);
-                return;
-            }
-
-            SetEmaVisible(emaAsia, ShouldShowEmaInstance(emaAsia));
-            SetEmaVisible(emaAsia2, ShouldShowEmaInstance(emaAsia2));
-            SetEmaVisible(emaAsia3, ShouldShowEmaInstance(emaAsia3));
-            SetEmaVisible(emaLondon, ShouldShowEmaInstance(emaLondon));
-            SetEmaVisible(emaLondon2, ShouldShowEmaInstance(emaLondon2));
-            SetEmaVisible(emaLondon3, ShouldShowEmaInstance(emaLondon3));
-            SetEmaVisible(emaNewYork, ShouldShowEmaInstance(emaNewYork));
-            SetEmaVisible(emaNewYork2, ShouldShowEmaInstance(emaNewYork2));
-            SetEmaVisible(emaNewYork3, ShouldShowEmaInstance(emaNewYork3));
-            SetEmaVisible(emaNewYork4, ShouldShowEmaInstance(emaNewYork4));
-            SetEmaVisible(emaNewYork5, ShouldShowEmaInstance(emaNewYork5));
-            SetEmaVisible(emaNewYork6, ShouldShowEmaInstance(emaNewYork6));
         }
 
         private void UpdateAdxPlotVisibility()
@@ -2969,35 +2730,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SetAdxVisible(adxNewYork3, ShowAdxOnChart);
             SetAdxVisible(adxNewYork4, ShowAdxOnChart);
             SetAdxVisible(adxNewYork5, ShowAdxOnChart);
-            SetAdxVisible(adxNewYork6, ShowAdxOnChart);
-        }
-
-
-        private bool ShouldShowEmaInstance(EMA ema)
-        {
-            if (ema == null)
-                return false;
-
-            return (activeSession == SessionSlot.Asia && ReferenceEquals(ema, emaAsia))
-                || (activeSession == SessionSlot.Asia2 && ReferenceEquals(ema, emaAsia2))
-                || (activeSession == SessionSlot.Asia3 && ReferenceEquals(ema, emaAsia3))
-                || (activeSession == SessionSlot.London && ReferenceEquals(ema, emaLondon))
-                || (activeSession == SessionSlot.London2 && ReferenceEquals(ema, emaLondon2))
-                || (activeSession == SessionSlot.London3 && ReferenceEquals(ema, emaLondon3))
-                || (activeSession == SessionSlot.NewYork && ReferenceEquals(ema, emaNewYork))
-                || (activeSession == SessionSlot.NewYork2 && ReferenceEquals(ema, emaNewYork2))
-                || (activeSession == SessionSlot.NewYork3 && ReferenceEquals(ema, emaNewYork3))
-                || (activeSession == SessionSlot.NewYork4 && ReferenceEquals(ema, emaNewYork4))
-                || (activeSession == SessionSlot.NewYork5 && ReferenceEquals(ema, emaNewYork5))
-                || (activeSession == SessionSlot.NewYork6 && ReferenceEquals(ema, emaNewYork6));
-        }
-
-        private void SetEmaVisible(EMA ema, bool visible)
-        {
-            if (ema == null || ema.Plots == null || ema.Plots.Length == 0)
-                return;
-
-            ema.Plots[0].Brush = visible ? Brushes.Gold : Brushes.Transparent;
         }
 
         private void SetAdxVisible(DM adx, bool showAdx)
@@ -3063,25 +2795,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 drawMax ? Brushes.OrangeRed : Brushes.Transparent,
                 DashStyleHelper.Dash,
                 2);
-        }
-
-        private int GetMaxConfiguredEmaPeriod()
-        {
-            return new[]
-            {
-                AsiaEmaPeriod,
-                Asia2EmaPeriod,
-                Asia3EmaPeriod,
-                LondonEmaPeriod,
-                London2EmaPeriod,
-                London3EmaPeriod,
-                NewYorkEmaPeriod,
-                NewYork2EmaPeriod,
-                NewYork3EmaPeriod,
-                NewYork4EmaPeriod,
-                NewYork5EmaPeriod,
-                NewYork6EmaPeriod
-            }.Max();
         }
 
         private bool IsFamilyActive(SessionFamily family, DateTime time)
@@ -3297,7 +3010,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void CancelWorkingEntryOrders()
         {
-            ClearPendingOpenLimitEntryResubmit();
             CancelOrderIfActive(longEntryOrder, "CancelWorkingEntries");
             CancelOrderIfActive(shortEntryOrder, "CancelWorkingEntries");
         }
@@ -3678,136 +3390,60 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string id = order.OrderId ?? string.Empty;
             return string.Format("{0}:{1}:{2}", name, id, order.OrderState);
         }
-
-        private double BuildLongEntryStopPrice(double entryPrice, double emaValue)
+        private double BuildLongEntryStopPrice(double entryPrice)
         {
-            double raw = emaValue - activeStopPaddingPoints;
+            double raw = entryPrice - activeStopPaddingPoints;
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded >= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
             return rounded;
         }
-
-        private double BuildShortEntryStopPrice(double entryPrice, double emaValue)
+        private double BuildShortEntryStopPrice(double entryPrice)
         {
-            double raw = emaValue + activeStopPaddingPoints;
+            double raw = entryPrice + activeStopPaddingPoints;
 
             double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
             if (rounded <= entryPrice)
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
             return rounded;
         }
-
-        private bool IsEntryOpenLimitEnabled()
+        private double GetInitialEntryPrice()
         {
-            return activeEntryOpenLimit;
-        }
-
-        private double GetInitialEntryPrice(bool useOpenLimitEntry)
-        {
-            if (useOpenLimitEntry)
-                return Instrument.MasterInstrument.RoundToTickSize(Open[0]);
-
             return Instrument.MasterInstrument.RoundToTickSize(Close[0]);
         }
 
-        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, bool useMarketEntry)
+
+        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
         {
             if (isLong)
             {
                 pendingLongStopForWebhook = stopPrice;
                 SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
                 SetProfitTargetByDistanceTicks(LongEntrySignal, takeProfitPoints);
-                SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, quantity);
+                SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice + takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitLongEntryOrder(quantity, entryPrice, useMarketEntry, LongEntrySignal);
+                SubmitLongEntryOrder(quantity, LongEntrySignal);
             }
             else
             {
                 pendingShortStopForWebhook = stopPrice;
                 SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
                 SetProfitTargetByDistanceTicks(ShortEntrySignal, takeProfitPoints);
-                SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, quantity);
+                SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice - takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitShortEntryOrder(quantity, entryPrice, useMarketEntry, ShortEntrySignal);
+                SubmitShortEntryOrder(quantity, ShortEntrySignal);
             }
         }
-
-        private void QueueOpenLimitEntryResubmit(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
+        private void SubmitLongEntryOrder(int quantity, string signalName)
         {
-            pendingOpenLimitEntryResubmit = true;
-            pendingOpenLimitEntryIsLong = isLong;
-            pendingOpenLimitEntryQuantity = quantity;
-            pendingOpenLimitEntryPrice = entryPrice;
-            pendingOpenLimitStopPrice = stopPrice;
-            pendingOpenLimitTakeProfitPoints = takeProfitPoints;
-            pendingOpenLimitTakeProfitPrice = takeProfitPrice;
-            pendingOpenLimitEntryBar = CurrentBar;
+            EnterLong(quantity, signalName);
+        }
+        private void SubmitShortEntryOrder(int quantity, string signalName)
+        {
+            EnterShort(quantity, signalName);
         }
 
-        private void ClearPendingOpenLimitEntryResubmit()
-        {
-            pendingOpenLimitEntryResubmit = false;
-            pendingOpenLimitEntryIsLong = false;
-            pendingOpenLimitEntryQuantity = 0;
-            pendingOpenLimitEntryPrice = 0.0;
-            pendingOpenLimitStopPrice = 0.0;
-            pendingOpenLimitTakeProfitPoints = 0.0;
-            pendingOpenLimitTakeProfitPrice = 0.0;
-            pendingOpenLimitEntryBar = -1;
-        }
-
-        private bool TrySubmitQueuedOpenLimitEntryAfterCancel(string cancelledOrderName)
-        {
-            if (!pendingOpenLimitEntryResubmit)
-                return false;
-
-            bool cancelledLong = IsLongEntryOrderName(cancelledOrderName);
-            bool cancelledShort = IsShortEntryOrderName(cancelledOrderName);
-            if ((pendingOpenLimitEntryIsLong && !cancelledLong) || (!pendingOpenLimitEntryIsLong && !cancelledShort))
-                return false;
-
-            if (Position.MarketPosition != MarketPosition.Flat || pendingOpenLimitEntryBar != CurrentBar || !IsEntryOpenLimitEnabled())
-            {
-                ClearPendingOpenLimitEntryResubmit();
-                return false;
-            }
-
-            bool isLong = pendingOpenLimitEntryIsLong;
-            int quantity = pendingOpenLimitEntryQuantity;
-            double entryPrice = pendingOpenLimitEntryPrice;
-            double stopPrice = pendingOpenLimitStopPrice;
-            double takeProfitPoints = pendingOpenLimitTakeProfitPoints;
-            double takeProfitPrice = pendingOpenLimitTakeProfitPrice;
-            ClearPendingOpenLimitEntryResubmit();
-
-            SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, false);
-            LogDebug(string.Format(
-                "Open-limit entry replaced | side={0} session={1} entry={2:0.00} stop={3:0.00} qty={4}",
-                isLong ? "Long" : "Short",
-                FormatSessionLabel(activeSession),
-                entryPrice,
-                stopPrice,
-                quantity));
-            return true;
-        }
-
-        private void SubmitLongEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
-        {
-            if (isMarketEntry)
-                EnterLong(quantity, signalName);
-            else
-                EnterLongLimit(0, true, quantity, entryPrice, signalName);
-        }
-
-        private void SubmitShortEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
-        {
-            if (isMarketEntry)
-                EnterShort(quantity, signalName);
-            else
-                EnterShortLimit(0, true, quantity, entryPrice, signalName);
-        }
 
         private double GetAdxSlopePoints()
         {
@@ -3949,45 +3585,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return drawdown >= activeAdxPeakDrawdownExitUnits;
         }
 
-
-        private double GetBodyPercentAboveEma(double open, double close, double emaValue)
-        {
-            double bodyTop = Math.Max(open, close);
-            double bodyBottom = Math.Min(open, close);
-            double body = bodyTop - bodyBottom;
-            if (body <= 0)
-                return 0;
-
-            double above;
-            if (emaValue <= bodyBottom)
-                above = body;
-            else if (emaValue >= bodyTop)
-                above = 0;
-            else
-                above = bodyTop - emaValue;
-
-            return (above / body) * 100.0;
-        }
-
-        private double GetBodyPercentBelowEma(double open, double close, double emaValue)
-        {
-            double bodyTop = Math.Max(open, close);
-            double bodyBottom = Math.Min(open, close);
-            double body = bodyTop - bodyBottom;
-            if (body <= 0)
-                return 0;
-
-            double below;
-            if (emaValue >= bodyTop)
-                below = body;
-            else if (emaValue <= bodyBottom)
-                below = 0;
-            else
-                below = emaValue - bodyBottom;
-
-            return (below / body) * 100.0;
-        }
-
         private bool TimeInSession(SessionSlot slot, DateTime time)
         {
             TimeSpan start;
@@ -4104,9 +3701,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     start = NewYork5SessionStart;
                     end = NewYork5SessionEnd;
                     return true;
-
-                case SessionSlot.NewYork6:
-                    return false;
 
                 default:
                     return false;
@@ -4306,24 +3900,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return NewYorkSessionBrush ?? Brushes.LightSkyBlue;
                 default:
                     return Brushes.LightSkyBlue;
-            }
-        }
-
-        private bool IsAsiaSundayBlocked(SessionSlot slot, DateTime time)
-        {
-            if (!IsAsiaFamily(slot) || time.DayOfWeek != DayOfWeek.Sunday)
-                return false;
-
-            switch (slot)
-            {
-                case SessionSlot.Asia:
-                    return AsiaBlockSundayTrades;
-                case SessionSlot.Asia2:
-                    return Asia2BlockSundayTrades;
-                case SessionSlot.Asia3:
-                    return Asia3BlockSundayTrades;
-                default:
-                    return false;
             }
         }
 
@@ -4975,8 +4551,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return newYork4SessionClosed;
                 case SessionSlot.NewYork5:
                     return newYork5SessionClosed;
-                case SessionSlot.NewYork6:
-                    return newYork6SessionClosed;
                 default:
                     return false;
             }
@@ -5019,8 +4593,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case SessionSlot.NewYork5:
                     newYork5SessionClosed = value;
                     break;
-                case SessionSlot.NewYork6:
-                    newYork6SessionClosed = value;
+                default:
                     break;
             }
         }
@@ -5051,8 +4624,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return "NewYork4";
                 case SessionSlot.NewYork5:
                     return "NewYork5";
-                case SessionSlot.NewYork6:
-                    return "NewYork6";
                 default:
                     return "None";
             }
@@ -5068,7 +4639,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} slPad={14:0.##} trailHardSl={15} entryMinBody={16:0.##} candleRev={17}/{18:0.##}/{19:0.##} atrMin={20:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} adxMin={7:0.##} adxMax={8:0.##} adxPeakDd={9:0.##} adxAbsExit={10:0.##} tpPts={11:0.##} contracts={12} slPad={13:0.##} trailHardSl={14} entryMinBody={15:0.##} candleRev={16}/{17:0.##}/{18:0.##} atrMin={19:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -5076,7 +4647,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 string.IsNullOrWhiteSpace(ForceCloseTime) ? "Off" : ForceCloseTime,
                 start,
                 end,
-                activeEmaPeriod,
                 activeAdxThreshold,
                 activeAdxMaxThreshold,
                 activeAdxPeakDrawdownExitUnits,
@@ -5602,7 +5172,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3AdxPeriod,
                 NewYork4AdxPeriod,
                 NewYork5AdxPeriod,
-                NewYork6AdxPeriod
             }.Max();
         }
 
@@ -5812,7 +5381,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private bool SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
+        private bool SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, int quantityOverride = 0)
         {
             if (State != State.Realtime)
                 return false;
@@ -5821,14 +5390,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : Math.Max(0, activeContracts);
                 LogDebug(string.Format(
-                    "Webhook attempt | provider=ProjectX event={0} qty={1} market={2} entry={3:0.00} tp={4:0.00} sl={5:0.00}",
+                    "Webhook attempt | provider=ProjectX event={0} qty={1} entry={2:0.00} tp={3:0.00} sl={4:0.00}",
                     eventType,
                     orderQtyForProvider,
-                    isMarketEntry,
                     entryPrice,
                     takeProfit,
                     stopLoss));
-                return SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
+                return SendProjectX(eventType, entryPrice, takeProfit, stopLoss, orderQtyForProvider);
             }
 
             if (string.IsNullOrWhiteSpace(WebhookUrl))
@@ -5850,10 +5418,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (action == "buy" || action == "sell")
                 {
                     json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"time\":\"{5}\",\"takeProfit\":{{\"limitPrice\":{6}}},\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{7}}}}}",
+                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"market\",\"quantityType\":\"fixed_quantity\",\"quantity\":{2},\"signalPrice\":{3},\"time\":\"{4}\",\"takeProfit\":{{\"limitPrice\":{5}}},\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{6}}}}}",
                         ticker,
                         action,
-                        isMarketEntry ? "market" : "limit",
                         orderQty,
                         entryPrice,
                         time,
@@ -5886,11 +5453,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 LogDebug(string.Format(
-                    "Webhook attempt | provider=TradersPost event={0} action={1} qty={2} market={3} url={4}",
+                    "Webhook attempt | provider=TradersPost event={0} action={1} qty={2} url={3}",
                     eventType,
                     action,
                     orderQty,
-                    isMarketEntry,
                     WebhookUrl));
                 LogDebug(string.Format("Webhook payload | {0}", json));
 
@@ -5910,7 +5476,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private bool SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        private bool SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, int quantity)
         {
             if (!EnsureProjectXSession())
             {
@@ -5941,7 +5507,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         case "buy":
                         case "sell":
                             if (ProjectXPrepareForEntry(account.Id, contractId))
-                                ProjectXPlaceOrder(eventType, account.Id, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+                                ProjectXPlaceOrder(eventType, account.Id, contractId, entryPrice, takeProfit, stopLoss, quantity);
                             break;
                         case "exit":
                             ProjectXFlattenPosition(account.Id, contractId);
@@ -6620,10 +6186,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
         }
 
-        private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, int quantity)
         {
             int orderSide = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
-            int orderType = isMarketEntry ? 2 : 1;
+            int orderType = 2;
             int normalizedQuantity = Math.Max(1, quantity);
             double entry = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
             bool isLong = orderSide == 0;
@@ -6636,18 +6202,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 1,
                 isLong ? -1 : 1);
 
-            string limitPart = isMarketEntry
-                ? string.Empty
-                : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", entry);
-
             string json = string.Format(CultureInfo.InvariantCulture,
-                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":{6},\"type\":1,\"ticks\":{7}}},\"stopLossBracket\":{{\"quantity\":{6},\"type\":4,\"ticks\":{8}}}}}",
+                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4},\"takeProfitBracket\":{{\"quantity\":{5},\"type\":1,\"ticks\":{6}}},\"stopLossBracket\":{{\"quantity\":{5},\"type\":4,\"ticks\":{7}}}}}",
                 accountId,
                 contractId,
                 orderType,
                 orderSide,
                 normalizedQuantity,
-                limitPart,
                 normalizedQuantity,
                 tpTicks,
                 slTicks);
@@ -7423,17 +6984,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public TimeSpan AsiaSessionEnd { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 1 entries on Sundays.", GroupName = "Asia 1", Order = 3)]
-        public bool AsiaBlockSundayTrades { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by Asia 1 entry and exit logic.", GroupName = "Asia 1", Order = 4)]
-        public int AsiaEmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Contracts", Description = "Base contracts for Asia 1 entries.", GroupName = "Asia 1 Session(18:30-20:00)", Order = 5)]
         public int AsiaContracts { get; set; }
@@ -7471,12 +7021,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "Asia 1", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "Asia 1", Order = 16)]
         public double AsiaStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 1", Order = 16)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "Asia 1", Order = 17)]
         public bool AsiaTrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -7490,11 +7040,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 1", Order = 22)]
         public double AsiaEntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 1", Order = 23)]
-        public bool AsiaEntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7530,17 +7075,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Session End", Description = "Asia 2 session end time in chart time zone.", GroupName = "Asia 2", Order = 2)]
         public TimeSpan Asia2SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 2 entries on Sundays.", GroupName = "Asia 2", Order = 3)]
-        public bool Asia2BlockSundayTrades { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by Asia 2 entry and exit logic.", GroupName = "Asia 2", Order = 4)]
-        public int Asia2EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -7580,12 +7114,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "Asia 2", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "Asia 2", Order = 16)]
         public double Asia2StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 2", Order = 16)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "Asia 2", Order = 17)]
         public bool Asia2TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -7599,11 +7133,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 2", Order = 22)]
         public double Asia2EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 2", Order = 23)]
-        public bool Asia2EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7639,17 +7168,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Session End", Description = "Asia 3 session end time in chart time zone.", GroupName = "Asia 3", Order = 2)]
         public TimeSpan Asia3SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 3 entries on Sundays.", GroupName = "Asia 3", Order = 3)]
-        public bool Asia3BlockSundayTrades { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by Asia 3 entry and exit logic.", GroupName = "Asia 3", Order = 4)]
-        public int Asia3EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -7689,12 +7207,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "Asia 3", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "Asia 3", Order = 16)]
         public double Asia3StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 3", Order = 16)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "Asia 3", Order = 17)]
         public bool Asia3TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -7708,11 +7226,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 3", Order = 22)]
         public double Asia3EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 3", Order = 23)]
-        public bool Asia3EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7754,12 +7267,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool AutoShiftLondon { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by London 1 entry and exit logic.", GroupName = "London 1", Order = 4)]
-        public int LondonEmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Contracts", Description = "Base contracts for London 1 entries.", GroupName = "London 1 Session(01:00-03:00)", Order = 5)]
         public int LondonContracts { get; set; }
@@ -7797,12 +7304,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "London 1", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "London 1", Order = 16)]
         public double LondonStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "London 1", Order = 16)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "London 1", Order = 17)]
         public bool LondonTrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -7816,11 +7323,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "London 1", Order = 22)]
         public double LondonEntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 1", Order = 23)]
-        public bool LondonEntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7863,12 +7365,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool AutoShiftLondon2 { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by London 2 entry and exit logic.", GroupName = "London 2", Order = 4)]
-        public int London2EmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Contracts", Description = "Base contracts for London 2 entries.", GroupName = "London 2 Session(03:00-05:00)", Order = 5)]
         public int London2Contracts { get; set; }
@@ -7906,12 +7402,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "London 2", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "London 2", Order = 16)]
         public double London2StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "London 2", Order = 16)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "London 2", Order = 17)]
         public bool London2TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -7925,11 +7421,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "London 2", Order = 22)]
         public double London2EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 2", Order = 23)]
-        public bool London2EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7977,12 +7468,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public string London3FlatByTime { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by London 3 entry and exit logic.", GroupName = "London 3", Order = 4)]
-        public int London3EmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Contracts", Description = "Base contracts for London 3 entries.", GroupName = "London 3 Session(05:00-08:00)", Order = 5)]
         public int London3Contracts { get; set; }
@@ -8020,12 +7505,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "London 3", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "London 3", Order = 16)]
         public double London3StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "London 3", Order = 16)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "London 3", Order = 17)]
         public bool London3TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -8039,11 +7524,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "London 3", Order = 22)]
         public double London3EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 3", Order = 23)]
-        public bool London3EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8078,12 +7558,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Session End", Description = "New York 1 session end time in chart time zone.", GroupName = "New York 1", Order = 2)]
         public TimeSpan NewYorkSessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York 1 entry and exit logic.", GroupName = "New York 1", Order = 5)]
-        public int NewYorkEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -8123,12 +7597,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "New York 1", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "New York 1", Order = 16)]
         public double NewYorkStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 1", Order = 17)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "New York 1", Order = 17)]
         public bool NewYorkTrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -8142,11 +7616,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "New York 1", Order = 22)]
         public double NewYorkEntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 1", Order = 24)]
-        public bool NewYorkEntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8182,12 +7651,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Session End", Description = "New York 2 session end time in chart time zone.", GroupName = "New York 2", Order = 2)]
         public TimeSpan NewYork2SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York 2 entry and exit logic.", GroupName = "New York 2", Order = 5)]
-        public int NewYork2EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -8227,12 +7690,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "New York 2", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "New York 2", Order = 16)]
         public double NewYork2StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 2", Order = 17)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "New York 2", Order = 17)]
         public bool NewYork2TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -8246,11 +7709,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "New York 2", Order = 22)]
         public double NewYork2EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 2", Order = 24)]
-        public bool NewYork2EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8286,12 +7744,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Session End", Description = "New York 3 session end time in chart time zone.", GroupName = "New York 3", Order = 2)]
         public TimeSpan NewYork3SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York 3 entry and exit logic.", GroupName = "New York 3", Order = 5)]
-        public int NewYork3EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -8331,12 +7783,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "New York 3", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "New York 3", Order = 16)]
         public double NewYork3StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 3", Order = 17)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "New York 3", Order = 17)]
         public bool NewYork3TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -8350,11 +7802,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "New York 3", Order = 22)]
         public double NewYork3EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 3", Order = 24)]
-        public bool NewYork3EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8389,12 +7836,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Session End", Description = "New York 4 session end time in chart time zone.", GroupName = "New York 4", Order = 2)]
         public TimeSpan NewYork4SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York 4 entry and exit logic.", GroupName = "New York 4", Order = 5)]
-        public int NewYork4EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -8434,12 +7875,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "New York 4", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "New York 4", Order = 16)]
         public double NewYork4StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 4", Order = 17)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "New York 4", Order = 17)]
         public bool NewYork4TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -8453,11 +7894,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "New York 4", Order = 22)]
         public double NewYork4EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 4", Order = 24)]
-        public bool NewYork4EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8492,12 +7928,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Session End", Description = "New York 5 session end time in chart time zone.", GroupName = "New York 5", Order = 2)]
         public TimeSpan NewYork5SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York 5 entry and exit logic.", GroupName = "New York 5", Order = 5)]
-        public int NewYork5EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -8537,12 +7967,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "New York 5", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Initial stop distance in points from entry price.", GroupName = "New York 5", Order = 16)]
         public double NewYork5StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 5", Order = 17)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using close plus/minus SL Padding Points. The stop only tightens.", GroupName = "New York 5", Order = 17)]
         public bool NewYork5TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
@@ -8556,11 +7986,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "New York 5", Order = 22)]
         public double NewYork5EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 5", Order = 24)]
-        public bool NewYork5EntryOpenLimit { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8585,110 +8010,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 5 entries while ATR(14) is below this value.", GroupName = "New York 5", Order = 41)]
         public double NewYork5AtrMinimum { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Session Start", Description = "New York 6 session start time in chart time zone.", GroupName = "New York 6", Order = 1)]
-        public TimeSpan NewYork6SessionStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Session End", Description = "New York 6 session end time in chart time zone.", GroupName = "New York 6", Order = 2)]
-        public TimeSpan NewYork6SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York 6 entry and exit logic.", GroupName = "New York 6", Order = 5)]
-        public int NewYork6EmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 6 entries.", GroupName = "New York 6 Session(15:00-16:00)", Order = 6)]
-        public int NewYork6Contracts { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York 6 trend filter.", GroupName = "New York 6", Order = 11)]
-        public int NewYork6AdxPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York 6 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York 6", Order = 12)]
-        public double NewYork6AdxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York 6 entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York 6", Order = 13)]
-        public double NewYork6AdxMaxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York 6", Order = 15)]
-        public double NewYork6AdxPeakDrawdownExitUnits { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York 6", Order = 16)]
-        public double NewYork6AdxAbsoluteExitLevel { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "New York 6", Order = 17)]
-        public double NewYork6StopPaddingPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 6", Order = 17)]
-        public bool NewYork6TrailHardStop { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York 6", Order = 19)]
-        public double NewYork6TakeProfitPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "New York 6", Order = 22)]
-        public double NewYork6EntryMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 6", Order = 24)]
-        public bool NewYork6EntryOpenLimit { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 6", Order = 37)]
-        public int NewYork6CandleReversalExitBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "New York 6", Order = 38)]
-        public double NewYork6CandleReversalCloseBeyondPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "New York 6", Order = 39)]
-        public double NewYork6CandleReversalMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 6 entries while ATR(14) is below this value.", GroupName = "New York 6", Order = 41)]
-        public double NewYork6AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8737,8 +8058,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             get { return Serialize.BrushToString(NewYorkSessionBrush); }
             set { NewYorkSessionBrush = Serialize.StringToBrush(value); }
         }
-
-        internal bool ShowEmaOnChart { get; set; }
 
         internal bool ShowAdxOnChart { get; set; }
 
