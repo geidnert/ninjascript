@@ -74,6 +74,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ProjectX
         }
 
+        public enum TrailHardStopMode
+        {
+            [XmlEnum("false")]
+            False,
+            [XmlEnum("true")]
+            True,
+            Bidirectional
+        }
+
         private enum ProjectXProtectionOrderKind
         {
             StopLoss,
@@ -175,7 +184,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxPeakDrawdownExitUnits;
         private double activeAdxAbsoluteExitLevel;
         private double activeStopPaddingPoints;
-        private bool activeTrailHardStop;
+        private TrailHardStopMode activeTrailHardStop;
         private bool activeEmaCrossSlEnabled;
         private double activeEmaCrossSlPoints;
         private int activeCandleReversalExitBars;
@@ -486,7 +495,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxPeakDrawdownExitUnits = 0;
                 AsiaAdxAbsoluteExitLevel = 61.62;
                 AsiaStopPaddingPoints = 45.5;
-                AsiaTrailHardStop = true;
+                AsiaTrailHardStop = TrailHardStopMode.True;
                 AsiaTakeProfitPoints = 146.25;
                 AsiaAtrMinimum = 11.11;
                 AsiaCandleReversalExitBars = 14;
@@ -504,7 +513,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2AdxPeakDrawdownExitUnits = 11.6;
                 Asia2AdxAbsoluteExitLevel = 63.8;
                 Asia2StopPaddingPoints = 28;
-                Asia2TrailHardStop = false;
+                Asia2TrailHardStop = TrailHardStopMode.False;
                 Asia2TakeProfitPoints = 66.5;
                 Asia2AtrMinimum = 10.1;
                 Asia2CandleReversalExitBars = 11;
@@ -522,7 +531,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3AdxPeakDrawdownExitUnits = 4.33;
                 Asia3AdxAbsoluteExitLevel = 61.65;
                 Asia3StopPaddingPoints = 65.75;
-                Asia3TrailHardStop = true;
+                Asia3TrailHardStop = TrailHardStopMode.True;
                 Asia3TakeProfitPoints = 47.75;
                 Asia3AtrMinimum = 5.93;
                 Asia3CandleReversalExitBars = 8;
@@ -541,7 +550,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonAdxPeakDrawdownExitUnits = 4.34;
                 LondonAdxAbsoluteExitLevel = 45.25;
                 LondonStopPaddingPoints = 99.25;
-                LondonTrailHardStop = true;
+                LondonTrailHardStop = TrailHardStopMode.True;
                 LondonTakeProfitPoints = 155.5;
                 LondonAtrMinimum = 4.27;
                 LondonCandleReversalExitBars = 6;
@@ -560,7 +569,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2AdxPeakDrawdownExitUnits = 10.19;
                 London2AdxAbsoluteExitLevel = 50.53;
                 London2StopPaddingPoints = 90.25;
-                London2TrailHardStop = true;
+                London2TrailHardStop = TrailHardStopMode.True;
                 London2TakeProfitPoints = 191.5;
                 London2AtrMinimum = 8.14;
                 London2CandleReversalExitBars = 7;
@@ -580,7 +589,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3AdxPeakDrawdownExitUnits = 7;
                 London3AdxAbsoluteExitLevel = 45;
                 London3StopPaddingPoints = 70;
-                London3TrailHardStop = false;
+                London3TrailHardStop = TrailHardStopMode.False;
                 London3TakeProfitPoints = 270;
                 London3AtrMinimum = 8.9;
                 London3CandleReversalExitBars = 12;
@@ -598,7 +607,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxPeakDrawdownExitUnits = 16.1;
                 NewYorkAdxAbsoluteExitLevel = 58.3;
                 NewYorkStopPaddingPoints = 191.75;
-                NewYorkTrailHardStop = true;
+                NewYorkTrailHardStop = TrailHardStopMode.True;
                 NewYorkTakeProfitPoints = 214;
                 NewYorkAtrMinimum = 15.4;
                 NewYorkCandleReversalExitBars = 5;
@@ -616,7 +625,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2AdxPeakDrawdownExitUnits = 9.9;
                 NewYork2AdxAbsoluteExitLevel = 45.3;
                 NewYork2StopPaddingPoints = 114;
-                NewYork2TrailHardStop = true;
+                NewYork2TrailHardStop = TrailHardStopMode.True;
                 NewYork2TakeProfitPoints = 156.25;
                 NewYork2AtrMinimum = 18.4;
                 NewYork2CandleReversalExitBars = 10;
@@ -634,7 +643,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3AdxPeakDrawdownExitUnits = 1.2;
                 NewYork3AdxAbsoluteExitLevel = 23.9;
                 NewYork3StopPaddingPoints = 73.75;
-                NewYork3TrailHardStop = true;
+                NewYork3TrailHardStop = TrailHardStopMode.True;
                 NewYork3TakeProfitPoints = 138;
                 NewYork3AtrMinimum = 20.6;
                 NewYork3CandleReversalExitBars = 11;
@@ -652,7 +661,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4AdxPeakDrawdownExitUnits = 1.4;
                 NewYork4AdxAbsoluteExitLevel = 53.2;
                 NewYork4StopPaddingPoints = 91.75;
-                NewYork4TrailHardStop = true;
+                NewYork4TrailHardStop = TrailHardStopMode.True;
                 NewYork4TakeProfitPoints = 219.5;
                 NewYork4AtrMinimum = 22.9;
                 NewYork4CandleReversalExitBars = 11;
@@ -670,7 +679,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5AdxPeakDrawdownExitUnits = 6.4;
                 NewYork5AdxAbsoluteExitLevel = 22.4;
                 NewYork5StopPaddingPoints = 131.5;
-                NewYork5TrailHardStop = true;
+                NewYork5TrailHardStop = TrailHardStopMode.True;
                 NewYork5TakeProfitPoints = 180;
                 NewYork5AtrMinimum = 24.5;
                 NewYork5CandleReversalExitBars = 16;
@@ -1779,7 +1788,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void TryTrailHardStop(double emaValue)
         {
-            if (!activeTrailHardStop || Position.MarketPosition == MarketPosition.Flat || activeEma == null || IsTerminalExitInFlight())
+            if (activeTrailHardStop == TrailHardStopMode.False || Position.MarketPosition == MarketPosition.Flat || activeEma == null || IsTerminalExitInFlight())
                 return;
 
             double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
@@ -1809,16 +1818,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsManagedStopPriceValid(stopPrice, closePrice))
                 return;
 
-            if (ApplyManagedStop(entrySignal, stopPrice, "hard-sl-trail"))
+            bool bidirectional = activeTrailHardStop == TrailHardStopMode.Bidirectional;
+            if (ApplyManagedStop(entrySignal, stopPrice, "hard-sl-trail", bidirectional))
             {
                 LogDebug(string.Format(
-                    "Hard SL trailed | side={0} signal={1} stop={2:0.00} ema={3:0.00} close={4:0.00} pad={5:0.00}",
+                    "Hard SL trailed | side={0} signal={1} stop={2:0.00} ema={3:0.00} close={4:0.00} pad={5:0.00} mode={6}",
                     Position.MarketPosition,
                     entrySignal,
                     stopPrice,
                     emaValue,
                     closePrice,
-                    activeStopPaddingPoints));
+                    activeStopPaddingPoints,
+                    activeTrailHardStop));
             }
         }
 
@@ -1866,9 +1877,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool ApplyManagedStop(string entrySignal, double stopPrice, string reason)
         {
+            return ApplyManagedStop(entrySignal, stopPrice, reason, false);
+        }
+
+        private bool ApplyManagedStop(string entrySignal, double stopPrice, string reason, bool allowBidirectionalMove)
+        {
             stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
-            if (!ShouldTightenManagedStop(stopPrice))
+
+            if (allowBidirectionalMove)
+            {
+                if (!ShouldMoveManagedStop(stopPrice))
+                    return false;
+            }
+            else if (!ShouldTightenManagedStop(stopPrice))
+            {
                 return false;
+            }
 
             SetStopLoss(entrySignal, CalculationMode.Price, stopPrice, false);
             currentStopPrice = stopPrice;
@@ -1886,6 +1910,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return currentStopPrice <= 0.0 || stopPrice < currentStopPrice - TickSize * 0.5;
 
             return false;
+        }
+
+        private bool ShouldMoveManagedStop(double stopPrice)
+        {
+            return currentStopPrice <= 0.0 || Math.Abs(stopPrice - currentStopPrice) > TickSize * 0.5;
         }
 
         private bool IsManagedStopPriceValid(double stopPrice, double closePrice)
@@ -2840,7 +2869,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeContracts = 0;
                     activeEntryMinBodyPoints = 0.0;
                     activeStopPaddingPoints = 0.0;
-                    activeTrailHardStop = false;
+                    activeTrailHardStop = TrailHardStopMode.False;
                     activeTakeProfitPoints = 0.0;
                     activeMinimumAtrForEntry = 0.0;
                     activeCandleReversalExitBars = 0;
@@ -7294,8 +7323,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 1", Order = 16)]
-        public bool AsiaTrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "Asia 1", Order = 16)]
+        public TrailHardStopMode AsiaTrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7392,8 +7421,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 2", Order = 16)]
-        public bool Asia2TrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "Asia 2", Order = 16)]
+        public TrailHardStopMode Asia2TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7490,8 +7519,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 3", Order = 16)]
-        public bool Asia3TrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "Asia 3", Order = 16)]
+        public TrailHardStopMode Asia3TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7593,8 +7622,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "London 1", Order = 16)]
-        public bool LondonTrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "London 1", Order = 16)]
+        public TrailHardStopMode LondonTrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7697,8 +7726,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "London 2", Order = 16)]
-        public bool London2TrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "London 2", Order = 16)]
+        public TrailHardStopMode London2TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7806,8 +7835,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "London 3", Order = 16)]
-        public bool London3TrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "London 3", Order = 16)]
+        public TrailHardStopMode London3TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -7904,8 +7933,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 1", Order = 17)]
-        public bool NewYorkTrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "New York 1", Order = 17)]
+        public TrailHardStopMode NewYorkTrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8002,8 +8031,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 2", Order = 17)]
-        public bool NewYork2TrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "New York 2", Order = 17)]
+        public TrailHardStopMode NewYork2TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8100,8 +8129,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 3", Order = 17)]
-        public bool NewYork3TrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "New York 3", Order = 17)]
+        public TrailHardStopMode NewYork3TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8197,8 +8226,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 4", Order = 17)]
-        public bool NewYork4TrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "New York 4", Order = 17)]
+        public TrailHardStopMode NewYork4TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -8294,8 +8323,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 5", Order = 17)]
-        public bool NewYork5TrailHardStop { get; set; }
+        [Display(Name = "Trail Hard SL", Description = "False disables trailing. True trails each bar close and only tightens. Bidirectional trails each bar close and can move both directions to stay SL Padding Points from EMA.", GroupName = "New York 5", Order = 17)]
+        public TrailHardStopMode NewYork5TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
