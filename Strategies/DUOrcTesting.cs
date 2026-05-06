@@ -481,7 +481,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 AsiaSessionStart = new TimeSpan(18, 30, 0);
                 AsiaSessionEnd = new TimeSpan(20, 00, 0);
-                AsiaBlockSundayTrades = false;
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaEntryMinBodyPoints = 0;
@@ -500,7 +499,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 Asia2SessionStart = new TimeSpan(20, 00, 0);
                 Asia2SessionEnd = TimeSpan.Zero;
-                Asia2BlockSundayTrades = false;
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2EntryMinBodyPoints = 0;
@@ -519,7 +517,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 Asia3SessionStart = TimeSpan.Zero;
                 Asia3SessionEnd = new TimeSpan(2, 00, 0);
-                Asia3BlockSundayTrades = false;
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
                 Asia3EntryMinBodyPoints = 1.5;
@@ -972,7 +969,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
-            bool isAsiaSundayBlockedNow = IsAsiaSundayBlocked(activeSession, Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double atrValue = GetCurrentAtrValue();
@@ -981,12 +977,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
             bool adxThresholdPass = adxMinPass && adxMaxPass;
             bool atrMinPass = !inActiveSessionNow || activeMinimumAtrForEntry <= 0.0 || atrValue >= activeMinimumAtrForEntry;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxThresholdPass && atrMinPass;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !accountBlocked && adxThresholdPass && atrMinPass;
 
             if (!inActiveSessionNow)
-                CancelWorkingEntryOrders();
-
-            if (isAsiaSundayBlockedNow)
                 CancelWorkingEntryOrders();
 
             if (activeEma == null || CurrentBar < activeEmaPeriod)
@@ -1117,8 +1110,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         reasons.Add(string.Format("OutOfSession active={0}", FormatSessionLabel(activeSession)));
                     if (inNewsSkipNow)
                         reasons.Add(string.Format("NewsSkip minutes={0}", NewsBlockMinutes));
-                    if (isAsiaSundayBlockedNow)
-                        reasons.Add("AsiaSundayBlock");
                     if (accountBlocked)
                         reasons.Add(string.Format("AccountBlocked maxBalance={0:0.##}", MaxAccountBalance));
                     if (!adxMinPass)
@@ -4195,24 +4186,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return NewYorkSessionBrush ?? Brushes.LightSkyBlue;
                 default:
                     return Brushes.LightSkyBlue;
-            }
-        }
-
-        private bool IsAsiaSundayBlocked(SessionSlot slot, DateTime time)
-        {
-            if (!IsAsiaFamily(slot) || time.DayOfWeek != DayOfWeek.Sunday)
-                return false;
-
-            switch (slot)
-            {
-                case SessionSlot.Asia:
-                    return AsiaBlockSundayTrades;
-                case SessionSlot.Asia2:
-                    return Asia2BlockSundayTrades;
-                case SessionSlot.Asia3:
-                    return Asia3BlockSundayTrades;
-                default:
-                    return false;
             }
         }
 
@@ -7313,11 +7286,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Session End", Description = "Asia 1 session end time in chart time zone.", GroupName = "Asia 1", Order = 2)]
         public TimeSpan AsiaSessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 1 entries on Sundays.", GroupName = "Asia 1", Order = 3)]
-        public bool AsiaBlockSundayTrades { get; set; }
-
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "EMA Period", Description = "EMA period used by Asia 1 entry and exit logic.", GroupName = "Asia 1", Order = 4)]
@@ -7399,11 +7367,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Session End", Description = "Asia 2 session end time in chart time zone.", GroupName = "Asia 2", Order = 2)]
         public TimeSpan Asia2SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 2 entries on Sundays.", GroupName = "Asia 2", Order = 3)]
-        public bool Asia2BlockSundayTrades { get; set; }
-
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "EMA Period", Description = "EMA period used by Asia 2 entry and exit logic.", GroupName = "Asia 2", Order = 4)]
@@ -7485,11 +7448,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Session End", Description = "Asia 3 session end time in chart time zone.", GroupName = "Asia 3", Order = 2)]
         public TimeSpan Asia3SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 3 entries on Sundays.", GroupName = "Asia 3", Order = 3)]
-        public bool Asia3BlockSundayTrades { get; set; }
-
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "EMA Period", Description = "EMA period used by Asia 3 entry and exit logic.", GroupName = "Asia 3", Order = 4)]
