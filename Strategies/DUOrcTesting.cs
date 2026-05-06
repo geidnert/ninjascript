@@ -57,8 +57,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             NewYork2,
             NewYork3,
             NewYork4,
-            NewYork5,
-            NewYork6
+            NewYork5
         }
 
         private enum SessionFamily
@@ -120,7 +119,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool newYork3SessionClosed;
         private bool newYork4SessionClosed;
         private bool newYork5SessionClosed;
-        private bool newYork6SessionClosed;
 
         private bool sessionInitialized;
         private SessionSlot activeSession = SessionSlot.None;
@@ -151,7 +149,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private EMA emaNewYork3;
         private EMA emaNewYork4;
         private EMA emaNewYork5;
-        private EMA emaNewYork6;
         private EMA activeEma;
         private ATR entryAtr;
         private DUOAtrVisual atrVisual;
@@ -166,7 +163,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DM adxNewYork3;
         private DM adxNewYork4;
         private DM adxNewYork5;
-        private DM adxNewYork6;
         private DM activeAdx;
 
         private int activeEmaPeriod;
@@ -234,8 +230,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SessionSlot.NewYork2,
             SessionSlot.NewYork3,
             SessionSlot.NewYork4,
-            SessionSlot.NewYork5,
-            SessionSlot.NewYork6
+            SessionSlot.NewYork5
         };
         private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
         private static readonly string NewsDatesRaw =
@@ -681,24 +676,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5CandleReversalCloseBeyondPoints = 2.25;
                 NewYork5CandleReversalMinBodyPoints = 2.75;
 
-                NewYork6SessionStart = new TimeSpan(15, 00, 0);
-                NewYork6SessionEnd = new TimeSpan(16, 00, 0);
-                NewYork6EmaPeriod = 18;
-                NewYork6Contracts = 0;
-                NewYork6EntryMinBodyPoints = 3.25;
-                NewYork6AdxPeriod = 14;
-                NewYork6AdxThreshold = 23.1;
-                NewYork6AdxMaxThreshold = 37.5;
-                NewYork6AdxPeakDrawdownExitUnits = 13.3;
-                NewYork6AdxAbsoluteExitLevel = 63;
-                NewYork6StopPaddingPoints = 57;
-                NewYork6TrailHardStop = false;
-                NewYork6TakeProfitPoints = 175.75;
-                NewYork6AtrMinimum = 15.9;
-                NewYork6CandleReversalExitBars = 7;
-                NewYork6CandleReversalCloseBeyondPoints = 6.25;
-                NewYork6CandleReversalMinBodyPoints = 1.25;
-
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
                 AsiaSessionBrush = Brushes.DarkCyan;
@@ -743,7 +720,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 emaNewYork3 = EMA(NewYork3EmaPeriod);
                 emaNewYork4 = EMA(NewYork4EmaPeriod);
                 emaNewYork5 = EMA(NewYork5EmaPeriod);
-                emaNewYork6 = EMA(NewYork6EmaPeriod);
                 entryAtr = ATR(EntryAtrPeriod);
                 atrVisual = DUOAtrVisual(EntryAtrPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
@@ -757,7 +733,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 adxNewYork3 = DM(NewYork3AdxPeriod);
                 adxNewYork4 = DM(NewYork4AdxPeriod);
                 adxNewYork5 = DM(NewYork5AdxPeriod);
-                adxNewYork6 = DM(NewYork6AdxPeriod);
                 UpdateAdxReferenceLines(adxAsia, AsiaAdxThreshold, AsiaAdxMaxThreshold);
                 UpdateAdxReferenceLines(adxAsia2, Asia2AdxThreshold, Asia2AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxAsia3, Asia3AdxThreshold, Asia3AdxMaxThreshold);
@@ -769,7 +744,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UpdateAdxReferenceLines(adxNewYork3, NewYork3AdxThreshold, NewYork3AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxNewYork4, NewYork4AdxThreshold, NewYork4AdxMaxThreshold);
                 UpdateAdxReferenceLines(adxNewYork5, NewYork5AdxThreshold, NewYork5AdxMaxThreshold);
-                UpdateAdxReferenceLines(adxNewYork6, NewYork6AdxThreshold, NewYork6AdxMaxThreshold);
 
                 if (ShowEmaOnChart)
                 {
@@ -784,7 +758,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     AddChartIndicator(emaNewYork3);
                     AddChartIndicator(emaNewYork4);
                     AddChartIndicator(emaNewYork5);
-                    AddChartIndicator(emaNewYork6);
                 }
 
                 if (ShowAdxOnChart)
@@ -800,7 +773,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     AddChartIndicator(adxNewYork3);
                     AddChartIndicator(adxNewYork4);
                     AddChartIndicator(adxNewYork5);
-                    AddChartIndicator(adxNewYork6);
                 }
 
                 if (ShowAtrOnChart || ShowAtrThresholdLines)
@@ -848,7 +820,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 newYork3SessionClosed = false;
                 newYork4SessionClosed = false;
                 newYork5SessionClosed = false;
-                newYork6SessionClosed = false;
                 projectXSessionToken = null;
                 projectXTokenAcquiredUtc = Core.Globals.MinDate;
                 projectXAccounts = null;
@@ -2488,7 +2459,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case SessionSlot.NewYork3:
                 case SessionSlot.NewYork4:
                 case SessionSlot.NewYork5:
-                case SessionSlot.NewYork6:
                     return SessionFamily.NewYork;
 
                 default:
@@ -2580,8 +2550,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return NewYork4Contracts > 0 && NewYork4SessionStart != NewYork4SessionEnd;
                 case SessionSlot.NewYork5:
                     return NewYork5Contracts > 0 && NewYork5SessionStart != NewYork5SessionEnd;
-                case SessionSlot.NewYork6:
-                    return NewYork6Contracts > 0 && NewYork6SessionStart != NewYork6SessionEnd;
                 default:
                     return false;
             }
@@ -2822,27 +2790,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeCandleReversalMinBodyPoints = NewYork5CandleReversalMinBodyPoints;
                     break;
 
-                case SessionSlot.NewYork6:
-                    activeEma = emaNewYork6;
-                    activeAdx = adxNewYork6;
-                    activeEmaPeriod = NewYork6EmaPeriod;
-                    activeAdxPeriod = NewYork6AdxPeriod;
-                    activeAdxThreshold = NewYork6AdxThreshold;
-                    activeAdxMaxThreshold = NewYork6AdxMaxThreshold;
-                    activeAdxPeakDrawdownExitUnits = NewYork6AdxPeakDrawdownExitUnits;
-                    activeAdxAbsoluteExitLevel = NewYork6AdxAbsoluteExitLevel;
-                    UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
-                    activeContracts = NewYork6Contracts;
-                    activeEntryMinBodyPoints = NewYork6EntryMinBodyPoints;
-                    activeStopPaddingPoints = NewYork6StopPaddingPoints;
-                    activeTrailHardStop = NewYork6TrailHardStop;
-                    activeTakeProfitPoints = NewYork6TakeProfitPoints;
-                    activeMinimumAtrForEntry = NewYork6AtrMinimum;
-                    activeCandleReversalExitBars = NewYork6CandleReversalExitBars;
-                    activeCandleReversalCloseBeyondPoints = NewYork6CandleReversalCloseBeyondPoints;
-                    activeCandleReversalMinBodyPoints = NewYork6CandleReversalMinBodyPoints;
-                    break;
-
                 default:
                     activeEma = null;
                     activeAdx = null;
@@ -2880,7 +2827,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SetEmaVisible(emaNewYork3, false);
                 SetEmaVisible(emaNewYork4, false);
                 SetEmaVisible(emaNewYork5, false);
-                SetEmaVisible(emaNewYork6, false);
                 return;
             }
 
@@ -2895,7 +2841,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SetEmaVisible(emaNewYork3, ShouldShowEmaInstance(emaNewYork3));
             SetEmaVisible(emaNewYork4, ShouldShowEmaInstance(emaNewYork4));
             SetEmaVisible(emaNewYork5, ShouldShowEmaInstance(emaNewYork5));
-            SetEmaVisible(emaNewYork6, ShouldShowEmaInstance(emaNewYork6));
         }
 
         private void UpdateAdxPlotVisibility()
@@ -2911,7 +2856,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SetAdxVisible(adxNewYork3, ShowAdxOnChart);
             SetAdxVisible(adxNewYork4, ShowAdxOnChart);
             SetAdxVisible(adxNewYork5, ShowAdxOnChart);
-            SetAdxVisible(adxNewYork6, ShowAdxOnChart);
         }
 
         private void UpdateAtrPlotVisibility()
@@ -2939,8 +2883,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 || (activeSession == SessionSlot.NewYork2 && ReferenceEquals(ema, emaNewYork2))
                 || (activeSession == SessionSlot.NewYork3 && ReferenceEquals(ema, emaNewYork3))
                 || (activeSession == SessionSlot.NewYork4 && ReferenceEquals(ema, emaNewYork4))
-                || (activeSession == SessionSlot.NewYork5 && ReferenceEquals(ema, emaNewYork5))
-                || (activeSession == SessionSlot.NewYork6 && ReferenceEquals(ema, emaNewYork6));
+                || (activeSession == SessionSlot.NewYork5 && ReferenceEquals(ema, emaNewYork5));
         }
 
         private void SetEmaVisible(EMA ema, bool visible)
@@ -3030,8 +2973,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EmaPeriod,
                 NewYork3EmaPeriod,
                 NewYork4EmaPeriod,
-                NewYork5EmaPeriod,
-                NewYork6EmaPeriod
+                NewYork5EmaPeriod
             }.Max();
         }
 
@@ -3981,13 +3923,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     end = NewYork5SessionEnd;
                     return true;
 
-                case SessionSlot.NewYork6:
-                    if (NewYork6Contracts <= 0 || NewYork6SessionStart == NewYork6SessionEnd)
-                        return false;
-                    start = NewYork6SessionStart;
-                    end = NewYork6SessionEnd;
-                    return true;
-
                 default:
                     return false;
             }
@@ -4837,8 +4772,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return newYork4SessionClosed;
                 case SessionSlot.NewYork5:
                     return newYork5SessionClosed;
-                case SessionSlot.NewYork6:
-                    return newYork6SessionClosed;
                 default:
                     return false;
             }
@@ -4881,9 +4814,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case SessionSlot.NewYork5:
                     newYork5SessionClosed = value;
                     break;
-                case SessionSlot.NewYork6:
-                    newYork6SessionClosed = value;
-                    break;
             }
         }
 
@@ -4913,8 +4843,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return "NewYork4";
                 case SessionSlot.NewYork5:
                     return "NewYork5";
-                case SessionSlot.NewYork6:
-                    return "NewYork6";
                 default:
                     return "None";
             }
@@ -5468,8 +5396,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2AdxPeriod,
                 NewYork3AdxPeriod,
                 NewYork4AdxPeriod,
-                NewYork5AdxPeriod,
-                NewYork6AdxPeriod
+                NewYork5AdxPeriod
             }.Max();
         }
 
@@ -8188,87 +8115,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 5 entries while ATR(14) is below this value.", GroupName = "New York 5", Order = 41)]
         public double NewYork5AtrMinimum { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "New York 6 session start time in chart time zone.", GroupName = "New York 6", Order = 1)]
-        public TimeSpan NewYork6SessionStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Session End", Description = "New York 6 session end time in chart time zone.", GroupName = "New York 6", Order = 2)]
-        public TimeSpan NewYork6SessionEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by New York 6 entry and exit logic.", GroupName = "New York 6", Order = 5)]
-        public int NewYork6EmaPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 6 entries.", GroupName = "New York 6", Order = 6)]
-        public int NewYork6Contracts { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the New York 6 trend filter.", GroupName = "New York 6", Order = 11)]
-        public int NewYork6AdxPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. New York 6 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "New York 6", Order = 12)]
-        public double NewYork6AdxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. New York 6 entries are allowed only when ADX is less than or equal to this value.", GroupName = "New York 6", Order = 13)]
-        public double NewYork6AdxMaxThreshold { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "New York 6", Order = 15)]
-        public double NewYork6AdxPeakDrawdownExitUnits { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "New York 6", Order = 16)]
-        public double NewYork6AdxAbsoluteExitLevel { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "New York 6", Order = 17)]
-        public double NewYork6StopPaddingPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "New York 6", Order = 17)]
-        public bool NewYork6TrailHardStop { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "New York 6", Order = 19)]
-        public double NewYork6TakeProfitPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "New York 6", Order = 22)]
-        public double NewYork6EntryMinBodyPoints { get; set; }
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 6", Order = 37)]
-        public int NewYork6CandleReversalExitBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "New York 6", Order = 38)]
-        public double NewYork6CandleReversalCloseBeyondPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "New York 6", Order = 39)]
-        public double NewYork6CandleReversalMinBodyPoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 6 entries while ATR(14) is below this value.", GroupName = "New York 6", Order = 41)]
-        public double NewYork6AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Close At Session End", Description = "If true, flatten positions and cancel entries at each configured session end.", GroupName = "10. Sessions", Order = 0)]
