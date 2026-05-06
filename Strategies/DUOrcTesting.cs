@@ -100,14 +100,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private Order longEntryOrder;
         private Order shortEntryOrder;
-        private bool pendingOpenLimitEntryResubmit;
-        private bool pendingOpenLimitEntryIsLong;
-        private double pendingOpenLimitEntryPrice;
-        private double pendingOpenLimitStopPrice;
-        private double pendingOpenLimitTakeProfitPoints;
-        private double pendingOpenLimitTakeProfitPrice;
-        private int pendingOpenLimitEntryQuantity;
-        private int pendingOpenLimitEntryBar;
         private int missingLongEntryOrderBars;
         private int missingShortEntryOrderBars;
         private string webhookUrl = string.Empty;
@@ -190,7 +182,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxAbsoluteExitLevel;
         private double activeStopPaddingPoints;
         private bool activeTrailHardStop;
-        private bool activeEntryOpenLimit;
         private int activeCandleReversalExitBars;
         private double activeCandleReversalCloseBeyondPoints;
         private double activeCandleReversalMinBodyPoints;
@@ -505,7 +496,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaTrailHardStop = true;
                 AsiaTakeProfitPoints = 146.25;
                 AsiaAtrMinimum = 11.11;
-                AsiaEntryOpenLimit = false;
                 AsiaCandleReversalExitBars = 14;
                 AsiaCandleReversalCloseBeyondPoints = 7.75;
                 AsiaCandleReversalMinBodyPoints = 0;
@@ -526,7 +516,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2TrailHardStop = false;
                 Asia2TakeProfitPoints = 66.5;
                 Asia2AtrMinimum = 10.1;
-                Asia2EntryOpenLimit = false;
                 Asia2CandleReversalExitBars = 11;
                 Asia2CandleReversalCloseBeyondPoints = 14.25;
                 Asia2CandleReversalMinBodyPoints = 8;
@@ -547,7 +536,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3TrailHardStop = true;
                 Asia3TakeProfitPoints = 47.75;
                 Asia3AtrMinimum = 5.93;
-                Asia3EntryOpenLimit = false;
                 Asia3CandleReversalExitBars = 8;
                 Asia3CandleReversalCloseBeyondPoints = 10.25;
                 Asia3CandleReversalMinBodyPoints = 1.5;
@@ -568,7 +556,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonTrailHardStop = true;
                 LondonTakeProfitPoints = 155.5;
                 LondonAtrMinimum = 4.27;
-                LondonEntryOpenLimit = false;
                 LondonCandleReversalExitBars = 6;
                 LondonCandleReversalCloseBeyondPoints = 3.25;
                 LondonCandleReversalMinBodyPoints = 14;
@@ -589,7 +576,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2TrailHardStop = true;
                 London2TakeProfitPoints = 191.5;
                 London2AtrMinimum = 8.14;
-                London2EntryOpenLimit = false;
                 London2CandleReversalExitBars = 7;
                 London2CandleReversalCloseBeyondPoints = 7;
                 London2CandleReversalMinBodyPoints = 2;
@@ -611,7 +597,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3TrailHardStop = false;
                 London3TakeProfitPoints = 270;
                 London3AtrMinimum = 8.9;
-                London3EntryOpenLimit = false;
                 London3CandleReversalExitBars = 12;
                 London3CandleReversalCloseBeyondPoints = 0.25;
                 London3CandleReversalMinBodyPoints = 7.5;
@@ -631,7 +616,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkTrailHardStop = true;
                 NewYorkTakeProfitPoints = 214;
                 NewYorkAtrMinimum = 15.4;
-                NewYorkEntryOpenLimit = false;
                 NewYorkCandleReversalExitBars = 5;
                 NewYorkCandleReversalCloseBeyondPoints = 0;
                 NewYorkCandleReversalMinBodyPoints = 0.75;
@@ -651,7 +635,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2TrailHardStop = true;
                 NewYork2TakeProfitPoints = 156.25;
                 NewYork2AtrMinimum = 18.4;
-                NewYork2EntryOpenLimit = false;
                 NewYork2CandleReversalExitBars = 10;
                 NewYork2CandleReversalCloseBeyondPoints = 6.5;
                 NewYork2CandleReversalMinBodyPoints = 2;
@@ -671,7 +654,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3TrailHardStop = true;
                 NewYork3TakeProfitPoints = 138;
                 NewYork3AtrMinimum = 20.6;
-                NewYork3EntryOpenLimit = false;
                 NewYork3CandleReversalExitBars = 11;
                 NewYork3CandleReversalCloseBeyondPoints = 0;
                 NewYork3CandleReversalMinBodyPoints = 1.75;
@@ -691,7 +673,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4TrailHardStop = true;
                 NewYork4TakeProfitPoints = 219.5;
                 NewYork4AtrMinimum = 22.9;
-                NewYork4EntryOpenLimit = false;
                 NewYork4CandleReversalExitBars = 11;
                 NewYork4CandleReversalCloseBeyondPoints = 4.25;
                 NewYork4CandleReversalMinBodyPoints = 0;
@@ -711,7 +692,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5TrailHardStop = true;
                 NewYork5TakeProfitPoints = 180;
                 NewYork5AtrMinimum = 24.5;
-                NewYork5EntryOpenLimit = false;
                 NewYork5CandleReversalExitBars = 16;
                 NewYork5CandleReversalCloseBeyondPoints = 2.25;
                 NewYork5CandleReversalMinBodyPoints = 2.75;
@@ -731,7 +711,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork6TrailHardStop = false;
                 NewYork6TakeProfitPoints = 175.75;
                 NewYork6AtrMinimum = 15.9;
-                NewYork6EntryOpenLimit = false;
                 NewYork6CandleReversalExitBars = 7;
                 NewYork6CandleReversalCloseBeyondPoints = 6.25;
                 NewYork6CandleReversalMinBodyPoints = 1.25;
@@ -869,7 +848,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 newYorkTimeZone = null;
                 pendingLongStopForWebhook = 0.0;
                 pendingShortStopForWebhook = 0.0;
-                ClearPendingOpenLimitEntryResubmit();
                 currentTradePeakAdx = 0.0;
                 trackedAdxPeakPosition = MarketPosition.Flat;
                 initialStopPrice = 0.0;
@@ -1221,9 +1199,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
                 bool longOrderActive = IsOrderActive(longEntryOrder);
-                bool useOpenLimitEntry = IsEntryOpenLimitEnabled();
-                bool useMarketEntry = !useOpenLimitEntry;
-                double entryPrice = GetInitialEntryPrice(useOpenLimitEntry);
+                double entryPrice = GetInitialEntryPrice();
                 double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue);
                 int qty = GetEntryQuantity();
                 if (qty <= 0)
@@ -1245,14 +1221,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!longOrderActive)
                 {
-                    SubmitPreparedInitialEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, useMarketEntry);
-                    LogDebug(string.Format("Place LONG {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useOpenLimitEntry ? "open-limit" : (useMarketEntry ? "market" : "limit"), FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
-                }
-                else if (useOpenLimitEntry)
-                {
-                    QueueOpenLimitEntryResubmit(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
-                    CancelOrderIfActive(longEntryOrder, "ChaseOpenLimitLong");
-                    LogDebug(string.Format("LONG open-limit chase queued | session={0} entry={1:0.00} stop={2:0.00} qty={3} tracked={4}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty, FormatOrderRef(longEntryOrder)));
+                    SubmitPreparedInitialEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
+                    LogDebug(string.Format("Place LONG market | session={0} entry={1:0.00} stop={2:0.00} qty={3}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1267,9 +1237,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
                 bool shortOrderActive = IsOrderActive(shortEntryOrder);
-                bool useOpenLimitEntry = IsEntryOpenLimitEnabled();
-                bool useMarketEntry = !useOpenLimitEntry;
-                double entryPrice = GetInitialEntryPrice(useOpenLimitEntry);
+                double entryPrice = GetInitialEntryPrice();
                 double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue);
                 int qty = GetEntryQuantity();
                 if (qty <= 0)
@@ -1291,14 +1259,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!shortOrderActive)
                 {
-                    SubmitPreparedInitialEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, useMarketEntry);
-                    LogDebug(string.Format("Place SHORT {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", useOpenLimitEntry ? "open-limit" : (useMarketEntry ? "market" : "limit"), FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
-                }
-                else if (useOpenLimitEntry)
-                {
-                    QueueOpenLimitEntryResubmit(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
-                    CancelOrderIfActive(shortEntryOrder, "ChaseOpenLimitShort");
-                    LogDebug(string.Format("SHORT open-limit chase queued | session={0} entry={1:0.00} stop={2:0.00} qty={3} tracked={4}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty, FormatOrderRef(shortEntryOrder)));
+                    SubmitPreparedInitialEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
+                    LogDebug(string.Format("Place SHORT market | session={0} entry={1:0.00} stop={2:0.00} qty={3}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1424,17 +1386,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             bool isEntryOrder = IsEntryOrderName(order.Name);
-            if (isEntryOrder && orderState == OrderState.Filled)
-                ClearPendingOpenLimitEntryResubmit();
-
-            bool queuedOpenLimitResubmitted = false;
-            if (isEntryOrder && orderState == OrderState.Cancelled && Position.MarketPosition == MarketPosition.Flat)
-                queuedOpenLimitResubmitted = TrySubmitQueuedOpenLimitEntryAfterCancel(order.Name);
-
             if (isEntryOrder && orderState != OrderState.Filled &&
                 (orderState == OrderState.Cancelled || orderState == OrderState.Rejected) &&
-                Position.MarketPosition == MarketPosition.Flat &&
-                !queuedOpenLimitResubmitted)
+                Position.MarketPosition == MarketPosition.Flat)
             {
                 if (tradeLinesActive)
                     FinalizeTradeLines();
@@ -2698,7 +2652,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = AsiaTrailHardStop;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
                     activeMinimumAtrForEntry = AsiaAtrMinimum;
-                    activeEntryOpenLimit = AsiaEntryOpenLimit;
                     activeCandleReversalExitBars = AsiaCandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = AsiaCandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = AsiaCandleReversalMinBodyPoints;
@@ -2721,7 +2674,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = Asia2TrailHardStop;
                     activeTakeProfitPoints = Asia2TakeProfitPoints;
                     activeMinimumAtrForEntry = Asia2AtrMinimum;
-                    activeEntryOpenLimit = Asia2EntryOpenLimit;
                     activeCandleReversalExitBars = Asia2CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = Asia2CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = Asia2CandleReversalMinBodyPoints;
@@ -2744,7 +2696,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = Asia3TrailHardStop;
                     activeTakeProfitPoints = Asia3TakeProfitPoints;
                     activeMinimumAtrForEntry = Asia3AtrMinimum;
-                    activeEntryOpenLimit = Asia3EntryOpenLimit;
                     activeCandleReversalExitBars = Asia3CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = Asia3CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = Asia3CandleReversalMinBodyPoints;
@@ -2767,7 +2718,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = LondonTrailHardStop;
                     activeTakeProfitPoints = LondonTakeProfitPoints;
                     activeMinimumAtrForEntry = LondonAtrMinimum;
-                    activeEntryOpenLimit = LondonEntryOpenLimit;
                     activeCandleReversalExitBars = LondonCandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = LondonCandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = LondonCandleReversalMinBodyPoints;
@@ -2790,7 +2740,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = London2TrailHardStop;
                     activeTakeProfitPoints = London2TakeProfitPoints;
                     activeMinimumAtrForEntry = London2AtrMinimum;
-                    activeEntryOpenLimit = London2EntryOpenLimit;
                     activeCandleReversalExitBars = London2CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = London2CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = London2CandleReversalMinBodyPoints;
@@ -2813,7 +2762,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = London3TrailHardStop;
                     activeTakeProfitPoints = London3TakeProfitPoints;
                     activeMinimumAtrForEntry = London3AtrMinimum;
-                    activeEntryOpenLimit = London3EntryOpenLimit;
                     activeCandleReversalExitBars = London3CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = London3CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = London3CandleReversalMinBodyPoints;
@@ -2836,7 +2784,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYorkTrailHardStop;
                     activeTakeProfitPoints = NewYorkTakeProfitPoints;
                     activeMinimumAtrForEntry = NewYorkAtrMinimum;
-                    activeEntryOpenLimit = NewYorkEntryOpenLimit;
                     activeCandleReversalExitBars = NewYorkCandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYorkCandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYorkCandleReversalMinBodyPoints;
@@ -2859,7 +2806,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork2TrailHardStop;
                     activeTakeProfitPoints = NewYork2TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork2AtrMinimum;
-                    activeEntryOpenLimit = NewYork2EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork2CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork2CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork2CandleReversalMinBodyPoints;
@@ -2882,7 +2828,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork3TrailHardStop;
                     activeTakeProfitPoints = NewYork3TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork3AtrMinimum;
-                    activeEntryOpenLimit = NewYork3EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork3CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork3CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork3CandleReversalMinBodyPoints;
@@ -2905,7 +2850,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork4TrailHardStop;
                     activeTakeProfitPoints = NewYork4TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork4AtrMinimum;
-                    activeEntryOpenLimit = NewYork4EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork4CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork4CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork4CandleReversalMinBodyPoints;
@@ -2928,7 +2872,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork5TrailHardStop;
                     activeTakeProfitPoints = NewYork5TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork5AtrMinimum;
-                    activeEntryOpenLimit = NewYork5EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork5CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork5CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork5CandleReversalMinBodyPoints;
@@ -2951,7 +2894,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = NewYork6TrailHardStop;
                     activeTakeProfitPoints = NewYork6TakeProfitPoints;
                     activeMinimumAtrForEntry = NewYork6AtrMinimum;
-                    activeEntryOpenLimit = NewYork6EntryOpenLimit;
                     activeCandleReversalExitBars = NewYork6CandleReversalExitBars;
                     activeCandleReversalCloseBeyondPoints = NewYork6CandleReversalCloseBeyondPoints;
                     activeCandleReversalMinBodyPoints = NewYork6CandleReversalMinBodyPoints;
@@ -2973,7 +2915,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeTrailHardStop = false;
                     activeTakeProfitPoints = 0.0;
                     activeMinimumAtrForEntry = 0.0;
-                    activeEntryOpenLimit = false;
                     activeCandleReversalExitBars = 0;
                     activeCandleReversalCloseBeyondPoints = 0.0;
                     activeCandleReversalMinBodyPoints = 0.0;
@@ -3364,7 +3305,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void CancelWorkingEntryOrders()
         {
-            ClearPendingOpenLimitEntryResubmit();
             CancelOrderIfActive(longEntryOrder, "CancelWorkingEntries");
             CancelOrderIfActive(shortEntryOrder, "CancelWorkingEntries");
         }
@@ -3765,12 +3705,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
             return rounded;
         }
-
-        private bool IsEntryOpenLimitEnabled()
-        {
-            return activeEntryOpenLimit;
-        }
-
         private double GetEntryEmaSlopePoints()
         {
             if (activeEma == null || CurrentBar < 1)
@@ -3789,109 +3723,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 : slopePoints <= -activeEntryEmaMinSlopePoints;
         }
 
-        private double GetInitialEntryPrice(bool useOpenLimitEntry)
+        private double GetInitialEntryPrice()
         {
-            if (useOpenLimitEntry)
-                return Instrument.MasterInstrument.RoundToTickSize(Open[0]);
-
             return Instrument.MasterInstrument.RoundToTickSize(Close[0]);
         }
 
-        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, bool useMarketEntry)
+        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
         {
             if (isLong)
             {
                 pendingLongStopForWebhook = stopPrice;
                 SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
                 SetProfitTargetByDistanceTicks(LongEntrySignal, takeProfitPoints);
-                SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, quantity);
+                SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, true, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice + takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitLongEntryOrder(quantity, entryPrice, useMarketEntry, LongEntrySignal);
+                SubmitLongEntryOrder(quantity, LongEntrySignal);
             }
             else
             {
                 pendingShortStopForWebhook = stopPrice;
                 SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
                 SetProfitTargetByDistanceTicks(ShortEntrySignal, takeProfitPoints);
-                SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, useMarketEntry, quantity);
+                SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, true, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice - takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitShortEntryOrder(quantity, entryPrice, useMarketEntry, ShortEntrySignal);
+                SubmitShortEntryOrder(quantity, ShortEntrySignal);
             }
         }
 
-        private void QueueOpenLimitEntryResubmit(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
+        private void SubmitLongEntryOrder(int quantity, string signalName)
         {
-            pendingOpenLimitEntryResubmit = true;
-            pendingOpenLimitEntryIsLong = isLong;
-            pendingOpenLimitEntryQuantity = quantity;
-            pendingOpenLimitEntryPrice = entryPrice;
-            pendingOpenLimitStopPrice = stopPrice;
-            pendingOpenLimitTakeProfitPoints = takeProfitPoints;
-            pendingOpenLimitTakeProfitPrice = takeProfitPrice;
-            pendingOpenLimitEntryBar = CurrentBar;
+            EnterLong(quantity, signalName);
         }
 
-        private void ClearPendingOpenLimitEntryResubmit()
+        private void SubmitShortEntryOrder(int quantity, string signalName)
         {
-            pendingOpenLimitEntryResubmit = false;
-            pendingOpenLimitEntryIsLong = false;
-            pendingOpenLimitEntryQuantity = 0;
-            pendingOpenLimitEntryPrice = 0.0;
-            pendingOpenLimitStopPrice = 0.0;
-            pendingOpenLimitTakeProfitPoints = 0.0;
-            pendingOpenLimitTakeProfitPrice = 0.0;
-            pendingOpenLimitEntryBar = -1;
-        }
-
-        private bool TrySubmitQueuedOpenLimitEntryAfterCancel(string cancelledOrderName)
-        {
-            if (!pendingOpenLimitEntryResubmit)
-                return false;
-
-            bool cancelledLong = IsLongEntryOrderName(cancelledOrderName);
-            bool cancelledShort = IsShortEntryOrderName(cancelledOrderName);
-            if ((pendingOpenLimitEntryIsLong && !cancelledLong) || (!pendingOpenLimitEntryIsLong && !cancelledShort))
-                return false;
-
-            if (Position.MarketPosition != MarketPosition.Flat || pendingOpenLimitEntryBar != CurrentBar || !IsEntryOpenLimitEnabled())
-            {
-                ClearPendingOpenLimitEntryResubmit();
-                return false;
-            }
-
-            bool isLong = pendingOpenLimitEntryIsLong;
-            int quantity = pendingOpenLimitEntryQuantity;
-            double entryPrice = pendingOpenLimitEntryPrice;
-            double stopPrice = pendingOpenLimitStopPrice;
-            double takeProfitPoints = pendingOpenLimitTakeProfitPoints;
-            double takeProfitPrice = pendingOpenLimitTakeProfitPrice;
-            ClearPendingOpenLimitEntryResubmit();
-
-            SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, false);
-            LogDebug(string.Format(
-                "Open-limit entry replaced | side={0} session={1} entry={2:0.00} stop={3:0.00} qty={4}",
-                isLong ? "Long" : "Short",
-                FormatSessionLabel(activeSession),
-                entryPrice,
-                stopPrice,
-                quantity));
-            return true;
-        }
-
-        private void SubmitLongEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
-        {
-            if (isMarketEntry)
-                EnterLong(quantity, signalName);
-            else
-                EnterLongLimit(0, true, quantity, entryPrice, signalName);
-        }
-
-        private void SubmitShortEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
-        {
-            if (isMarketEntry)
-                EnterShort(quantity, signalName);
-            else
-                EnterShortLimit(0, true, quantity, entryPrice, signalName);
+            EnterShort(quantity, signalName);
         }
 
         private double GetAdxSlopePoints()
@@ -7577,11 +7443,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "Asia 1", Order = 23)]
         public double AsiaEntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 1", Order = 24)]
-        public bool AsiaEntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 1", Order = 36)]
@@ -7673,11 +7534,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "Asia 2", Order = 23)]
         public double Asia2EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 2", Order = 24)]
-        public bool Asia2EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 2", Order = 36)]
@@ -7769,11 +7625,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "Asia 3", Order = 23)]
         public double Asia3EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "Asia 3", Order = 24)]
-        public bool Asia3EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 3", Order = 36)]
@@ -7864,11 +7715,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "London 1", Order = 23)]
         public double LondonEntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 1", Order = 24)]
-        public bool LondonEntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "London 1", Order = 36)]
@@ -7960,11 +7806,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "London 2", Order = 23)]
         public double London2EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 2", Order = 24)]
-        public bool London2EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "London 2", Order = 36)]
@@ -8060,11 +7901,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "London 3", Order = 23)]
         public double London3EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "London 3", Order = 24)]
-        public bool London3EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "London 3", Order = 36)]
@@ -8151,11 +7987,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "New York 1", Order = 23)]
         public double NewYorkEntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 1", Order = 24)]
-        public bool NewYorkEntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 1", Order = 37)]
@@ -8243,11 +8074,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "New York 2", Order = 23)]
         public double NewYork2EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 2", Order = 24)]
-        public bool NewYork2EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 2", Order = 37)]
@@ -8335,11 +8161,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "New York 3", Order = 23)]
         public double NewYork3EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 3", Order = 24)]
-        public bool NewYork3EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 3", Order = 37)]
@@ -8426,11 +8247,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "New York 4", Order = 23)]
         public double NewYork4EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 4", Order = 24)]
-        public bool NewYork4EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 4", Order = 37)]
@@ -8517,11 +8333,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "New York 5", Order = 23)]
         public double NewYork5EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 5", Order = 24)]
-        public bool NewYork5EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 5", Order = 37)]
@@ -8608,11 +8419,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry EMA Min Slope (Points/Bar)", Description = "0 disables. Long entries require EMA slope >= this value; short entries require EMA slope <= negative this value.", GroupName = "New York 6", Order = 23)]
         public double NewYork6EntryEmaMinSlopePoints { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Open Limit", Description = "If enabled, places initial entries as limit orders at the signal candle open and replaces unfilled same-side entries on each new valid signal candle.", GroupName = "New York 6", Order = 24)]
-        public bool NewYork6EntryOpenLimit { get; set; }
-
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "New York 6", Order = 37)]
