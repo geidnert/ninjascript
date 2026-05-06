@@ -1110,8 +1110,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!longOrderActive)
                 {
-                    SubmitPreparedInitialEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
-                    LogDebug(string.Format("Place LONG market | session={0} entry={1:0.00} stop={2:0.00} qty={3}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
+                    string entrySignal = BuildSessionEntrySignalName(activeSession, true);
+                    SubmitPreparedInitialEntry(true, entrySignal, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
+                    LogDebug(string.Format("Place LONG market | session={0} signal={1} entry={2:0.00} stop={3:0.00} qty={4}", FormatSessionLabel(activeSession), entrySignal, entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1148,8 +1149,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (!shortOrderActive)
                 {
-                    SubmitPreparedInitialEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
-                    LogDebug(string.Format("Place SHORT market | session={0} entry={1:0.00} stop={2:0.00} qty={3}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
+                    string entrySignal = BuildSessionEntrySignalName(activeSession, false);
+                    SubmitPreparedInitialEntry(false, entrySignal, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
+                    LogDebug(string.Format("Place SHORT market | session={0} signal={1} entry={2:0.00} stop={3:0.00} qty={4}", FormatSessionLabel(activeSession), entrySignal, entryPrice, stopPrice, qty));
                 }
                 else if (DebugLogging)
                 {
@@ -1531,12 +1533,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
         private bool IsLongEntryOrderName(string orderName)
         {
-            return string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal);
+            return IsEntryOrderNameForBaseSignal(orderName, LongEntrySignal);
         }
 
         private bool IsShortEntryOrderName(string orderName)
         {
-            return string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal);
+            return IsEntryOrderNameForBaseSignal(orderName, ShortEntrySignal);
+        }
+
+        private bool IsEntryOrderNameForBaseSignal(string orderName, string baseSignal)
+        {
+            if (string.IsNullOrEmpty(orderName))
+                return false;
+
+            return string.Equals(orderName, baseSignal, StringComparison.Ordinal)
+                || orderName.EndsWith("_" + baseSignal, StringComparison.Ordinal);
         }
 
         private string GetOpenLongEntrySignal()
@@ -1547,6 +1558,43 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string GetOpenShortEntrySignal()
         {
             return IsShortEntryOrderName(currentPositionEntrySignal) ? currentPositionEntrySignal : ShortEntrySignal;
+        }
+
+        private string BuildSessionEntrySignalName(SessionSlot session, bool isLong)
+        {
+            string baseSignal = isLong ? LongEntrySignal : ShortEntrySignal;
+            return string.Format("{0}_{1}", FormatSessionExportCode(session), baseSignal);
+        }
+
+        private string FormatSessionExportCode(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia:
+                    return "A1";
+                case SessionSlot.Asia2:
+                    return "A2";
+                case SessionSlot.Asia3:
+                    return "A3";
+                case SessionSlot.London:
+                    return "L1";
+                case SessionSlot.London2:
+                    return "L2";
+                case SessionSlot.London3:
+                    return "L3";
+                case SessionSlot.NewYork:
+                    return "NY1";
+                case SessionSlot.NewYork2:
+                    return "NY2";
+                case SessionSlot.NewYork3:
+                    return "NY3";
+                case SessionSlot.NewYork4:
+                    return "NY4";
+                case SessionSlot.NewYork5:
+                    return "NY5";
+                default:
+                    return "NOSESSION";
+            }
         }
 
         private string BuildExitSignalName(string reason)
@@ -3205,7 +3253,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     string fromEntrySignal = accountOrder.FromEntrySignal ?? string.Empty;
                     bool signalMatches = fromEntrySignal.Length == 0
                         || entrySignal.Length == 0
-                        || string.Equals(fromEntrySignal, entrySignal, StringComparison.Ordinal);
+                        || string.Equals(fromEntrySignal, entrySignal, StringComparison.Ordinal)
+                        || (string.IsNullOrEmpty(currentPositionEntrySignal) && IsEntryOrderName(fromEntrySignal));
 
                     if (!signalMatches)
                         continue;
@@ -3459,25 +3508,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
 
-        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
+        private void SubmitPreparedInitialEntry(bool isLong, string entrySignal, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
         {
             if (isLong)
             {
                 pendingLongStopForWebhook = stopPrice;
-                SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
-                SetProfitTargetByDistanceTicks(LongEntrySignal, takeProfitPoints);
+                SetStopLossByDistanceTicks(entrySignal, entryPrice, stopPrice);
+                SetProfitTargetByDistanceTicks(entrySignal, takeProfitPoints);
                 SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice + takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitLongEntryOrder(quantity, LongEntrySignal);
+                SubmitLongEntryOrder(quantity, entrySignal);
             }
             else
             {
                 pendingShortStopForWebhook = stopPrice;
-                SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
-                SetProfitTargetByDistanceTicks(ShortEntrySignal, takeProfitPoints);
+                SetStopLossByDistanceTicks(entrySignal, entryPrice, stopPrice);
+                SetProfitTargetByDistanceTicks(entrySignal, takeProfitPoints);
                 SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice - takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitShortEntryOrder(quantity, ShortEntrySignal);
+                SubmitShortEntryOrder(quantity, entrySignal);
             }
         }
         private void SubmitLongEntryOrder(int quantity, string signalName)
