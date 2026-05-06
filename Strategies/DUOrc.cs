@@ -587,7 +587,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2CandleReversalMinBodyPoints = 2;
 
                 London3SessionStart = new TimeSpan(5, 00, 0);
-                London3SessionEnd = new TimeSpan(8, 00, 0);
+                London3SessionEnd = new TimeSpan(7, 30, 0);
                 London3FlatByTime = "08:25";
                 AutoShiftLondon3 = true;
                 London3EmaPeriod = 21;
@@ -690,13 +690,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5EntryMinBodyPoints = 3;
                 NewYork5AdxPeriod = 21;
                 NewYork5AdxThreshold = 18.3;
-                NewYork5AdxMaxThreshold = 42.2;
+                NewYork5AdxMaxThreshold = 42.4;
                 NewYork5AdxPeakDrawdownExitUnits = 6.4;
                 NewYork5AdxAbsoluteExitLevel = 22.4;
                 NewYork5StopPaddingPoints = 131.5;
                 NewYork5TrailHardStop = true;
                 NewYork5TakeProfitPoints = 180;
-                NewYork5AtrMinimum = 24.5;
+                NewYork5AtrMinimum = 15.8;
                 NewYork5EntryOpenLimit = false;
                 NewYork5CandleReversalExitBars = 16;
                 NewYork5CandleReversalCloseBeyondPoints = 2.25;
@@ -704,22 +704,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 NewYork6SessionStart = new TimeSpan(15, 00, 0);
                 NewYork6SessionEnd = new TimeSpan(16, 00, 0);
-                NewYork6EmaPeriod = 18;
+                NewYork6EmaPeriod = 21;
                 NewYork6Contracts = 0;
-                NewYork6EntryMinBodyPoints = 3.25;
+                NewYork6EntryMinBodyPoints = 0;
                 NewYork6AdxPeriod = 14;
-                NewYork6AdxThreshold = 23.1;
-                NewYork6AdxMaxThreshold = 37.5;
-                NewYork6AdxPeakDrawdownExitUnits = 13.3;
-                NewYork6AdxAbsoluteExitLevel = 63;
-                NewYork6StopPaddingPoints = 57;
+                NewYork6AdxThreshold = 0;
+                NewYork6AdxMaxThreshold = 0;
+                NewYork6AdxPeakDrawdownExitUnits = 0;
+                NewYork6AdxAbsoluteExitLevel = 0;
+                NewYork6StopPaddingPoints = 0;
                 NewYork6TrailHardStop = false;
-                NewYork6TakeProfitPoints = 175.75;
-                NewYork6AtrMinimum = 15.9;
+                NewYork6TakeProfitPoints = 0;
+                NewYork6AtrMinimum = 0;
                 NewYork6EntryOpenLimit = false;
-                NewYork6CandleReversalExitBars = 7;
-                NewYork6CandleReversalCloseBeyondPoints = 6.25;
-                NewYork6CandleReversalMinBodyPoints = 1.25;
+                NewYork6CandleReversalExitBars = 0;
+                NewYork6CandleReversalCloseBeyondPoints = 0;
+                NewYork6CandleReversalMinBodyPoints = 0;
 
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
