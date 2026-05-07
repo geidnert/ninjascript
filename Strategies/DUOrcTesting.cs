@@ -580,7 +580,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2CandleReversalMinBodyPoints = 2;
 
                 London3SessionStart = new TimeSpan(5, 00, 0);
-                London3SessionEnd = new TimeSpan(8, 00, 0);
+                London3SessionEnd = new TimeSpan(7, 30, 0);
                 London3FlatByTime = "08:25";
                 AutoShiftLondon3 = true;
                 London3EmaPeriod = 21;
@@ -678,13 +678,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5EntryMinBodyPoints = 3;
                 NewYork5AdxPeriod = 21;
                 NewYork5AdxThreshold = 18.3;
-                NewYork5AdxMaxThreshold = 42.2;
+                NewYork5AdxMaxThreshold = 42.4;
                 NewYork5AdxPeakDrawdownExitUnits = 6.4;
                 NewYork5AdxAbsoluteExitLevel = 22.4;
                 NewYork5StopPaddingPoints = 131.5;
                 NewYork5TrailHardStop = TrailHardStopMode.True;
                 NewYork5TakeProfitPoints = 180;
-                NewYork5AtrMinimum = 24.5;
+                NewYork5AtrMinimum = 15.8;
                 NewYork5CandleReversalExitBars = 16;
                 NewYork5CandleReversalCloseBeyondPoints = 2.25;
                 NewYork5CandleReversalMinBodyPoints = 2.75;
