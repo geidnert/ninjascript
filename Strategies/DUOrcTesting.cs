@@ -569,7 +569,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2CandleReversalMinBodyPoints = 2;
 
                 London3SessionStart = new TimeSpan(5, 00, 0);
-                London3SessionEnd = new TimeSpan(7, 30, 0);
+                London3SessionEnd = new TimeSpan(8, 00, 0);
                 London3FlatByTime = "08:25";
                 AutoShiftLondon3 = true;
                 London3EmaPeriod = 21;
