@@ -453,6 +453,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime realtimeInfoPreviewBarTime = DateTime.MinValue;
         private double realtimeInfoPreviewHigh = double.NaN;
         private double realtimeInfoPreviewLow = double.NaN;
+        private double realtimeInfoPreviewClose = double.NaN;
         private const double RealtimeInfoRefreshSeconds = 1.0;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
             Color.FromArgb(240, 0x2A, 0x2F, 0x45),
@@ -889,7 +890,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DrawSessionBackgrounds();
             DrawNewsWindows(Time[0]);
             UpdateTradeLines();
-            UpdateInfo();
 
             foreach (SessionSlot slot in ConfigurableSessionSlots)
                 ProcessSessionTransitions(slot);
@@ -904,6 +904,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             UpdateActiveSession(Time[0]);
             UpdateEmaPlotVisibility();
             UpdateAdxPlotVisibility();
+            UpdateInfo();
 
             if (AuditPositionProtection("bar-watchdog"))
                 return;
@@ -1234,11 +1235,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 realtimeInfoPreviewBarTime = barTime;
                 realtimeInfoPreviewHigh = Math.Max(High[0], price);
                 realtimeInfoPreviewLow = Math.Min(Low[0], price);
+                realtimeInfoPreviewClose = price;
                 return;
             }
 
             realtimeInfoPreviewHigh = Math.Max(realtimeInfoPreviewHigh, price);
             realtimeInfoPreviewLow = Math.Min(realtimeInfoPreviewLow, price);
+            realtimeInfoPreviewClose = price;
         }
 
         private void RefreshInfoFromRealtimeTick()
@@ -2524,6 +2527,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return hasConfiguredSession ? nextSlot : SessionSlot.None;
+        }
+
+        private SessionSlot DetermineCurrentSessionForTime(DateTime time)
+        {
+            foreach (SessionSlot slot in ConfigurableSessionSlots)
+            {
+                if (IsSessionConfigured(slot) && TimeInSession(slot, time))
+                    return slot;
+            }
+
+            return SessionSlot.None;
         }
 
         private SessionSlot GetFirstConfiguredSession()
@@ -5266,6 +5280,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lines.Add(("Contracts:", contractsText, Brushes.LightGray, Brushes.LightGray));
             lines.Add(("ADX:", adxState, Brushes.LightGray, adxBrush));
             lines.Add(("ATR:", atrState, Brushes.LightGray, atrBrush));
+            SessionSlot infoSession = DetermineCurrentSessionForTime(Time[0]);
+            var closeSignal = BuildFiveMinuteCloseSignalInfo(infoSession, adxValue, atrValue);
+            lines.Add(("5m Close:", closeSignal.value, Brushes.LightGray, closeSignal.brush));
             if (!UseNewsSkip)
             {
                 lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.LightGray));
@@ -5300,10 +5317,94 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
-            lines.Add(("Session:", FormatSessionLabel(activeSession), Brushes.LightGray, Brushes.LightGray));
+            lines.Add(("Session:", FormatSessionLabel(infoSession), Brushes.LightGray, Brushes.LightGray));
             lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
 
             return lines;
+        }
+
+        private (string value, Brush brush) BuildFiveMinuteCloseSignalInfo(SessionSlot infoSession, double adxValue, double atrValue)
+        {
+            if (!CanEvaluateFiveMinuteCloseSignal(infoSession, adxValue, atrValue))
+                return ("No Trade", Brushes.IndianRed);
+
+            double closePrice = GetInfoClosePrice();
+            double openPrice = Open[0];
+            double emaValue = activeEma[0];
+            double entryBodyPoints = Math.Abs(closePrice - openPrice);
+            if (activeEntryMinBodyPoints > 0.0 && entryBodyPoints < activeEntryMinBodyPoints)
+                return ("No Trade", Brushes.IndianRed);
+
+            bool bullish = closePrice > openPrice;
+            bool bearish = closePrice < openPrice;
+            if (bullish && GetBodyPercentAboveEma(openPrice, closePrice, emaValue) > 0.0 && !IsOrderActive(longEntryOrder))
+                return ("Long", Brushes.LimeGreen);
+
+            if (bearish && GetBodyPercentBelowEma(openPrice, closePrice, emaValue) > 0.0 && !IsOrderActive(shortEntryOrder))
+                return ("Short", Brushes.LimeGreen);
+
+            return ("No Trade", Brushes.IndianRed);
+        }
+
+        private bool CanEvaluateFiveMinuteCloseSignal(SessionSlot infoSession, double adxValue, double atrValue)
+        {
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
+                return false;
+
+            if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())))
+                return false;
+
+            if (infoSession == SessionSlot.None || activeSession != infoSession)
+                return false;
+
+            if (IsForceCloseTimeReached(Time[0]) || IsTemporaryBlockedTradingDate(Time[0]) || TimeInNewsSkip(Time[0]))
+                return false;
+
+            if (IsAccountBalanceInfoBlocked() || Position.MarketPosition != MarketPosition.Flat)
+                return false;
+
+            if (terminalExitPending || IsOrderActive(activeExitOrder) || GetEntryQuantity() <= 0)
+                return false;
+
+            if (activeEma == null || CurrentBar < activeEmaPeriod)
+                return false;
+
+            if (activeAdxThreshold > 0.0 && adxValue < activeAdxThreshold)
+                return false;
+
+            if (activeAdxMaxThreshold > 0.0 && adxValue > activeAdxMaxThreshold)
+                return false;
+
+            if (activeMinimumAtrForEntry > 0.0 && atrValue < activeMinimumAtrForEntry)
+                return false;
+
+            return true;
+        }
+
+        private bool IsAccountBalanceInfoBlocked()
+        {
+            if (MaxAccountBalance <= 0.0)
+                return false;
+
+            if (accountBalanceLimitReached)
+                return true;
+
+            double balance;
+            return TryGetCurrentCashValue(out balance) && balance >= MaxAccountBalance;
+        }
+
+        private double GetInfoClosePrice()
+        {
+            double closePrice = Close[0];
+            if (useRealtimeInfoPreview
+                && realtimeInfoPreviewBarTime == Time[0]
+                && !double.IsNaN(realtimeInfoPreviewClose)
+                && !double.IsInfinity(realtimeInfoPreviewClose))
+            {
+                closePrice = realtimeInfoPreviewClose;
+            }
+
+            return Instrument.MasterInstrument.RoundToTickSize(closePrice);
         }
 
         private string FormatInfoThresholdMetric(string state, double thresholdValue, double currentValue)
