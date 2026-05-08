@@ -137,6 +137,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double tradeLineTpPrice;
         private double tradeLineSlPrice;
         private readonly List<TradeLineSnapshot> historicalTradeLines = new List<TradeLineSnapshot>();
+        private readonly object tradeLineSnapshotsSync = new object();
 
         private EMA emaAsia;
         private EMA emaAsia2;
@@ -796,7 +797,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tradeLineEntryPrice = 0.0;
                 tradeLineTpPrice = 0.0;
                 tradeLineSlPrice = 0.0;
-                historicalTradeLines.Clear();
+                lock (tradeLineSnapshotsSync)
+                    historicalTradeLines.Clear();
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
                 UpdateAdxPlotVisibility();
@@ -1473,8 +1475,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!UseCustomTradeLineRendering() || RenderTarget == null || chartControl == null || chartScale == null || ChartBars == null)
                 return;
 
+            TradeLineSnapshot[] historicalSnapshots;
+            lock (tradeLineSnapshotsSync)
+                historicalSnapshots = historicalTradeLines.ToArray();
+
             bool hasActiveSegment = ShouldRenderActiveTradeLinesCustom();
-            bool hasHistoricalSegments = historicalTradeLines.Count > 0;
+            bool hasHistoricalSegments = historicalSnapshots.Length > 0;
             if (!hasActiveSegment && !hasHistoricalSegments)
                 return;
 
@@ -1485,7 +1491,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             using (var stopBrush = Brushes.Red.ToDxBrush(RenderTarget))
             using (var targetBrush = Brushes.LimeGreen.ToDxBrush(RenderTarget))
             {
-                foreach (TradeLineSnapshot snapshot in historicalTradeLines)
+                foreach (TradeLineSnapshot snapshot in historicalSnapshots)
                 {
                     DrawRenderedTradeLineSet(
                         chartControl,
@@ -2083,15 +2089,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             tradeLineExitBar = CurrentBar;
-            historicalTradeLines.Add(new TradeLineSnapshot
+            lock (tradeLineSnapshotsSync)
             {
-                StartBar = tradeLineSignalBar,
-                EndBar = tradeLineExitBar,
-                EntryPrice = tradeLineEntryPrice,
-                StopPrice = tradeLineSlPrice,
-                HasTakeProfit = tradeLineHasTp,
-                TakeProfitPrice = tradeLineTpPrice
-            });
+                historicalTradeLines.Add(new TradeLineSnapshot
+                {
+                    StartBar = tradeLineSignalBar,
+                    EndBar = tradeLineExitBar,
+                    EntryPrice = tradeLineEntryPrice,
+                    StopPrice = tradeLineSlPrice,
+                    HasTakeProfit = tradeLineHasTp,
+                    TakeProfitPrice = tradeLineTpPrice
+                });
+            }
             UpdateTradeLines();
             tradeLinesActive = false;
             ClearTradeLineState();
