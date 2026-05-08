@@ -34,120 +34,169 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             VendorLicense(1346);
         }
-        private const string StrategySignalPrefix = "HUGO";
-        private const string LongEntrySignal = StrategySignalPrefix + "Long";
-        private const string ShortEntrySignal = StrategySignalPrefix + "Short";
-        private const string HeartbeatStrategyName = "HUGO";
-        private const int RequiredPrimaryTimeframeMinutes = 15;
-
+        private const string StrategySignalPrefix    = "HUGO";
+        private const string LongEntrySignalName      = StrategySignalPrefix + "Long";
+        private const string ShortEntrySignalName     = StrategySignalPrefix + "Short";
+        private const string HeartbeatStrategyName    = "HUGO";
+        private const int    RequiredPrimaryTimeframeMinutes = 15;
         #region Private Variables
-        // EMA instances — one per bucket (may share same length but kept separate for flexibility)
-        private EMA emaL1, emaL2, emaS1, emaS2;
-        // We also need a "detection" EMA to spot crossovers — use the shortest of the four
-        // Actually, crossover detection needs a consistent EMA. We'll use all four and check per-direction.
-        // For long signals: we need to detect Close crosses above EMA. Which EMA? 
-        // The crossover is direction-specific, so longs use the long EMAs and shorts use the short EMAs.
-        // But we have TWO long EMAs (L1, L2) — the bucket is determined AFTER the crossover.
-        // Solution: detect crossover using BOTH long EMAs — if close crosses above EITHER, it's a long signal.
-        // Then measure candle size to pick bucket.
-        // HOWEVER: the original design uses a single EMA for crossover detection.
-        // With per-bucket EMAs, we need a strategy: use the LONGER of the two for crossover detection
-        // per direction, or require crossover on the SPECIFIC bucket's EMA.
-        // Simplest correct approach: detect crossover on EACH bucket's EMA independently.
-        // A long signal fires for L1 if close crosses above emaL1, and for L2 if close crosses above emaL2.
-        // Then candle size determines which bucket actually takes the trade.
-        // If both L1 and L2 EMAs are crossed on the same bar, the candle size picks the right one.
-        // This is the cleanest approach.
 
-        // Signal tracking
-        private bool longSignalActive;
-        private bool shortSignalActive;
-        private int signalBar;
+        private double dailyPnL_Sess1_L1;
+        private int    dailyTradeCount_Sess1_L1;
+        private bool   dailyLossHit_Sess1_L1;
+        private bool   dailyProfitHit_Sess1_L1;
+        private double dailyPnL_Sess1_L2;
+        private int    dailyTradeCount_Sess1_L2;
+        private bool   dailyLossHit_Sess1_L2;
+        private bool   dailyProfitHit_Sess1_L2;
+        private double dailyPnL_Sess1_S1;
+        private int    dailyTradeCount_Sess1_S1;
+        private bool   dailyLossHit_Sess1_S1;
+        private bool   dailyProfitHit_Sess1_S1;
+        private double dailyPnL_Sess1_S2;
+        private int    dailyTradeCount_Sess1_S2;
+        private bool   dailyLossHit_Sess1_S2;
+        private bool   dailyProfitHit_Sess1_S2;
+        private double dailyPnL_Sess2_L1;
+        private int    dailyTradeCount_Sess2_L1;
+        private bool   dailyLossHit_Sess2_L1;
+        private bool   dailyProfitHit_Sess2_L1;
+        private double dailyPnL_Sess2_L2;
+        private int    dailyTradeCount_Sess2_L2;
+        private bool   dailyLossHit_Sess2_L2;
+        private bool   dailyProfitHit_Sess2_L2;
+        private double dailyPnL_Sess2_S1;
+        private int    dailyTradeCount_Sess2_S1;
+        private bool   dailyLossHit_Sess2_S1;
+        private bool   dailyProfitHit_Sess2_S1;
+        private double dailyPnL_Sess2_S2;
+        private int    dailyTradeCount_Sess2_S2;
+        private bool   dailyLossHit_Sess2_S2;
+        private bool   dailyProfitHit_Sess2_S2;
+        private double dailyPnL_Sess3_L1;
+        private int    dailyTradeCount_Sess3_L1;
+        private bool   dailyLossHit_Sess3_L1;
+        private bool   dailyProfitHit_Sess3_L1;
+        private double dailyPnL_Sess3_L2;
+        private int    dailyTradeCount_Sess3_L2;
+        private bool   dailyLossHit_Sess3_L2;
+        private bool   dailyProfitHit_Sess3_L2;
+        private double dailyPnL_Sess3_S1;
+        private int    dailyTradeCount_Sess3_S1;
+        private bool   dailyLossHit_Sess3_S1;
+        private bool   dailyProfitHit_Sess3_S1;
+        private double dailyPnL_Sess3_S2;
+        private int    dailyTradeCount_Sess3_S2;
+        private bool   dailyLossHit_Sess3_S2;
+        private bool   dailyProfitHit_Sess3_S2;
+        private double dailyPnL_Sess4_L1;
+        private int    dailyTradeCount_Sess4_L1;
+        private bool   dailyLossHit_Sess4_L1;
+        private bool   dailyProfitHit_Sess4_L1;
+        private double dailyPnL_Sess4_L2;
+        private int    dailyTradeCount_Sess4_L2;
+        private bool   dailyLossHit_Sess4_L2;
+        private bool   dailyProfitHit_Sess4_L2;
+        private double dailyPnL_Sess4_S1;
+        private int    dailyTradeCount_Sess4_S1;
+        private bool   dailyLossHit_Sess4_S1;
+        private bool   dailyProfitHit_Sess4_S1;
+        private double dailyPnL_Sess4_S2;
+        private int    dailyTradeCount_Sess4_S2;
+        private bool   dailyLossHit_Sess4_S2;
+        private bool   dailyProfitHit_Sess4_S2;
+
+        private EMA emaSess1_L1;
+        private EMA emaSess1_L2;
+        private EMA emaSess1_S1;
+        private EMA emaSess1_S2;
+        private EMA emaSess2_L1;
+        private EMA emaSess2_L2;
+        private EMA emaSess2_S1;
+        private EMA emaSess2_S2;
+        private EMA emaSess3_L1;
+        private EMA emaSess3_L2;
+        private EMA emaSess3_S1;
+        private EMA emaSess3_S2;
+        private EMA emaSess4_L1;
+        private EMA emaSess4_L2;
+        private EMA emaSess4_S1;
+        private EMA emaSess4_S2;
+        private WMA wmaSess1_L1;
+        private WMA wmaSess1_L2;
+        private WMA wmaSess1_S1;
+        private WMA wmaSess1_S2;
+        private WMA wmaSess2_L1;
+        private WMA wmaSess2_L2;
+        private WMA wmaSess2_S1;
+        private WMA wmaSess2_S2;
+        private WMA wmaSess3_L1;
+        private WMA wmaSess3_L2;
+        private WMA wmaSess3_S1;
+        private WMA wmaSess3_S2;
+        private WMA wmaSess4_L1;
+        private WMA wmaSess4_L2;
+        private WMA wmaSess4_S1;
+        private WMA wmaSess4_S2;
+
+        private bool   longSignalActive;
+        private bool   shortSignalActive;
+        private int    signalBar;
         private double crossoverCandleHigh;
         private double crossoverCandleLow;
-        private double signalEmaValue;
+        private Order  entryOrder;
 
-        // Filter wait tracking
-        private bool pendingLongFilterWait;
-        private bool pendingShortFilterWait;
-        private int filterWaitStartBar;
-        private string pendingFilterBucket; // which bucket is waiting
+        private double   globalDailyPnL;
+        private DateTime currentSessionDate;
+        private bool     globalDailyLossLimitHit;
+        private bool     globalDailyProfitLimitHit;
+        private int      globalDailyTradeCount;
 
-        // Order tracking
-        private Order entryOrder;
-        private string managedEntrySignal = string.Empty;
-        private int entrySignalSequence;
-
-        // Global Daily P&L tracking
-        private double globalDailyPnL;
-        private DateTime lastTradeDate;
-        private DateTime currentSessionDate;   // v1.10: session-anchored date (handles midnight crossing)
-        private bool globalDailyLossLimitHit;
-        private bool globalDailyProfitLimitHit;
-        private int globalDailyTradeCount;
-
-        // Per-bucket daily P&L tracking
-        private double dailyPnL_L1, dailyPnL_L2, dailyPnL_S1, dailyPnL_S2;
-        private int dailyTradeCount_L1, dailyTradeCount_L2, dailyTradeCount_S1, dailyTradeCount_S2;
-        private bool dailyLossHit_L1, dailyLossHit_L2, dailyLossHit_S1, dailyLossHit_S2;
-        private bool dailyProfitHit_L1, dailyProfitHit_L2, dailyProfitHit_S1, dailyProfitHit_S2;
-
-        // Position tracking
         private double entryPrice;
         private double currentStopPrice;
-        private double currentTargetPrice;
-        private bool breakEvenMoved;
-        private int currentTradeDirection;
-        private string activeBucket; // which bucket owns the current position
+        private bool   breakEvenMoved;
+        private int    currentTradeDirection;
+        private string activeBucket;
+        private int    activeSession;
+        private int    pendingDirection;
 
-        // Pending direction
-        private int pendingDirection;
+        private int[]    lastTradeDirection = new int[5];
+        private double[] lastTradePnL       = new double[5];
 
-        // Direction flip tracking (global)
-        private int lastTradeDirection;
-        private double lastTradePnL;
-
-        // v1.03: Price-Trailing Stop state
         private double bestPriceSinceEntry;
-        private bool trailActivated;
-        private bool trailLocked;
+        private bool   trailActivated;
+        private bool   trailLocked;
         private double initialStopDistance;
         private double initialTPDistance;
 
-        // v1.06: Max Bars in Trade
-        private int entryBar;
-
-        // v1.06: SL to Entry on EMA Cross
-        private bool slMovedToEntryOnEMA;
-
-        // v1.06: Skip Time Window
         private bool inSkipWindow;
         private bool inNewsSkipWindow;
-        private bool maxAccountLimitHit;
-        private bool isConfiguredTimeframeValid = true;
-        private bool isConfiguredInstrumentValid = true;
-        private bool timeframePopupShown;
-        private bool instrumentPopupShown;
-        // v1.07: WMA / SMA / ADX indicators — one per bucket
-        private WMA wmaL1, wmaL2, wmaS1, wmaS2;
-        private SMA smaL1, smaL2, smaS1, smaS2;
-        private ADX adxL1, adxL2, adxS1, adxS2;
-        private StrategyHeartbeatReporter heartbeatReporter;
+
+        // ── Commercial / AutoEdge additions ──────────────────────────────────
+        private bool     maxAccountLimitHit;
+        private bool     isConfiguredTimeframeValid  = true;
+        private bool     isConfiguredInstrumentValid = true;
+        private bool     timeframePopupShown;
+        private bool     instrumentPopupShown;
 
         // Info box overlay
-        private Border infoBoxContainer;
-        private StackPanel infoBoxRowsPanel;
+        private Border      infoBoxContainer;
+        private StackPanel  infoBoxRowsPanel;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
             Color.FromArgb(240, 0x2A, 0x2F, 0x45),
             Color.FromArgb(240, 0x1E, 0x23, 0x36),
             Color.FromArgb(240, 0x14, 0x18, 0x28));
-        private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
-        private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
-        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(255, 0x8B, 0x45, 0x13);
-        private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
-        private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
-        private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
+        private static readonly Brush InfoBodyOddBrush     = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
+        private static readonly Brush InfoBodyEvenBrush    = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
+        private static readonly Brush InfoHeaderTextBrush  = CreateFrozenBrush(255, 0x8B, 0x45, 0x13);
+        private static readonly Brush InfoLabelBrush       = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
+        private static readonly Brush InfoValueBrush       = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
+        private static readonly Brush PassedNewsRowBrush   = CreateFrozenBrush(30, 211, 211, 211);
 
+        // Heartbeat reporter (TopstepX API)
+        private StrategyHeartbeatReporter heartbeatReporter;
+
+        // News dates
         private static readonly string NewsDatesRaw =
 @"2025-01-02,08:30
 2025-01-08,08:30
@@ -365,9 +414,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 2026-12-24,08:30
 2026-12-30,14:00
 2026-12-31,08:30";
-        private static readonly List<DateTime> NewsDates = new List<DateTime>();
-        private static bool newsDatesInitialized;
-
+        private readonly List<DateTime> NewsDates = new List<DateTime>();
+        private bool newsDatesInitialized;
 
         #endregion
 
@@ -377,81 +425,61 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         #region Common Parameters
 
-        // ── Time Settings ─────────────────────────────────────────────────────
         [NinjaScriptProperty]
-        [Display(Name = "Session Start Time", Description = "Midnight-crossing anchor. Resets daily counters at this time. Set to the true start of the trading session (e.g. 18:00 for NQ).", Order = 1, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "Session Start Time (Daily Reset Anchor)", Description = "CME daily reset anchor - typically 18:00 for NQ.", Order = 1, GroupName = "0. Common - Time Settings")]
         [Browsable(false)]
         public string SessionStartTime { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Window Start", Description = "Earliest time at which new entries are allowed. Can be later than Session Start Time.", Order = 2, GroupName = "0. Common - Time Settings")]
-        [Browsable(false)]
-        public string TradeWindowStart { get; set; }
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Contract Quantity", Order = 2, GroupName = "0. Common - Time Settings")]
+        public int ContractQuantity { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Last Entry Time", Order = 3, GroupName = "0. Common - Time Settings")]
-        [Browsable(false)]
-        public string LastEntryTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Force Close Time", Order = 4, GroupName = "0. Common - Time Settings")]
-        [Browsable(false)]
-        public string ForceCloseTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Session End Time", Order = 5, GroupName = "0. Common - Time Settings")]
-        [Browsable(false)]
-        public string SessionEndTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Skip Time Window", Order = 6, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "Enable Skip Time Window", Order = 3, GroupName = "0. Common - Time Settings")]
         [Browsable(false)]
         public bool EnableSkipTime { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Skip Time Start", Order = 7, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "Skip Time Start", Order = 4, GroupName = "0. Common - Time Settings")]
         [Browsable(false)]
         public string SkipTimeStart { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Skip Time End", Order = 8, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "Skip Time End", Order = 5, GroupName = "0. Common - Time Settings")]
         [Browsable(false)]
         public string SkipTimeEnd { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flatten Position at Skip Start", Order = 9, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "Flatten Position at Skip Start", Order = 6, GroupName = "0. Common - Time Settings")]
         [Browsable(false)]
         public bool FlattenAtSkipStart { get; set; }
 
+        // ── News Skip ────────────────────────────────────────────────────────
         [NinjaScriptProperty]
-        [Display(Name = "Use News Skip", Order = 10, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "Use News Skip", Order = 7, GroupName = "0. Common - Time Settings")]
         public bool UseNewsSkip { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "News Time", Order = 11, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "News Time", Order = 8, GroupName = "0. Common - Time Settings")]
         [Browsable(false)]
         public string NewsTime { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 240)]
-        [Display(Name = "News Block Minutes", Order = 12, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "News Block Minutes", Order = 9, GroupName = "0. Common - Time Settings")]
         public int NewsBlockMinutes { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Flatten Position at News Start", Order = 13, GroupName = "0. Common - Time Settings")]
+        [Display(Name = "Flatten Position at News Start", Order = 10, GroupName = "0. Common - Time Settings")]
         [Browsable(false)]
         public bool FlattenAtNewsStart { get; set; }
 
-        // ── Contract Size ─────────────────────────────────────────────────────
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contract Quantity", Order = 14, GroupName = "0. Common - Time Settings")]
-        public int ContractQuantity { get; set; }
-
+        // ── Execution ────────────────────────────────────────────────────────
         [NinjaScriptProperty]
         [Display(Name = "Entry Confirmation", Order = 1, GroupName = "0. Common - Execution")]
         public bool RequireEntryConfirmation { get; set; }
 
+        // ── Webhooks ─────────────────────────────────────────────────────────
         [NinjaScriptProperty]
         [Display(Name = "TradersPost Webhook URL", Order = 1, GroupName = "0. Common - Webhooks")]
         public string WebhookUrl { get; set; }
@@ -460,15 +488,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Webhook Ticker Override", Order = 2, GroupName = "0. Common - Webhooks")]
         public string WebhookTickerOverride { get; set; }
 
-        // ── Global Risk Management ────────────────────────────────────────────
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max Account Balance", Description = "When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.", Order = 0, GroupName = "0. Common - Global Risk")]
-        public double MaxAccountBalance { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Global Max Daily Loss", Order = 1, GroupName = "0. Common - Global Risk")]
-        [Browsable(false)]
+        // ── Contract Size ────────────────────────────────────────────────────
         public bool EnableGlobalMaxDailyLoss { get; set; }
 
         [NinjaScriptProperty]
@@ -499,1126 +519,4793 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         public int GlobalMaxTradesPerDay { get; set; }
 
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Account Balance", Description = "Net liquidation ceiling. When reached, entries are blocked and open positions are flattened. 0 = disabled.", Order = 7, GroupName = "0. Common - Global Risk")]
+        public double MaxAccountBalance { get; set; }
+
         #endregion
 
         // ════════════════════════════════════════════════════════════════════════
-        //  L1: LONG — SMALL CANDLE
+        //  PER-SESSION TIME SETTINGS + BUCKET PARAMETERS
         // ════════════════════════════════════════════════════════════════════════
 
-        #region L1 Parameters
+        #region Per-Session Time Settings
 
         [NinjaScriptProperty]
-        [Display(Name = "L1 Enable", Description = "Enable Long Small Candle bucket", Order = 0, GroupName = "L1.0 Bucket Settings")]
+        [Display(Name = "S1 Enable Session", Description = "Enable or disable this entire session.", Order = 1, GroupName = "1. Session 1 - Times")]
         [Browsable(false)]
-        public bool L1_Enable { get; set; }
+        public bool Sess1_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 Trade Window Start", Order = 2, GroupName = "1. Session 1 - Times")]
+        [Browsable(false)]
+        public string Sess1_TradeWindowStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 Last Entry Time", Order = 3, GroupName = "1. Session 1 - Times")]
+        [Browsable(false)]
+        public string Sess1_LastEntryTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 Enable Force Close", Order = 4, GroupName = "1. Session 1 - Times")]
+        [Browsable(false)]
+        public bool Sess1_EnableForceClose { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 Force Close Time", Order = 5, GroupName = "1. Session 1 - Times")]
+        [Browsable(false)]
+        public string Sess1_ForceCloseTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 Session End Time", Order = 6, GroupName = "1. Session 1 - Times")]
+        [Browsable(false)]
+        public string Sess1_SessionEndTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 Enable Session", Description = "Enable or disable this entire session.", Order = 1, GroupName = "1. Session 2 - Times")]
+        [Browsable(false)]
+        public bool Sess2_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 Trade Window Start", Order = 2, GroupName = "1. Session 2 - Times")]
+        [Browsable(false)]
+        public string Sess2_TradeWindowStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 Last Entry Time", Order = 3, GroupName = "1. Session 2 - Times")]
+        [Browsable(false)]
+        public string Sess2_LastEntryTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 Enable Force Close", Order = 4, GroupName = "1. Session 2 - Times")]
+        [Browsable(false)]
+        public bool Sess2_EnableForceClose { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 Force Close Time", Order = 5, GroupName = "1. Session 2 - Times")]
+        [Browsable(false)]
+        public string Sess2_ForceCloseTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 Session End Time", Order = 6, GroupName = "1. Session 2 - Times")]
+        [Browsable(false)]
+        public string Sess2_SessionEndTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 Enable Session", Description = "Enable or disable this entire session.", Order = 1, GroupName = "1. Session 3 - Times")]
+        [Browsable(false)]
+        public bool Sess3_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 Trade Window Start", Order = 2, GroupName = "1. Session 3 - Times")]
+        [Browsable(false)]
+        public string Sess3_TradeWindowStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 Last Entry Time", Order = 3, GroupName = "1. Session 3 - Times")]
+        [Browsable(false)]
+        public string Sess3_LastEntryTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 Enable Force Close", Order = 4, GroupName = "1. Session 3 - Times")]
+        [Browsable(false)]
+        public bool Sess3_EnableForceClose { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 Force Close Time", Order = 5, GroupName = "1. Session 3 - Times")]
+        [Browsable(false)]
+        public string Sess3_ForceCloseTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 Session End Time", Order = 6, GroupName = "1. Session 3 - Times")]
+        [Browsable(false)]
+        public string Sess3_SessionEndTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 Enable Session", Description = "Enable or disable this entire session.", Order = 1, GroupName = "1. Session 4 - Times")]
+        [Browsable(false)]
+        public bool Sess4_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 Trade Window Start", Order = 2, GroupName = "1. Session 4 - Times")]
+        [Browsable(false)]
+        public string Sess4_TradeWindowStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 Last Entry Time", Order = 3, GroupName = "1. Session 4 - Times")]
+        [Browsable(false)]
+        public string Sess4_LastEntryTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 Enable Force Close", Order = 4, GroupName = "1. Session 4 - Times")]
+        [Browsable(false)]
+        public bool Sess4_EnableForceClose { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 Force Close Time", Order = 5, GroupName = "1. Session 4 - Times")]
+        [Browsable(false)]
+        public string Sess4_ForceCloseTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 Session End Time", Order = 6, GroupName = "1. Session 4 - Times")]
+        [Browsable(false)]
+        public string Sess4_SessionEndTime { get; set; }
+
+        #endregion
+
+        // ════════════ SESSION 1 ════════════
+        #region Session 1 Bucket Parameters
+
+        // ── Sess1 L1 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess1.L1.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess1_L1_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Min Candle Range (Points)", Description = "Minimum signal candle range for this bucket", Order = 1, GroupName = "L1.0 Bucket Settings")]
+        [Display(Name = "S1 L1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess1.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public double L1_MinCandleRange { get; set; }
+        public double Sess1_L1_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Max Candle Range (Points)", Description = "Maximum signal candle range for this bucket (0 = no max)", Order = 2, GroupName = "L1.0 Bucket Settings")]
+        [Display(Name = "S1 L1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess1.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public double L1_MaxCandleRange { get; set; }
+        public double Sess1_L1_MaxCandleRange { get; set; }
 
-        // EMA
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "L1 EMA Length", Order = 1, GroupName = "L1.1 EMA Settings")]
+        [Display(Name = "S1 L1 EMA Length", Order = 1, GroupName = "Sess1.L1.1 EMA Settings")]
         [Browsable(false)]
-        public int L1_EmaLength { get; set; }
+        public int Sess1_L1_EmaLength { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "L1 Enable EMA Slope Filter", Order = 2, GroupName = "L1.1 EMA Settings")]
+        [Display(Name = "S1 L1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess1.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool L1_EnableEmaSlope { get; set; }
+        public bool Sess1_L1_EnableEmaSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "L1 EMA Slope Mode", Order = 3, GroupName = "L1.1 EMA Settings")]
+        [Display(Name = "S1 L1 EMA Slope Mode", Order = 3, GroupName = "Sess1.L1.1 EMA Settings")]
         [Browsable(false)]
-        public Hugo_EmaSlopeModeEnum L1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "L1 EMA Slope Bars", Order = 4, GroupName = "L1.1 EMA Settings")]
-        [Browsable(false)]
-        public int L1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 EMA Min Slope %", Order = 5, GroupName = "L1.1 EMA Settings")]
-        [Browsable(false)]
-        public double L1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty][Display(Name = "L1 Enable WMA Filter", Order = 1, GroupName = "L1.1b WMA Filter")]
-        [Browsable(false)]
-        public bool L1_EnableWMAFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L1 WMA Length", Order = 2, GroupName = "L1.1b WMA Filter")]
-        [Browsable(false)]
-        public int L1_WMALength { get; set; }
-
-        [NinjaScriptProperty][Display(Name = "L1 Enable SMA Filter", Order = 1, GroupName = "L1.1c SMA Filter")]
-        [Browsable(false)]
-        public bool L1_EnableSMAFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L1 SMA Length", Order = 2, GroupName = "L1.1c SMA Filter")]
-        [Browsable(false)]
-        public int L1_SMALength { get; set; }
-
-        [NinjaScriptProperty][Display(Name = "L1 Enable ADX Filter", Order = 1, GroupName = "L1.1d ADX Filter")]
-        [Browsable(false)]
-        public bool L1_EnableADXFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L1 ADX Period", Order = 2, GroupName = "L1.1d ADX Filter")]
-        [Browsable(false)]
-        public int L1_ADXPeriod { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L1 ADX Min Value", Order = 3, GroupName = "L1.1d ADX Filter")]
-        [Browsable(false)]
-        public double L1_ADXMin { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L1 ADX Max Value", Order = 4, GroupName = "L1.1d ADX Filter")]
-        [Browsable(false)]
-        public double L1_ADXMax { get; set; }
-
-        // Entry
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Entry Type", Order = 1, GroupName = "L1.2 Entry Settings")]
-        [Browsable(false)]
-        public Hugo_EntryTypeEnum L1_EntryType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Pullback Offset (Points)", Order = 2, GroupName = "L1.2 Entry Settings")]
-        [Browsable(false)]
-        public double L1_PullbackOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "L1 Max Bars to Wait", Order = 3, GroupName = "L1.2 Entry Settings")]
-        [Browsable(false)]
-        public int L1_MaxBarsToWait { get; set; }
-
-        // Stop Loss
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Stop Loss Type", Order = 1, GroupName = "L1.3 Stop Loss")]
-        [Browsable(false)]
-        public Hugo_StopLossTypeEnum L1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "L1.3 Stop Loss")]
-        [Browsable(false)]
-        public double L1_FixedStopLoss { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L1 SL Candle Multiplier", Order = 2, GroupName = "L1.3 Stop Loss")]
-        [Browsable(false)]
-        public double L1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Stop Loss Offset (Points)", Order = 3, GroupName = "L1.3 Stop Loss")]
-        [Browsable(false)]
-        public double L1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Maximum Stop Loss (Points)", Order = 4, GroupName = "L1.3 Stop Loss")]
-        [Browsable(false)]
-        public double L1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Max Bars In Trade", Order = 5, GroupName = "L1.3 Stop Loss")]
-        [Browsable(false)]
-        public bool L1_EnableMaxBarsInTrade { get; set; }
+        public Hugo_EmaSlopeModeEnum Sess1_L1_EmaSlopeMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "L1 Max Bars In Trade", Order = 6, GroupName = "L1.3 Stop Loss")]
+        [Display(Name = "S1 L1 EMA Slope Bars", Order = 4, GroupName = "Sess1.L1.1 EMA Settings")]
         [Browsable(false)]
-        public int L1_MaxBarsInTrade { get; set; }
-
-        // Take Profit
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Take Profit Type", Order = 1, GroupName = "L1.4 Take Profit")]
-        [Browsable(false)]
-        public Hugo_TakeProfitTypeEnum L1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "L1 Risk Reward Ratio", Order = 2, GroupName = "L1.4 Take Profit")]
-        [Browsable(false)]
-        public double L1_RiskRewardRatio { get; set; }
+        public int Sess1_L1_EmaSlopeBars { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Fixed Take Profit (Points)", Order = 3, GroupName = "L1.4 Take Profit")]
+        [Display(Name = "S1 L1 EMA Min Slope %", Order = 5, GroupName = "Sess1.L1.1 EMA Settings")]
         [Browsable(false)]
-        public double L1_FixedTakeProfit { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L1 TP Candle Multiplier", Order = 4, GroupName = "L1.4 Take Profit")]
-        [Browsable(false)]
-        public double L1_TPCandleMultiplier { get; set; }
-
-        // Break Even
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Break Even", Order = 1, GroupName = "L1.5 Break Even")]
-        [Browsable(false)]
-        public bool L1_EnableBreakEven { get; set; }
+        public double Sess1_L1_EmaSlopeMinPct { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "L1 Break Even Trigger Type", Order = 2, GroupName = "L1.5 Break Even")]
+        [Display(Name = "S1 L1 Enable WMA Filter", Order = 1, GroupName = "Sess1.L1.1b WMA Filter")]
         [Browsable(false)]
-        public Hugo_BreakEvenTriggerEnum L1_BreakEvenTriggerType { get; set; }
+        public bool Sess1_L1_EnableWMAFilter { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Break Even Trigger Value", Order = 3, GroupName = "L1.5 Break Even")]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 L1 WMA Length", Order = 2, GroupName = "Sess1.L1.1b WMA Filter")]
         [Browsable(false)]
-        public double L1_BreakEvenTriggerValue { get; set; }
+        public int Sess1_L1_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Stop Loss Type", Order = 1, GroupName = "Sess1.L1.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess1_L1_StopLossType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Break Even Offset (Points)", Order = 4, GroupName = "L1.5 Break Even")]
+        [Display(Name = "S1 L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess1.L1.3 Stop Loss")]
         [Browsable(false)]
-        public double L1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable SL to Entry on EMA Cross", Order = 5, GroupName = "L1.5 Break Even")]
-        [Browsable(false)]
-        public bool L1_EnableSLToEntryOnEMA { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 SL to Entry Offset (Points)", Order = 6, GroupName = "L1.5 Break Even")]
-        [Browsable(false)]
-        public double L1_SLToEntryOffset { get; set; }
-
-        // Trailing Stop
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Price Trail Stop", Order = 1, GroupName = "L1.6 Trailing Stop")]
-        [Browsable(false)]
-        public bool L1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Trail Distance Mode", Order = 2, GroupName = "L1.6 Trailing Stop")]
-        [Browsable(false)]
-        public Hugo_TrailDistanceModeEnum L1_TrailDistanceMode { get; set; }
+        public double Sess1_L1_FixedStopLoss { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.01, double.MaxValue)]
-        [Display(Name = "L1 Trail Distance Value", Order = 3, GroupName = "L1.6 Trailing Stop")]
+        [Display(Name = "S1 L1 SL Candle Multiplier", Order = 3, GroupName = "Sess1.L1.3 Stop Loss")]
         [Browsable(false)]
-        public double L1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Trail Activation Mode", Order = 4, GroupName = "L1.6 Trailing Stop")]
-        [Browsable(false)]
-        public Hugo_TrailActivationModeEnum L1_TrailActivationMode { get; set; }
+        public double Sess1_L1_SLCandleMultiplier { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Trail Activation Value", Order = 5, GroupName = "L1.6 Trailing Stop")]
+        [Display(Name = "S1 L1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess1.L1.3 Stop Loss")]
         [Browsable(false)]
-        public double L1_TrailActivationValue { get; set; }
+        public double Sess1_L1_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess1.L1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_L1_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Take Profit Type", Order = 1, GroupName = "Sess1.L1.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess1_L1_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S1 L1 Risk Reward Ratio", Order = 2, GroupName = "Sess1.L1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_L1_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess1.L1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_L1_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 L1 TP Candle Multiplier", Order = 4, GroupName = "Sess1.L1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_L1_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Enable Break Even", Order = 1, GroupName = "Sess1.L1.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess1_L1_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Break Even Trigger Type", Order = 2, GroupName = "Sess1.L1.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess1_L1_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L1 Break Even Trigger Value", Order = 3, GroupName = "Sess1.L1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess1_L1_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L1 Break Even Offset (Points)", Order = 4, GroupName = "Sess1.L1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess1_L1_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Enable Price Trail Stop", Order = 1, GroupName = "Sess1.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess1_L1_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Trail Distance Mode", Order = 2, GroupName = "Sess1.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess1_L1_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 L1 Trail Distance Value", Order = 3, GroupName = "Sess1.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess1_L1_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Trail Activation Mode", Order = 4, GroupName = "Sess1.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess1_L1_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L1 Trail Activation Value", Order = 5, GroupName = "Sess1.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess1_L1_TrailActivationValue { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "L1 Trail Step (Ticks)", Order = 6, GroupName = "L1.6 Trailing Stop")]
+        [Display(Name = "S1 L1 Trail Step (Ticks)", Order = 6, GroupName = "Sess1.L1.6 Trailing Stop")]
         [Browsable(false)]
-        public int L1_TrailStepTicks { get; set; }
+        public int Sess1_L1_TrailStepTicks { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Trail Lock", Order = 7, GroupName = "L1.6 Trailing Stop")]
+        [Display(Name = "S1 L1 Enable Body % Filter", Order = 1, GroupName = "Sess1.L1.7 Signal Filters")]
         [Browsable(false)]
-        public bool L1_EnableTrailLock { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Trail Lock Value", Order = 8, GroupName = "L1.6 Trailing Stop")]
-        [Browsable(false)]
-        public double L1_TrailLockValue { get; set; }
-
-        // Signal Quality Filters
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Candle Size Filter", Order = 1, GroupName = "L1.7 Signal Filters")]
-        [Browsable(false)]
-        public bool L1_EnableCandleSizeFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Min Candle Size (Points)", Order = 2, GroupName = "L1.7 Signal Filters")]
-        [Browsable(false)]
-        public double L1_MinCandleSize { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Max Candle Size (Points)", Order = 3, GroupName = "L1.7 Signal Filters")]
-        [Browsable(false)]
-        public double L1_MaxCandleSize { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Body % Filter", Order = 4, GroupName = "L1.7 Signal Filters")]
-        [Browsable(false)]
-        public bool L1_EnableBodyPctFilter { get; set; }
+        public bool Sess1_L1_EnableBodyPctFilter { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, 100)]
-        [Display(Name = "L1 Min Body % of Range", Order = 5, GroupName = "L1.7 Signal Filters")]
+        [Display(Name = "S1 L1 Min Body % of Range", Order = 2, GroupName = "Sess1.L1.7 Signal Filters")]
         [Browsable(false)]
-        public double L1_MinBodyPct { get; set; }
+        public double Sess1_L1_MinBodyPct { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Close Distance Filter", Order = 6, GroupName = "L1.7 Signal Filters")]
+        [Display(Name = "S1 L1 Enable Direction Flip", Order = 1, GroupName = "Sess1.L1.8 Direction Flip")]
         [Browsable(false)]
-        public bool L1_EnableCloseDistanceFilter { get; set; }
+        public bool Sess1_L1_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Enable Max Daily Loss", Order = 1, GroupName = "Sess1.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_L1_EnableMaxDailyLoss { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Min Close Distance (Points)", Order = 7, GroupName = "L1.7 Signal Filters")]
+        [Display(Name = "S1 L1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess1.L1.9 Risk Management")]
         [Browsable(false)]
-        public double L1_MinCloseDistance { get; set; }
+        public double Sess1_L1_MaxDailyLoss { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Filter Wait Bars", Order = 8, GroupName = "L1.7 Signal Filters")]
+        [Display(Name = "S1 L1 Enable Max Daily Profit", Order = 3, GroupName = "Sess1.L1.9 Risk Management")]
         [Browsable(false)]
-        public bool L1_EnableFilterWaitBars { get; set; }
+        public bool Sess1_L1_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess1.L1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess1_L1_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess1.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_L1_EnableMaxTradesPerDay { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "L1 Filter Wait Max Bars", Order = 9, GroupName = "L1.7 Signal Filters")]
+        [Display(Name = "S1 L1 Max Trades Per Day", Order = 6, GroupName = "Sess1.L1.9 Risk Management")]
         [Browsable(false)]
-        public int L1_FilterWaitMaxBars { get; set; }
+        public int Sess1_L1_MaxTradesPerDay { get; set; }
 
-        // Direction Flip
+        // ── Sess1 L2 ─────────────────────────────────────
         [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Direction Flip", Order = 1, GroupName = "L1.8 Direction Flip")]
+        [Display(Name = "S1 L2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess1.L2.0 Bucket Settings")]
         [Browsable(false)]
-        public bool L1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Same Direction On Loss", Order = 2, GroupName = "L1.8 Direction Flip")]
-        [Browsable(false)]
-        public bool L1_EnableSameDirectionOnLoss { get; set; }
+        public bool Sess1_L2_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Loss Threshold (Points)", Order = 3, GroupName = "L1.8 Direction Flip")]
+        [Display(Name = "S1 L2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess1.L2.0 Bucket Settings")]
         [Browsable(false)]
-        public double L1_SameDirectionLossThreshold { get; set; }
-
-        // Per-bucket Risk Management
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Max Daily Loss", Order = 1, GroupName = "L1.9 Risk Management")]
-        [Browsable(false)]
-        public bool L1_EnableMaxDailyLoss { get; set; }
+        public double Sess1_L2_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Max Daily Loss (Points)", Order = 2, GroupName = "L1.9 Risk Management")]
+        [Display(Name = "S1 L2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess1.L2.0 Bucket Settings")]
         [Browsable(false)]
-        public double L1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Max Daily Profit", Order = 3, GroupName = "L1.9 Risk Management")]
-        [Browsable(false)]
-        public bool L1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "L1 Max Daily Profit (Points)", Order = 4, GroupName = "L1.9 Risk Management")]
-        [Browsable(false)]
-        public double L1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "L1 Enable Max Trades Per Day", Order = 5, GroupName = "L1.9 Risk Management")]
-        [Browsable(false)]
-        public bool L1_EnableMaxTradesPerDay { get; set; }
+        public double Sess1_L2_MaxCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
-        [Display(Name = "L1 Max Trades Per Day", Order = 6, GroupName = "L1.9 Risk Management")]
+        [Display(Name = "S1 L2 EMA Length", Order = 1, GroupName = "Sess1.L2.1 EMA Settings")]
         [Browsable(false)]
-        public int L1_MaxTradesPerDay { get; set; }
+        public int Sess1_L2_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess1.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 EMA Slope Mode", Order = 3, GroupName = "Sess1.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess1_L2_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 L2 EMA Slope Bars", Order = 4, GroupName = "Sess1.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess1_L2_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 EMA Min Slope %", Order = 5, GroupName = "Sess1.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess1_L2_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable WMA Filter", Order = 1, GroupName = "Sess1.L2.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 L2 WMA Length", Order = 2, GroupName = "Sess1.L2.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess1_L2_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Stop Loss Type", Order = 1, GroupName = "Sess1.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess1_L2_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess1.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_L2_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 L2 SL Candle Multiplier", Order = 3, GroupName = "Sess1.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_L2_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess1.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_L2_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess1.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_L2_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Take Profit Type", Order = 1, GroupName = "Sess1.L2.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess1_L2_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S1 L2 Risk Reward Ratio", Order = 2, GroupName = "Sess1.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_L2_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess1.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_L2_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 L2 TP Candle Multiplier", Order = 4, GroupName = "Sess1.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_L2_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable Break Even", Order = 1, GroupName = "Sess1.L2.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Break Even Trigger Type", Order = 2, GroupName = "Sess1.L2.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess1_L2_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Break Even Trigger Value", Order = 3, GroupName = "Sess1.L2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess1_L2_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Break Even Offset (Points)", Order = 4, GroupName = "Sess1.L2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess1_L2_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable Price Trail Stop", Order = 1, GroupName = "Sess1.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Trail Distance Mode", Order = 2, GroupName = "Sess1.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess1_L2_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 L2 Trail Distance Value", Order = 3, GroupName = "Sess1.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess1_L2_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Trail Activation Mode", Order = 4, GroupName = "Sess1.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess1_L2_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Trail Activation Value", Order = 5, GroupName = "Sess1.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess1_L2_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S1 L2 Trail Step (Ticks)", Order = 6, GroupName = "Sess1.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess1_L2_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable Body % Filter", Order = 1, GroupName = "Sess1.L2.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S1 L2 Min Body % of Range", Order = 2, GroupName = "Sess1.L2.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess1_L2_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable Direction Flip", Order = 1, GroupName = "Sess1.L2.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable Max Daily Loss", Order = 1, GroupName = "Sess1.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess1.L2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess1_L2_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable Max Daily Profit", Order = 3, GroupName = "Sess1.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 L2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess1.L2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess1_L2_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 L2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess1.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_L2_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 L2 Max Trades Per Day", Order = 6, GroupName = "Sess1.L2.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess1_L2_MaxTradesPerDay { get; set; }
+
+        // ── Sess1 S1 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess1.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess1_S1_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess1.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess1_S1_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess1.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess1_S1_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 S1 EMA Length", Order = 1, GroupName = "Sess1.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess1_S1_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess1.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 EMA Slope Mode", Order = 3, GroupName = "Sess1.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess1_S1_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 S1 EMA Slope Bars", Order = 4, GroupName = "Sess1.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess1_S1_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 EMA Min Slope %", Order = 5, GroupName = "Sess1.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess1_S1_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable WMA Filter", Order = 1, GroupName = "Sess1.S1.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 S1 WMA Length", Order = 2, GroupName = "Sess1.S1.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess1_S1_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Stop Loss Type", Order = 1, GroupName = "Sess1.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess1_S1_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess1.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_S1_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 S1 SL Candle Multiplier", Order = 3, GroupName = "Sess1.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_S1_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess1.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_S1_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess1.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_S1_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Take Profit Type", Order = 1, GroupName = "Sess1.S1.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess1_S1_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S1 S1 Risk Reward Ratio", Order = 2, GroupName = "Sess1.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_S1_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess1.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_S1_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 S1 TP Candle Multiplier", Order = 4, GroupName = "Sess1.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_S1_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable Break Even", Order = 1, GroupName = "Sess1.S1.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Break Even Trigger Type", Order = 2, GroupName = "Sess1.S1.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess1_S1_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Break Even Trigger Value", Order = 3, GroupName = "Sess1.S1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess1_S1_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Break Even Offset (Points)", Order = 4, GroupName = "Sess1.S1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess1_S1_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable Price Trail Stop", Order = 1, GroupName = "Sess1.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Trail Distance Mode", Order = 2, GroupName = "Sess1.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess1_S1_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 S1 Trail Distance Value", Order = 3, GroupName = "Sess1.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess1_S1_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Trail Activation Mode", Order = 4, GroupName = "Sess1.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess1_S1_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Trail Activation Value", Order = 5, GroupName = "Sess1.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess1_S1_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S1 S1 Trail Step (Ticks)", Order = 6, GroupName = "Sess1.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess1_S1_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable Body % Filter", Order = 1, GroupName = "Sess1.S1.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S1 S1 Min Body % of Range", Order = 2, GroupName = "Sess1.S1.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess1_S1_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable Direction Flip", Order = 1, GroupName = "Sess1.S1.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable Max Daily Loss", Order = 1, GroupName = "Sess1.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess1.S1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess1_S1_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable Max Daily Profit", Order = 3, GroupName = "Sess1.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess1.S1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess1_S1_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess1.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_S1_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 S1 Max Trades Per Day", Order = 6, GroupName = "Sess1.S1.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess1_S1_MaxTradesPerDay { get; set; }
+
+        // ── Sess1 S2 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess1.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess1_S2_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess1.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess1_S2_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess1.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess1_S2_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 S2 EMA Length", Order = 1, GroupName = "Sess1.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess1_S2_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess1.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 EMA Slope Mode", Order = 3, GroupName = "Sess1.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess1_S2_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 S2 EMA Slope Bars", Order = 4, GroupName = "Sess1.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess1_S2_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 EMA Min Slope %", Order = 5, GroupName = "Sess1.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess1_S2_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable WMA Filter", Order = 1, GroupName = "Sess1.S2.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 S2 WMA Length", Order = 2, GroupName = "Sess1.S2.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess1_S2_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Stop Loss Type", Order = 1, GroupName = "Sess1.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess1_S2_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess1.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_S2_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 S2 SL Candle Multiplier", Order = 3, GroupName = "Sess1.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_S2_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess1.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_S2_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess1.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess1_S2_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Take Profit Type", Order = 1, GroupName = "Sess1.S2.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess1_S2_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S1 S2 Risk Reward Ratio", Order = 2, GroupName = "Sess1.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_S2_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess1.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_S2_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 S2 TP Candle Multiplier", Order = 4, GroupName = "Sess1.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess1_S2_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable Break Even", Order = 1, GroupName = "Sess1.S2.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Break Even Trigger Type", Order = 2, GroupName = "Sess1.S2.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess1_S2_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Break Even Trigger Value", Order = 3, GroupName = "Sess1.S2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess1_S2_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Break Even Offset (Points)", Order = 4, GroupName = "Sess1.S2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess1_S2_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable Price Trail Stop", Order = 1, GroupName = "Sess1.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Trail Distance Mode", Order = 2, GroupName = "Sess1.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess1_S2_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S1 S2 Trail Distance Value", Order = 3, GroupName = "Sess1.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess1_S2_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Trail Activation Mode", Order = 4, GroupName = "Sess1.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess1_S2_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Trail Activation Value", Order = 5, GroupName = "Sess1.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess1_S2_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S1 S2 Trail Step (Ticks)", Order = 6, GroupName = "Sess1.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess1_S2_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable Body % Filter", Order = 1, GroupName = "Sess1.S2.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S1 S2 Min Body % of Range", Order = 2, GroupName = "Sess1.S2.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess1_S2_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable Direction Flip", Order = 1, GroupName = "Sess1.S2.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable Max Daily Loss", Order = 1, GroupName = "Sess1.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess1.S2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess1_S2_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable Max Daily Profit", Order = 3, GroupName = "Sess1.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S1 S2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess1.S2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess1_S2_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S1 S2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess1.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess1_S2_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S1 S2 Max Trades Per Day", Order = 6, GroupName = "Sess1.S2.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess1_S2_MaxTradesPerDay { get; set; }
 
         #endregion
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  L2: LONG — LARGE CANDLE
-        // ════════════════════════════════════════════════════════════════════════
+        // ════════════ SESSION 2 ════════════
+        #region Session 2 Bucket Parameters
 
-        #region L2 Parameters
-
+        // ── Sess2 L1 ─────────────────────────────────────
         [NinjaScriptProperty]
-        [Display(Name = "L2 Enable", Description = "Enable Long Large Candle bucket", Order = 0, GroupName = "L2.0 Bucket Settings")]
+        [Display(Name = "S2 L1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess2.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public bool L2_Enable { get; set; }
+        public bool Sess2_L1_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L2 Min Candle Range (Points)", Order = 1, GroupName = "L2.0 Bucket Settings")]
+        [Display(Name = "S2 L1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess2.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public double L2_MinCandleRange { get; set; }
+        public double Sess2_L1_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "L2 Max Candle Range (Points)", Description = "0 = no max", Order = 2, GroupName = "L2.0 Bucket Settings")]
+        [Display(Name = "S2 L1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess2.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public double L2_MaxCandleRange { get; set; }
+        public double Sess2_L1_MaxCandleRange { get; set; }
 
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 EMA Length", Order = 1, GroupName = "L2.1 EMA Settings")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 L1 EMA Length", Order = 1, GroupName = "Sess2.L1.1 EMA Settings")]
         [Browsable(false)]
-        public int L2_EmaLength { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable EMA Slope Filter", Order = 2, GroupName = "L2.1 EMA Settings")]
-        [Browsable(false)]
-        public bool L2_EnableEmaSlope { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 EMA Slope Mode", Order = 3, GroupName = "L2.1 EMA Settings")]
-        [Browsable(false)]
-        public Hugo_EmaSlopeModeEnum L2_EmaSlopeMode { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 EMA Slope Bars", Order = 4, GroupName = "L2.1 EMA Settings")]
-        [Browsable(false)]
-        public int L2_EmaSlopeBars { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 EMA Min Slope %", Order = 5, GroupName = "L2.1 EMA Settings")]
-        [Browsable(false)]
-        public double L2_EmaSlopeMinPct { get; set; }
+        public int Sess2_L1_EmaLength { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Enable WMA Filter", Order = 1, GroupName = "L2.1b WMA Filter")]
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess2.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool L2_EnableWMAFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 WMA Length", Order = 2, GroupName = "L2.1b WMA Filter")]
-        [Browsable(false)]
-        public int L2_WMALength { get; set; }
+        public bool Sess2_L1_EnableEmaSlope { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Enable SMA Filter", Order = 1, GroupName = "L2.1c SMA Filter")]
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 EMA Slope Mode", Order = 3, GroupName = "Sess2.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool L2_EnableSMAFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 SMA Length", Order = 2, GroupName = "L2.1c SMA Filter")]
-        [Browsable(false)]
-        public int L2_SMALength { get; set; }
+        public Hugo_EmaSlopeModeEnum Sess2_L1_EmaSlopeMode { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Enable ADX Filter", Order = 1, GroupName = "L2.1d ADX Filter")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 L1 EMA Slope Bars", Order = 4, GroupName = "Sess2.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool L2_EnableADXFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 ADX Period", Order = 2, GroupName = "L2.1d ADX Filter")]
-        [Browsable(false)]
-        public int L2_ADXPeriod { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 ADX Min Value", Order = 3, GroupName = "L2.1d ADX Filter")]
-        [Browsable(false)]
-        public double L2_ADXMin { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 ADX Max Value", Order = 4, GroupName = "L2.1d ADX Filter")]
-        [Browsable(false)]
-        public double L2_ADXMax { get; set; }
+        public int Sess2_L1_EmaSlopeBars { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Entry Type", Order = 1, GroupName = "L2.2 Entry Settings")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 EMA Min Slope %", Order = 5, GroupName = "Sess2.L1.1 EMA Settings")]
         [Browsable(false)]
-        public Hugo_EntryTypeEnum L2_EntryType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Pullback Offset (Points)", Order = 2, GroupName = "L2.2 Entry Settings")]
-        [Browsable(false)]
-        public double L2_PullbackOffset { get; set; }
-        [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "L2 Max Bars to Wait", Order = 3, GroupName = "L2.2 Entry Settings")]
-        [Browsable(false)]
-        public int L2_MaxBarsToWait { get; set; }
+        public double Sess2_L1_EmaSlopeMinPct { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Stop Loss Type", Order = 1, GroupName = "L2.3 Stop Loss")]
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable WMA Filter", Order = 1, GroupName = "Sess2.L1.1b WMA Filter")]
         [Browsable(false)]
-        public Hugo_StopLossTypeEnum L2_StopLossType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "L2.3 Stop Loss")]
-        [Browsable(false)]
-        public double L2_FixedStopLoss { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L2 SL Candle Multiplier", Order = 2, GroupName = "L2.3 Stop Loss")]
-        [Browsable(false)]
-        public double L2_SLCandleMultiplier { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Stop Loss Offset (Points)", Order = 3, GroupName = "L2.3 Stop Loss")]
-        [Browsable(false)]
-        public double L2_StopLossOffset { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Maximum Stop Loss (Points)", Order = 4, GroupName = "L2.3 Stop Loss")]
-        [Browsable(false)]
-        public double L2_MaxStopLoss { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable Max Bars In Trade", Order = 5, GroupName = "L2.3 Stop Loss")]
-        [Browsable(false)]
-        public bool L2_EnableMaxBarsInTrade { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 Max Bars In Trade", Order = 6, GroupName = "L2.3 Stop Loss")]
-        [Browsable(false)]
-        public int L2_MaxBarsInTrade { get; set; }
+        public bool Sess2_L1_EnableWMAFilter { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Take Profit Type", Order = 1, GroupName = "L2.4 Take Profit")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 L1 WMA Length", Order = 2, GroupName = "Sess2.L1.1b WMA Filter")]
         [Browsable(false)]
-        public Hugo_TakeProfitTypeEnum L2_TakeProfitType { get; set; }
-        [NinjaScriptProperty][Range(0.1, double.MaxValue)][Display(Name = "L2 Risk Reward Ratio", Order = 2, GroupName = "L2.4 Take Profit")]
-        [Browsable(false)]
-        public double L2_RiskRewardRatio { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Fixed Take Profit (Points)", Order = 3, GroupName = "L2.4 Take Profit")]
-        [Browsable(false)]
-        public double L2_FixedTakeProfit { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L2 TP Candle Multiplier", Order = 4, GroupName = "L2.4 Take Profit")]
-        [Browsable(false)]
-        public double L2_TPCandleMultiplier { get; set; }
+        public int Sess2_L1_WMALength { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Enable Break Even", Order = 1, GroupName = "L2.5 Break Even")]
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Stop Loss Type", Order = 1, GroupName = "Sess2.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool L2_EnableBreakEven { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Break Even Trigger Type", Order = 2, GroupName = "L2.5 Break Even")]
-        [Browsable(false)]
-        public Hugo_BreakEvenTriggerEnum L2_BreakEvenTriggerType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Break Even Trigger Value", Order = 3, GroupName = "L2.5 Break Even")]
-        [Browsable(false)]
-        public double L2_BreakEvenTriggerValue { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Break Even Offset (Points)", Order = 4, GroupName = "L2.5 Break Even")]
-        [Browsable(false)]
-        public double L2_BreakEvenOffset { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable SL to Entry on EMA Cross", Order = 5, GroupName = "L2.5 Break Even")]
-        [Browsable(false)]
-        public bool L2_EnableSLToEntryOnEMA { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 SL to Entry Offset (Points)", Order = 6, GroupName = "L2.5 Break Even")]
-        [Browsable(false)]
-        public double L2_SLToEntryOffset { get; set; }
+        public Hugo_StopLossTypeEnum Sess2_L1_StopLossType { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Enable Price Trail Stop", Order = 1, GroupName = "L2.6 Trailing Stop")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess2.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool L2_EnablePriceTrail { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Trail Distance Mode", Order = 2, GroupName = "L2.6 Trailing Stop")]
-        [Browsable(false)]
-        public Hugo_TrailDistanceModeEnum L2_TrailDistanceMode { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "L2 Trail Distance Value", Order = 3, GroupName = "L2.6 Trailing Stop")]
-        [Browsable(false)]
-        public double L2_TrailDistanceValue { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Trail Activation Mode", Order = 4, GroupName = "L2.6 Trailing Stop")]
-        [Browsable(false)]
-        public Hugo_TrailActivationModeEnum L2_TrailActivationMode { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Trail Activation Value", Order = 5, GroupName = "L2.6 Trailing Stop")]
-        [Browsable(false)]
-        public double L2_TrailActivationValue { get; set; }
-        [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "L2 Trail Step (Ticks)", Order = 6, GroupName = "L2.6 Trailing Stop")]
-        [Browsable(false)]
-        public int L2_TrailStepTicks { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable Trail Lock", Order = 7, GroupName = "L2.6 Trailing Stop")]
-        [Browsable(false)]
-        public bool L2_EnableTrailLock { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Trail Lock Value", Order = 8, GroupName = "L2.6 Trailing Stop")]
-        [Browsable(false)]
-        public double L2_TrailLockValue { get; set; }
+        public double Sess2_L1_FixedStopLoss { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Enable Candle Size Filter", Order = 1, GroupName = "L2.7 Signal Filters")]
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 L1 SL Candle Multiplier", Order = 3, GroupName = "Sess2.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool L2_EnableCandleSizeFilter { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Min Candle Size (Points)", Order = 2, GroupName = "L2.7 Signal Filters")]
-        [Browsable(false)]
-        public double L2_MinCandleSize { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Max Candle Size (Points)", Order = 3, GroupName = "L2.7 Signal Filters")]
-        [Browsable(false)]
-        public double L2_MaxCandleSize { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable Body % Filter", Order = 4, GroupName = "L2.7 Signal Filters")]
-        [Browsable(false)]
-        public bool L2_EnableBodyPctFilter { get; set; }
-        [NinjaScriptProperty][Range(0, 100)][Display(Name = "L2 Min Body % of Range", Order = 5, GroupName = "L2.7 Signal Filters")]
-        [Browsable(false)]
-        public double L2_MinBodyPct { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable Close Distance Filter", Order = 6, GroupName = "L2.7 Signal Filters")]
-        [Browsable(false)]
-        public bool L2_EnableCloseDistanceFilter { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Min Close Distance (Points)", Order = 7, GroupName = "L2.7 Signal Filters")]
-        [Browsable(false)]
-        public double L2_MinCloseDistance { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable Filter Wait Bars", Order = 8, GroupName = "L2.7 Signal Filters")]
-        [Browsable(false)]
-        public bool L2_EnableFilterWaitBars { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 Filter Wait Max Bars", Order = 9, GroupName = "L2.7 Signal Filters")]
-        [Browsable(false)]
-        public int L2_FilterWaitMaxBars { get; set; }
+        public double Sess2_L1_SLCandleMultiplier { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Enable Direction Flip", Order = 1, GroupName = "L2.8 Direction Flip")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess2.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool L2_EnableDirectionFlip { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable Same Direction On Loss", Order = 2, GroupName = "L2.8 Direction Flip")]
-        [Browsable(false)]
-        public bool L2_EnableSameDirectionOnLoss { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Loss Threshold (Points)", Order = 3, GroupName = "L2.8 Direction Flip")]
-        [Browsable(false)]
-        public double L2_SameDirectionLossThreshold { get; set; }
+        public double Sess2_L1_StopLossOffset { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "L2 Enable Max Daily Loss", Order = 1, GroupName = "L2.9 Risk Management")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess2.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool L2_EnableMaxDailyLoss { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Max Daily Loss (Points)", Order = 2, GroupName = "L2.9 Risk Management")]
+        public double Sess2_L1_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Take Profit Type", Order = 1, GroupName = "Sess2.L1.4 Take Profit")]
         [Browsable(false)]
-        public double L2_MaxDailyLoss { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable Max Daily Profit", Order = 3, GroupName = "L2.9 Risk Management")]
+        public Hugo_TakeProfitTypeEnum Sess2_L1_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S2 L1 Risk Reward Ratio", Order = 2, GroupName = "Sess2.L1.4 Take Profit")]
         [Browsable(false)]
-        public bool L2_EnableMaxDailyProfit { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "L2 Max Daily Profit (Points)", Order = 4, GroupName = "L2.9 Risk Management")]
+        public double Sess2_L1_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess2.L1.4 Take Profit")]
         [Browsable(false)]
-        public double L2_MaxDailyProfit { get; set; }
-        [NinjaScriptProperty][Display(Name = "L2 Enable Max Trades Per Day", Order = 5, GroupName = "L2.9 Risk Management")]
+        public double Sess2_L1_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 L1 TP Candle Multiplier", Order = 4, GroupName = "Sess2.L1.4 Take Profit")]
         [Browsable(false)]
-        public bool L2_EnableMaxTradesPerDay { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "L2 Max Trades Per Day", Order = 6, GroupName = "L2.9 Risk Management")]
+        public double Sess2_L1_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable Break Even", Order = 1, GroupName = "Sess2.L1.5 Break Even")]
         [Browsable(false)]
-        public int L2_MaxTradesPerDay { get; set; }
+        public bool Sess2_L1_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Break Even Trigger Type", Order = 2, GroupName = "Sess2.L1.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess2_L1_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Break Even Trigger Value", Order = 3, GroupName = "Sess2.L1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess2_L1_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Break Even Offset (Points)", Order = 4, GroupName = "Sess2.L1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess2_L1_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable Price Trail Stop", Order = 1, GroupName = "Sess2.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess2_L1_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Trail Distance Mode", Order = 2, GroupName = "Sess2.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess2_L1_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 L1 Trail Distance Value", Order = 3, GroupName = "Sess2.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess2_L1_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Trail Activation Mode", Order = 4, GroupName = "Sess2.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess2_L1_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Trail Activation Value", Order = 5, GroupName = "Sess2.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess2_L1_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S2 L1 Trail Step (Ticks)", Order = 6, GroupName = "Sess2.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess2_L1_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable Body % Filter", Order = 1, GroupName = "Sess2.L1.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess2_L1_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S2 L1 Min Body % of Range", Order = 2, GroupName = "Sess2.L1.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess2_L1_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable Direction Flip", Order = 1, GroupName = "Sess2.L1.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess2_L1_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable Max Daily Loss", Order = 1, GroupName = "Sess2.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_L1_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess2.L1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess2_L1_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable Max Daily Profit", Order = 3, GroupName = "Sess2.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_L1_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess2.L1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess2_L1_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess2.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_L1_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 L1 Max Trades Per Day", Order = 6, GroupName = "Sess2.L1.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess2_L1_MaxTradesPerDay { get; set; }
+
+        // ── Sess2 L2 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess2.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess2_L2_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess2.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess2_L2_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess2.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess2_L2_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 L2 EMA Length", Order = 1, GroupName = "Sess2.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess2_L2_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess2.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 EMA Slope Mode", Order = 3, GroupName = "Sess2.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess2_L2_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 L2 EMA Slope Bars", Order = 4, GroupName = "Sess2.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess2_L2_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 EMA Min Slope %", Order = 5, GroupName = "Sess2.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess2_L2_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable WMA Filter", Order = 1, GroupName = "Sess2.L2.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 L2 WMA Length", Order = 2, GroupName = "Sess2.L2.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess2_L2_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Stop Loss Type", Order = 1, GroupName = "Sess2.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess2_L2_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess2.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_L2_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 L2 SL Candle Multiplier", Order = 3, GroupName = "Sess2.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_L2_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess2.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_L2_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess2.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_L2_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Take Profit Type", Order = 1, GroupName = "Sess2.L2.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess2_L2_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S2 L2 Risk Reward Ratio", Order = 2, GroupName = "Sess2.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_L2_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess2.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_L2_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 L2 TP Candle Multiplier", Order = 4, GroupName = "Sess2.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_L2_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable Break Even", Order = 1, GroupName = "Sess2.L2.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Break Even Trigger Type", Order = 2, GroupName = "Sess2.L2.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess2_L2_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Break Even Trigger Value", Order = 3, GroupName = "Sess2.L2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess2_L2_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Break Even Offset (Points)", Order = 4, GroupName = "Sess2.L2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess2_L2_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable Price Trail Stop", Order = 1, GroupName = "Sess2.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Trail Distance Mode", Order = 2, GroupName = "Sess2.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess2_L2_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 L2 Trail Distance Value", Order = 3, GroupName = "Sess2.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess2_L2_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Trail Activation Mode", Order = 4, GroupName = "Sess2.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess2_L2_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Trail Activation Value", Order = 5, GroupName = "Sess2.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess2_L2_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S2 L2 Trail Step (Ticks)", Order = 6, GroupName = "Sess2.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess2_L2_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable Body % Filter", Order = 1, GroupName = "Sess2.L2.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S2 L2 Min Body % of Range", Order = 2, GroupName = "Sess2.L2.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess2_L2_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable Direction Flip", Order = 1, GroupName = "Sess2.L2.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable Max Daily Loss", Order = 1, GroupName = "Sess2.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess2.L2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess2_L2_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable Max Daily Profit", Order = 3, GroupName = "Sess2.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 L2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess2.L2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess2_L2_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 L2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess2.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_L2_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 L2 Max Trades Per Day", Order = 6, GroupName = "Sess2.L2.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess2_L2_MaxTradesPerDay { get; set; }
+
+        // ── Sess2 S1 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess2.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess2_S1_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess2.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess2_S1_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess2.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess2_S1_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 S1 EMA Length", Order = 1, GroupName = "Sess2.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess2_S1_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess2.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 EMA Slope Mode", Order = 3, GroupName = "Sess2.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess2_S1_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 S1 EMA Slope Bars", Order = 4, GroupName = "Sess2.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess2_S1_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 EMA Min Slope %", Order = 5, GroupName = "Sess2.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess2_S1_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable WMA Filter", Order = 1, GroupName = "Sess2.S1.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 S1 WMA Length", Order = 2, GroupName = "Sess2.S1.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess2_S1_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Stop Loss Type", Order = 1, GroupName = "Sess2.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess2_S1_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess2.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_S1_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 S1 SL Candle Multiplier", Order = 3, GroupName = "Sess2.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_S1_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess2.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_S1_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess2.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_S1_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Take Profit Type", Order = 1, GroupName = "Sess2.S1.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess2_S1_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S2 S1 Risk Reward Ratio", Order = 2, GroupName = "Sess2.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_S1_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess2.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_S1_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 S1 TP Candle Multiplier", Order = 4, GroupName = "Sess2.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_S1_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable Break Even", Order = 1, GroupName = "Sess2.S1.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Break Even Trigger Type", Order = 2, GroupName = "Sess2.S1.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess2_S1_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Break Even Trigger Value", Order = 3, GroupName = "Sess2.S1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess2_S1_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Break Even Offset (Points)", Order = 4, GroupName = "Sess2.S1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess2_S1_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable Price Trail Stop", Order = 1, GroupName = "Sess2.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Trail Distance Mode", Order = 2, GroupName = "Sess2.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess2_S1_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 S1 Trail Distance Value", Order = 3, GroupName = "Sess2.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess2_S1_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Trail Activation Mode", Order = 4, GroupName = "Sess2.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess2_S1_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Trail Activation Value", Order = 5, GroupName = "Sess2.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess2_S1_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S2 S1 Trail Step (Ticks)", Order = 6, GroupName = "Sess2.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess2_S1_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable Body % Filter", Order = 1, GroupName = "Sess2.S1.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S2 S1 Min Body % of Range", Order = 2, GroupName = "Sess2.S1.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess2_S1_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable Direction Flip", Order = 1, GroupName = "Sess2.S1.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable Max Daily Loss", Order = 1, GroupName = "Sess2.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess2.S1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess2_S1_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable Max Daily Profit", Order = 3, GroupName = "Sess2.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess2.S1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess2_S1_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess2.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_S1_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 S1 Max Trades Per Day", Order = 6, GroupName = "Sess2.S1.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess2_S1_MaxTradesPerDay { get; set; }
+
+        // ── Sess2 S2 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess2.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess2_S2_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess2.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess2_S2_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess2.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess2_S2_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 S2 EMA Length", Order = 1, GroupName = "Sess2.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess2_S2_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess2.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 EMA Slope Mode", Order = 3, GroupName = "Sess2.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess2_S2_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 S2 EMA Slope Bars", Order = 4, GroupName = "Sess2.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess2_S2_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 EMA Min Slope %", Order = 5, GroupName = "Sess2.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess2_S2_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable WMA Filter", Order = 1, GroupName = "Sess2.S2.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 S2 WMA Length", Order = 2, GroupName = "Sess2.S2.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess2_S2_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Stop Loss Type", Order = 1, GroupName = "Sess2.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess2_S2_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess2.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_S2_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 S2 SL Candle Multiplier", Order = 3, GroupName = "Sess2.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_S2_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess2.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_S2_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess2.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess2_S2_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Take Profit Type", Order = 1, GroupName = "Sess2.S2.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess2_S2_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S2 S2 Risk Reward Ratio", Order = 2, GroupName = "Sess2.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_S2_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess2.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_S2_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 S2 TP Candle Multiplier", Order = 4, GroupName = "Sess2.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess2_S2_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable Break Even", Order = 1, GroupName = "Sess2.S2.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Break Even Trigger Type", Order = 2, GroupName = "Sess2.S2.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess2_S2_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Break Even Trigger Value", Order = 3, GroupName = "Sess2.S2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess2_S2_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Break Even Offset (Points)", Order = 4, GroupName = "Sess2.S2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess2_S2_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable Price Trail Stop", Order = 1, GroupName = "Sess2.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Trail Distance Mode", Order = 2, GroupName = "Sess2.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess2_S2_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S2 S2 Trail Distance Value", Order = 3, GroupName = "Sess2.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess2_S2_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Trail Activation Mode", Order = 4, GroupName = "Sess2.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess2_S2_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Trail Activation Value", Order = 5, GroupName = "Sess2.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess2_S2_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S2 S2 Trail Step (Ticks)", Order = 6, GroupName = "Sess2.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess2_S2_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable Body % Filter", Order = 1, GroupName = "Sess2.S2.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S2 S2 Min Body % of Range", Order = 2, GroupName = "Sess2.S2.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess2_S2_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable Direction Flip", Order = 1, GroupName = "Sess2.S2.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable Max Daily Loss", Order = 1, GroupName = "Sess2.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess2.S2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess2_S2_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable Max Daily Profit", Order = 3, GroupName = "Sess2.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S2 S2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess2.S2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess2_S2_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S2 S2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess2.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess2_S2_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S2 S2 Max Trades Per Day", Order = 6, GroupName = "Sess2.S2.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess2_S2_MaxTradesPerDay { get; set; }
 
         #endregion
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  S1: SHORT — SMALL CANDLE
-        // ════════════════════════════════════════════════════════════════════════
+        // ════════════ SESSION 3 ════════════
+        #region Session 3 Bucket Parameters
 
-        #region S1 Parameters
-
+        // ── Sess3 L1 ─────────────────────────────────────
         [NinjaScriptProperty]
-        [Display(Name = "S1 Enable", Description = "Enable Short Small Candle bucket", Order = 0, GroupName = "S1.0 Bucket Settings")]
+        [Display(Name = "S3 L1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess3.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public bool S1_Enable { get; set; }
+        public bool Sess3_L1_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "S1 Min Candle Range (Points)", Order = 1, GroupName = "S1.0 Bucket Settings")]
+        [Display(Name = "S3 L1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess3.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public double S1_MinCandleRange { get; set; }
+        public double Sess3_L1_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "S1 Max Candle Range (Points)", Description = "0 = no max", Order = 2, GroupName = "S1.0 Bucket Settings")]
+        [Display(Name = "S3 L1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess3.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public double S1_MaxCandleRange { get; set; }
+        public double Sess3_L1_MaxCandleRange { get; set; }
 
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 EMA Length", Order = 1, GroupName = "S1.1 EMA Settings")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 L1 EMA Length", Order = 1, GroupName = "Sess3.L1.1 EMA Settings")]
         [Browsable(false)]
-        public int S1_EmaLength { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable EMA Slope Filter", Order = 2, GroupName = "S1.1 EMA Settings")]
-        [Browsable(false)]
-        public bool S1_EnableEmaSlope { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 EMA Slope Mode", Order = 3, GroupName = "S1.1 EMA Settings")]
-        [Browsable(false)]
-        public Hugo_EmaSlopeModeEnum S1_EmaSlopeMode { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 EMA Slope Bars", Order = 4, GroupName = "S1.1 EMA Settings")]
-        [Browsable(false)]
-        public int S1_EmaSlopeBars { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 EMA Min Slope %", Order = 5, GroupName = "S1.1 EMA Settings")]
-        [Browsable(false)]
-        public double S1_EmaSlopeMinPct { get; set; }
+        public int Sess3_L1_EmaLength { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Enable WMA Filter", Order = 1, GroupName = "S1.1b WMA Filter")]
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess3.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool S1_EnableWMAFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 WMA Length", Order = 2, GroupName = "S1.1b WMA Filter")]
-        [Browsable(false)]
-        public int S1_WMALength { get; set; }
+        public bool Sess3_L1_EnableEmaSlope { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Enable SMA Filter", Order = 1, GroupName = "S1.1c SMA Filter")]
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 EMA Slope Mode", Order = 3, GroupName = "Sess3.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool S1_EnableSMAFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 SMA Length", Order = 2, GroupName = "S1.1c SMA Filter")]
-        [Browsable(false)]
-        public int S1_SMALength { get; set; }
+        public Hugo_EmaSlopeModeEnum Sess3_L1_EmaSlopeMode { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Enable ADX Filter", Order = 1, GroupName = "S1.1d ADX Filter")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 L1 EMA Slope Bars", Order = 4, GroupName = "Sess3.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool S1_EnableADXFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 ADX Period", Order = 2, GroupName = "S1.1d ADX Filter")]
-        [Browsable(false)]
-        public int S1_ADXPeriod { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 ADX Min Value", Order = 3, GroupName = "S1.1d ADX Filter")]
-        [Browsable(false)]
-        public double S1_ADXMin { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 ADX Max Value", Order = 4, GroupName = "S1.1d ADX Filter")]
-        [Browsable(false)]
-        public double S1_ADXMax { get; set; }
+        public int Sess3_L1_EmaSlopeBars { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Entry Type", Order = 1, GroupName = "S1.2 Entry Settings")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 EMA Min Slope %", Order = 5, GroupName = "Sess3.L1.1 EMA Settings")]
         [Browsable(false)]
-        public Hugo_EntryTypeEnum S1_EntryType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Pullback Offset (Points)", Order = 2, GroupName = "S1.2 Entry Settings")]
-        [Browsable(false)]
-        public double S1_PullbackOffset { get; set; }
-        [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "S1 Max Bars to Wait", Order = 3, GroupName = "S1.2 Entry Settings")]
-        [Browsable(false)]
-        public int S1_MaxBarsToWait { get; set; }
+        public double Sess3_L1_EmaSlopeMinPct { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Stop Loss Type", Order = 1, GroupName = "S1.3 Stop Loss")]
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable WMA Filter", Order = 1, GroupName = "Sess3.L1.1b WMA Filter")]
         [Browsable(false)]
-        public Hugo_StopLossTypeEnum S1_StopLossType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "S1.3 Stop Loss")]
-        [Browsable(false)]
-        public double S1_FixedStopLoss { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S1 SL Candle Multiplier", Order = 2, GroupName = "S1.3 Stop Loss")]
-        [Browsable(false)]
-        public double S1_SLCandleMultiplier { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Stop Loss Offset (Points)", Order = 3, GroupName = "S1.3 Stop Loss")]
-        [Browsable(false)]
-        public double S1_StopLossOffset { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Maximum Stop Loss (Points)", Order = 4, GroupName = "S1.3 Stop Loss")]
-        [Browsable(false)]
-        public double S1_MaxStopLoss { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable Max Bars In Trade", Order = 5, GroupName = "S1.3 Stop Loss")]
-        [Browsable(false)]
-        public bool S1_EnableMaxBarsInTrade { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 Max Bars In Trade", Order = 6, GroupName = "S1.3 Stop Loss")]
-        [Browsable(false)]
-        public int S1_MaxBarsInTrade { get; set; }
+        public bool Sess3_L1_EnableWMAFilter { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Take Profit Type", Order = 1, GroupName = "S1.4 Take Profit")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 L1 WMA Length", Order = 2, GroupName = "Sess3.L1.1b WMA Filter")]
         [Browsable(false)]
-        public Hugo_TakeProfitTypeEnum S1_TakeProfitType { get; set; }
-        [NinjaScriptProperty][Range(0.1, double.MaxValue)][Display(Name = "S1 Risk Reward Ratio", Order = 2, GroupName = "S1.4 Take Profit")]
-        [Browsable(false)]
-        public double S1_RiskRewardRatio { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Fixed Take Profit (Points)", Order = 3, GroupName = "S1.4 Take Profit")]
-        [Browsable(false)]
-        public double S1_FixedTakeProfit { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S1 TP Candle Multiplier", Order = 4, GroupName = "S1.4 Take Profit")]
-        [Browsable(false)]
-        public double S1_TPCandleMultiplier { get; set; }
+        public int Sess3_L1_WMALength { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Enable Break Even", Order = 1, GroupName = "S1.5 Break Even")]
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Stop Loss Type", Order = 1, GroupName = "Sess3.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S1_EnableBreakEven { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Break Even Trigger Type", Order = 2, GroupName = "S1.5 Break Even")]
-        [Browsable(false)]
-        public Hugo_BreakEvenTriggerEnum S1_BreakEvenTriggerType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Break Even Trigger Value", Order = 3, GroupName = "S1.5 Break Even")]
-        [Browsable(false)]
-        public double S1_BreakEvenTriggerValue { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Break Even Offset (Points)", Order = 4, GroupName = "S1.5 Break Even")]
-        [Browsable(false)]
-        public double S1_BreakEvenOffset { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable SL to Entry on EMA Cross", Order = 5, GroupName = "S1.5 Break Even")]
-        [Browsable(false)]
-        public bool S1_EnableSLToEntryOnEMA { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 SL to Entry Offset (Points)", Order = 6, GroupName = "S1.5 Break Even")]
-        [Browsable(false)]
-        public double S1_SLToEntryOffset { get; set; }
+        public Hugo_StopLossTypeEnum Sess3_L1_StopLossType { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Enable Price Trail Stop", Order = 1, GroupName = "S1.6 Trailing Stop")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess3.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S1_EnablePriceTrail { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Trail Distance Mode", Order = 2, GroupName = "S1.6 Trailing Stop")]
-        [Browsable(false)]
-        public Hugo_TrailDistanceModeEnum S1_TrailDistanceMode { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S1 Trail Distance Value", Order = 3, GroupName = "S1.6 Trailing Stop")]
-        [Browsable(false)]
-        public double S1_TrailDistanceValue { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Trail Activation Mode", Order = 4, GroupName = "S1.6 Trailing Stop")]
-        [Browsable(false)]
-        public Hugo_TrailActivationModeEnum S1_TrailActivationMode { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Trail Activation Value", Order = 5, GroupName = "S1.6 Trailing Stop")]
-        [Browsable(false)]
-        public double S1_TrailActivationValue { get; set; }
-        [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "S1 Trail Step (Ticks)", Order = 6, GroupName = "S1.6 Trailing Stop")]
-        [Browsable(false)]
-        public int S1_TrailStepTicks { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable Trail Lock", Order = 7, GroupName = "S1.6 Trailing Stop")]
-        [Browsable(false)]
-        public bool S1_EnableTrailLock { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Trail Lock Value", Order = 8, GroupName = "S1.6 Trailing Stop")]
-        [Browsable(false)]
-        public double S1_TrailLockValue { get; set; }
+        public double Sess3_L1_FixedStopLoss { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Enable Candle Size Filter", Order = 1, GroupName = "S1.7 Signal Filters")]
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 L1 SL Candle Multiplier", Order = 3, GroupName = "Sess3.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S1_EnableCandleSizeFilter { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Min Candle Size (Points)", Order = 2, GroupName = "S1.7 Signal Filters")]
-        [Browsable(false)]
-        public double S1_MinCandleSize { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Max Candle Size (Points)", Order = 3, GroupName = "S1.7 Signal Filters")]
-        [Browsable(false)]
-        public double S1_MaxCandleSize { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable Body % Filter", Order = 4, GroupName = "S1.7 Signal Filters")]
-        [Browsable(false)]
-        public bool S1_EnableBodyPctFilter { get; set; }
-        [NinjaScriptProperty][Range(0, 100)][Display(Name = "S1 Min Body % of Range", Order = 5, GroupName = "S1.7 Signal Filters")]
-        [Browsable(false)]
-        public double S1_MinBodyPct { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable Close Distance Filter", Order = 6, GroupName = "S1.7 Signal Filters")]
-        [Browsable(false)]
-        public bool S1_EnableCloseDistanceFilter { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Min Close Distance (Points)", Order = 7, GroupName = "S1.7 Signal Filters")]
-        [Browsable(false)]
-        public double S1_MinCloseDistance { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable Filter Wait Bars", Order = 8, GroupName = "S1.7 Signal Filters")]
-        [Browsable(false)]
-        public bool S1_EnableFilterWaitBars { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 Filter Wait Max Bars", Order = 9, GroupName = "S1.7 Signal Filters")]
-        [Browsable(false)]
-        public int S1_FilterWaitMaxBars { get; set; }
+        public double Sess3_L1_SLCandleMultiplier { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Enable Direction Flip", Order = 1, GroupName = "S1.8 Direction Flip")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess3.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S1_EnableDirectionFlip { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable Same Direction On Loss", Order = 2, GroupName = "S1.8 Direction Flip")]
-        [Browsable(false)]
-        public bool S1_EnableSameDirectionOnLoss { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Loss Threshold (Points)", Order = 3, GroupName = "S1.8 Direction Flip")]
-        [Browsable(false)]
-        public double S1_SameDirectionLossThreshold { get; set; }
+        public double Sess3_L1_StopLossOffset { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S1 Enable Max Daily Loss", Order = 1, GroupName = "S1.9 Risk Management")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess3.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S1_EnableMaxDailyLoss { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Max Daily Loss (Points)", Order = 2, GroupName = "S1.9 Risk Management")]
+        public double Sess3_L1_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Take Profit Type", Order = 1, GroupName = "Sess3.L1.4 Take Profit")]
         [Browsable(false)]
-        public double S1_MaxDailyLoss { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable Max Daily Profit", Order = 3, GroupName = "S1.9 Risk Management")]
+        public Hugo_TakeProfitTypeEnum Sess3_L1_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S3 L1 Risk Reward Ratio", Order = 2, GroupName = "Sess3.L1.4 Take Profit")]
         [Browsable(false)]
-        public bool S1_EnableMaxDailyProfit { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S1 Max Daily Profit (Points)", Order = 4, GroupName = "S1.9 Risk Management")]
+        public double Sess3_L1_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess3.L1.4 Take Profit")]
         [Browsable(false)]
-        public double S1_MaxDailyProfit { get; set; }
-        [NinjaScriptProperty][Display(Name = "S1 Enable Max Trades Per Day", Order = 5, GroupName = "S1.9 Risk Management")]
+        public double Sess3_L1_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 L1 TP Candle Multiplier", Order = 4, GroupName = "Sess3.L1.4 Take Profit")]
         [Browsable(false)]
-        public bool S1_EnableMaxTradesPerDay { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S1 Max Trades Per Day", Order = 6, GroupName = "S1.9 Risk Management")]
+        public double Sess3_L1_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable Break Even", Order = 1, GroupName = "Sess3.L1.5 Break Even")]
         [Browsable(false)]
-        public int S1_MaxTradesPerDay { get; set; }
+        public bool Sess3_L1_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Break Even Trigger Type", Order = 2, GroupName = "Sess3.L1.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess3_L1_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Break Even Trigger Value", Order = 3, GroupName = "Sess3.L1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess3_L1_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Break Even Offset (Points)", Order = 4, GroupName = "Sess3.L1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess3_L1_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable Price Trail Stop", Order = 1, GroupName = "Sess3.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess3_L1_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Trail Distance Mode", Order = 2, GroupName = "Sess3.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess3_L1_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 L1 Trail Distance Value", Order = 3, GroupName = "Sess3.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess3_L1_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Trail Activation Mode", Order = 4, GroupName = "Sess3.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess3_L1_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Trail Activation Value", Order = 5, GroupName = "Sess3.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess3_L1_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S3 L1 Trail Step (Ticks)", Order = 6, GroupName = "Sess3.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess3_L1_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable Body % Filter", Order = 1, GroupName = "Sess3.L1.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess3_L1_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S3 L1 Min Body % of Range", Order = 2, GroupName = "Sess3.L1.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess3_L1_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable Direction Flip", Order = 1, GroupName = "Sess3.L1.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess3_L1_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable Max Daily Loss", Order = 1, GroupName = "Sess3.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_L1_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess3.L1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess3_L1_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable Max Daily Profit", Order = 3, GroupName = "Sess3.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_L1_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess3.L1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess3_L1_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess3.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_L1_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 L1 Max Trades Per Day", Order = 6, GroupName = "Sess3.L1.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess3_L1_MaxTradesPerDay { get; set; }
+
+        // ── Sess3 L2 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess3.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess3_L2_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess3.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess3_L2_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess3.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess3_L2_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 L2 EMA Length", Order = 1, GroupName = "Sess3.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess3_L2_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess3.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 EMA Slope Mode", Order = 3, GroupName = "Sess3.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess3_L2_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 L2 EMA Slope Bars", Order = 4, GroupName = "Sess3.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess3_L2_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 EMA Min Slope %", Order = 5, GroupName = "Sess3.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess3_L2_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable WMA Filter", Order = 1, GroupName = "Sess3.L2.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 L2 WMA Length", Order = 2, GroupName = "Sess3.L2.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess3_L2_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Stop Loss Type", Order = 1, GroupName = "Sess3.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess3_L2_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess3.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_L2_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 L2 SL Candle Multiplier", Order = 3, GroupName = "Sess3.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_L2_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess3.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_L2_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess3.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_L2_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Take Profit Type", Order = 1, GroupName = "Sess3.L2.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess3_L2_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S3 L2 Risk Reward Ratio", Order = 2, GroupName = "Sess3.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_L2_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess3.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_L2_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 L2 TP Candle Multiplier", Order = 4, GroupName = "Sess3.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_L2_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable Break Even", Order = 1, GroupName = "Sess3.L2.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Break Even Trigger Type", Order = 2, GroupName = "Sess3.L2.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess3_L2_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Break Even Trigger Value", Order = 3, GroupName = "Sess3.L2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess3_L2_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Break Even Offset (Points)", Order = 4, GroupName = "Sess3.L2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess3_L2_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable Price Trail Stop", Order = 1, GroupName = "Sess3.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Trail Distance Mode", Order = 2, GroupName = "Sess3.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess3_L2_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 L2 Trail Distance Value", Order = 3, GroupName = "Sess3.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess3_L2_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Trail Activation Mode", Order = 4, GroupName = "Sess3.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess3_L2_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Trail Activation Value", Order = 5, GroupName = "Sess3.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess3_L2_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S3 L2 Trail Step (Ticks)", Order = 6, GroupName = "Sess3.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess3_L2_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable Body % Filter", Order = 1, GroupName = "Sess3.L2.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S3 L2 Min Body % of Range", Order = 2, GroupName = "Sess3.L2.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess3_L2_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable Direction Flip", Order = 1, GroupName = "Sess3.L2.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable Max Daily Loss", Order = 1, GroupName = "Sess3.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess3.L2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess3_L2_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable Max Daily Profit", Order = 3, GroupName = "Sess3.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 L2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess3.L2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess3_L2_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 L2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess3.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_L2_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 L2 Max Trades Per Day", Order = 6, GroupName = "Sess3.L2.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess3_L2_MaxTradesPerDay { get; set; }
+
+        // ── Sess3 S1 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess3.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess3_S1_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess3.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess3_S1_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess3.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess3_S1_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 S1 EMA Length", Order = 1, GroupName = "Sess3.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess3_S1_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess3.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 EMA Slope Mode", Order = 3, GroupName = "Sess3.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess3_S1_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 S1 EMA Slope Bars", Order = 4, GroupName = "Sess3.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess3_S1_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 EMA Min Slope %", Order = 5, GroupName = "Sess3.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess3_S1_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable WMA Filter", Order = 1, GroupName = "Sess3.S1.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 S1 WMA Length", Order = 2, GroupName = "Sess3.S1.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess3_S1_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Stop Loss Type", Order = 1, GroupName = "Sess3.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess3_S1_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess3.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_S1_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 S1 SL Candle Multiplier", Order = 3, GroupName = "Sess3.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_S1_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess3.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_S1_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess3.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_S1_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Take Profit Type", Order = 1, GroupName = "Sess3.S1.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess3_S1_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S3 S1 Risk Reward Ratio", Order = 2, GroupName = "Sess3.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_S1_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess3.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_S1_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 S1 TP Candle Multiplier", Order = 4, GroupName = "Sess3.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_S1_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable Break Even", Order = 1, GroupName = "Sess3.S1.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Break Even Trigger Type", Order = 2, GroupName = "Sess3.S1.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess3_S1_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Break Even Trigger Value", Order = 3, GroupName = "Sess3.S1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess3_S1_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Break Even Offset (Points)", Order = 4, GroupName = "Sess3.S1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess3_S1_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable Price Trail Stop", Order = 1, GroupName = "Sess3.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Trail Distance Mode", Order = 2, GroupName = "Sess3.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess3_S1_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 S1 Trail Distance Value", Order = 3, GroupName = "Sess3.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess3_S1_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Trail Activation Mode", Order = 4, GroupName = "Sess3.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess3_S1_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Trail Activation Value", Order = 5, GroupName = "Sess3.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess3_S1_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S3 S1 Trail Step (Ticks)", Order = 6, GroupName = "Sess3.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess3_S1_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable Body % Filter", Order = 1, GroupName = "Sess3.S1.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S3 S1 Min Body % of Range", Order = 2, GroupName = "Sess3.S1.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess3_S1_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable Direction Flip", Order = 1, GroupName = "Sess3.S1.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable Max Daily Loss", Order = 1, GroupName = "Sess3.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess3.S1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess3_S1_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable Max Daily Profit", Order = 3, GroupName = "Sess3.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess3.S1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess3_S1_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess3.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_S1_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 S1 Max Trades Per Day", Order = 6, GroupName = "Sess3.S1.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess3_S1_MaxTradesPerDay { get; set; }
+
+        // ── Sess3 S2 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess3.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess3_S2_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess3.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess3_S2_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess3.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess3_S2_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 S2 EMA Length", Order = 1, GroupName = "Sess3.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess3_S2_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess3.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 EMA Slope Mode", Order = 3, GroupName = "Sess3.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess3_S2_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 S2 EMA Slope Bars", Order = 4, GroupName = "Sess3.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess3_S2_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 EMA Min Slope %", Order = 5, GroupName = "Sess3.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess3_S2_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable WMA Filter", Order = 1, GroupName = "Sess3.S2.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 S2 WMA Length", Order = 2, GroupName = "Sess3.S2.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess3_S2_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Stop Loss Type", Order = 1, GroupName = "Sess3.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess3_S2_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess3.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_S2_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 S2 SL Candle Multiplier", Order = 3, GroupName = "Sess3.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_S2_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess3.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_S2_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess3.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess3_S2_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Take Profit Type", Order = 1, GroupName = "Sess3.S2.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess3_S2_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S3 S2 Risk Reward Ratio", Order = 2, GroupName = "Sess3.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_S2_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess3.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_S2_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 S2 TP Candle Multiplier", Order = 4, GroupName = "Sess3.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess3_S2_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable Break Even", Order = 1, GroupName = "Sess3.S2.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Break Even Trigger Type", Order = 2, GroupName = "Sess3.S2.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess3_S2_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Break Even Trigger Value", Order = 3, GroupName = "Sess3.S2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess3_S2_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Break Even Offset (Points)", Order = 4, GroupName = "Sess3.S2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess3_S2_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable Price Trail Stop", Order = 1, GroupName = "Sess3.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Trail Distance Mode", Order = 2, GroupName = "Sess3.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess3_S2_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S3 S2 Trail Distance Value", Order = 3, GroupName = "Sess3.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess3_S2_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Trail Activation Mode", Order = 4, GroupName = "Sess3.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess3_S2_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Trail Activation Value", Order = 5, GroupName = "Sess3.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess3_S2_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S3 S2 Trail Step (Ticks)", Order = 6, GroupName = "Sess3.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess3_S2_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable Body % Filter", Order = 1, GroupName = "Sess3.S2.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S3 S2 Min Body % of Range", Order = 2, GroupName = "Sess3.S2.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess3_S2_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable Direction Flip", Order = 1, GroupName = "Sess3.S2.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable Max Daily Loss", Order = 1, GroupName = "Sess3.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess3.S2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess3_S2_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable Max Daily Profit", Order = 3, GroupName = "Sess3.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S3 S2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess3.S2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess3_S2_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S3 S2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess3.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess3_S2_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S3 S2 Max Trades Per Day", Order = 6, GroupName = "Sess3.S2.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess3_S2_MaxTradesPerDay { get; set; }
 
         #endregion
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  S2: SHORT — LARGE CANDLE
-        // ════════════════════════════════════════════════════════════════════════
+        // ════════════ SESSION 4 ════════════
+        #region Session 4 Bucket Parameters
 
-        #region S2 Parameters
-
+        // ── Sess4 L1 ─────────────────────────────────────
         [NinjaScriptProperty]
-        [Display(Name = "S2 Enable", Description = "Enable Short Large Candle bucket", Order = 0, GroupName = "S2.0 Bucket Settings")]
+        [Display(Name = "S4 L1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess4.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public bool S2_Enable { get; set; }
+        public bool Sess4_L1_Enable { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "S2 Min Candle Range (Points)", Order = 1, GroupName = "S2.0 Bucket Settings")]
+        [Display(Name = "S4 L1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess4.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public double S2_MinCandleRange { get; set; }
+        public double Sess4_L1_MinCandleRange { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
-        [Display(Name = "S2 Max Candle Range (Points)", Description = "0 = no max", Order = 2, GroupName = "S2.0 Bucket Settings")]
+        [Display(Name = "S4 L1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess4.L1.0 Bucket Settings")]
         [Browsable(false)]
-        public double S2_MaxCandleRange { get; set; }
+        public double Sess4_L1_MaxCandleRange { get; set; }
 
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 EMA Length", Order = 1, GroupName = "S2.1 EMA Settings")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 L1 EMA Length", Order = 1, GroupName = "Sess4.L1.1 EMA Settings")]
         [Browsable(false)]
-        public int S2_EmaLength { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable EMA Slope Filter", Order = 2, GroupName = "S2.1 EMA Settings")]
-        [Browsable(false)]
-        public bool S2_EnableEmaSlope { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 EMA Slope Mode", Order = 3, GroupName = "S2.1 EMA Settings")]
-        [Browsable(false)]
-        public Hugo_EmaSlopeModeEnum S2_EmaSlopeMode { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 EMA Slope Bars", Order = 4, GroupName = "S2.1 EMA Settings")]
-        [Browsable(false)]
-        public int S2_EmaSlopeBars { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 EMA Min Slope %", Order = 5, GroupName = "S2.1 EMA Settings")]
-        [Browsable(false)]
-        public double S2_EmaSlopeMinPct { get; set; }
+        public int Sess4_L1_EmaLength { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Enable WMA Filter", Order = 1, GroupName = "S2.1b WMA Filter")]
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess4.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool S2_EnableWMAFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 WMA Length", Order = 2, GroupName = "S2.1b WMA Filter")]
-        [Browsable(false)]
-        public int S2_WMALength { get; set; }
+        public bool Sess4_L1_EnableEmaSlope { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Enable SMA Filter", Order = 1, GroupName = "S2.1c SMA Filter")]
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 EMA Slope Mode", Order = 3, GroupName = "Sess4.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool S2_EnableSMAFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 SMA Length", Order = 2, GroupName = "S2.1c SMA Filter")]
-        [Browsable(false)]
-        public int S2_SMALength { get; set; }
+        public Hugo_EmaSlopeModeEnum Sess4_L1_EmaSlopeMode { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Enable ADX Filter", Order = 1, GroupName = "S2.1d ADX Filter")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 L1 EMA Slope Bars", Order = 4, GroupName = "Sess4.L1.1 EMA Settings")]
         [Browsable(false)]
-        public bool S2_EnableADXFilter { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 ADX Period", Order = 2, GroupName = "S2.1d ADX Filter")]
-        [Browsable(false)]
-        public int S2_ADXPeriod { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 ADX Min Value", Order = 3, GroupName = "S2.1d ADX Filter")]
-        [Browsable(false)]
-        public double S2_ADXMin { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 ADX Max Value", Order = 4, GroupName = "S2.1d ADX Filter")]
-        [Browsable(false)]
-        public double S2_ADXMax { get; set; }
+        public int Sess4_L1_EmaSlopeBars { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Entry Type", Order = 1, GroupName = "S2.2 Entry Settings")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 EMA Min Slope %", Order = 5, GroupName = "Sess4.L1.1 EMA Settings")]
         [Browsable(false)]
-        public Hugo_EntryTypeEnum S2_EntryType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Pullback Offset (Points)", Order = 2, GroupName = "S2.2 Entry Settings")]
-        [Browsable(false)]
-        public double S2_PullbackOffset { get; set; }
-        [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "S2 Max Bars to Wait", Order = 3, GroupName = "S2.2 Entry Settings")]
-        [Browsable(false)]
-        public int S2_MaxBarsToWait { get; set; }
+        public double Sess4_L1_EmaSlopeMinPct { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Stop Loss Type", Order = 1, GroupName = "S2.3 Stop Loss")]
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable WMA Filter", Order = 1, GroupName = "Sess4.L1.1b WMA Filter")]
         [Browsable(false)]
-        public Hugo_StopLossTypeEnum S2_StopLossType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "S2.3 Stop Loss")]
-        [Browsable(false)]
-        public double S2_FixedStopLoss { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S2 SL Candle Multiplier", Order = 2, GroupName = "S2.3 Stop Loss")]
-        [Browsable(false)]
-        public double S2_SLCandleMultiplier { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Stop Loss Offset (Points)", Order = 3, GroupName = "S2.3 Stop Loss")]
-        [Browsable(false)]
-        public double S2_StopLossOffset { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Maximum Stop Loss (Points)", Order = 4, GroupName = "S2.3 Stop Loss")]
-        [Browsable(false)]
-        public double S2_MaxStopLoss { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable Max Bars In Trade", Order = 5, GroupName = "S2.3 Stop Loss")]
-        [Browsable(false)]
-        public bool S2_EnableMaxBarsInTrade { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 Max Bars In Trade", Order = 6, GroupName = "S2.3 Stop Loss")]
-        [Browsable(false)]
-        public int S2_MaxBarsInTrade { get; set; }
+        public bool Sess4_L1_EnableWMAFilter { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Take Profit Type", Order = 1, GroupName = "S2.4 Take Profit")]
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 L1 WMA Length", Order = 2, GroupName = "Sess4.L1.1b WMA Filter")]
         [Browsable(false)]
-        public Hugo_TakeProfitTypeEnum S2_TakeProfitType { get; set; }
-        [NinjaScriptProperty][Range(0.1, double.MaxValue)][Display(Name = "S2 Risk Reward Ratio", Order = 2, GroupName = "S2.4 Take Profit")]
-        [Browsable(false)]
-        public double S2_RiskRewardRatio { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Fixed Take Profit (Points)", Order = 3, GroupName = "S2.4 Take Profit")]
-        [Browsable(false)]
-        public double S2_FixedTakeProfit { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S2 TP Candle Multiplier", Order = 4, GroupName = "S2.4 Take Profit")]
-        [Browsable(false)]
-        public double S2_TPCandleMultiplier { get; set; }
+        public int Sess4_L1_WMALength { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Enable Break Even", Order = 1, GroupName = "S2.5 Break Even")]
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Stop Loss Type", Order = 1, GroupName = "Sess4.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S2_EnableBreakEven { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Break Even Trigger Type", Order = 2, GroupName = "S2.5 Break Even")]
-        [Browsable(false)]
-        public Hugo_BreakEvenTriggerEnum S2_BreakEvenTriggerType { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Break Even Trigger Value", Order = 3, GroupName = "S2.5 Break Even")]
-        [Browsable(false)]
-        public double S2_BreakEvenTriggerValue { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Break Even Offset (Points)", Order = 4, GroupName = "S2.5 Break Even")]
-        [Browsable(false)]
-        public double S2_BreakEvenOffset { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable SL to Entry on EMA Cross", Order = 5, GroupName = "S2.5 Break Even")]
-        [Browsable(false)]
-        public bool S2_EnableSLToEntryOnEMA { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 SL to Entry Offset (Points)", Order = 6, GroupName = "S2.5 Break Even")]
-        [Browsable(false)]
-        public double S2_SLToEntryOffset { get; set; }
+        public Hugo_StopLossTypeEnum Sess4_L1_StopLossType { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Enable Price Trail Stop", Order = 1, GroupName = "S2.6 Trailing Stop")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess4.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S2_EnablePriceTrail { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Trail Distance Mode", Order = 2, GroupName = "S2.6 Trailing Stop")]
-        [Browsable(false)]
-        public Hugo_TrailDistanceModeEnum S2_TrailDistanceMode { get; set; }
-        [NinjaScriptProperty][Range(0.01, double.MaxValue)][Display(Name = "S2 Trail Distance Value", Order = 3, GroupName = "S2.6 Trailing Stop")]
-        [Browsable(false)]
-        public double S2_TrailDistanceValue { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Trail Activation Mode", Order = 4, GroupName = "S2.6 Trailing Stop")]
-        [Browsable(false)]
-        public Hugo_TrailActivationModeEnum S2_TrailActivationMode { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Trail Activation Value", Order = 5, GroupName = "S2.6 Trailing Stop")]
-        [Browsable(false)]
-        public double S2_TrailActivationValue { get; set; }
-        [NinjaScriptProperty][Range(0, int.MaxValue)][Display(Name = "S2 Trail Step (Ticks)", Order = 6, GroupName = "S2.6 Trailing Stop")]
-        [Browsable(false)]
-        public int S2_TrailStepTicks { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable Trail Lock", Order = 7, GroupName = "S2.6 Trailing Stop")]
-        [Browsable(false)]
-        public bool S2_EnableTrailLock { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Trail Lock Value", Order = 8, GroupName = "S2.6 Trailing Stop")]
-        [Browsable(false)]
-        public double S2_TrailLockValue { get; set; }
+        public double Sess4_L1_FixedStopLoss { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Enable Candle Size Filter", Order = 1, GroupName = "S2.7 Signal Filters")]
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 L1 SL Candle Multiplier", Order = 3, GroupName = "Sess4.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S2_EnableCandleSizeFilter { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Min Candle Size (Points)", Order = 2, GroupName = "S2.7 Signal Filters")]
-        [Browsable(false)]
-        public double S2_MinCandleSize { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Max Candle Size (Points)", Order = 3, GroupName = "S2.7 Signal Filters")]
-        [Browsable(false)]
-        public double S2_MaxCandleSize { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable Body % Filter", Order = 4, GroupName = "S2.7 Signal Filters")]
-        [Browsable(false)]
-        public bool S2_EnableBodyPctFilter { get; set; }
-        [NinjaScriptProperty][Range(0, 100)][Display(Name = "S2 Min Body % of Range", Order = 5, GroupName = "S2.7 Signal Filters")]
-        [Browsable(false)]
-        public double S2_MinBodyPct { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable Close Distance Filter", Order = 6, GroupName = "S2.7 Signal Filters")]
-        [Browsable(false)]
-        public bool S2_EnableCloseDistanceFilter { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Min Close Distance (Points)", Order = 7, GroupName = "S2.7 Signal Filters")]
-        [Browsable(false)]
-        public double S2_MinCloseDistance { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable Filter Wait Bars", Order = 8, GroupName = "S2.7 Signal Filters")]
-        [Browsable(false)]
-        public bool S2_EnableFilterWaitBars { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 Filter Wait Max Bars", Order = 9, GroupName = "S2.7 Signal Filters")]
-        [Browsable(false)]
-        public int S2_FilterWaitMaxBars { get; set; }
+        public double Sess4_L1_SLCandleMultiplier { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Enable Direction Flip", Order = 1, GroupName = "S2.8 Direction Flip")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess4.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S2_EnableDirectionFlip { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable Same Direction On Loss", Order = 2, GroupName = "S2.8 Direction Flip")]
-        [Browsable(false)]
-        public bool S2_EnableSameDirectionOnLoss { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Loss Threshold (Points)", Order = 3, GroupName = "S2.8 Direction Flip")]
-        [Browsable(false)]
-        public double S2_SameDirectionLossThreshold { get; set; }
+        public double Sess4_L1_StopLossOffset { get; set; }
 
-        [NinjaScriptProperty][Display(Name = "S2 Enable Max Daily Loss", Order = 1, GroupName = "S2.9 Risk Management")]
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess4.L1.3 Stop Loss")]
         [Browsable(false)]
-        public bool S2_EnableMaxDailyLoss { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Max Daily Loss (Points)", Order = 2, GroupName = "S2.9 Risk Management")]
+        public double Sess4_L1_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Take Profit Type", Order = 1, GroupName = "Sess4.L1.4 Take Profit")]
         [Browsable(false)]
-        public double S2_MaxDailyLoss { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable Max Daily Profit", Order = 3, GroupName = "S2.9 Risk Management")]
+        public Hugo_TakeProfitTypeEnum Sess4_L1_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S4 L1 Risk Reward Ratio", Order = 2, GroupName = "Sess4.L1.4 Take Profit")]
         [Browsable(false)]
-        public bool S2_EnableMaxDailyProfit { get; set; }
-        [NinjaScriptProperty][Range(0, double.MaxValue)][Display(Name = "S2 Max Daily Profit (Points)", Order = 4, GroupName = "S2.9 Risk Management")]
+        public double Sess4_L1_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess4.L1.4 Take Profit")]
         [Browsable(false)]
-        public double S2_MaxDailyProfit { get; set; }
-        [NinjaScriptProperty][Display(Name = "S2 Enable Max Trades Per Day", Order = 5, GroupName = "S2.9 Risk Management")]
+        public double Sess4_L1_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 L1 TP Candle Multiplier", Order = 4, GroupName = "Sess4.L1.4 Take Profit")]
         [Browsable(false)]
-        public bool S2_EnableMaxTradesPerDay { get; set; }
-        [NinjaScriptProperty][Range(1, int.MaxValue)][Display(Name = "S2 Max Trades Per Day", Order = 6, GroupName = "S2.9 Risk Management")]
+        public double Sess4_L1_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable Break Even", Order = 1, GroupName = "Sess4.L1.5 Break Even")]
         [Browsable(false)]
-        public int S2_MaxTradesPerDay { get; set; }
+        public bool Sess4_L1_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Break Even Trigger Type", Order = 2, GroupName = "Sess4.L1.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess4_L1_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Break Even Trigger Value", Order = 3, GroupName = "Sess4.L1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess4_L1_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Break Even Offset (Points)", Order = 4, GroupName = "Sess4.L1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess4_L1_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable Price Trail Stop", Order = 1, GroupName = "Sess4.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess4_L1_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Trail Distance Mode", Order = 2, GroupName = "Sess4.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess4_L1_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 L1 Trail Distance Value", Order = 3, GroupName = "Sess4.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess4_L1_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Trail Activation Mode", Order = 4, GroupName = "Sess4.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess4_L1_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Trail Activation Value", Order = 5, GroupName = "Sess4.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess4_L1_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S4 L1 Trail Step (Ticks)", Order = 6, GroupName = "Sess4.L1.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess4_L1_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable Body % Filter", Order = 1, GroupName = "Sess4.L1.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess4_L1_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S4 L1 Min Body % of Range", Order = 2, GroupName = "Sess4.L1.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess4_L1_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable Direction Flip", Order = 1, GroupName = "Sess4.L1.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess4_L1_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable Max Daily Loss", Order = 1, GroupName = "Sess4.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_L1_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess4.L1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess4_L1_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable Max Daily Profit", Order = 3, GroupName = "Sess4.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_L1_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess4.L1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess4_L1_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess4.L1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_L1_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 L1 Max Trades Per Day", Order = 6, GroupName = "Sess4.L1.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess4_L1_MaxTradesPerDay { get; set; }
+
+        // ── Sess4 L2 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess4.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess4_L2_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess4.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess4_L2_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess4.L2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess4_L2_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 L2 EMA Length", Order = 1, GroupName = "Sess4.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess4_L2_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess4.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 EMA Slope Mode", Order = 3, GroupName = "Sess4.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess4_L2_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 L2 EMA Slope Bars", Order = 4, GroupName = "Sess4.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess4_L2_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 EMA Min Slope %", Order = 5, GroupName = "Sess4.L2.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess4_L2_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable WMA Filter", Order = 1, GroupName = "Sess4.L2.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 L2 WMA Length", Order = 2, GroupName = "Sess4.L2.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess4_L2_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Stop Loss Type", Order = 1, GroupName = "Sess4.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess4_L2_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess4.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_L2_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 L2 SL Candle Multiplier", Order = 3, GroupName = "Sess4.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_L2_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess4.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_L2_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess4.L2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_L2_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Take Profit Type", Order = 1, GroupName = "Sess4.L2.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess4_L2_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S4 L2 Risk Reward Ratio", Order = 2, GroupName = "Sess4.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_L2_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess4.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_L2_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 L2 TP Candle Multiplier", Order = 4, GroupName = "Sess4.L2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_L2_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable Break Even", Order = 1, GroupName = "Sess4.L2.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Break Even Trigger Type", Order = 2, GroupName = "Sess4.L2.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess4_L2_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Break Even Trigger Value", Order = 3, GroupName = "Sess4.L2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess4_L2_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Break Even Offset (Points)", Order = 4, GroupName = "Sess4.L2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess4_L2_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable Price Trail Stop", Order = 1, GroupName = "Sess4.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Trail Distance Mode", Order = 2, GroupName = "Sess4.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess4_L2_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 L2 Trail Distance Value", Order = 3, GroupName = "Sess4.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess4_L2_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Trail Activation Mode", Order = 4, GroupName = "Sess4.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess4_L2_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Trail Activation Value", Order = 5, GroupName = "Sess4.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess4_L2_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S4 L2 Trail Step (Ticks)", Order = 6, GroupName = "Sess4.L2.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess4_L2_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable Body % Filter", Order = 1, GroupName = "Sess4.L2.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S4 L2 Min Body % of Range", Order = 2, GroupName = "Sess4.L2.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess4_L2_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable Direction Flip", Order = 1, GroupName = "Sess4.L2.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable Max Daily Loss", Order = 1, GroupName = "Sess4.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess4.L2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess4_L2_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable Max Daily Profit", Order = 3, GroupName = "Sess4.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 L2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess4.L2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess4_L2_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 L2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess4.L2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_L2_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 L2 Max Trades Per Day", Order = 6, GroupName = "Sess4.L2.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess4_L2_MaxTradesPerDay { get; set; }
+
+        // ── Sess4 S1 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess4.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess4_S1_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess4.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess4_S1_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess4.S1.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess4_S1_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 S1 EMA Length", Order = 1, GroupName = "Sess4.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess4_S1_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess4.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 EMA Slope Mode", Order = 3, GroupName = "Sess4.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess4_S1_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 S1 EMA Slope Bars", Order = 4, GroupName = "Sess4.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess4_S1_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 EMA Min Slope %", Order = 5, GroupName = "Sess4.S1.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess4_S1_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable WMA Filter", Order = 1, GroupName = "Sess4.S1.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 S1 WMA Length", Order = 2, GroupName = "Sess4.S1.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess4_S1_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Stop Loss Type", Order = 1, GroupName = "Sess4.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess4_S1_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess4.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_S1_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 S1 SL Candle Multiplier", Order = 3, GroupName = "Sess4.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_S1_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess4.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_S1_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess4.S1.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_S1_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Take Profit Type", Order = 1, GroupName = "Sess4.S1.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess4_S1_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S4 S1 Risk Reward Ratio", Order = 2, GroupName = "Sess4.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_S1_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess4.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_S1_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 S1 TP Candle Multiplier", Order = 4, GroupName = "Sess4.S1.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_S1_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable Break Even", Order = 1, GroupName = "Sess4.S1.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Break Even Trigger Type", Order = 2, GroupName = "Sess4.S1.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess4_S1_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Break Even Trigger Value", Order = 3, GroupName = "Sess4.S1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess4_S1_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Break Even Offset (Points)", Order = 4, GroupName = "Sess4.S1.5 Break Even")]
+        [Browsable(false)]
+        public double Sess4_S1_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable Price Trail Stop", Order = 1, GroupName = "Sess4.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Trail Distance Mode", Order = 2, GroupName = "Sess4.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess4_S1_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 S1 Trail Distance Value", Order = 3, GroupName = "Sess4.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess4_S1_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Trail Activation Mode", Order = 4, GroupName = "Sess4.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess4_S1_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Trail Activation Value", Order = 5, GroupName = "Sess4.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess4_S1_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S4 S1 Trail Step (Ticks)", Order = 6, GroupName = "Sess4.S1.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess4_S1_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable Body % Filter", Order = 1, GroupName = "Sess4.S1.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S4 S1 Min Body % of Range", Order = 2, GroupName = "Sess4.S1.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess4_S1_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable Direction Flip", Order = 1, GroupName = "Sess4.S1.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable Max Daily Loss", Order = 1, GroupName = "Sess4.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess4.S1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess4_S1_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable Max Daily Profit", Order = 3, GroupName = "Sess4.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess4.S1.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess4_S1_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess4.S1.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_S1_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 S1 Max Trades Per Day", Order = 6, GroupName = "Sess4.S1.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess4_S1_MaxTradesPerDay { get; set; }
+
+        // ── Sess4 S2 ─────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess4.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public bool Sess4_S2_Enable { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess4.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess4_S2_MinCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess4.S2.0 Bucket Settings")]
+        [Browsable(false)]
+        public double Sess4_S2_MaxCandleRange { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 S2 EMA Length", Order = 1, GroupName = "Sess4.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess4_S2_EmaLength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess4.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnableEmaSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 EMA Slope Mode", Order = 3, GroupName = "Sess4.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public Hugo_EmaSlopeModeEnum Sess4_S2_EmaSlopeMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 S2 EMA Slope Bars", Order = 4, GroupName = "Sess4.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public int Sess4_S2_EmaSlopeBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 EMA Min Slope %", Order = 5, GroupName = "Sess4.S2.1 EMA Settings")]
+        [Browsable(false)]
+        public double Sess4_S2_EmaSlopeMinPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable WMA Filter", Order = 1, GroupName = "Sess4.S2.1b WMA Filter")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnableWMAFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 S2 WMA Length", Order = 2, GroupName = "Sess4.S2.1b WMA Filter")]
+        [Browsable(false)]
+        public int Sess4_S2_WMALength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Stop Loss Type", Order = 1, GroupName = "Sess4.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public Hugo_StopLossTypeEnum Sess4_S2_StopLossType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess4.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_S2_FixedStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 S2 SL Candle Multiplier", Order = 3, GroupName = "Sess4.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_S2_SLCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess4.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_S2_StopLossOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess4.S2.3 Stop Loss")]
+        [Browsable(false)]
+        public double Sess4_S2_MaxStopLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Take Profit Type", Order = 1, GroupName = "Sess4.S2.4 Take Profit")]
+        [Browsable(false)]
+        public Hugo_TakeProfitTypeEnum Sess4_S2_TakeProfitType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "S4 S2 Risk Reward Ratio", Order = 2, GroupName = "Sess4.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_S2_RiskRewardRatio { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess4.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_S2_FixedTakeProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 S2 TP Candle Multiplier", Order = 4, GroupName = "Sess4.S2.4 Take Profit")]
+        [Browsable(false)]
+        public double Sess4_S2_TPCandleMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable Break Even", Order = 1, GroupName = "Sess4.S2.5 Break Even")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnableBreakEven { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Break Even Trigger Type", Order = 2, GroupName = "Sess4.S2.5 Break Even")]
+        [Browsable(false)]
+        public Hugo_BreakEvenTriggerEnum Sess4_S2_BreakEvenTriggerType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Break Even Trigger Value", Order = 3, GroupName = "Sess4.S2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess4_S2_BreakEvenTriggerValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Break Even Offset (Points)", Order = 4, GroupName = "Sess4.S2.5 Break Even")]
+        [Browsable(false)]
+        public double Sess4_S2_BreakEvenOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable Price Trail Stop", Order = 1, GroupName = "Sess4.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnablePriceTrail { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Trail Distance Mode", Order = 2, GroupName = "Sess4.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailDistanceModeEnum Sess4_S2_TrailDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, double.MaxValue)]
+        [Display(Name = "S4 S2 Trail Distance Value", Order = 3, GroupName = "Sess4.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess4_S2_TrailDistanceValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Trail Activation Mode", Order = 4, GroupName = "Sess4.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public Hugo_TrailActivationModeEnum Sess4_S2_TrailActivationMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Trail Activation Value", Order = 5, GroupName = "Sess4.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public double Sess4_S2_TrailActivationValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "S4 S2 Trail Step (Ticks)", Order = 6, GroupName = "Sess4.S2.6 Trailing Stop")]
+        [Browsable(false)]
+        public int Sess4_S2_TrailStepTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable Body % Filter", Order = 1, GroupName = "Sess4.S2.7 Signal Filters")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnableBodyPctFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "S4 S2 Min Body % of Range", Order = 2, GroupName = "Sess4.S2.7 Signal Filters")]
+        [Browsable(false)]
+        public double Sess4_S2_MinBodyPct { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable Direction Flip", Order = 1, GroupName = "Sess4.S2.8 Direction Flip")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnableDirectionFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable Max Daily Loss", Order = 1, GroupName = "Sess4.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnableMaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess4.S2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess4_S2_MaxDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable Max Daily Profit", Order = 3, GroupName = "Sess4.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnableMaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "S4 S2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess4.S2.9 Risk Management")]
+        [Browsable(false)]
+        public double Sess4_S2_MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "S4 S2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess4.S2.9 Risk Management")]
+        [Browsable(false)]
+        public bool Sess4_S2_EnableMaxTradesPerDay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "S4 S2 Max Trades Per Day", Order = 6, GroupName = "Sess4.S2.9 Risk Management")]
+        [Browsable(false)]
+        public int Sess4_S2_MaxTradesPerDay { get; set; }
 
         #endregion
 
+
         // ════════════════════════════════════════════════════════════════════════
-        //  BUCKET PARAMETER ACCESSOR — Reads correct parameters based on activeBucket
+        //  ACCESSORS
         // ════════════════════════════════════════════════════════════════════════
 
-        #region Bucket Accessor Helper
+        #region Accessors
 
-        private EMA GetEma(string bucket)
+        private EMA GetEma(int s, string b)
         {
-            switch (bucket) { case "L1": return emaL1; case "L2": return emaL2; case "S1": return emaS1; case "S2": return emaS2; default: return emaL1; }
+            switch ((s, b))
+            {
+                case (1, "L1"): return emaSess1_L1;
+                case (1, "L2"): return emaSess1_L2;
+                case (1, "S1"): return emaSess1_S1;
+                case (1, "S2"): return emaSess1_S2;
+                case (2, "L1"): return emaSess2_L1;
+                case (2, "L2"): return emaSess2_L2;
+                case (2, "S1"): return emaSess2_S1;
+                case (2, "S2"): return emaSess2_S2;
+                case (3, "L1"): return emaSess3_L1;
+                case (3, "L2"): return emaSess3_L2;
+                case (3, "S1"): return emaSess3_S1;
+                case (3, "S2"): return emaSess3_S2;
+                case (4, "L1"): return emaSess4_L1;
+                case (4, "L2"): return emaSess4_L2;
+                case (4, "S1"): return emaSess4_S1;
+                case (4, "S2"): return emaSess4_S2;
+                default: return emaSess1_L1;
+            }
         }
 
-        private bool B_EnableEmaSlope(string b) { switch(b){case "L1":return L1_EnableEmaSlope;case "L2":return L2_EnableEmaSlope;case "S1":return S1_EnableEmaSlope;case "S2":return S2_EnableEmaSlope;default:return false;} }
-        private Hugo_EmaSlopeModeEnum B_EmaSlopeMode(string b) { switch(b){case "L1":return L1_EmaSlopeMode;case "L2":return L2_EmaSlopeMode;case "S1":return S1_EmaSlopeMode;case "S2":return S2_EmaSlopeMode;default:return Hugo_EmaSlopeModeEnum.MagnitudeOnly;} }
-        private int B_EmaSlopeBars(string b) { switch(b){case "L1":return L1_EmaSlopeBars;case "L2":return L2_EmaSlopeBars;case "S1":return S1_EmaSlopeBars;case "S2":return S2_EmaSlopeBars;default:return 49;} }
-        private double B_EmaSlopeMinPct(string b) { switch(b){case "L1":return L1_EmaSlopeMinPct;case "L2":return L2_EmaSlopeMinPct;case "S1":return S1_EmaSlopeMinPct;case "S2":return S2_EmaSlopeMinPct;default:return 0;} }
+        private WMA GetWma(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return wmaSess1_L1;
+                case (1, "L2"): return wmaSess1_L2;
+                case (1, "S1"): return wmaSess1_S1;
+                case (1, "S2"): return wmaSess1_S2;
+                case (2, "L1"): return wmaSess2_L1;
+                case (2, "L2"): return wmaSess2_L2;
+                case (2, "S1"): return wmaSess2_S1;
+                case (2, "S2"): return wmaSess2_S2;
+                case (3, "L1"): return wmaSess3_L1;
+                case (3, "L2"): return wmaSess3_L2;
+                case (3, "S1"): return wmaSess3_S1;
+                case (3, "S2"): return wmaSess3_S2;
+                case (4, "L1"): return wmaSess4_L1;
+                case (4, "L2"): return wmaSess4_L2;
+                case (4, "S1"): return wmaSess4_S1;
+                case (4, "S2"): return wmaSess4_S2;
+                default: return wmaSess1_L1;
+            }
+        }
 
-        private Hugo_EntryTypeEnum B_EntryType(string b) { switch(b){case "L1":return L1_EntryType;case "L2":return L2_EntryType;case "S1":return S1_EntryType;case "S2":return S2_EntryType;default:return Hugo_EntryTypeEnum.Immediate;} }
-        private double B_PullbackOffset(string b) { switch(b){case "L1":return L1_PullbackOffset;case "L2":return L2_PullbackOffset;case "S1":return S1_PullbackOffset;case "S2":return S2_PullbackOffset;default:return 3;} }
-        private int B_MaxBarsToWait(string b) { switch(b){case "L1":return L1_MaxBarsToWait;case "L2":return L2_MaxBarsToWait;case "S1":return S1_MaxBarsToWait;case "S2":return S2_MaxBarsToWait;default:return 0;} }
+        private bool IsBucketEnabled(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_Enable;
+                case (1, "L2"): return Sess1_L2_Enable;
+                case (1, "S1"): return Sess1_S1_Enable;
+                case (1, "S2"): return Sess1_S2_Enable;
+                case (2, "L1"): return Sess2_L1_Enable;
+                case (2, "L2"): return Sess2_L2_Enable;
+                case (2, "S1"): return Sess2_S1_Enable;
+                case (2, "S2"): return Sess2_S2_Enable;
+                case (3, "L1"): return Sess3_L1_Enable;
+                case (3, "L2"): return Sess3_L2_Enable;
+                case (3, "S1"): return Sess3_S1_Enable;
+                case (3, "S2"): return Sess3_S2_Enable;
+                case (4, "L1"): return Sess4_L1_Enable;
+                case (4, "L2"): return Sess4_L2_Enable;
+                case (4, "S1"): return Sess4_S1_Enable;
+                case (4, "S2"): return Sess4_S2_Enable;
+                default: return false;
+            }
+        }
 
-        private Hugo_StopLossTypeEnum B_StopLossType(string b) { switch(b){case "L1":return L1_StopLossType;case "L2":return L2_StopLossType;case "S1":return S1_StopLossType;case "S2":return S2_StopLossType;default:return Hugo_StopLossTypeEnum.Fixed;} }
-        private double B_FixedStopLoss(string b) { switch(b){case "L1":return L1_FixedStopLoss;case "L2":return L2_FixedStopLoss;case "S1":return S1_FixedStopLoss;case "S2":return S2_FixedStopLoss;default:return 57;} }
-        private double B_StopLossOffset(string b) { switch(b){case "L1":return L1_StopLossOffset;case "L2":return L2_StopLossOffset;case "S1":return S1_StopLossOffset;case "S2":return S2_StopLossOffset;default:return 56;} }
-        private double B_MaxStopLoss(string b) { switch(b){case "L1":return L1_MaxStopLoss;case "L2":return L2_MaxStopLoss;case "S1":return S1_MaxStopLoss;case "S2":return S2_MaxStopLoss;default:return 50;} }
+        private bool B_EnableEmaSlope(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnableEmaSlope;
+                case (1, "L2"): return Sess1_L2_EnableEmaSlope;
+                case (1, "S1"): return Sess1_S1_EnableEmaSlope;
+                case (1, "S2"): return Sess1_S2_EnableEmaSlope;
+                case (2, "L1"): return Sess2_L1_EnableEmaSlope;
+                case (2, "L2"): return Sess2_L2_EnableEmaSlope;
+                case (2, "S1"): return Sess2_S1_EnableEmaSlope;
+                case (2, "S2"): return Sess2_S2_EnableEmaSlope;
+                case (3, "L1"): return Sess3_L1_EnableEmaSlope;
+                case (3, "L2"): return Sess3_L2_EnableEmaSlope;
+                case (3, "S1"): return Sess3_S1_EnableEmaSlope;
+                case (3, "S2"): return Sess3_S2_EnableEmaSlope;
+                case (4, "L1"): return Sess4_L1_EnableEmaSlope;
+                case (4, "L2"): return Sess4_L2_EnableEmaSlope;
+                case (4, "S1"): return Sess4_S1_EnableEmaSlope;
+                case (4, "S2"): return Sess4_S2_EnableEmaSlope;
+                default: return false;
+            }
+        }
 
-        private Hugo_TakeProfitTypeEnum B_TakeProfitType(string b) { switch(b){case "L1":return L1_TakeProfitType;case "L2":return L2_TakeProfitType;case "S1":return S1_TakeProfitType;case "S2":return S2_TakeProfitType;default:return Hugo_TakeProfitTypeEnum.RiskReward;} }
-        private double B_RiskRewardRatio(string b) { switch(b){case "L1":return L1_RiskRewardRatio;case "L2":return L2_RiskRewardRatio;case "S1":return S1_RiskRewardRatio;case "S2":return S2_RiskRewardRatio;default:return 3.42;} }
-        private double B_FixedTakeProfit(string b) { switch(b){case "L1":return L1_FixedTakeProfit;case "L2":return L2_FixedTakeProfit;case "S1":return S1_FixedTakeProfit;case "S2":return S2_FixedTakeProfit;default:return 100;} }
-        private double B_SLCandleMultiplier(string b) { switch(b){case "L1":return L1_SLCandleMultiplier;case "L2":return L2_SLCandleMultiplier;case "S1":return S1_SLCandleMultiplier;case "S2":return S2_SLCandleMultiplier;default:return 1.0;} }
-        private double B_TPCandleMultiplier(string b) { switch(b){case "L1":return L1_TPCandleMultiplier;case "L2":return L2_TPCandleMultiplier;case "S1":return S1_TPCandleMultiplier;case "S2":return S2_TPCandleMultiplier;default:return 1.0;} }
+        private Hugo_EmaSlopeModeEnum B_EmaSlopeMode(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EmaSlopeMode;
+                case (1, "L2"): return Sess1_L2_EmaSlopeMode;
+                case (1, "S1"): return Sess1_S1_EmaSlopeMode;
+                case (1, "S2"): return Sess1_S2_EmaSlopeMode;
+                case (2, "L1"): return Sess2_L1_EmaSlopeMode;
+                case (2, "L2"): return Sess2_L2_EmaSlopeMode;
+                case (2, "S1"): return Sess2_S1_EmaSlopeMode;
+                case (2, "S2"): return Sess2_S2_EmaSlopeMode;
+                case (3, "L1"): return Sess3_L1_EmaSlopeMode;
+                case (3, "L2"): return Sess3_L2_EmaSlopeMode;
+                case (3, "S1"): return Sess3_S1_EmaSlopeMode;
+                case (3, "S2"): return Sess3_S2_EmaSlopeMode;
+                case (4, "L1"): return Sess4_L1_EmaSlopeMode;
+                case (4, "L2"): return Sess4_L2_EmaSlopeMode;
+                case (4, "S1"): return Sess4_S1_EmaSlopeMode;
+                case (4, "S2"): return Sess4_S2_EmaSlopeMode;
+                default: return Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+            }
+        }
 
-        private bool B_EnableBreakEven(string b) { switch(b){case "L1":return L1_EnableBreakEven;case "L2":return L2_EnableBreakEven;case "S1":return S1_EnableBreakEven;case "S2":return S2_EnableBreakEven;default:return false;} }
-        private Hugo_BreakEvenTriggerEnum B_BreakEvenTriggerType(string b) { switch(b){case "L1":return L1_BreakEvenTriggerType;case "L2":return L2_BreakEvenTriggerType;case "S1":return S1_BreakEvenTriggerType;case "S2":return S2_BreakEvenTriggerType;default:return Hugo_BreakEvenTriggerEnum.RiskMultiple;} }
-        private double B_BreakEvenTriggerValue(string b) { switch(b){case "L1":return L1_BreakEvenTriggerValue;case "L2":return L2_BreakEvenTriggerValue;case "S1":return S1_BreakEvenTriggerValue;case "S2":return S2_BreakEvenTriggerValue;default:return 3.29;} }
-        private double B_BreakEvenOffset(string b) { switch(b){case "L1":return L1_BreakEvenOffset;case "L2":return L2_BreakEvenOffset;case "S1":return S1_BreakEvenOffset;case "S2":return S2_BreakEvenOffset;default:return 2;} }
+        private int B_EmaSlopeBars(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EmaSlopeBars;
+                case (1, "L2"): return Sess1_L2_EmaSlopeBars;
+                case (1, "S1"): return Sess1_S1_EmaSlopeBars;
+                case (1, "S2"): return Sess1_S2_EmaSlopeBars;
+                case (2, "L1"): return Sess2_L1_EmaSlopeBars;
+                case (2, "L2"): return Sess2_L2_EmaSlopeBars;
+                case (2, "S1"): return Sess2_S1_EmaSlopeBars;
+                case (2, "S2"): return Sess2_S2_EmaSlopeBars;
+                case (3, "L1"): return Sess3_L1_EmaSlopeBars;
+                case (3, "L2"): return Sess3_L2_EmaSlopeBars;
+                case (3, "S1"): return Sess3_S1_EmaSlopeBars;
+                case (3, "S2"): return Sess3_S2_EmaSlopeBars;
+                case (4, "L1"): return Sess4_L1_EmaSlopeBars;
+                case (4, "L2"): return Sess4_L2_EmaSlopeBars;
+                case (4, "S1"): return Sess4_S1_EmaSlopeBars;
+                case (4, "S2"): return Sess4_S2_EmaSlopeBars;
+                default: return 49;
+            }
+        }
 
-        private bool B_EnablePriceTrail(string b) { switch(b){case "L1":return L1_EnablePriceTrail;case "L2":return L2_EnablePriceTrail;case "S1":return S1_EnablePriceTrail;case "S2":return S2_EnablePriceTrail;default:return false;} }
-        private Hugo_TrailDistanceModeEnum B_TrailDistanceMode(string b) { switch(b){case "L1":return L1_TrailDistanceMode;case "L2":return L2_TrailDistanceMode;case "S1":return S1_TrailDistanceMode;case "S2":return S2_TrailDistanceMode;default:return Hugo_TrailDistanceModeEnum.FixedPoints;} }
-        private double B_TrailDistanceValue(string b) { switch(b){case "L1":return L1_TrailDistanceValue;case "L2":return L2_TrailDistanceValue;case "S1":return S1_TrailDistanceValue;case "S2":return S2_TrailDistanceValue;default:return 20;} }
-        private Hugo_TrailActivationModeEnum B_TrailActivationMode(string b) { switch(b){case "L1":return L1_TrailActivationMode;case "L2":return L2_TrailActivationMode;case "S1":return S1_TrailActivationMode;case "S2":return S2_TrailActivationMode;default:return Hugo_TrailActivationModeEnum.FixedPoints;} }
-        private double B_TrailActivationValue(string b) { switch(b){case "L1":return L1_TrailActivationValue;case "L2":return L2_TrailActivationValue;case "S1":return S1_TrailActivationValue;case "S2":return S2_TrailActivationValue;default:return 30;} }
-        private int B_TrailStepTicks(string b) { switch(b){case "L1":return L1_TrailStepTicks;case "L2":return L2_TrailStepTicks;case "S1":return S1_TrailStepTicks;case "S2":return S2_TrailStepTicks;default:return 0;} }
-        private bool B_EnableTrailLock(string b) { switch(b){case "L1":return L1_EnableTrailLock;case "L2":return L2_EnableTrailLock;case "S1":return S1_EnableTrailLock;case "S2":return S2_EnableTrailLock;default:return false;} }
-        private double B_TrailLockValue(string b) { switch(b){case "L1":return L1_TrailLockValue;case "L2":return L2_TrailLockValue;case "S1":return S1_TrailLockValue;case "S2":return S2_TrailLockValue;default:return 0;} }
+        private double B_EmaSlopeMinPct(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EmaSlopeMinPct;
+                case (1, "L2"): return Sess1_L2_EmaSlopeMinPct;
+                case (1, "S1"): return Sess1_S1_EmaSlopeMinPct;
+                case (1, "S2"): return Sess1_S2_EmaSlopeMinPct;
+                case (2, "L1"): return Sess2_L1_EmaSlopeMinPct;
+                case (2, "L2"): return Sess2_L2_EmaSlopeMinPct;
+                case (2, "S1"): return Sess2_S1_EmaSlopeMinPct;
+                case (2, "S2"): return Sess2_S2_EmaSlopeMinPct;
+                case (3, "L1"): return Sess3_L1_EmaSlopeMinPct;
+                case (3, "L2"): return Sess3_L2_EmaSlopeMinPct;
+                case (3, "S1"): return Sess3_S1_EmaSlopeMinPct;
+                case (3, "S2"): return Sess3_S2_EmaSlopeMinPct;
+                case (4, "L1"): return Sess4_L1_EmaSlopeMinPct;
+                case (4, "L2"): return Sess4_L2_EmaSlopeMinPct;
+                case (4, "S1"): return Sess4_S1_EmaSlopeMinPct;
+                case (4, "S2"): return Sess4_S2_EmaSlopeMinPct;
+                default: return 0;
+            }
+        }
 
-        private bool B_EnableCandleSizeFilter(string b) { switch(b){case "L1":return L1_EnableCandleSizeFilter;case "L2":return L2_EnableCandleSizeFilter;case "S1":return S1_EnableCandleSizeFilter;case "S2":return S2_EnableCandleSizeFilter;default:return false;} }
-        private double B_MinCandleSize(string b) { switch(b){case "L1":return L1_MinCandleSize;case "L2":return L2_MinCandleSize;case "S1":return S1_MinCandleSize;case "S2":return S2_MinCandleSize;default:return 10;} }
-        private double B_MaxCandleSize(string b) { switch(b){case "L1":return L1_MaxCandleSize;case "L2":return L2_MaxCandleSize;case "S1":return S1_MaxCandleSize;case "S2":return S2_MaxCandleSize;default:return 0;} }
-        private bool B_EnableBodyPctFilter(string b) { switch(b){case "L1":return L1_EnableBodyPctFilter;case "L2":return L2_EnableBodyPctFilter;case "S1":return S1_EnableBodyPctFilter;case "S2":return S2_EnableBodyPctFilter;default:return false;} }
-        private double B_MinBodyPct(string b) { switch(b){case "L1":return L1_MinBodyPct;case "L2":return L2_MinBodyPct;case "S1":return S1_MinBodyPct;case "S2":return S2_MinBodyPct;default:return 33;} }
-        private bool B_EnableCloseDistanceFilter(string b) { switch(b){case "L1":return L1_EnableCloseDistanceFilter;case "L2":return L2_EnableCloseDistanceFilter;case "S1":return S1_EnableCloseDistanceFilter;case "S2":return S2_EnableCloseDistanceFilter;default:return false;} }
-        private double B_MinCloseDistance(string b) { switch(b){case "L1":return L1_MinCloseDistance;case "L2":return L2_MinCloseDistance;case "S1":return S1_MinCloseDistance;case "S2":return S2_MinCloseDistance;default:return 5;} }
-        private bool B_EnableFilterWaitBars(string b) { switch(b){case "L1":return L1_EnableFilterWaitBars;case "L2":return L2_EnableFilterWaitBars;case "S1":return S1_EnableFilterWaitBars;case "S2":return S2_EnableFilterWaitBars;default:return false;} }
-        private int B_FilterWaitMaxBars(string b) { switch(b){case "L1":return L1_FilterWaitMaxBars;case "L2":return L2_FilterWaitMaxBars;case "S1":return S1_FilterWaitMaxBars;case "S2":return S2_FilterWaitMaxBars;default:return 3;} }
+        private Hugo_StopLossTypeEnum B_StopLossType(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_StopLossType;
+                case (1, "L2"): return Sess1_L2_StopLossType;
+                case (1, "S1"): return Sess1_S1_StopLossType;
+                case (1, "S2"): return Sess1_S2_StopLossType;
+                case (2, "L1"): return Sess2_L1_StopLossType;
+                case (2, "L2"): return Sess2_L2_StopLossType;
+                case (2, "S1"): return Sess2_S1_StopLossType;
+                case (2, "S2"): return Sess2_S2_StopLossType;
+                case (3, "L1"): return Sess3_L1_StopLossType;
+                case (3, "L2"): return Sess3_L2_StopLossType;
+                case (3, "S1"): return Sess3_S1_StopLossType;
+                case (3, "S2"): return Sess3_S2_StopLossType;
+                case (4, "L1"): return Sess4_L1_StopLossType;
+                case (4, "L2"): return Sess4_L2_StopLossType;
+                case (4, "S1"): return Sess4_S1_StopLossType;
+                case (4, "S2"): return Sess4_S2_StopLossType;
+                default: return Hugo_StopLossTypeEnum.Fixed;
+            }
+        }
 
-        private bool B_EnableDirectionFlip(string b) { switch(b){case "L1":return L1_EnableDirectionFlip;case "L2":return L2_EnableDirectionFlip;case "S1":return S1_EnableDirectionFlip;case "S2":return S2_EnableDirectionFlip;default:return false;} }
-        private bool B_EnableSameDirectionOnLoss(string b) { switch(b){case "L1":return L1_EnableSameDirectionOnLoss;case "L2":return L2_EnableSameDirectionOnLoss;case "S1":return S1_EnableSameDirectionOnLoss;case "S2":return S2_EnableSameDirectionOnLoss;default:return false;} }
-        private double B_SameDirectionLossThreshold(string b) { switch(b){case "L1":return L1_SameDirectionLossThreshold;case "L2":return L2_SameDirectionLossThreshold;case "S1":return S1_SameDirectionLossThreshold;case "S2":return S2_SameDirectionLossThreshold;default:return 10;} }
+        private double B_FixedStopLoss(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_FixedStopLoss;
+                case (1, "L2"): return Sess1_L2_FixedStopLoss;
+                case (1, "S1"): return Sess1_S1_FixedStopLoss;
+                case (1, "S2"): return Sess1_S2_FixedStopLoss;
+                case (2, "L1"): return Sess2_L1_FixedStopLoss;
+                case (2, "L2"): return Sess2_L2_FixedStopLoss;
+                case (2, "S1"): return Sess2_S1_FixedStopLoss;
+                case (2, "S2"): return Sess2_S2_FixedStopLoss;
+                case (3, "L1"): return Sess3_L1_FixedStopLoss;
+                case (3, "L2"): return Sess3_L2_FixedStopLoss;
+                case (3, "S1"): return Sess3_S1_FixedStopLoss;
+                case (3, "S2"): return Sess3_S2_FixedStopLoss;
+                case (4, "L1"): return Sess4_L1_FixedStopLoss;
+                case (4, "L2"): return Sess4_L2_FixedStopLoss;
+                case (4, "S1"): return Sess4_S1_FixedStopLoss;
+                case (4, "S2"): return Sess4_S2_FixedStopLoss;
+                default: return 57;
+            }
+        }
 
-        private bool B_EnableMaxDailyLoss(string b) { switch(b){case "L1":return L1_EnableMaxDailyLoss;case "L2":return L2_EnableMaxDailyLoss;case "S1":return S1_EnableMaxDailyLoss;case "S2":return S2_EnableMaxDailyLoss;default:return false;} }
-        private double B_MaxDailyLoss(string b) { switch(b){case "L1":return L1_MaxDailyLoss;case "L2":return L2_MaxDailyLoss;case "S1":return S1_MaxDailyLoss;case "S2":return S2_MaxDailyLoss;default:return 307;} }
-        private bool B_EnableMaxDailyProfit(string b) { switch(b){case "L1":return L1_EnableMaxDailyProfit;case "L2":return L2_EnableMaxDailyProfit;case "S1":return S1_EnableMaxDailyProfit;case "S2":return S2_EnableMaxDailyProfit;default:return false;} }
-        private double B_MaxDailyProfit(string b) { switch(b){case "L1":return L1_MaxDailyProfit;case "L2":return L2_MaxDailyProfit;case "S1":return S1_MaxDailyProfit;case "S2":return S2_MaxDailyProfit;default:return 186;} }
-        private bool B_EnableMaxTradesPerDay(string b) { switch(b){case "L1":return L1_EnableMaxTradesPerDay;case "L2":return L2_EnableMaxTradesPerDay;case "S1":return S1_EnableMaxTradesPerDay;case "S2":return S2_EnableMaxTradesPerDay;default:return false;} }
-        private int B_MaxTradesPerDay(string b) { switch(b){case "L1":return L1_MaxTradesPerDay;case "L2":return L2_MaxTradesPerDay;case "S1":return S1_MaxTradesPerDay;case "S2":return S2_MaxTradesPerDay;default:return 6;} }
+        private double B_StopLossOffset(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_StopLossOffset;
+                case (1, "L2"): return Sess1_L2_StopLossOffset;
+                case (1, "S1"): return Sess1_S1_StopLossOffset;
+                case (1, "S2"): return Sess1_S2_StopLossOffset;
+                case (2, "L1"): return Sess2_L1_StopLossOffset;
+                case (2, "L2"): return Sess2_L2_StopLossOffset;
+                case (2, "S1"): return Sess2_S1_StopLossOffset;
+                case (2, "S2"): return Sess2_S2_StopLossOffset;
+                case (3, "L1"): return Sess3_L1_StopLossOffset;
+                case (3, "L2"): return Sess3_L2_StopLossOffset;
+                case (3, "S1"): return Sess3_S1_StopLossOffset;
+                case (3, "S2"): return Sess3_S2_StopLossOffset;
+                case (4, "L1"): return Sess4_L1_StopLossOffset;
+                case (4, "L2"): return Sess4_L2_StopLossOffset;
+                case (4, "S1"): return Sess4_S1_StopLossOffset;
+                case (4, "S2"): return Sess4_S2_StopLossOffset;
+                default: return 56;
+            }
+        }
 
-        // v1.06: Max Bars In Trade accessors
-        private bool B_EnableMaxBarsInTrade(string b) { switch(b){case "L1":return L1_EnableMaxBarsInTrade;case "L2":return L2_EnableMaxBarsInTrade;case "S1":return S1_EnableMaxBarsInTrade;case "S2":return S2_EnableMaxBarsInTrade;default:return false;} }
-        private int B_MaxBarsInTrade(string b) { switch(b){case "L1":return L1_MaxBarsInTrade;case "L2":return L2_MaxBarsInTrade;case "S1":return S1_MaxBarsInTrade;case "S2":return S2_MaxBarsInTrade;default:return 20;} }
+        private double B_MaxStopLoss(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_MaxStopLoss;
+                case (1, "L2"): return Sess1_L2_MaxStopLoss;
+                case (1, "S1"): return Sess1_S1_MaxStopLoss;
+                case (1, "S2"): return Sess1_S2_MaxStopLoss;
+                case (2, "L1"): return Sess2_L1_MaxStopLoss;
+                case (2, "L2"): return Sess2_L2_MaxStopLoss;
+                case (2, "S1"): return Sess2_S1_MaxStopLoss;
+                case (2, "S2"): return Sess2_S2_MaxStopLoss;
+                case (3, "L1"): return Sess3_L1_MaxStopLoss;
+                case (3, "L2"): return Sess3_L2_MaxStopLoss;
+                case (3, "S1"): return Sess3_S1_MaxStopLoss;
+                case (3, "S2"): return Sess3_S2_MaxStopLoss;
+                case (4, "L1"): return Sess4_L1_MaxStopLoss;
+                case (4, "L2"): return Sess4_L2_MaxStopLoss;
+                case (4, "S1"): return Sess4_S1_MaxStopLoss;
+                case (4, "S2"): return Sess4_S2_MaxStopLoss;
+                default: return 50;
+            }
+        }
 
-        // v1.06: SL to Entry on EMA accessors
-        private bool B_EnableSLToEntryOnEMA(string b) { switch(b){case "L1":return L1_EnableSLToEntryOnEMA;case "L2":return L2_EnableSLToEntryOnEMA;case "S1":return S1_EnableSLToEntryOnEMA;case "S2":return S2_EnableSLToEntryOnEMA;default:return false;} }
-        private double B_SLToEntryOffset(string b) { switch(b){case "L1":return L1_SLToEntryOffset;case "L2":return L2_SLToEntryOffset;case "S1":return S1_SLToEntryOffset;case "S2":return S2_SLToEntryOffset;default:return 0;} }
-        // v1.07: WMA / SMA / ADX filter accessors
-        private WMA GetWma(string b) { switch(b){case "L1":return wmaL1;case "L2":return wmaL2;case "S1":return wmaS1;case "S2":return wmaS2;default:return wmaL1;} }
-        private SMA GetSma(string b) { switch(b){case "L1":return smaL1;case "L2":return smaL2;case "S1":return smaS1;case "S2":return smaS2;default:return smaL1;} }
-        private ADX GetAdx(string b) { switch(b){case "L1":return adxL1;case "L2":return adxL2;case "S1":return adxS1;case "S2":return adxS2;default:return adxL1;} }
+        private double B_SLCandleMultiplier(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_SLCandleMultiplier;
+                case (1, "L2"): return Sess1_L2_SLCandleMultiplier;
+                case (1, "S1"): return Sess1_S1_SLCandleMultiplier;
+                case (1, "S2"): return Sess1_S2_SLCandleMultiplier;
+                case (2, "L1"): return Sess2_L1_SLCandleMultiplier;
+                case (2, "L2"): return Sess2_L2_SLCandleMultiplier;
+                case (2, "S1"): return Sess2_S1_SLCandleMultiplier;
+                case (2, "S2"): return Sess2_S2_SLCandleMultiplier;
+                case (3, "L1"): return Sess3_L1_SLCandleMultiplier;
+                case (3, "L2"): return Sess3_L2_SLCandleMultiplier;
+                case (3, "S1"): return Sess3_S1_SLCandleMultiplier;
+                case (3, "S2"): return Sess3_S2_SLCandleMultiplier;
+                case (4, "L1"): return Sess4_L1_SLCandleMultiplier;
+                case (4, "L2"): return Sess4_L2_SLCandleMultiplier;
+                case (4, "S1"): return Sess4_S1_SLCandleMultiplier;
+                case (4, "S2"): return Sess4_S2_SLCandleMultiplier;
+                default: return 1.0;
+            }
+        }
 
-        private bool B_EnableWMAFilter(string b) { switch(b){case "L1":return L1_EnableWMAFilter;case "L2":return L2_EnableWMAFilter;case "S1":return S1_EnableWMAFilter;case "S2":return S2_EnableWMAFilter;default:return false;} }
-        private int B_WMALength(string b) { switch(b){case "L1":return L1_WMALength;case "L2":return L2_WMALength;case "S1":return S1_WMALength;case "S2":return S2_WMALength;default:return 20;} }
-        private bool B_EnableSMAFilter(string b) { switch(b){case "L1":return L1_EnableSMAFilter;case "L2":return L2_EnableSMAFilter;case "S1":return S1_EnableSMAFilter;case "S2":return S2_EnableSMAFilter;default:return false;} }
-        private int B_SMALength(string b) { switch(b){case "L1":return L1_SMALength;case "L2":return L2_SMALength;case "S1":return S1_SMALength;case "S2":return S2_SMALength;default:return 20;} }
-        private bool B_EnableADXFilter(string b) { switch(b){case "L1":return L1_EnableADXFilter;case "L2":return L2_EnableADXFilter;case "S1":return S1_EnableADXFilter;case "S2":return S2_EnableADXFilter;default:return false;} }
-        private int B_ADXPeriod(string b) { switch(b){case "L1":return L1_ADXPeriod;case "L2":return L2_ADXPeriod;case "S1":return S1_ADXPeriod;case "S2":return S2_ADXPeriod;default:return 14;} }
-        private double B_ADXMin(string b) { switch(b){case "L1":return L1_ADXMin;case "L2":return L2_ADXMin;case "S1":return S1_ADXMin;case "S2":return S2_ADXMin;default:return 20;} }
-        private double B_ADXMax(string b) { switch(b){case "L1":return L1_ADXMax;case "L2":return L2_ADXMax;case "S1":return S1_ADXMax;case "S2":return S2_ADXMax;default:return 100;} }
+        private Hugo_TakeProfitTypeEnum B_TakeProfitType(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_TakeProfitType;
+                case (1, "L2"): return Sess1_L2_TakeProfitType;
+                case (1, "S1"): return Sess1_S1_TakeProfitType;
+                case (1, "S2"): return Sess1_S2_TakeProfitType;
+                case (2, "L1"): return Sess2_L1_TakeProfitType;
+                case (2, "L2"): return Sess2_L2_TakeProfitType;
+                case (2, "S1"): return Sess2_S1_TakeProfitType;
+                case (2, "S2"): return Sess2_S2_TakeProfitType;
+                case (3, "L1"): return Sess3_L1_TakeProfitType;
+                case (3, "L2"): return Sess3_L2_TakeProfitType;
+                case (3, "S1"): return Sess3_S1_TakeProfitType;
+                case (3, "S2"): return Sess3_S2_TakeProfitType;
+                case (4, "L1"): return Sess4_L1_TakeProfitType;
+                case (4, "L2"): return Sess4_L2_TakeProfitType;
+                case (4, "S1"): return Sess4_S1_TakeProfitType;
+                case (4, "S2"): return Sess4_S2_TakeProfitType;
+                default: return Hugo_TakeProfitTypeEnum.RiskReward;
+            }
+        }
 
+        private double B_RiskRewardRatio(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_RiskRewardRatio;
+                case (1, "L2"): return Sess1_L2_RiskRewardRatio;
+                case (1, "S1"): return Sess1_S1_RiskRewardRatio;
+                case (1, "S2"): return Sess1_S2_RiskRewardRatio;
+                case (2, "L1"): return Sess2_L1_RiskRewardRatio;
+                case (2, "L2"): return Sess2_L2_RiskRewardRatio;
+                case (2, "S1"): return Sess2_S1_RiskRewardRatio;
+                case (2, "S2"): return Sess2_S2_RiskRewardRatio;
+                case (3, "L1"): return Sess3_L1_RiskRewardRatio;
+                case (3, "L2"): return Sess3_L2_RiskRewardRatio;
+                case (3, "S1"): return Sess3_S1_RiskRewardRatio;
+                case (3, "S2"): return Sess3_S2_RiskRewardRatio;
+                case (4, "L1"): return Sess4_L1_RiskRewardRatio;
+                case (4, "L2"): return Sess4_L2_RiskRewardRatio;
+                case (4, "S1"): return Sess4_S1_RiskRewardRatio;
+                case (4, "S2"): return Sess4_S2_RiskRewardRatio;
+                default: return 3.42;
+            }
+        }
 
-        // Per-bucket P&L accessors
-        private double GetBucketDailyPnL(string b) { switch(b){case "L1":return dailyPnL_L1;case "L2":return dailyPnL_L2;case "S1":return dailyPnL_S1;case "S2":return dailyPnL_S2;default:return 0;} }
-        private void AddBucketDailyPnL(string b, double v) { switch(b){case "L1":dailyPnL_L1+=v;break;case "L2":dailyPnL_L2+=v;break;case "S1":dailyPnL_S1+=v;break;case "S2":dailyPnL_S2+=v;break;} }
-        private int GetBucketTradeCount(string b) { switch(b){case "L1":return dailyTradeCount_L1;case "L2":return dailyTradeCount_L2;case "S1":return dailyTradeCount_S1;case "S2":return dailyTradeCount_S2;default:return 0;} }
-        private void IncBucketTradeCount(string b) { switch(b){case "L1":dailyTradeCount_L1++;break;case "L2":dailyTradeCount_L2++;break;case "S1":dailyTradeCount_S1++;break;case "S2":dailyTradeCount_S2++;break;} }
-        private bool GetBucketLossHit(string b) { switch(b){case "L1":return dailyLossHit_L1;case "L2":return dailyLossHit_L2;case "S1":return dailyLossHit_S1;case "S2":return dailyLossHit_S2;default:return false;} }
-        private void SetBucketLossHit(string b, bool v) { switch(b){case "L1":dailyLossHit_L1=v;break;case "L2":dailyLossHit_L2=v;break;case "S1":dailyLossHit_S1=v;break;case "S2":dailyLossHit_S2=v;break;} }
-        private bool GetBucketProfitHit(string b) { switch(b){case "L1":return dailyProfitHit_L1;case "L2":return dailyProfitHit_L2;case "S1":return dailyProfitHit_S1;case "S2":return dailyProfitHit_S2;default:return false;} }
-        private void SetBucketProfitHit(string b, bool v) { switch(b){case "L1":dailyProfitHit_L1=v;break;case "L2":dailyProfitHit_L2=v;break;case "S1":dailyProfitHit_S1=v;break;case "S2":dailyProfitHit_S2=v;break;} }
-        private bool IsBucketEnabled(string b) { switch(b){case "L1":return L1_Enable;case "L2":return L2_Enable;case "S1":return S1_Enable;case "S2":return S2_Enable;default:return false;} }
+        private double B_FixedTakeProfit(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_FixedTakeProfit;
+                case (1, "L2"): return Sess1_L2_FixedTakeProfit;
+                case (1, "S1"): return Sess1_S1_FixedTakeProfit;
+                case (1, "S2"): return Sess1_S2_FixedTakeProfit;
+                case (2, "L1"): return Sess2_L1_FixedTakeProfit;
+                case (2, "L2"): return Sess2_L2_FixedTakeProfit;
+                case (2, "S1"): return Sess2_S1_FixedTakeProfit;
+                case (2, "S2"): return Sess2_S2_FixedTakeProfit;
+                case (3, "L1"): return Sess3_L1_FixedTakeProfit;
+                case (3, "L2"): return Sess3_L2_FixedTakeProfit;
+                case (3, "S1"): return Sess3_S1_FixedTakeProfit;
+                case (3, "S2"): return Sess3_S2_FixedTakeProfit;
+                case (4, "L1"): return Sess4_L1_FixedTakeProfit;
+                case (4, "L2"): return Sess4_L2_FixedTakeProfit;
+                case (4, "S1"): return Sess4_S1_FixedTakeProfit;
+                case (4, "S2"): return Sess4_S2_FixedTakeProfit;
+                default: return 100;
+            }
+        }
+
+        private double B_TPCandleMultiplier(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_TPCandleMultiplier;
+                case (1, "L2"): return Sess1_L2_TPCandleMultiplier;
+                case (1, "S1"): return Sess1_S1_TPCandleMultiplier;
+                case (1, "S2"): return Sess1_S2_TPCandleMultiplier;
+                case (2, "L1"): return Sess2_L1_TPCandleMultiplier;
+                case (2, "L2"): return Sess2_L2_TPCandleMultiplier;
+                case (2, "S1"): return Sess2_S1_TPCandleMultiplier;
+                case (2, "S2"): return Sess2_S2_TPCandleMultiplier;
+                case (3, "L1"): return Sess3_L1_TPCandleMultiplier;
+                case (3, "L2"): return Sess3_L2_TPCandleMultiplier;
+                case (3, "S1"): return Sess3_S1_TPCandleMultiplier;
+                case (3, "S2"): return Sess3_S2_TPCandleMultiplier;
+                case (4, "L1"): return Sess4_L1_TPCandleMultiplier;
+                case (4, "L2"): return Sess4_L2_TPCandleMultiplier;
+                case (4, "S1"): return Sess4_S1_TPCandleMultiplier;
+                case (4, "S2"): return Sess4_S2_TPCandleMultiplier;
+                default: return 1.0;
+            }
+        }
+
+        private bool B_EnableBreakEven(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnableBreakEven;
+                case (1, "L2"): return Sess1_L2_EnableBreakEven;
+                case (1, "S1"): return Sess1_S1_EnableBreakEven;
+                case (1, "S2"): return Sess1_S2_EnableBreakEven;
+                case (2, "L1"): return Sess2_L1_EnableBreakEven;
+                case (2, "L2"): return Sess2_L2_EnableBreakEven;
+                case (2, "S1"): return Sess2_S1_EnableBreakEven;
+                case (2, "S2"): return Sess2_S2_EnableBreakEven;
+                case (3, "L1"): return Sess3_L1_EnableBreakEven;
+                case (3, "L2"): return Sess3_L2_EnableBreakEven;
+                case (3, "S1"): return Sess3_S1_EnableBreakEven;
+                case (3, "S2"): return Sess3_S2_EnableBreakEven;
+                case (4, "L1"): return Sess4_L1_EnableBreakEven;
+                case (4, "L2"): return Sess4_L2_EnableBreakEven;
+                case (4, "S1"): return Sess4_S1_EnableBreakEven;
+                case (4, "S2"): return Sess4_S2_EnableBreakEven;
+                default: return false;
+            }
+        }
+
+        private Hugo_BreakEvenTriggerEnum B_BreakEvenTriggerType(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_BreakEvenTriggerType;
+                case (1, "L2"): return Sess1_L2_BreakEvenTriggerType;
+                case (1, "S1"): return Sess1_S1_BreakEvenTriggerType;
+                case (1, "S2"): return Sess1_S2_BreakEvenTriggerType;
+                case (2, "L1"): return Sess2_L1_BreakEvenTriggerType;
+                case (2, "L2"): return Sess2_L2_BreakEvenTriggerType;
+                case (2, "S1"): return Sess2_S1_BreakEvenTriggerType;
+                case (2, "S2"): return Sess2_S2_BreakEvenTriggerType;
+                case (3, "L1"): return Sess3_L1_BreakEvenTriggerType;
+                case (3, "L2"): return Sess3_L2_BreakEvenTriggerType;
+                case (3, "S1"): return Sess3_S1_BreakEvenTriggerType;
+                case (3, "S2"): return Sess3_S2_BreakEvenTriggerType;
+                case (4, "L1"): return Sess4_L1_BreakEvenTriggerType;
+                case (4, "L2"): return Sess4_L2_BreakEvenTriggerType;
+                case (4, "S1"): return Sess4_S1_BreakEvenTriggerType;
+                case (4, "S2"): return Sess4_S2_BreakEvenTriggerType;
+                default: return Hugo_BreakEvenTriggerEnum.RiskMultiple;
+            }
+        }
+
+        private double B_BreakEvenTriggerValue(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_BreakEvenTriggerValue;
+                case (1, "L2"): return Sess1_L2_BreakEvenTriggerValue;
+                case (1, "S1"): return Sess1_S1_BreakEvenTriggerValue;
+                case (1, "S2"): return Sess1_S2_BreakEvenTriggerValue;
+                case (2, "L1"): return Sess2_L1_BreakEvenTriggerValue;
+                case (2, "L2"): return Sess2_L2_BreakEvenTriggerValue;
+                case (2, "S1"): return Sess2_S1_BreakEvenTriggerValue;
+                case (2, "S2"): return Sess2_S2_BreakEvenTriggerValue;
+                case (3, "L1"): return Sess3_L1_BreakEvenTriggerValue;
+                case (3, "L2"): return Sess3_L2_BreakEvenTriggerValue;
+                case (3, "S1"): return Sess3_S1_BreakEvenTriggerValue;
+                case (3, "S2"): return Sess3_S2_BreakEvenTriggerValue;
+                case (4, "L1"): return Sess4_L1_BreakEvenTriggerValue;
+                case (4, "L2"): return Sess4_L2_BreakEvenTriggerValue;
+                case (4, "S1"): return Sess4_S1_BreakEvenTriggerValue;
+                case (4, "S2"): return Sess4_S2_BreakEvenTriggerValue;
+                default: return 3.29;
+            }
+        }
+
+        private double B_BreakEvenOffset(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_BreakEvenOffset;
+                case (1, "L2"): return Sess1_L2_BreakEvenOffset;
+                case (1, "S1"): return Sess1_S1_BreakEvenOffset;
+                case (1, "S2"): return Sess1_S2_BreakEvenOffset;
+                case (2, "L1"): return Sess2_L1_BreakEvenOffset;
+                case (2, "L2"): return Sess2_L2_BreakEvenOffset;
+                case (2, "S1"): return Sess2_S1_BreakEvenOffset;
+                case (2, "S2"): return Sess2_S2_BreakEvenOffset;
+                case (3, "L1"): return Sess3_L1_BreakEvenOffset;
+                case (3, "L2"): return Sess3_L2_BreakEvenOffset;
+                case (3, "S1"): return Sess3_S1_BreakEvenOffset;
+                case (3, "S2"): return Sess3_S2_BreakEvenOffset;
+                case (4, "L1"): return Sess4_L1_BreakEvenOffset;
+                case (4, "L2"): return Sess4_L2_BreakEvenOffset;
+                case (4, "S1"): return Sess4_S1_BreakEvenOffset;
+                case (4, "S2"): return Sess4_S2_BreakEvenOffset;
+                default: return 2;
+            }
+        }
+
+        private bool B_EnablePriceTrail(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnablePriceTrail;
+                case (1, "L2"): return Sess1_L2_EnablePriceTrail;
+                case (1, "S1"): return Sess1_S1_EnablePriceTrail;
+                case (1, "S2"): return Sess1_S2_EnablePriceTrail;
+                case (2, "L1"): return Sess2_L1_EnablePriceTrail;
+                case (2, "L2"): return Sess2_L2_EnablePriceTrail;
+                case (2, "S1"): return Sess2_S1_EnablePriceTrail;
+                case (2, "S2"): return Sess2_S2_EnablePriceTrail;
+                case (3, "L1"): return Sess3_L1_EnablePriceTrail;
+                case (3, "L2"): return Sess3_L2_EnablePriceTrail;
+                case (3, "S1"): return Sess3_S1_EnablePriceTrail;
+                case (3, "S2"): return Sess3_S2_EnablePriceTrail;
+                case (4, "L1"): return Sess4_L1_EnablePriceTrail;
+                case (4, "L2"): return Sess4_L2_EnablePriceTrail;
+                case (4, "S1"): return Sess4_S1_EnablePriceTrail;
+                case (4, "S2"): return Sess4_S2_EnablePriceTrail;
+                default: return false;
+            }
+        }
+
+        private Hugo_TrailDistanceModeEnum B_TrailDistanceMode(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_TrailDistanceMode;
+                case (1, "L2"): return Sess1_L2_TrailDistanceMode;
+                case (1, "S1"): return Sess1_S1_TrailDistanceMode;
+                case (1, "S2"): return Sess1_S2_TrailDistanceMode;
+                case (2, "L1"): return Sess2_L1_TrailDistanceMode;
+                case (2, "L2"): return Sess2_L2_TrailDistanceMode;
+                case (2, "S1"): return Sess2_S1_TrailDistanceMode;
+                case (2, "S2"): return Sess2_S2_TrailDistanceMode;
+                case (3, "L1"): return Sess3_L1_TrailDistanceMode;
+                case (3, "L2"): return Sess3_L2_TrailDistanceMode;
+                case (3, "S1"): return Sess3_S1_TrailDistanceMode;
+                case (3, "S2"): return Sess3_S2_TrailDistanceMode;
+                case (4, "L1"): return Sess4_L1_TrailDistanceMode;
+                case (4, "L2"): return Sess4_L2_TrailDistanceMode;
+                case (4, "S1"): return Sess4_S1_TrailDistanceMode;
+                case (4, "S2"): return Sess4_S2_TrailDistanceMode;
+                default: return Hugo_TrailDistanceModeEnum.FixedPoints;
+            }
+        }
+
+        private double B_TrailDistanceValue(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_TrailDistanceValue;
+                case (1, "L2"): return Sess1_L2_TrailDistanceValue;
+                case (1, "S1"): return Sess1_S1_TrailDistanceValue;
+                case (1, "S2"): return Sess1_S2_TrailDistanceValue;
+                case (2, "L1"): return Sess2_L1_TrailDistanceValue;
+                case (2, "L2"): return Sess2_L2_TrailDistanceValue;
+                case (2, "S1"): return Sess2_S1_TrailDistanceValue;
+                case (2, "S2"): return Sess2_S2_TrailDistanceValue;
+                case (3, "L1"): return Sess3_L1_TrailDistanceValue;
+                case (3, "L2"): return Sess3_L2_TrailDistanceValue;
+                case (3, "S1"): return Sess3_S1_TrailDistanceValue;
+                case (3, "S2"): return Sess3_S2_TrailDistanceValue;
+                case (4, "L1"): return Sess4_L1_TrailDistanceValue;
+                case (4, "L2"): return Sess4_L2_TrailDistanceValue;
+                case (4, "S1"): return Sess4_S1_TrailDistanceValue;
+                case (4, "S2"): return Sess4_S2_TrailDistanceValue;
+                default: return 20;
+            }
+        }
+
+        private Hugo_TrailActivationModeEnum B_TrailActivationMode(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_TrailActivationMode;
+                case (1, "L2"): return Sess1_L2_TrailActivationMode;
+                case (1, "S1"): return Sess1_S1_TrailActivationMode;
+                case (1, "S2"): return Sess1_S2_TrailActivationMode;
+                case (2, "L1"): return Sess2_L1_TrailActivationMode;
+                case (2, "L2"): return Sess2_L2_TrailActivationMode;
+                case (2, "S1"): return Sess2_S1_TrailActivationMode;
+                case (2, "S2"): return Sess2_S2_TrailActivationMode;
+                case (3, "L1"): return Sess3_L1_TrailActivationMode;
+                case (3, "L2"): return Sess3_L2_TrailActivationMode;
+                case (3, "S1"): return Sess3_S1_TrailActivationMode;
+                case (3, "S2"): return Sess3_S2_TrailActivationMode;
+                case (4, "L1"): return Sess4_L1_TrailActivationMode;
+                case (4, "L2"): return Sess4_L2_TrailActivationMode;
+                case (4, "S1"): return Sess4_S1_TrailActivationMode;
+                case (4, "S2"): return Sess4_S2_TrailActivationMode;
+                default: return Hugo_TrailActivationModeEnum.FixedPoints;
+            }
+        }
+
+        private double B_TrailActivationValue(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_TrailActivationValue;
+                case (1, "L2"): return Sess1_L2_TrailActivationValue;
+                case (1, "S1"): return Sess1_S1_TrailActivationValue;
+                case (1, "S2"): return Sess1_S2_TrailActivationValue;
+                case (2, "L1"): return Sess2_L1_TrailActivationValue;
+                case (2, "L2"): return Sess2_L2_TrailActivationValue;
+                case (2, "S1"): return Sess2_S1_TrailActivationValue;
+                case (2, "S2"): return Sess2_S2_TrailActivationValue;
+                case (3, "L1"): return Sess3_L1_TrailActivationValue;
+                case (3, "L2"): return Sess3_L2_TrailActivationValue;
+                case (3, "S1"): return Sess3_S1_TrailActivationValue;
+                case (3, "S2"): return Sess3_S2_TrailActivationValue;
+                case (4, "L1"): return Sess4_L1_TrailActivationValue;
+                case (4, "L2"): return Sess4_L2_TrailActivationValue;
+                case (4, "S1"): return Sess4_S1_TrailActivationValue;
+                case (4, "S2"): return Sess4_S2_TrailActivationValue;
+                default: return 30;
+            }
+        }
+
+        private int B_TrailStepTicks(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_TrailStepTicks;
+                case (1, "L2"): return Sess1_L2_TrailStepTicks;
+                case (1, "S1"): return Sess1_S1_TrailStepTicks;
+                case (1, "S2"): return Sess1_S2_TrailStepTicks;
+                case (2, "L1"): return Sess2_L1_TrailStepTicks;
+                case (2, "L2"): return Sess2_L2_TrailStepTicks;
+                case (2, "S1"): return Sess2_S1_TrailStepTicks;
+                case (2, "S2"): return Sess2_S2_TrailStepTicks;
+                case (3, "L1"): return Sess3_L1_TrailStepTicks;
+                case (3, "L2"): return Sess3_L2_TrailStepTicks;
+                case (3, "S1"): return Sess3_S1_TrailStepTicks;
+                case (3, "S2"): return Sess3_S2_TrailStepTicks;
+                case (4, "L1"): return Sess4_L1_TrailStepTicks;
+                case (4, "L2"): return Sess4_L2_TrailStepTicks;
+                case (4, "S1"): return Sess4_S1_TrailStepTicks;
+                case (4, "S2"): return Sess4_S2_TrailStepTicks;
+                default: return 0;
+            }
+        }
+
+        private bool B_EnableBodyPctFilter(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnableBodyPctFilter;
+                case (1, "L2"): return Sess1_L2_EnableBodyPctFilter;
+                case (1, "S1"): return Sess1_S1_EnableBodyPctFilter;
+                case (1, "S2"): return Sess1_S2_EnableBodyPctFilter;
+                case (2, "L1"): return Sess2_L1_EnableBodyPctFilter;
+                case (2, "L2"): return Sess2_L2_EnableBodyPctFilter;
+                case (2, "S1"): return Sess2_S1_EnableBodyPctFilter;
+                case (2, "S2"): return Sess2_S2_EnableBodyPctFilter;
+                case (3, "L1"): return Sess3_L1_EnableBodyPctFilter;
+                case (3, "L2"): return Sess3_L2_EnableBodyPctFilter;
+                case (3, "S1"): return Sess3_S1_EnableBodyPctFilter;
+                case (3, "S2"): return Sess3_S2_EnableBodyPctFilter;
+                case (4, "L1"): return Sess4_L1_EnableBodyPctFilter;
+                case (4, "L2"): return Sess4_L2_EnableBodyPctFilter;
+                case (4, "S1"): return Sess4_S1_EnableBodyPctFilter;
+                case (4, "S2"): return Sess4_S2_EnableBodyPctFilter;
+                default: return false;
+            }
+        }
+
+        private double B_MinBodyPct(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_MinBodyPct;
+                case (1, "L2"): return Sess1_L2_MinBodyPct;
+                case (1, "S1"): return Sess1_S1_MinBodyPct;
+                case (1, "S2"): return Sess1_S2_MinBodyPct;
+                case (2, "L1"): return Sess2_L1_MinBodyPct;
+                case (2, "L2"): return Sess2_L2_MinBodyPct;
+                case (2, "S1"): return Sess2_S1_MinBodyPct;
+                case (2, "S2"): return Sess2_S2_MinBodyPct;
+                case (3, "L1"): return Sess3_L1_MinBodyPct;
+                case (3, "L2"): return Sess3_L2_MinBodyPct;
+                case (3, "S1"): return Sess3_S1_MinBodyPct;
+                case (3, "S2"): return Sess3_S2_MinBodyPct;
+                case (4, "L1"): return Sess4_L1_MinBodyPct;
+                case (4, "L2"): return Sess4_L2_MinBodyPct;
+                case (4, "S1"): return Sess4_S1_MinBodyPct;
+                case (4, "S2"): return Sess4_S2_MinBodyPct;
+                default: return 33;
+            }
+        }
+
+        private bool B_EnableDirectionFlip(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnableDirectionFlip;
+                case (1, "L2"): return Sess1_L2_EnableDirectionFlip;
+                case (1, "S1"): return Sess1_S1_EnableDirectionFlip;
+                case (1, "S2"): return Sess1_S2_EnableDirectionFlip;
+                case (2, "L1"): return Sess2_L1_EnableDirectionFlip;
+                case (2, "L2"): return Sess2_L2_EnableDirectionFlip;
+                case (2, "S1"): return Sess2_S1_EnableDirectionFlip;
+                case (2, "S2"): return Sess2_S2_EnableDirectionFlip;
+                case (3, "L1"): return Sess3_L1_EnableDirectionFlip;
+                case (3, "L2"): return Sess3_L2_EnableDirectionFlip;
+                case (3, "S1"): return Sess3_S1_EnableDirectionFlip;
+                case (3, "S2"): return Sess3_S2_EnableDirectionFlip;
+                case (4, "L1"): return Sess4_L1_EnableDirectionFlip;
+                case (4, "L2"): return Sess4_L2_EnableDirectionFlip;
+                case (4, "S1"): return Sess4_S1_EnableDirectionFlip;
+                case (4, "S2"): return Sess4_S2_EnableDirectionFlip;
+                default: return false;
+            }
+        }
+
+        private bool B_EnableMaxDailyLoss(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnableMaxDailyLoss;
+                case (1, "L2"): return Sess1_L2_EnableMaxDailyLoss;
+                case (1, "S1"): return Sess1_S1_EnableMaxDailyLoss;
+                case (1, "S2"): return Sess1_S2_EnableMaxDailyLoss;
+                case (2, "L1"): return Sess2_L1_EnableMaxDailyLoss;
+                case (2, "L2"): return Sess2_L2_EnableMaxDailyLoss;
+                case (2, "S1"): return Sess2_S1_EnableMaxDailyLoss;
+                case (2, "S2"): return Sess2_S2_EnableMaxDailyLoss;
+                case (3, "L1"): return Sess3_L1_EnableMaxDailyLoss;
+                case (3, "L2"): return Sess3_L2_EnableMaxDailyLoss;
+                case (3, "S1"): return Sess3_S1_EnableMaxDailyLoss;
+                case (3, "S2"): return Sess3_S2_EnableMaxDailyLoss;
+                case (4, "L1"): return Sess4_L1_EnableMaxDailyLoss;
+                case (4, "L2"): return Sess4_L2_EnableMaxDailyLoss;
+                case (4, "S1"): return Sess4_S1_EnableMaxDailyLoss;
+                case (4, "S2"): return Sess4_S2_EnableMaxDailyLoss;
+                default: return false;
+            }
+        }
+
+        private double B_MaxDailyLoss(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_MaxDailyLoss;
+                case (1, "L2"): return Sess1_L2_MaxDailyLoss;
+                case (1, "S1"): return Sess1_S1_MaxDailyLoss;
+                case (1, "S2"): return Sess1_S2_MaxDailyLoss;
+                case (2, "L1"): return Sess2_L1_MaxDailyLoss;
+                case (2, "L2"): return Sess2_L2_MaxDailyLoss;
+                case (2, "S1"): return Sess2_S1_MaxDailyLoss;
+                case (2, "S2"): return Sess2_S2_MaxDailyLoss;
+                case (3, "L1"): return Sess3_L1_MaxDailyLoss;
+                case (3, "L2"): return Sess3_L2_MaxDailyLoss;
+                case (3, "S1"): return Sess3_S1_MaxDailyLoss;
+                case (3, "S2"): return Sess3_S2_MaxDailyLoss;
+                case (4, "L1"): return Sess4_L1_MaxDailyLoss;
+                case (4, "L2"): return Sess4_L2_MaxDailyLoss;
+                case (4, "S1"): return Sess4_S1_MaxDailyLoss;
+                case (4, "S2"): return Sess4_S2_MaxDailyLoss;
+                default: return 307;
+            }
+        }
+
+        private bool B_EnableMaxDailyProfit(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnableMaxDailyProfit;
+                case (1, "L2"): return Sess1_L2_EnableMaxDailyProfit;
+                case (1, "S1"): return Sess1_S1_EnableMaxDailyProfit;
+                case (1, "S2"): return Sess1_S2_EnableMaxDailyProfit;
+                case (2, "L1"): return Sess2_L1_EnableMaxDailyProfit;
+                case (2, "L2"): return Sess2_L2_EnableMaxDailyProfit;
+                case (2, "S1"): return Sess2_S1_EnableMaxDailyProfit;
+                case (2, "S2"): return Sess2_S2_EnableMaxDailyProfit;
+                case (3, "L1"): return Sess3_L1_EnableMaxDailyProfit;
+                case (3, "L2"): return Sess3_L2_EnableMaxDailyProfit;
+                case (3, "S1"): return Sess3_S1_EnableMaxDailyProfit;
+                case (3, "S2"): return Sess3_S2_EnableMaxDailyProfit;
+                case (4, "L1"): return Sess4_L1_EnableMaxDailyProfit;
+                case (4, "L2"): return Sess4_L2_EnableMaxDailyProfit;
+                case (4, "S1"): return Sess4_S1_EnableMaxDailyProfit;
+                case (4, "S2"): return Sess4_S2_EnableMaxDailyProfit;
+                default: return false;
+            }
+        }
+
+        private double B_MaxDailyProfit(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_MaxDailyProfit;
+                case (1, "L2"): return Sess1_L2_MaxDailyProfit;
+                case (1, "S1"): return Sess1_S1_MaxDailyProfit;
+                case (1, "S2"): return Sess1_S2_MaxDailyProfit;
+                case (2, "L1"): return Sess2_L1_MaxDailyProfit;
+                case (2, "L2"): return Sess2_L2_MaxDailyProfit;
+                case (2, "S1"): return Sess2_S1_MaxDailyProfit;
+                case (2, "S2"): return Sess2_S2_MaxDailyProfit;
+                case (3, "L1"): return Sess3_L1_MaxDailyProfit;
+                case (3, "L2"): return Sess3_L2_MaxDailyProfit;
+                case (3, "S1"): return Sess3_S1_MaxDailyProfit;
+                case (3, "S2"): return Sess3_S2_MaxDailyProfit;
+                case (4, "L1"): return Sess4_L1_MaxDailyProfit;
+                case (4, "L2"): return Sess4_L2_MaxDailyProfit;
+                case (4, "S1"): return Sess4_S1_MaxDailyProfit;
+                case (4, "S2"): return Sess4_S2_MaxDailyProfit;
+                default: return 186;
+            }
+        }
+
+        private bool B_EnableMaxTradesPerDay(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnableMaxTradesPerDay;
+                case (1, "L2"): return Sess1_L2_EnableMaxTradesPerDay;
+                case (1, "S1"): return Sess1_S1_EnableMaxTradesPerDay;
+                case (1, "S2"): return Sess1_S2_EnableMaxTradesPerDay;
+                case (2, "L1"): return Sess2_L1_EnableMaxTradesPerDay;
+                case (2, "L2"): return Sess2_L2_EnableMaxTradesPerDay;
+                case (2, "S1"): return Sess2_S1_EnableMaxTradesPerDay;
+                case (2, "S2"): return Sess2_S2_EnableMaxTradesPerDay;
+                case (3, "L1"): return Sess3_L1_EnableMaxTradesPerDay;
+                case (3, "L2"): return Sess3_L2_EnableMaxTradesPerDay;
+                case (3, "S1"): return Sess3_S1_EnableMaxTradesPerDay;
+                case (3, "S2"): return Sess3_S2_EnableMaxTradesPerDay;
+                case (4, "L1"): return Sess4_L1_EnableMaxTradesPerDay;
+                case (4, "L2"): return Sess4_L2_EnableMaxTradesPerDay;
+                case (4, "S1"): return Sess4_S1_EnableMaxTradesPerDay;
+                case (4, "S2"): return Sess4_S2_EnableMaxTradesPerDay;
+                default: return false;
+            }
+        }
+
+        private int B_MaxTradesPerDay(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_MaxTradesPerDay;
+                case (1, "L2"): return Sess1_L2_MaxTradesPerDay;
+                case (1, "S1"): return Sess1_S1_MaxTradesPerDay;
+                case (1, "S2"): return Sess1_S2_MaxTradesPerDay;
+                case (2, "L1"): return Sess2_L1_MaxTradesPerDay;
+                case (2, "L2"): return Sess2_L2_MaxTradesPerDay;
+                case (2, "S1"): return Sess2_S1_MaxTradesPerDay;
+                case (2, "S2"): return Sess2_S2_MaxTradesPerDay;
+                case (3, "L1"): return Sess3_L1_MaxTradesPerDay;
+                case (3, "L2"): return Sess3_L2_MaxTradesPerDay;
+                case (3, "S1"): return Sess3_S1_MaxTradesPerDay;
+                case (3, "S2"): return Sess3_S2_MaxTradesPerDay;
+                case (4, "L1"): return Sess4_L1_MaxTradesPerDay;
+                case (4, "L2"): return Sess4_L2_MaxTradesPerDay;
+                case (4, "S1"): return Sess4_S1_MaxTradesPerDay;
+                case (4, "S2"): return Sess4_S2_MaxTradesPerDay;
+                default: return 6;
+            }
+        }
+
+        private bool B_EnableWMAFilter(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EnableWMAFilter;
+                case (1, "L2"): return Sess1_L2_EnableWMAFilter;
+                case (1, "S1"): return Sess1_S1_EnableWMAFilter;
+                case (1, "S2"): return Sess1_S2_EnableWMAFilter;
+                case (2, "L1"): return Sess2_L1_EnableWMAFilter;
+                case (2, "L2"): return Sess2_L2_EnableWMAFilter;
+                case (2, "S1"): return Sess2_S1_EnableWMAFilter;
+                case (2, "S2"): return Sess2_S2_EnableWMAFilter;
+                case (3, "L1"): return Sess3_L1_EnableWMAFilter;
+                case (3, "L2"): return Sess3_L2_EnableWMAFilter;
+                case (3, "S1"): return Sess3_S1_EnableWMAFilter;
+                case (3, "S2"): return Sess3_S2_EnableWMAFilter;
+                case (4, "L1"): return Sess4_L1_EnableWMAFilter;
+                case (4, "L2"): return Sess4_L2_EnableWMAFilter;
+                case (4, "S1"): return Sess4_S1_EnableWMAFilter;
+                case (4, "S2"): return Sess4_S2_EnableWMAFilter;
+                default: return false;
+            }
+        }
+
+        private int B_WMALength(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_WMALength;
+                case (1, "L2"): return Sess1_L2_WMALength;
+                case (1, "S1"): return Sess1_S1_WMALength;
+                case (1, "S2"): return Sess1_S2_WMALength;
+                case (2, "L1"): return Sess2_L1_WMALength;
+                case (2, "L2"): return Sess2_L2_WMALength;
+                case (2, "S1"): return Sess2_S1_WMALength;
+                case (2, "S2"): return Sess2_S2_WMALength;
+                case (3, "L1"): return Sess3_L1_WMALength;
+                case (3, "L2"): return Sess3_L2_WMALength;
+                case (3, "S1"): return Sess3_S1_WMALength;
+                case (3, "S2"): return Sess3_S2_WMALength;
+                case (4, "L1"): return Sess4_L1_WMALength;
+                case (4, "L2"): return Sess4_L2_WMALength;
+                case (4, "S1"): return Sess4_S1_WMALength;
+                case (4, "S2"): return Sess4_S2_WMALength;
+                default: return 20;
+            }
+        }
+
+        private double B_MinCandleRange(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_MinCandleRange;
+                case (1, "L2"): return Sess1_L2_MinCandleRange;
+                case (1, "S1"): return Sess1_S1_MinCandleRange;
+                case (1, "S2"): return Sess1_S2_MinCandleRange;
+                case (2, "L1"): return Sess2_L1_MinCandleRange;
+                case (2, "L2"): return Sess2_L2_MinCandleRange;
+                case (2, "S1"): return Sess2_S1_MinCandleRange;
+                case (2, "S2"): return Sess2_S2_MinCandleRange;
+                case (3, "L1"): return Sess3_L1_MinCandleRange;
+                case (3, "L2"): return Sess3_L2_MinCandleRange;
+                case (3, "S1"): return Sess3_S1_MinCandleRange;
+                case (3, "S2"): return Sess3_S2_MinCandleRange;
+                case (4, "L1"): return Sess4_L1_MinCandleRange;
+                case (4, "L2"): return Sess4_L2_MinCandleRange;
+                case (4, "S1"): return Sess4_S1_MinCandleRange;
+                case (4, "S2"): return Sess4_S2_MinCandleRange;
+                default: return 0;
+            }
+        }
+
+        private double B_MaxCandleRange(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_MaxCandleRange;
+                case (1, "L2"): return Sess1_L2_MaxCandleRange;
+                case (1, "S1"): return Sess1_S1_MaxCandleRange;
+                case (1, "S2"): return Sess1_S2_MaxCandleRange;
+                case (2, "L1"): return Sess2_L1_MaxCandleRange;
+                case (2, "L2"): return Sess2_L2_MaxCandleRange;
+                case (2, "S1"): return Sess2_S1_MaxCandleRange;
+                case (2, "S2"): return Sess2_S2_MaxCandleRange;
+                case (3, "L1"): return Sess3_L1_MaxCandleRange;
+                case (3, "L2"): return Sess3_L2_MaxCandleRange;
+                case (3, "S1"): return Sess3_S1_MaxCandleRange;
+                case (3, "S2"): return Sess3_S2_MaxCandleRange;
+                case (4, "L1"): return Sess4_L1_MaxCandleRange;
+                case (4, "L2"): return Sess4_L2_MaxCandleRange;
+                case (4, "S1"): return Sess4_S1_MaxCandleRange;
+                case (4, "S2"): return Sess4_S2_MaxCandleRange;
+                default: return 0;
+            }
+        }
+
+        private int B_EmaLength(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return Sess1_L1_EmaLength;
+                case (1, "L2"): return Sess1_L2_EmaLength;
+                case (1, "S1"): return Sess1_S1_EmaLength;
+                case (1, "S2"): return Sess1_S2_EmaLength;
+                case (2, "L1"): return Sess2_L1_EmaLength;
+                case (2, "L2"): return Sess2_L2_EmaLength;
+                case (2, "S1"): return Sess2_S1_EmaLength;
+                case (2, "S2"): return Sess2_S2_EmaLength;
+                case (3, "L1"): return Sess3_L1_EmaLength;
+                case (3, "L2"): return Sess3_L2_EmaLength;
+                case (3, "S1"): return Sess3_S1_EmaLength;
+                case (3, "S2"): return Sess3_S2_EmaLength;
+                case (4, "L1"): return Sess4_L1_EmaLength;
+                case (4, "L2"): return Sess4_L2_EmaLength;
+                case (4, "S1"): return Sess4_S1_EmaLength;
+                case (4, "S2"): return Sess4_S2_EmaLength;
+                default: return 1;
+            }
+        }
+
+        private double GetBucketDailyPnL(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return dailyPnL_Sess1_L1;
+                case (1, "L2"): return dailyPnL_Sess1_L2;
+                case (1, "S1"): return dailyPnL_Sess1_S1;
+                case (1, "S2"): return dailyPnL_Sess1_S2;
+                case (2, "L1"): return dailyPnL_Sess2_L1;
+                case (2, "L2"): return dailyPnL_Sess2_L2;
+                case (2, "S1"): return dailyPnL_Sess2_S1;
+                case (2, "S2"): return dailyPnL_Sess2_S2;
+                case (3, "L1"): return dailyPnL_Sess3_L1;
+                case (3, "L2"): return dailyPnL_Sess3_L2;
+                case (3, "S1"): return dailyPnL_Sess3_S1;
+                case (3, "S2"): return dailyPnL_Sess3_S2;
+                case (4, "L1"): return dailyPnL_Sess4_L1;
+                case (4, "L2"): return dailyPnL_Sess4_L2;
+                case (4, "S1"): return dailyPnL_Sess4_S1;
+                case (4, "S2"): return dailyPnL_Sess4_S2;
+                default: return default(double);
+            }
+        }
+
+        private int GetBucketTradeCount(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return dailyTradeCount_Sess1_L1;
+                case (1, "L2"): return dailyTradeCount_Sess1_L2;
+                case (1, "S1"): return dailyTradeCount_Sess1_S1;
+                case (1, "S2"): return dailyTradeCount_Sess1_S2;
+                case (2, "L1"): return dailyTradeCount_Sess2_L1;
+                case (2, "L2"): return dailyTradeCount_Sess2_L2;
+                case (2, "S1"): return dailyTradeCount_Sess2_S1;
+                case (2, "S2"): return dailyTradeCount_Sess2_S2;
+                case (3, "L1"): return dailyTradeCount_Sess3_L1;
+                case (3, "L2"): return dailyTradeCount_Sess3_L2;
+                case (3, "S1"): return dailyTradeCount_Sess3_S1;
+                case (3, "S2"): return dailyTradeCount_Sess3_S2;
+                case (4, "L1"): return dailyTradeCount_Sess4_L1;
+                case (4, "L2"): return dailyTradeCount_Sess4_L2;
+                case (4, "S1"): return dailyTradeCount_Sess4_S1;
+                case (4, "S2"): return dailyTradeCount_Sess4_S2;
+                default: return default(int);
+            }
+        }
+
+        private bool GetBucketLossHit(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return dailyLossHit_Sess1_L1;
+                case (1, "L2"): return dailyLossHit_Sess1_L2;
+                case (1, "S1"): return dailyLossHit_Sess1_S1;
+                case (1, "S2"): return dailyLossHit_Sess1_S2;
+                case (2, "L1"): return dailyLossHit_Sess2_L1;
+                case (2, "L2"): return dailyLossHit_Sess2_L2;
+                case (2, "S1"): return dailyLossHit_Sess2_S1;
+                case (2, "S2"): return dailyLossHit_Sess2_S2;
+                case (3, "L1"): return dailyLossHit_Sess3_L1;
+                case (3, "L2"): return dailyLossHit_Sess3_L2;
+                case (3, "S1"): return dailyLossHit_Sess3_S1;
+                case (3, "S2"): return dailyLossHit_Sess3_S2;
+                case (4, "L1"): return dailyLossHit_Sess4_L1;
+                case (4, "L2"): return dailyLossHit_Sess4_L2;
+                case (4, "S1"): return dailyLossHit_Sess4_S1;
+                case (4, "S2"): return dailyLossHit_Sess4_S2;
+                default: return default(bool);
+            }
+        }
+
+        private bool GetBucketProfitHit(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): return dailyProfitHit_Sess1_L1;
+                case (1, "L2"): return dailyProfitHit_Sess1_L2;
+                case (1, "S1"): return dailyProfitHit_Sess1_S1;
+                case (1, "S2"): return dailyProfitHit_Sess1_S2;
+                case (2, "L1"): return dailyProfitHit_Sess2_L1;
+                case (2, "L2"): return dailyProfitHit_Sess2_L2;
+                case (2, "S1"): return dailyProfitHit_Sess2_S1;
+                case (2, "S2"): return dailyProfitHit_Sess2_S2;
+                case (3, "L1"): return dailyProfitHit_Sess3_L1;
+                case (3, "L2"): return dailyProfitHit_Sess3_L2;
+                case (3, "S1"): return dailyProfitHit_Sess3_S1;
+                case (3, "S2"): return dailyProfitHit_Sess3_S2;
+                case (4, "L1"): return dailyProfitHit_Sess4_L1;
+                case (4, "L2"): return dailyProfitHit_Sess4_L2;
+                case (4, "S1"): return dailyProfitHit_Sess4_S1;
+                case (4, "S2"): return dailyProfitHit_Sess4_S2;
+                default: return default(bool);
+            }
+        }
+
+        private void AddBucketDailyPnL(int s, string b, double v)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): dailyPnL_Sess1_L1 += v; break;
+                case (1, "L2"): dailyPnL_Sess1_L2 += v; break;
+                case (1, "S1"): dailyPnL_Sess1_S1 += v; break;
+                case (1, "S2"): dailyPnL_Sess1_S2 += v; break;
+                case (2, "L1"): dailyPnL_Sess2_L1 += v; break;
+                case (2, "L2"): dailyPnL_Sess2_L2 += v; break;
+                case (2, "S1"): dailyPnL_Sess2_S1 += v; break;
+                case (2, "S2"): dailyPnL_Sess2_S2 += v; break;
+                case (3, "L1"): dailyPnL_Sess3_L1 += v; break;
+                case (3, "L2"): dailyPnL_Sess3_L2 += v; break;
+                case (3, "S1"): dailyPnL_Sess3_S1 += v; break;
+                case (3, "S2"): dailyPnL_Sess3_S2 += v; break;
+                case (4, "L1"): dailyPnL_Sess4_L1 += v; break;
+                case (4, "L2"): dailyPnL_Sess4_L2 += v; break;
+                case (4, "S1"): dailyPnL_Sess4_S1 += v; break;
+                case (4, "S2"): dailyPnL_Sess4_S2 += v; break;
+            }
+        }
+
+        private void IncBucketTradeCount(int s, string b)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): dailyTradeCount_Sess1_L1++; break;
+                case (1, "L2"): dailyTradeCount_Sess1_L2++; break;
+                case (1, "S1"): dailyTradeCount_Sess1_S1++; break;
+                case (1, "S2"): dailyTradeCount_Sess1_S2++; break;
+                case (2, "L1"): dailyTradeCount_Sess2_L1++; break;
+                case (2, "L2"): dailyTradeCount_Sess2_L2++; break;
+                case (2, "S1"): dailyTradeCount_Sess2_S1++; break;
+                case (2, "S2"): dailyTradeCount_Sess2_S2++; break;
+                case (3, "L1"): dailyTradeCount_Sess3_L1++; break;
+                case (3, "L2"): dailyTradeCount_Sess3_L2++; break;
+                case (3, "S1"): dailyTradeCount_Sess3_S1++; break;
+                case (3, "S2"): dailyTradeCount_Sess3_S2++; break;
+                case (4, "L1"): dailyTradeCount_Sess4_L1++; break;
+                case (4, "L2"): dailyTradeCount_Sess4_L2++; break;
+                case (4, "S1"): dailyTradeCount_Sess4_S1++; break;
+                case (4, "S2"): dailyTradeCount_Sess4_S2++; break;
+            }
+        }
+
+        private void SetBucketLossHit(int s, string b, bool v)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): dailyLossHit_Sess1_L1 = v; break;
+                case (1, "L2"): dailyLossHit_Sess1_L2 = v; break;
+                case (1, "S1"): dailyLossHit_Sess1_S1 = v; break;
+                case (1, "S2"): dailyLossHit_Sess1_S2 = v; break;
+                case (2, "L1"): dailyLossHit_Sess2_L1 = v; break;
+                case (2, "L2"): dailyLossHit_Sess2_L2 = v; break;
+                case (2, "S1"): dailyLossHit_Sess2_S1 = v; break;
+                case (2, "S2"): dailyLossHit_Sess2_S2 = v; break;
+                case (3, "L1"): dailyLossHit_Sess3_L1 = v; break;
+                case (3, "L2"): dailyLossHit_Sess3_L2 = v; break;
+                case (3, "S1"): dailyLossHit_Sess3_S1 = v; break;
+                case (3, "S2"): dailyLossHit_Sess3_S2 = v; break;
+                case (4, "L1"): dailyLossHit_Sess4_L1 = v; break;
+                case (4, "L2"): dailyLossHit_Sess4_L2 = v; break;
+                case (4, "S1"): dailyLossHit_Sess4_S1 = v; break;
+                case (4, "S2"): dailyLossHit_Sess4_S2 = v; break;
+            }
+        }
+
+        private void SetBucketProfitHit(int s, string b, bool v)
+        {
+            switch ((s, b))
+            {
+                case (1, "L1"): dailyProfitHit_Sess1_L1 = v; break;
+                case (1, "L2"): dailyProfitHit_Sess1_L2 = v; break;
+                case (1, "S1"): dailyProfitHit_Sess1_S1 = v; break;
+                case (1, "S2"): dailyProfitHit_Sess1_S2 = v; break;
+                case (2, "L1"): dailyProfitHit_Sess2_L1 = v; break;
+                case (2, "L2"): dailyProfitHit_Sess2_L2 = v; break;
+                case (2, "S1"): dailyProfitHit_Sess2_S1 = v; break;
+                case (2, "S2"): dailyProfitHit_Sess2_S2 = v; break;
+                case (3, "L1"): dailyProfitHit_Sess3_L1 = v; break;
+                case (3, "L2"): dailyProfitHit_Sess3_L2 = v; break;
+                case (3, "S1"): dailyProfitHit_Sess3_S1 = v; break;
+                case (3, "S2"): dailyProfitHit_Sess3_S2 = v; break;
+                case (4, "L1"): dailyProfitHit_Sess4_L1 = v; break;
+                case (4, "L2"): dailyProfitHit_Sess4_L2 = v; break;
+                case (4, "S1"): dailyProfitHit_Sess4_S1 = v; break;
+                case (4, "S2"): dailyProfitHit_Sess4_S2 = v; break;
+            }
+        }
+
+        private bool GetSessEnable(int s)
+        {
+            switch (s)
+            {
+                case 1: return Sess1_Enable;
+                case 2: return Sess2_Enable;
+                case 3: return Sess3_Enable;
+                case 4: return Sess4_Enable;
+                default: return false;
+            }
+        }
 
         #endregion
 
         // ════════════════════════════════════════════════════════════════════════
-        //  BUCKET ROUTING — Determines which bucket a signal belongs to
+        //  SESSION ROUTING
         // ════════════════════════════════════════════════════════════════════════
 
-        /// <summary>
-        /// Given a direction (1=long, -1=short) and candle range, find the matching bucket.
-        /// Returns null if no bucket matches or matching bucket is disabled/halted.
-        /// </summary>
-        private string ResolveBucket(int direction, double candleRange)
+        #region Session Routing
+
+        private double ToSessionMinutes(TimeSpan t)
+        {
+            double ssm = TimeSpan.Parse(SessionStartTime).TotalMinutes;
+            double m   = t.TotalMinutes - ssm;
+            if (m < 0) m += 1440.0;
+            return m;
+        }
+        private double SM(string ts) => ToSessionMinutes(TimeSpan.Parse(ts));
+
+        private double GetSessTradeWindowStartSM(int s) { switch(s) { case 1: return SM(Sess1_TradeWindowStart); case 2: return SM(Sess2_TradeWindowStart); case 3: return SM(Sess3_TradeWindowStart); case 4: return SM(Sess4_TradeWindowStart); default: return 0; } }
+        private double GetSessLastEntrySM(int s)        { switch(s) { case 1: return SM(Sess1_LastEntryTime);    case 2: return SM(Sess2_LastEntryTime);    case 3: return SM(Sess3_LastEntryTime);    case 4: return SM(Sess4_LastEntryTime);    default: return 0; } }
+        private double GetSessForceCloseSM(int s)       { switch(s) { case 1: return SM(Sess1_ForceCloseTime);  case 2: return SM(Sess2_ForceCloseTime);  case 3: return SM(Sess3_ForceCloseTime);  case 4: return SM(Sess4_ForceCloseTime);  default: return 0; } }
+        private double GetSessSessionEndSM(int s)       { switch(s) { case 1: return SM(Sess1_SessionEndTime);  case 2: return SM(Sess2_SessionEndTime);  case 3: return SM(Sess3_SessionEndTime);  case 4: return SM(Sess4_SessionEndTime);  default: return 0; } }
+        private bool   GetSessEnableForceClose(int s)   { switch(s) { case 1: return Sess1_EnableForceClose;    case 2: return Sess2_EnableForceClose;    case 3: return Sess3_EnableForceClose;    case 4: return Sess4_EnableForceClose;    default: return false; } }
+
+        // Priority: 4 -> 3 -> 2 -> 1 (higher session number wins on overlap)
+        private int ResolveActiveSession(double barSM)
+        {
+            for (int s = 4; s >= 1; s--)
+            {
+                if (!GetSessEnable(s)) continue;
+                double startSM = GetSessTradeWindowStartSM(s);
+                double endSM   = GetSessSessionEndSM(s);
+                if (startSM == endSM) continue;
+                bool inSession = endSM > startSM
+                    ? barSM >= startSM && barSM < endSM
+                    : barSM >= startSM || barSM < endSM;
+                if (inSession) return s;
+            }
+            return 0;
+        }
+
+        private string ResolveBucket(int session, int direction, double candleRange)
         {
             string[] candidates = direction == 1 ? new[] { "L1", "L2" } : new[] { "S1", "S2" };
-
             foreach (string b in candidates)
             {
-                if (!IsBucketEnabled(b)) continue;
-
-                double minR = 0, maxR = 0;
-                switch (b)
-                {
-                    case "L1": minR = L1_MinCandleRange; maxR = L1_MaxCandleRange; break;
-                    case "L2": minR = L2_MinCandleRange; maxR = L2_MaxCandleRange; break;
-                    case "S1": minR = S1_MinCandleRange; maxR = S1_MaxCandleRange; break;
-                    case "S2": minR = S2_MinCandleRange; maxR = S2_MaxCandleRange; break;
-                }
-
-                if (candleRange < minR) continue;
+                if (!IsBucketEnabled(session, b)) continue;
+                if (candleRange < B_MinCandleRange(session, b)) continue;
+                double maxR = B_MaxCandleRange(session, b);
                 if (maxR > 0 && candleRange > maxR) continue;
-
-                // Bucket range matches — check if bucket is halted
-                if (GetBucketLossHit(b) || GetBucketProfitHit(b)) continue;
-                if (B_EnableMaxTradesPerDay(b) && GetBucketTradeCount(b) >= B_MaxTradesPerDay(b)) continue;
-
+                if (GetBucketLossHit(session, b) || GetBucketProfitHit(session, b)) continue;
+                if (B_EnableMaxTradesPerDay(session, b) && GetBucketTradeCount(session, b) >= B_MaxTradesPerDay(session, b)) continue;
                 return b;
             }
             return null;
         }
+
+        #endregion
 
         // ════════════════════════════════════════════════════════════════════════
         //  OnStateChange
@@ -1628,7 +5315,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description = "HUGO";
+                Description = "HUGO Multi v1 - 4-Session EMA Commercial Strategy";
                 Name        = "HUGO";
                 Calculate                               = Calculate.OnBarClose;
                 EntriesPerDirection                     = 1;
@@ -1647,404 +5334,844 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 BarsRequiredToTrade                     = 20;
                 IsInstantiatedOnEachOptimizationIteration = true;
 
-                // ── Common defaults ──────────────────────────────────────────
-                SessionStartTime        = "18:00";
-                TradeWindowStart        = "03:50";
-                LastEntryTime           = "13:15";
-                ForceCloseTime          = "15:00";
-                SessionEndTime          = "17:00";
-                ContractQuantity        = 1;
+                // ── Commercial defaults ──────────────────────────────────────
                 RequireEntryConfirmation = false;
-                WebhookUrl              = string.Empty;
-                WebhookTickerOverride   = string.Empty;
-                MaxAccountBalance       = 0.0;
+                WebhookUrl               = string.Empty;
+                WebhookTickerOverride    = string.Empty;
+                MaxAccountBalance        = 0.0;
+                UseNewsSkip              = false;
+                NewsTime                 = string.Empty;
+                NewsBlockMinutes         = 1;
+                FlattenAtNewsStart       = false;
 
-                EnableSkipTime          = true;
-                SkipTimeStart           = "08:25";
-                SkipTimeEnd             = "08:30";
-                FlattenAtSkipStart      = false;
-                UseNewsSkip             = false;
-                NewsBlockMinutes        = 1;
-                FlattenAtNewsStart      = false;
-
-                EnableGlobalMaxDailyLoss    = true;
-                GlobalMaxDailyLoss          = 307;
+                SessionStartTime            = "19:15";
+                ContractQuantity            = 1;
+                EnableSkipTime              = false;
+                SkipTimeStart               = "08:15";
+                SkipTimeEnd                 = "08:45";
+                FlattenAtSkipStart          = false;
+                EnableGlobalMaxDailyLoss    = false;
+                GlobalMaxDailyLoss          = 230;
                 EnableGlobalMaxDailyProfit  = true;
-                GlobalMaxDailyProfit        = 186;
+                GlobalMaxDailyProfit        = 330;
                 EnableGlobalMaxTradesPerDay = true;
-                GlobalMaxTradesPerDay       = 7;
+                GlobalMaxTradesPerDay       = 5;
 
-                // ── L1: Long Small Candle ────────────────────────────────────
-                L1_Enable               = true;
-                L1_MinCandleRange       = 0;
-                L1_MaxCandleRange       = 50;
+                Sess1_Enable           = true;
+                Sess1_TradeWindowStart  = "19:15";
+                Sess1_LastEntryTime     = "00:00";
+                Sess1_EnableForceClose  = true;
+                Sess1_ForceCloseTime    = "03:40";
+                Sess1_SessionEndTime    = "17:00";
 
-                L1_EmaLength            = 48;
-                L1_EnableEmaSlope       = true;
-                L1_EmaSlopeMode         = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
-                L1_EmaSlopeBars         = 53;
-                L1_EmaSlopeMinPct       = 0.069;
+                Sess2_Enable           = true;
+                Sess2_TradeWindowStart  = "00:00";
+                Sess2_LastEntryTime     = "03:50";
+                Sess2_EnableForceClose  = true;
+                Sess2_ForceCloseTime    = "04:00";
+                Sess2_SessionEndTime    = "17:00";
 
-                L1_EnableWMAFilter      = false;
-                L1_WMALength            = 20;
-                L1_EnableSMAFilter      = false;
-                L1_SMALength            = 50;
-                L1_EnableADXFilter      = false;
-                L1_ADXPeriod            = 14;
-                L1_ADXMin               = 20;
-                L1_ADXMax               = 100;
+                Sess3_Enable           = true;
+                Sess3_TradeWindowStart  = "04:00";
+                Sess3_LastEntryTime     = "08:15";
+                Sess3_EnableForceClose  = true;
+                Sess3_ForceCloseTime    = "15:15";
+                Sess3_SessionEndTime    = "17:00";
 
-                L1_EntryType            = Hugo_EntryTypeEnum.Immediate;
-                L1_PullbackOffset       = 3;
-                L1_MaxBarsToWait        = 0;
+                Sess4_Enable           = true;
+                Sess4_TradeWindowStart  = "08:45";
+                Sess4_LastEntryTime     = "14:45";
+                Sess4_EnableForceClose  = true;
+                Sess4_ForceCloseTime    = "15:00";
+                Sess4_SessionEndTime    = "17:00";
 
-                L1_StopLossType         = Hugo_StopLossTypeEnum.Fixed;
-                L1_FixedStopLoss        = 59;
-                L1_SLCandleMultiplier    = 1.0;
-                L1_StopLossOffset       = 22;
-                L1_MaxStopLoss          = 49.25;
-                L1_EnableMaxBarsInTrade = false;
-                L1_MaxBarsInTrade       = 20;
+                // ── Sess1 L1 ──
+                Sess1_L1_Enable = true;
+                Sess1_L1_MinCandleRange = 0;
+                Sess1_L1_MaxCandleRange = 30;
+                Sess1_L1_EmaLength = 34;
+                Sess1_L1_EnableEmaSlope = true;
+                Sess1_L1_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess1_L1_EmaSlopeBars = 53;
+                Sess1_L1_EmaSlopeMinPct = 0.131;
+                Sess1_L1_EnableWMAFilter = false;
+                Sess1_L1_WMALength = 55;
+                Sess1_L1_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess1_L1_FixedStopLoss = 72;
+                Sess1_L1_SLCandleMultiplier = 1.0;
+                Sess1_L1_StopLossOffset = 22;
+                Sess1_L1_MaxStopLoss = 72;
+                Sess1_L1_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess1_L1_RiskRewardRatio = 3.7;
+                Sess1_L1_FixedTakeProfit = 203;
+                Sess1_L1_TPCandleMultiplier = 1.0;
+                Sess1_L1_EnableBreakEven = false;
+                Sess1_L1_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess1_L1_BreakEvenTriggerValue = 1.06;
+                Sess1_L1_BreakEvenOffset = 30;
+                Sess1_L1_EnablePriceTrail = false;
+                Sess1_L1_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess1_L1_TrailDistanceValue = 64;
+                Sess1_L1_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess1_L1_TrailActivationValue = 80;
+                Sess1_L1_TrailStepTicks = 0;
+                Sess1_L1_EnableBodyPctFilter = true;
+                Sess1_L1_MinBodyPct = 23;
+                Sess1_L1_EnableDirectionFlip = false;
+                Sess1_L1_EnableMaxDailyLoss = true;
+                Sess1_L1_MaxDailyLoss = 70;
+                Sess1_L1_EnableMaxDailyProfit = false;
+                Sess1_L1_MaxDailyProfit = 157;
+                Sess1_L1_EnableMaxTradesPerDay = true;
+                Sess1_L1_MaxTradesPerDay = 1;
 
-                L1_TakeProfitType       = Hugo_TakeProfitTypeEnum.RiskReward;
-                L1_RiskRewardRatio      = 3.67;
-                L1_FixedTakeProfit      = 203;
-                L1_TPCandleMultiplier    = 1.0;
+                // ── Sess1 L2 ──
+                Sess1_L2_Enable = true;
+                Sess1_L2_MinCandleRange = 30.25;
+                Sess1_L2_MaxCandleRange = 59;
+                Sess1_L2_EmaLength = 50;
+                Sess1_L2_EnableEmaSlope = true;
+                Sess1_L2_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess1_L2_EmaSlopeBars = 21;
+                Sess1_L2_EmaSlopeMinPct = 0.08;
+                Sess1_L2_EnableWMAFilter = true;
+                Sess1_L2_WMALength = 100;
+                Sess1_L2_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess1_L2_FixedStopLoss = 56.75;
+                Sess1_L2_SLCandleMultiplier = 1.0;
+                Sess1_L2_StopLossOffset = 46;
+                Sess1_L2_MaxStopLoss = 50;
+                Sess1_L2_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess1_L2_RiskRewardRatio = 5.0;
+                Sess1_L2_FixedTakeProfit = 100;
+                Sess1_L2_TPCandleMultiplier = 1.0;
+                Sess1_L2_EnableBreakEven = true;
+                Sess1_L2_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess1_L2_BreakEvenTriggerValue = 1.4;
+                Sess1_L2_BreakEvenOffset = 2;
+                Sess1_L2_EnablePriceTrail = false;
+                Sess1_L2_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess1_L2_TrailDistanceValue = 25;
+                Sess1_L2_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess1_L2_TrailActivationValue = 191;
+                Sess1_L2_TrailStepTicks = 0;
+                Sess1_L2_EnableBodyPctFilter = true;
+                Sess1_L2_MinBodyPct = 21;
+                Sess1_L2_EnableDirectionFlip = true;
+                Sess1_L2_EnableMaxDailyLoss = false;
+                Sess1_L2_MaxDailyLoss = 41;
+                Sess1_L2_EnableMaxDailyProfit = false;
+                Sess1_L2_MaxDailyProfit = 100;
+                Sess1_L2_EnableMaxTradesPerDay = true;
+                Sess1_L2_MaxTradesPerDay = 1;
 
-                L1_EnableBreakEven          = false;
-                L1_BreakEvenTriggerType     = Hugo_BreakEvenTriggerEnum.RiskMultiple;
-                L1_BreakEvenTriggerValue    = 2.67;
-                L1_BreakEvenOffset          = 11;
-                L1_EnableSLToEntryOnEMA     = false;
-                L1_SLToEntryOffset          = 0;
+                // ── Sess1 S1 ──
+                Sess1_S1_Enable = true;
+                Sess1_S1_MinCandleRange = 0;
+                Sess1_S1_MaxCandleRange = 30;
+                Sess1_S1_EmaLength = 21;
+                Sess1_S1_EnableEmaSlope = true;
+                Sess1_S1_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess1_S1_EmaSlopeBars = 45;
+                Sess1_S1_EmaSlopeMinPct = 0.005;
+                Sess1_S1_EnableWMAFilter = true;
+                Sess1_S1_WMALength = 30;
+                Sess1_S1_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess1_S1_FixedStopLoss = 70;
+                Sess1_S1_SLCandleMultiplier = 1.0;
+                Sess1_S1_StopLossOffset = 40;
+                Sess1_S1_MaxStopLoss = 50;
+                Sess1_S1_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess1_S1_RiskRewardRatio = 4.0;
+                Sess1_S1_FixedTakeProfit = 100;
+                Sess1_S1_TPCandleMultiplier = 1.0;
+                Sess1_S1_EnableBreakEven = true;
+                Sess1_S1_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess1_S1_BreakEvenTriggerValue = 2.7;
+                Sess1_S1_BreakEvenOffset = 9;
+                Sess1_S1_EnablePriceTrail = false;
+                Sess1_S1_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess1_S1_TrailDistanceValue = 20;
+                Sess1_S1_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess1_S1_TrailActivationValue = 147;
+                Sess1_S1_TrailStepTicks = 0;
+                Sess1_S1_EnableBodyPctFilter = true;
+                Sess1_S1_MinBodyPct = 11;
+                Sess1_S1_EnableDirectionFlip = false;
+                Sess1_S1_EnableMaxDailyLoss = false;
+                Sess1_S1_MaxDailyLoss = 155;
+                Sess1_S1_EnableMaxDailyProfit = false;
+                Sess1_S1_MaxDailyProfit = 187;
+                Sess1_S1_EnableMaxTradesPerDay = true;
+                Sess1_S1_MaxTradesPerDay = 2;
 
-                L1_EnablePriceTrail         = false;
-                L1_TrailDistanceMode        = Hugo_TrailDistanceModeEnum.FixedPoints;
-                L1_TrailDistanceValue       = 55;
-                L1_TrailActivationMode      = Hugo_TrailActivationModeEnum.FixedPoints;
-                L1_TrailActivationValue     = 150;
-                L1_TrailStepTicks           = 0;
-                L1_EnableTrailLock          = false;
-                L1_TrailLockValue           = 0;
+                // ── Sess1 S2 ──
+                Sess1_S2_Enable = true;
+                Sess1_S2_MinCandleRange = 30.25;
+                Sess1_S2_MaxCandleRange = 158;
+                Sess1_S2_EmaLength = 34;
+                Sess1_S2_EnableEmaSlope = true;
+                Sess1_S2_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess1_S2_EmaSlopeBars = 46;
+                Sess1_S2_EmaSlopeMinPct = 0.01;
+                Sess1_S2_EnableWMAFilter = false;
+                Sess1_S2_WMALength = 61;
+                Sess1_S2_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess1_S2_FixedStopLoss = 49;
+                Sess1_S2_SLCandleMultiplier = 1.0;
+                Sess1_S2_StopLossOffset = 56;
+                Sess1_S2_MaxStopLoss = 46;
+                Sess1_S2_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess1_S2_RiskRewardRatio = 5.1;
+                Sess1_S2_FixedTakeProfit = 100;
+                Sess1_S2_TPCandleMultiplier = 1.0;
+                Sess1_S2_EnableBreakEven = true;
+                Sess1_S2_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess1_S2_BreakEvenTriggerValue = 2.9;
+                Sess1_S2_BreakEvenOffset = 5;
+                Sess1_S2_EnablePriceTrail = false;
+                Sess1_S2_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess1_S2_TrailDistanceValue = 60;
+                Sess1_S2_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess1_S2_TrailActivationValue = 196;
+                Sess1_S2_TrailStepTicks = 0;
+                Sess1_S2_EnableBodyPctFilter = true;
+                Sess1_S2_MinBodyPct = 36;
+                Sess1_S2_EnableDirectionFlip = false;
+                Sess1_S2_EnableMaxDailyLoss = true;
+                Sess1_S2_MaxDailyLoss = 105;
+                Sess1_S2_EnableMaxDailyProfit = true;
+                Sess1_S2_MaxDailyProfit = 131;
+                Sess1_S2_EnableMaxTradesPerDay = true;
+                Sess1_S2_MaxTradesPerDay = 2;
 
-                L1_EnableCandleSizeFilter   = false;
-                L1_MinCandleSize            = 10;
-                L1_MaxCandleSize            = 0;
-                L1_EnableBodyPctFilter      = true;
-                L1_MinBodyPct               = 32;
-                L1_EnableCloseDistanceFilter = false;
-                L1_MinCloseDistance          = 5;
-                L1_EnableFilterWaitBars     = false;
-                L1_FilterWaitMaxBars        = 3;
+                // ── Sess2 L1 ──
+                Sess2_L1_Enable = true;
+                Sess2_L1_MinCandleRange = 14;
+                Sess2_L1_MaxCandleRange = 30;
+                Sess2_L1_EmaLength = 67;
+                Sess2_L1_EnableEmaSlope = true;
+                Sess2_L1_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess2_L1_EmaSlopeBars = 53;
+                Sess2_L1_EmaSlopeMinPct = 0.029;
+                Sess2_L1_EnableWMAFilter = true;
+                Sess2_L1_WMALength = 100;
+                Sess2_L1_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess2_L1_FixedStopLoss = 43;
+                Sess2_L1_SLCandleMultiplier = 1.0;
+                Sess2_L1_StopLossOffset = 22;
+                Sess2_L1_MaxStopLoss = 33;
+                Sess2_L1_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess2_L1_RiskRewardRatio = 3.74;
+                Sess2_L1_FixedTakeProfit = 203;
+                Sess2_L1_TPCandleMultiplier = 1.0;
+                Sess2_L1_EnableBreakEven = false;
+                Sess2_L1_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess2_L1_BreakEvenTriggerValue = 1.2;
+                Sess2_L1_BreakEvenOffset = 11;
+                Sess2_L1_EnablePriceTrail = false;
+                Sess2_L1_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess2_L1_TrailDistanceValue = 55;
+                Sess2_L1_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess2_L1_TrailActivationValue = 150;
+                Sess2_L1_TrailStepTicks = 0;
+                Sess2_L1_EnableBodyPctFilter = true;
+                Sess2_L1_MinBodyPct = 40;
+                Sess2_L1_EnableDirectionFlip = true;
+                Sess2_L1_EnableMaxDailyLoss = false;
+                Sess2_L1_MaxDailyLoss = 203;
+                Sess2_L1_EnableMaxDailyProfit = false;
+                Sess2_L1_MaxDailyProfit = 157;
+                Sess2_L1_EnableMaxTradesPerDay = true;
+                Sess2_L1_MaxTradesPerDay = 1;
 
-                L1_EnableDirectionFlip         = false;
-                L1_EnableSameDirectionOnLoss   = false;
-                L1_SameDirectionLossThreshold  = 10;
+                // ── Sess2 L2 ──
+                Sess2_L2_Enable = true;
+                Sess2_L2_MinCandleRange = 30.25;
+                Sess2_L2_MaxCandleRange = 50;
+                Sess2_L2_EmaLength = 50;
+                Sess2_L2_EnableEmaSlope = true;
+                Sess2_L2_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess2_L2_EmaSlopeBars = 27;
+                Sess2_L2_EmaSlopeMinPct = 0.07;
+                Sess2_L2_EnableWMAFilter = true;
+                Sess2_L2_WMALength = 100;
+                Sess2_L2_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess2_L2_FixedStopLoss = 44;
+                Sess2_L2_SLCandleMultiplier = 1.0;
+                Sess2_L2_StopLossOffset = 56;
+                Sess2_L2_MaxStopLoss = 44;
+                Sess2_L2_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess2_L2_RiskRewardRatio = 3.56;
+                Sess2_L2_FixedTakeProfit = 100;
+                Sess2_L2_TPCandleMultiplier = 1.0;
+                Sess2_L2_EnableBreakEven = true;
+                Sess2_L2_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess2_L2_BreakEvenTriggerValue = 0.93;
+                Sess2_L2_BreakEvenOffset = 10;
+                Sess2_L2_EnablePriceTrail = false;
+                Sess2_L2_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess2_L2_TrailDistanceValue = 25;
+                Sess2_L2_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess2_L2_TrailActivationValue = 192;
+                Sess2_L2_TrailStepTicks = 0;
+                Sess2_L2_EnableBodyPctFilter = true;
+                Sess2_L2_MinBodyPct = 20;
+                Sess2_L2_EnableDirectionFlip = true;
+                Sess2_L2_EnableMaxDailyLoss = true;
+                Sess2_L2_MaxDailyLoss = 207;
+                Sess2_L2_EnableMaxDailyProfit = true;
+                Sess2_L2_MaxDailyProfit = 186;
+                Sess2_L2_EnableMaxTradesPerDay = false;
+                Sess2_L2_MaxTradesPerDay = 6;
 
-                L1_EnableMaxDailyLoss       = true;
-                L1_MaxDailyLoss             = 203;
-                L1_EnableMaxDailyProfit     = true;
-                L1_MaxDailyProfit           = 157;
-                L1_EnableMaxTradesPerDay    = false;
-                L1_MaxTradesPerDay          = 2;
+                // ── Sess2 S1 ──
+                Sess2_S1_Enable = true;
+                Sess2_S1_MinCandleRange = 0;
+                Sess2_S1_MaxCandleRange = 50;
+                Sess2_S1_EmaLength = 50;
+                Sess2_S1_EnableEmaSlope = true;
+                Sess2_S1_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess2_S1_EmaSlopeBars = 45;
+                Sess2_S1_EmaSlopeMinPct = 0.077;
+                Sess2_S1_EnableWMAFilter = true;
+                Sess2_S1_WMALength = 100;
+                Sess2_S1_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess2_S1_FixedStopLoss = 21.75;
+                Sess2_S1_SLCandleMultiplier = 1.0;
+                Sess2_S1_StopLossOffset = 56;
+                Sess2_S1_MaxStopLoss = 22;
+                Sess2_S1_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess2_S1_RiskRewardRatio = 3.12;
+                Sess2_S1_FixedTakeProfit = 100;
+                Sess2_S1_TPCandleMultiplier = 1.0;
+                Sess2_S1_EnableBreakEven = true;
+                Sess2_S1_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess2_S1_BreakEvenTriggerValue = 1.04;
+                Sess2_S1_BreakEvenOffset = 3;
+                Sess2_S1_EnablePriceTrail = false;
+                Sess2_S1_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess2_S1_TrailDistanceValue = 20;
+                Sess2_S1_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess2_S1_TrailActivationValue = 147;
+                Sess2_S1_TrailStepTicks = 0;
+                Sess2_S1_EnableBodyPctFilter = true;
+                Sess2_S1_MinBodyPct = 28;
+                Sess2_S1_EnableDirectionFlip = true;
+                Sess2_S1_EnableMaxDailyLoss = true;
+                Sess2_S1_MaxDailyLoss = 155;
+                Sess2_S1_EnableMaxDailyProfit = true;
+                Sess2_S1_MaxDailyProfit = 187;
+                Sess2_S1_EnableMaxTradesPerDay = false;
+                Sess2_S1_MaxTradesPerDay = 1;
 
-                // ── L2: Long Large Candle (same defaults, different range) ───
-                L2_Enable               = true;
-                L2_MinCandleRange       = 50;
-                L2_MaxCandleRange       = 0;
+                // ── Sess2 S2 ──
+                Sess2_S2_Enable = true;
+                Sess2_S2_MinCandleRange = 50;
+                Sess2_S2_MaxCandleRange = 34.25;
+                Sess2_S2_EmaLength = 46;
+                Sess2_S2_EnableEmaSlope = true;
+                Sess2_S2_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess2_S2_EmaSlopeBars = 46;
+                Sess2_S2_EmaSlopeMinPct = 0.042;
+                Sess2_S2_EnableWMAFilter = true;
+                Sess2_S2_WMALength = 34;
+                Sess2_S2_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess2_S2_FixedStopLoss = 60;
+                Sess2_S2_SLCandleMultiplier = 1.0;
+                Sess2_S2_StopLossOffset = 56;
+                Sess2_S2_MaxStopLoss = 47;
+                Sess2_S2_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess2_S2_RiskRewardRatio = 3.4;
+                Sess2_S2_FixedTakeProfit = 100;
+                Sess2_S2_TPCandleMultiplier = 1.0;
+                Sess2_S2_EnableBreakEven = true;
+                Sess2_S2_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess2_S2_BreakEvenTriggerValue = 2.43;
+                Sess2_S2_BreakEvenOffset = 2;
+                Sess2_S2_EnablePriceTrail = false;
+                Sess2_S2_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess2_S2_TrailDistanceValue = 60;
+                Sess2_S2_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess2_S2_TrailActivationValue = 196;
+                Sess2_S2_TrailStepTicks = 0;
+                Sess2_S2_EnableBodyPctFilter = true;
+                Sess2_S2_MinBodyPct = 23;
+                Sess2_S2_EnableDirectionFlip = true;
+                Sess2_S2_EnableMaxDailyLoss = true;
+                Sess2_S2_MaxDailyLoss = 105;
+                Sess2_S2_EnableMaxDailyProfit = true;
+                Sess2_S2_MaxDailyProfit = 131;
+                Sess2_S2_EnableMaxTradesPerDay = true;
+                Sess2_S2_MaxTradesPerDay = 1;
 
-                L2_EmaLength            = 47;
-                L2_EnableEmaSlope       = true;
-                L2_EmaSlopeMode         = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
-                L2_EmaSlopeBars         = 27;
-                L2_EmaSlopeMinPct       = 0.055;
+                // ── Sess3 L1 ──
+                Sess3_L1_Enable = true;
+                Sess3_L1_MinCandleRange = 0;
+                Sess3_L1_MaxCandleRange = 50;
+                Sess3_L1_EmaLength = 50;
+                Sess3_L1_EnableEmaSlope = true;
+                Sess3_L1_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess3_L1_EmaSlopeBars = 53;
+                Sess3_L1_EmaSlopeMinPct = 0.071;
+                Sess3_L1_EnableWMAFilter = true;
+                Sess3_L1_WMALength = 20;
+                Sess3_L1_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess3_L1_FixedStopLoss = 52.25;
+                Sess3_L1_SLCandleMultiplier = 1.0;
+                Sess3_L1_StopLossOffset = 22;
+                Sess3_L1_MaxStopLoss = 45;
+                Sess3_L1_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess3_L1_RiskRewardRatio = 6;
+                Sess3_L1_FixedTakeProfit = 203;
+                Sess3_L1_TPCandleMultiplier = 1.0;
+                Sess3_L1_EnableBreakEven = true;
+                Sess3_L1_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess3_L1_BreakEvenTriggerValue = 3.95;
+                Sess3_L1_BreakEvenOffset = 20;
+                Sess3_L1_EnablePriceTrail = false;
+                Sess3_L1_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess3_L1_TrailDistanceValue = 55;
+                Sess3_L1_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess3_L1_TrailActivationValue = 150;
+                Sess3_L1_TrailStepTicks = 0;
+                Sess3_L1_EnableBodyPctFilter = true;
+                Sess3_L1_MinBodyPct = 31;
+                Sess3_L1_EnableDirectionFlip = false;
+                Sess3_L1_EnableMaxDailyLoss = false;
+                Sess3_L1_MaxDailyLoss = 203;
+                Sess3_L1_EnableMaxDailyProfit = false;
+                Sess3_L1_MaxDailyProfit = 150;
+                Sess3_L1_EnableMaxTradesPerDay = true;
+                Sess3_L1_MaxTradesPerDay = 2;
 
-                L2_EnableWMAFilter      = true;
-                L2_WMALength            = 70;
-                L2_EnableSMAFilter      = false;
-                L2_SMALength            = 49;
-                L2_EnableADXFilter      = false;
-                L2_ADXPeriod            = 3;
-                L2_ADXMin               = 14;
-                L2_ADXMax               = 100;
+                // ── Sess3 L2 ──
+                Sess3_L2_Enable = true;
+                Sess3_L2_MinCandleRange = 50.25;
+                Sess3_L2_MaxCandleRange = 0;
+                Sess3_L2_EmaLength = 50;
+                Sess3_L2_EnableEmaSlope = true;
+                Sess3_L2_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess3_L2_EmaSlopeBars = 27;
+                Sess3_L2_EmaSlopeMinPct = 0.05;
+                Sess3_L2_EnableWMAFilter = true;
+                Sess3_L2_WMALength = 50;
+                Sess3_L2_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess3_L2_FixedStopLoss = 48;
+                Sess3_L2_SLCandleMultiplier = 1.0;
+                Sess3_L2_StopLossOffset = 56;
+                Sess3_L2_MaxStopLoss = 47.5;
+                Sess3_L2_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess3_L2_RiskRewardRatio = 2.21;
+                Sess3_L2_FixedTakeProfit = 100;
+                Sess3_L2_TPCandleMultiplier = 1.0;
+                Sess3_L2_EnableBreakEven = true;
+                Sess3_L2_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess3_L2_BreakEvenTriggerValue = 1.45;
+                Sess3_L2_BreakEvenOffset = 23;
+                Sess3_L2_EnablePriceTrail = false;
+                Sess3_L2_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess3_L2_TrailDistanceValue = 25;
+                Sess3_L2_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess3_L2_TrailActivationValue = 192;
+                Sess3_L2_TrailStepTicks = 0;
+                Sess3_L2_EnableBodyPctFilter = true;
+                Sess3_L2_MinBodyPct = 20;
+                Sess3_L2_EnableDirectionFlip = true;
+                Sess3_L2_EnableMaxDailyLoss = false;
+                Sess3_L2_MaxDailyLoss = 207;
+                Sess3_L2_EnableMaxDailyProfit = false;
+                Sess3_L2_MaxDailyProfit = 186;
+                Sess3_L2_EnableMaxTradesPerDay = true;
+                Sess3_L2_MaxTradesPerDay = 1;
 
-                L2_EntryType            = Hugo_EntryTypeEnum.Immediate;
-                L2_PullbackOffset       = 3;
-                L2_MaxBarsToWait        = 0;
+                // ── Sess3 S1 ──
+                Sess3_S1_Enable = true;
+                Sess3_S1_MinCandleRange = 0;
+                Sess3_S1_MaxCandleRange = 50;
+                Sess3_S1_EmaLength = 50;
+                Sess3_S1_EnableEmaSlope = true;
+                Sess3_S1_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess3_S1_EmaSlopeBars = 45;
+                Sess3_S1_EmaSlopeMinPct = 0.062;
+                Sess3_S1_EnableWMAFilter = true;
+                Sess3_S1_WMALength = 56;
+                Sess3_S1_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess3_S1_FixedStopLoss = 61.5;
+                Sess3_S1_SLCandleMultiplier = 1.0;
+                Sess3_S1_StopLossOffset = 56;
+                Sess3_S1_MaxStopLoss = 53;
+                Sess3_S1_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess3_S1_RiskRewardRatio = 3.42;
+                Sess3_S1_FixedTakeProfit = 100;
+                Sess3_S1_TPCandleMultiplier = 1.0;
+                Sess3_S1_EnableBreakEven = true;
+                Sess3_S1_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess3_S1_BreakEvenTriggerValue = 1.05;
+                Sess3_S1_BreakEvenOffset = 3;
+                Sess3_S1_EnablePriceTrail = false;
+                Sess3_S1_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess3_S1_TrailDistanceValue = 20;
+                Sess3_S1_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess3_S1_TrailActivationValue = 147;
+                Sess3_S1_TrailStepTicks = 0;
+                Sess3_S1_EnableBodyPctFilter = true;
+                Sess3_S1_MinBodyPct = 28;
+                Sess3_S1_EnableDirectionFlip = true;
+                Sess3_S1_EnableMaxDailyLoss = false;
+                Sess3_S1_MaxDailyLoss = 155;
+                Sess3_S1_EnableMaxDailyProfit = true;
+                Sess3_S1_MaxDailyProfit = 187;
+                Sess3_S1_EnableMaxTradesPerDay = true;
+                Sess3_S1_MaxTradesPerDay = 1;
 
-                L2_StopLossType         = Hugo_StopLossTypeEnum.Fixed;
-                L2_FixedStopLoss        = 56.75;
-                L2_SLCandleMultiplier    = 1.0;
-                L2_StopLossOffset       = 56;
-                L2_MaxStopLoss          = 50;
-                L2_EnableMaxBarsInTrade = false;
-                L2_MaxBarsInTrade       = 20;
+                // ── Sess3 S2 ──
+                Sess3_S2_Enable = true;
+                Sess3_S2_MinCandleRange = 50.25;
+                Sess3_S2_MaxCandleRange = 193;
+                Sess3_S2_EmaLength = 46;
+                Sess3_S2_EnableEmaSlope = true;
+                Sess3_S2_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess3_S2_EmaSlopeBars = 46;
+                Sess3_S2_EmaSlopeMinPct = 0.079;
+                Sess3_S2_EnableWMAFilter = false;
+                Sess3_S2_WMALength = 25;
+                Sess3_S2_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess3_S2_FixedStopLoss = 47;
+                Sess3_S2_SLCandleMultiplier = 1.0;
+                Sess3_S2_StopLossOffset = 56;
+                Sess3_S2_MaxStopLoss = 47;
+                Sess3_S2_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess3_S2_RiskRewardRatio = 4.24;
+                Sess3_S2_FixedTakeProfit = 100;
+                Sess3_S2_TPCandleMultiplier = 1.0;
+                Sess3_S2_EnableBreakEven = true;
+                Sess3_S2_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess3_S2_BreakEvenTriggerValue = 2.92;
+                Sess3_S2_BreakEvenOffset = 5;
+                Sess3_S2_EnablePriceTrail = false;
+                Sess3_S2_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess3_S2_TrailDistanceValue = 60;
+                Sess3_S2_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess3_S2_TrailActivationValue = 196;
+                Sess3_S2_TrailStepTicks = 0;
+                Sess3_S2_EnableBodyPctFilter = true;
+                Sess3_S2_MinBodyPct = 44;
+                Sess3_S2_EnableDirectionFlip = false;
+                Sess3_S2_EnableMaxDailyLoss = false;
+                Sess3_S2_MaxDailyLoss = 105;
+                Sess3_S2_EnableMaxDailyProfit = true;
+                Sess3_S2_MaxDailyProfit = 47;
+                Sess3_S2_EnableMaxTradesPerDay = true;
+                Sess3_S2_MaxTradesPerDay = 2;
 
-                L2_TakeProfitType       = Hugo_TakeProfitTypeEnum.RiskReward;
-                L2_RiskRewardRatio      = 3.42;
-                L2_FixedTakeProfit      = 100;
-                L2_TPCandleMultiplier    = 1.0;
+                // ── Sess4 L1 ──
+                Sess4_L1_Enable = true;
+                Sess4_L1_MinCandleRange = 0;
+                Sess4_L1_MaxCandleRange = 50;
+                Sess4_L1_EmaLength = 50;
+                Sess4_L1_EnableEmaSlope = true;
+                Sess4_L1_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess4_L1_EmaSlopeBars = 53;
+                Sess4_L1_EmaSlopeMinPct = 0.105;
+                Sess4_L1_EnableWMAFilter = true;
+                Sess4_L1_WMALength = 65;
+                Sess4_L1_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess4_L1_FixedStopLoss = 49;
+                Sess4_L1_SLCandleMultiplier = 1.0;
+                Sess4_L1_StopLossOffset = 22;
+                Sess4_L1_MaxStopLoss = 52;
+                Sess4_L1_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess4_L1_RiskRewardRatio = 3.42;
+                Sess4_L1_FixedTakeProfit = 203;
+                Sess4_L1_TPCandleMultiplier = 1.0;
+                Sess4_L1_EnableBreakEven = true;
+                Sess4_L1_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess4_L1_BreakEvenTriggerValue = 2.47;
+                Sess4_L1_BreakEvenOffset = 4;
+                Sess4_L1_EnablePriceTrail = false;
+                Sess4_L1_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess4_L1_TrailDistanceValue = 55;
+                Sess4_L1_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess4_L1_TrailActivationValue = 150;
+                Sess4_L1_TrailStepTicks = 0;
+                Sess4_L1_EnableBodyPctFilter = true;
+                Sess4_L1_MinBodyPct = 20;
+                Sess4_L1_EnableDirectionFlip = true;
+                Sess4_L1_EnableMaxDailyLoss = true;
+                Sess4_L1_MaxDailyLoss = 203;
+                Sess4_L1_EnableMaxDailyProfit = false;
+                Sess4_L1_MaxDailyProfit = 150;
+                Sess4_L1_EnableMaxTradesPerDay = true;
+                Sess4_L1_MaxTradesPerDay = 1;
 
-                L2_EnableBreakEven          = true;
-                L2_BreakEvenTriggerType     = Hugo_BreakEvenTriggerEnum.RiskMultiple;
-                L2_BreakEvenTriggerValue    = 1.88;
-                L2_BreakEvenOffset          = 2;
-                L2_EnableSLToEntryOnEMA     = false;
-                L2_SLToEntryOffset          = 0;
+                // ── Sess4 L2 ──
+                Sess4_L2_Enable = true;
+                Sess4_L2_MinCandleRange = 50.25;
+                Sess4_L2_MaxCandleRange = 0;
+                Sess4_L2_EmaLength = 50;
+                Sess4_L2_EnableEmaSlope = true;
+                Sess4_L2_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess4_L2_EmaSlopeBars = 27;
+                Sess4_L2_EmaSlopeMinPct = 0.15;
+                Sess4_L2_EnableWMAFilter = true;
+                Sess4_L2_WMALength = 100;
+                Sess4_L2_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess4_L2_FixedStopLoss = 49.5;
+                Sess4_L2_SLCandleMultiplier = 1.0;
+                Sess4_L2_StopLossOffset = 56;
+                Sess4_L2_MaxStopLoss = 49;
+                Sess4_L2_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess4_L2_RiskRewardRatio = 2.7;
+                Sess4_L2_FixedTakeProfit = 100;
+                Sess4_L2_TPCandleMultiplier = 1.0;
+                Sess4_L2_EnableBreakEven = true;
+                Sess4_L2_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess4_L2_BreakEvenTriggerValue = 1.41;
+                Sess4_L2_BreakEvenOffset = 23;
+                Sess4_L2_EnablePriceTrail = false;
+                Sess4_L2_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess4_L2_TrailDistanceValue = 25;
+                Sess4_L2_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess4_L2_TrailActivationValue = 192;
+                Sess4_L2_TrailStepTicks = 0;
+                Sess4_L2_EnableBodyPctFilter = true;
+                Sess4_L2_MinBodyPct = 40;
+                Sess4_L2_EnableDirectionFlip = true;
+                Sess4_L2_EnableMaxDailyLoss = false;
+                Sess4_L2_MaxDailyLoss = 207;
+                Sess4_L2_EnableMaxDailyProfit = false;
+                Sess4_L2_MaxDailyProfit = 186;
+                Sess4_L2_EnableMaxTradesPerDay = true;
+                Sess4_L2_MaxTradesPerDay = 1;
 
-                L2_EnablePriceTrail         = false;
-                L2_TrailDistanceMode        = Hugo_TrailDistanceModeEnum.FixedPoints;
-                L2_TrailDistanceValue       = 25;
-                L2_TrailActivationMode      = Hugo_TrailActivationModeEnum.FixedPoints;
-                L2_TrailActivationValue     = 192;
-                L2_TrailStepTicks           = 0;
-                L2_EnableTrailLock          = false;
-                L2_TrailLockValue           = 0;
+                // ── Sess4 S1 ──
+                Sess4_S1_Enable = true;
+                Sess4_S1_MinCandleRange = 0;
+                Sess4_S1_MaxCandleRange = 50;
+                Sess4_S1_EmaLength = 50;
+                Sess4_S1_EnableEmaSlope = true;
+                Sess4_S1_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess4_S1_EmaSlopeBars = 45;
+                Sess4_S1_EmaSlopeMinPct = 0.001;
+                Sess4_S1_EnableWMAFilter = true;
+                Sess4_S1_WMALength = 67;
+                Sess4_S1_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess4_S1_FixedStopLoss = 61.25;
+                Sess4_S1_SLCandleMultiplier = 1.0;
+                Sess4_S1_StopLossOffset = 56;
+                Sess4_S1_MaxStopLoss = 53;
+                Sess4_S1_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess4_S1_RiskRewardRatio = 4.39;
+                Sess4_S1_FixedTakeProfit = 100;
+                Sess4_S1_TPCandleMultiplier = 1.0;
+                Sess4_S1_EnableBreakEven = true;
+                Sess4_S1_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess4_S1_BreakEvenTriggerValue = 1.2;
+                Sess4_S1_BreakEvenOffset = 2;
+                Sess4_S1_EnablePriceTrail = false;
+                Sess4_S1_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess4_S1_TrailDistanceValue = 20;
+                Sess4_S1_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess4_S1_TrailActivationValue = 147;
+                Sess4_S1_TrailStepTicks = 0;
+                Sess4_S1_EnableBodyPctFilter = true;
+                Sess4_S1_MinBodyPct = 26;
+                Sess4_S1_EnableDirectionFlip = true;
+                Sess4_S1_EnableMaxDailyLoss = true;
+                Sess4_S1_MaxDailyLoss = 155;
+                Sess4_S1_EnableMaxDailyProfit = true;
+                Sess4_S1_MaxDailyProfit = 187;
+                Sess4_S1_EnableMaxTradesPerDay = true;
+                Sess4_S1_MaxTradesPerDay = 1;
 
-                L2_EnableCandleSizeFilter   = false;
-                L2_MinCandleSize            = 10;
-                L2_MaxCandleSize            = 0;
-                L2_EnableBodyPctFilter      = true;
-                L2_MinBodyPct               = 31;
-                L2_EnableCloseDistanceFilter = false;
-                L2_MinCloseDistance          = 5;
-                L2_EnableFilterWaitBars     = false;
-                L2_FilterWaitMaxBars        = 3;
+                // ── Sess4 S2 ──
+                Sess4_S2_Enable = true;
+                Sess4_S2_MinCandleRange = 50.25;
+                Sess4_S2_MaxCandleRange = 193;
+                Sess4_S2_EmaLength = 46;
+                Sess4_S2_EnableEmaSlope = true;
+                Sess4_S2_EmaSlopeMode = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
+                Sess4_S2_EmaSlopeBars = 46;
+                Sess4_S2_EmaSlopeMinPct = 0.115;
+                Sess4_S2_EnableWMAFilter = true;
+                Sess4_S2_WMALength = 35;
+                Sess4_S2_StopLossType = Hugo_StopLossTypeEnum.Fixed;
+                Sess4_S2_FixedStopLoss = 40.75;
+                Sess4_S2_SLCandleMultiplier = 1.0;
+                Sess4_S2_StopLossOffset = 56;
+                Sess4_S2_MaxStopLoss = 41;
+                Sess4_S2_TakeProfitType = Hugo_TakeProfitTypeEnum.RiskReward;
+                Sess4_S2_RiskRewardRatio = 4.24;
+                Sess4_S2_FixedTakeProfit = 100;
+                Sess4_S2_TPCandleMultiplier = 1.0;
+                Sess4_S2_EnableBreakEven = true;
+                Sess4_S2_BreakEvenTriggerType = Hugo_BreakEvenTriggerEnum.RiskMultiple;
+                Sess4_S2_BreakEvenTriggerValue = 2.13;
+                Sess4_S2_BreakEvenOffset = 5;
+                Sess4_S2_EnablePriceTrail = false;
+                Sess4_S2_TrailDistanceMode = Hugo_TrailDistanceModeEnum.FixedPoints;
+                Sess4_S2_TrailDistanceValue = 60;
+                Sess4_S2_TrailActivationMode = Hugo_TrailActivationModeEnum.FixedPoints;
+                Sess4_S2_TrailActivationValue = 196;
+                Sess4_S2_TrailStepTicks = 0;
+                Sess4_S2_EnableBodyPctFilter = true;
+                Sess4_S2_MinBodyPct = 24;
+                Sess4_S2_EnableDirectionFlip = false;
+                Sess4_S2_EnableMaxDailyLoss = false;
+                Sess4_S2_MaxDailyLoss = 105;
+                Sess4_S2_EnableMaxDailyProfit = true;
+                Sess4_S2_MaxDailyProfit = 47;
+                Sess4_S2_EnableMaxTradesPerDay = true;
+                Sess4_S2_MaxTradesPerDay = 2;
 
-                L2_EnableDirectionFlip         = true;
-                L2_EnableSameDirectionOnLoss   = false;
-                L2_SameDirectionLossThreshold  = 1;
-
-                L2_EnableMaxDailyLoss       = true;
-                L2_MaxDailyLoss             = 207;
-                L2_EnableMaxDailyProfit     = true;
-                L2_MaxDailyProfit           = 186;
-                L2_EnableMaxTradesPerDay    = false;
-                L2_MaxTradesPerDay          = 6;
-
-                // ── S1: Short Small Candle ───────────────────────────────────
-                S1_Enable               = true;
-                S1_MinCandleRange       = 0;
-                S1_MaxCandleRange       = 50;
-
-                S1_EmaLength            = 48;
-                S1_EnableEmaSlope       = true;
-                S1_EmaSlopeMode         = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
-                S1_EmaSlopeBars         = 45;
-                S1_EmaSlopeMinPct       = 0.057;
-
-                S1_EnableWMAFilter      = true;
-                S1_WMALength            = 14;
-                S1_EnableSMAFilter      = false;
-                S1_SMALength            = 10;
-                S1_EnableADXFilter      = false;
-                S1_ADXPeriod            = 5;
-                S1_ADXMin               = 20;
-                S1_ADXMax               = 100;
-
-                S1_EntryType            = Hugo_EntryTypeEnum.Immediate;
-                S1_PullbackOffset       = 3;
-                S1_MaxBarsToWait        = 0;
-
-                S1_StopLossType         = Hugo_StopLossTypeEnum.Fixed;
-                S1_FixedStopLoss        = 61.5;
-                S1_SLCandleMultiplier    = 1.0;
-                S1_StopLossOffset       = 56;
-                S1_MaxStopLoss          = 50;
-                S1_EnableMaxBarsInTrade = false;
-                S1_MaxBarsInTrade       = 20;
-
-                S1_TakeProfitType       = Hugo_TakeProfitTypeEnum.RiskReward;
-                S1_RiskRewardRatio      = 3.42;
-                S1_FixedTakeProfit      = 100;
-                S1_TPCandleMultiplier    = 1.0;
-
-                S1_EnableBreakEven          = true;
-                S1_BreakEvenTriggerType     = Hugo_BreakEvenTriggerEnum.RiskMultiple;
-                S1_BreakEvenTriggerValue    = 1.05;
-                S1_BreakEvenOffset          = 2;
-                S1_EnableSLToEntryOnEMA     = false;
-                S1_SLToEntryOffset          = 0;
-
-                S1_EnablePriceTrail         = false;
-                S1_TrailDistanceMode        = Hugo_TrailDistanceModeEnum.FixedPoints;
-                S1_TrailDistanceValue       = 20;
-                S1_TrailActivationMode      = Hugo_TrailActivationModeEnum.FixedPoints;
-                S1_TrailActivationValue     = 147;
-                S1_TrailStepTicks           = 0;
-                S1_EnableTrailLock          = false;
-                S1_TrailLockValue           = 0;
-
-                S1_EnableCandleSizeFilter   = false;
-                S1_MinCandleSize            = 10;
-                S1_MaxCandleSize            = 0;
-                S1_EnableBodyPctFilter      = true;
-                S1_MinBodyPct               = 33;
-                S1_EnableCloseDistanceFilter = false;
-                S1_MinCloseDistance          = 5;
-                S1_EnableFilterWaitBars     = false;
-                S1_FilterWaitMaxBars        = 3;
-
-                S1_EnableDirectionFlip         = false;
-                S1_EnableSameDirectionOnLoss   = false;
-                S1_SameDirectionLossThreshold  = 10;
-
-                S1_EnableMaxDailyLoss       = true;
-                S1_MaxDailyLoss             = 155;
-                S1_EnableMaxDailyProfit     = true;
-                S1_MaxDailyProfit           = 187;
-                S1_EnableMaxTradesPerDay    = false;
-                S1_MaxTradesPerDay          = 6;
-
-                // ── S2: Short Large Candle ───────────────────────────────────
-                S2_Enable               = true;
-                S2_MinCandleRange       = 50;
-                S2_MaxCandleRange       = 193;
-
-                S2_EmaLength            = 46;
-                S2_EnableEmaSlope       = true;
-                S2_EmaSlopeMode         = Hugo_EmaSlopeModeEnum.MagnitudeOnly;
-                S2_EmaSlopeBars         = 46;
-                S2_EmaSlopeMinPct       = 0.06;
-
-                S2_EnableWMAFilter      = false;
-                S2_WMALength            = 20;
-                S2_EnableSMAFilter      = false;
-                S2_SMALength            = 50;
-                S2_EnableADXFilter      = false;
-                S2_ADXPeriod            = 14;
-                S2_ADXMin               = 20;
-                S2_ADXMax               = 100;
-
-                S2_EntryType            = Hugo_EntryTypeEnum.Immediate;
-                S2_PullbackOffset       = 3;
-                S2_MaxBarsToWait        = 0;
-
-                S2_StopLossType         = Hugo_StopLossTypeEnum.Fixed;
-                S2_FixedStopLoss        = 61;
-                S2_SLCandleMultiplier    = 1.0;
-                S2_StopLossOffset       = 56;
-                S2_MaxStopLoss          = 50;
-                S2_EnableMaxBarsInTrade = false;
-                S2_MaxBarsInTrade       = 20;
-
-                S2_TakeProfitType       = Hugo_TakeProfitTypeEnum.RiskReward;
-                S2_RiskRewardRatio      = 3.35;
-                S2_FixedTakeProfit      = 100;
-                S2_TPCandleMultiplier    = 1.0;
-
-                S2_EnableBreakEven          = true;
-                S2_BreakEvenTriggerType     = Hugo_BreakEvenTriggerEnum.RiskMultiple;
-                S2_BreakEvenTriggerValue    = 3.27;
-                S2_BreakEvenOffset          = 2;
-                S2_EnableSLToEntryOnEMA     = false;
-                S2_SLToEntryOffset          = 0;
-
-                S2_EnablePriceTrail         = false;
-                S2_TrailDistanceMode        = Hugo_TrailDistanceModeEnum.FixedPoints;
-                S2_TrailDistanceValue       = 60;
-                S2_TrailActivationMode      = Hugo_TrailActivationModeEnum.FixedPoints;
-                S2_TrailActivationValue     = 196;
-                S2_TrailStepTicks           = 0;
-                S2_EnableTrailLock          = false;
-                S2_TrailLockValue           = 0;
-
-                S2_EnableCandleSizeFilter   = false;
-                S2_MinCandleSize            = 10;
-                S2_MaxCandleSize            = 0;
-                S2_EnableBodyPctFilter      = true;
-                S2_MinBodyPct               = 31;
-                S2_EnableCloseDistanceFilter = false;
-                S2_MinCloseDistance          = 5;
-                S2_EnableFilterWaitBars     = false;
-                S2_FilterWaitMaxBars        = 3;
-
-                S2_EnableDirectionFlip         = false;
-                S2_EnableSameDirectionOnLoss   = false;
-                S2_SameDirectionLossThreshold  = 10;
-
-                S2_EnableMaxDailyLoss       = true;
-                S2_MaxDailyLoss             = 105;
-                S2_EnableMaxDailyProfit     = true;
-                S2_MaxDailyProfit           = 131;
-                S2_EnableMaxTradesPerDay    = true;
-                S2_MaxTradesPerDay          = 2;
             }
             else if (State == State.Configure)
             {
-                longSignalActive        = false;
-                shortSignalActive       = false;
-                signalBar               = 0;
-                globalDailyPnL          = 0;
-                lastTradeDate           = DateTime.MinValue;
-                globalDailyLossLimitHit = false;
+                longSignalActive          = false;
+                shortSignalActive         = false;
+                globalDailyPnL            = 0;
+                currentSessionDate        = DateTime.MinValue;
+                globalDailyLossLimitHit   = false;
                 globalDailyProfitLimitHit = false;
-                globalDailyTradeCount   = 0;
-                pendingDirection        = 0;
-                breakEvenMoved          = false;
-                currentTradeDirection   = 0;
-                currentTargetPrice      = 0;
-                lastTradeDirection      = 0;
-                lastTradePnL            = 0;
-                pendingLongFilterWait   = false;
-                pendingShortFilterWait  = false;
-                filterWaitStartBar      = 0;
-                pendingFilterBucket     = null;
-                activeBucket            = null;
-                bestPriceSinceEntry     = 0;
-                trailActivated          = false;
-                trailLocked             = false;
-                initialStopDistance     = 0;
-                initialTPDistance       = 0;
-                entryBar                = 0;
-                slMovedToEntryOnEMA     = false;
-                inSkipWindow            = false;
-                inNewsSkipWindow        = false;
-
-                // Reset per-bucket P&L
-                dailyPnL_L1 = dailyPnL_L2 = dailyPnL_S1 = dailyPnL_S2 = 0;
-                dailyTradeCount_L1 = dailyTradeCount_L2 = dailyTradeCount_S1 = dailyTradeCount_S2 = 0;
-                dailyLossHit_L1 = dailyLossHit_L2 = dailyLossHit_S1 = dailyLossHit_S2 = false;
-                dailyProfitHit_L1 = dailyProfitHit_L2 = dailyProfitHit_S1 = dailyProfitHit_S2 = false;
-                managedEntrySignal      = string.Empty;
-                entrySignalSequence     = 0;
-                maxAccountLimitHit      = false;
-                isConfiguredTimeframeValid = true;
-                isConfiguredInstrumentValid = true;
-                timeframePopupShown     = false;
-                instrumentPopupShown    = false;
+                globalDailyTradeCount     = 0;
+                pendingDirection          = 0;
+                breakEvenMoved            = false;
+                currentTradeDirection     = 0;
+                lastTradeDirection        = new int[5];
+                lastTradePnL              = new double[5];
+                activeBucket              = null;
+                activeSession             = 0;
+                inSkipWindow              = false;
+                inNewsSkipWindow          = false;
+                entryOrder                = null;
+                bestPriceSinceEntry       = 0;
+                trailActivated            = false;
+                trailLocked               = false;
+                initialStopDistance       = 0;
+                initialTPDistance         = 0;
+                maxAccountLimitHit           = false;
+                isConfiguredTimeframeValid   = true;
+                isConfiguredInstrumentValid  = true;
+                timeframePopupShown          = false;
+                instrumentPopupShown         = false;
+            dailyPnL_Sess1_L1        = 0;
+            dailyTradeCount_Sess1_L1 = 0;
+            dailyLossHit_Sess1_L1    = false;
+            dailyProfitHit_Sess1_L1  = false;
+            dailyPnL_Sess1_L2        = 0;
+            dailyTradeCount_Sess1_L2 = 0;
+            dailyLossHit_Sess1_L2    = false;
+            dailyProfitHit_Sess1_L2  = false;
+            dailyPnL_Sess1_S1        = 0;
+            dailyTradeCount_Sess1_S1 = 0;
+            dailyLossHit_Sess1_S1    = false;
+            dailyProfitHit_Sess1_S1  = false;
+            dailyPnL_Sess1_S2        = 0;
+            dailyTradeCount_Sess1_S2 = 0;
+            dailyLossHit_Sess1_S2    = false;
+            dailyProfitHit_Sess1_S2  = false;
+            dailyPnL_Sess2_L1        = 0;
+            dailyTradeCount_Sess2_L1 = 0;
+            dailyLossHit_Sess2_L1    = false;
+            dailyProfitHit_Sess2_L1  = false;
+            dailyPnL_Sess2_L2        = 0;
+            dailyTradeCount_Sess2_L2 = 0;
+            dailyLossHit_Sess2_L2    = false;
+            dailyProfitHit_Sess2_L2  = false;
+            dailyPnL_Sess2_S1        = 0;
+            dailyTradeCount_Sess2_S1 = 0;
+            dailyLossHit_Sess2_S1    = false;
+            dailyProfitHit_Sess2_S1  = false;
+            dailyPnL_Sess2_S2        = 0;
+            dailyTradeCount_Sess2_S2 = 0;
+            dailyLossHit_Sess2_S2    = false;
+            dailyProfitHit_Sess2_S2  = false;
+            dailyPnL_Sess3_L1        = 0;
+            dailyTradeCount_Sess3_L1 = 0;
+            dailyLossHit_Sess3_L1    = false;
+            dailyProfitHit_Sess3_L1  = false;
+            dailyPnL_Sess3_L2        = 0;
+            dailyTradeCount_Sess3_L2 = 0;
+            dailyLossHit_Sess3_L2    = false;
+            dailyProfitHit_Sess3_L2  = false;
+            dailyPnL_Sess3_S1        = 0;
+            dailyTradeCount_Sess3_S1 = 0;
+            dailyLossHit_Sess3_S1    = false;
+            dailyProfitHit_Sess3_S1  = false;
+            dailyPnL_Sess3_S2        = 0;
+            dailyTradeCount_Sess3_S2 = 0;
+            dailyLossHit_Sess3_S2    = false;
+            dailyProfitHit_Sess3_S2  = false;
+            dailyPnL_Sess4_L1        = 0;
+            dailyTradeCount_Sess4_L1 = 0;
+            dailyLossHit_Sess4_L1    = false;
+            dailyProfitHit_Sess4_L1  = false;
+            dailyPnL_Sess4_L2        = 0;
+            dailyTradeCount_Sess4_L2 = 0;
+            dailyLossHit_Sess4_L2    = false;
+            dailyProfitHit_Sess4_L2  = false;
+            dailyPnL_Sess4_S1        = 0;
+            dailyTradeCount_Sess4_S1 = 0;
+            dailyLossHit_Sess4_S1    = false;
+            dailyProfitHit_Sess4_S1  = false;
+            dailyPnL_Sess4_S2        = 0;
+            dailyTradeCount_Sess4_S2 = 0;
+            dailyLossHit_Sess4_S2    = false;
+            dailyProfitHit_Sess4_S2  = false;
             }
             else if (State == State.DataLoaded)
             {
+                emaSess1_L1 = EMA(Sess1_L1_EmaLength);
+                wmaSess1_L1 = WMA(Sess1_L1_WMALength);
+                emaSess1_L2 = EMA(Sess1_L2_EmaLength);
+                wmaSess1_L2 = WMA(Sess1_L2_WMALength);
+                emaSess1_S1 = EMA(Sess1_S1_EmaLength);
+                wmaSess1_S1 = WMA(Sess1_S1_WMALength);
+                emaSess1_S2 = EMA(Sess1_S2_EmaLength);
+                wmaSess1_S2 = WMA(Sess1_S2_WMALength);
+                emaSess2_L1 = EMA(Sess2_L1_EmaLength);
+                wmaSess2_L1 = WMA(Sess2_L1_WMALength);
+                emaSess2_L2 = EMA(Sess2_L2_EmaLength);
+                wmaSess2_L2 = WMA(Sess2_L2_WMALength);
+                emaSess2_S1 = EMA(Sess2_S1_EmaLength);
+                wmaSess2_S1 = WMA(Sess2_S1_WMALength);
+                emaSess2_S2 = EMA(Sess2_S2_EmaLength);
+                wmaSess2_S2 = WMA(Sess2_S2_WMALength);
+                emaSess3_L1 = EMA(Sess3_L1_EmaLength);
+                wmaSess3_L1 = WMA(Sess3_L1_WMALength);
+                emaSess3_L2 = EMA(Sess3_L2_EmaLength);
+                wmaSess3_L2 = WMA(Sess3_L2_WMALength);
+                emaSess3_S1 = EMA(Sess3_S1_EmaLength);
+                wmaSess3_S1 = WMA(Sess3_S1_WMALength);
+                emaSess3_S2 = EMA(Sess3_S2_EmaLength);
+                wmaSess3_S2 = WMA(Sess3_S2_WMALength);
+                emaSess4_L1 = EMA(Sess4_L1_EmaLength);
+                wmaSess4_L1 = WMA(Sess4_L1_WMALength);
+                emaSess4_L2 = EMA(Sess4_L2_EmaLength);
+                wmaSess4_L2 = WMA(Sess4_L2_WMALength);
+                emaSess4_S1 = EMA(Sess4_S1_EmaLength);
+                wmaSess4_S1 = WMA(Sess4_S1_WMALength);
+                emaSess4_S2 = EMA(Sess4_S2_EmaLength);
+                wmaSess4_S2 = WMA(Sess4_S2_WMALength);
+                AddChartIndicator(emaSess4_L1);
+
+                // ── Commercial: validate TF and instrument ───────────────────
                 ValidateRequiredPrimaryTimeframe(RequiredPrimaryTimeframeMinutes);
                 ValidateRequiredPrimaryInstrument();
                 EnsureNewsDatesInitialized();
 
-                emaL1 = EMA(L1_EmaLength);
-                wmaL1 = WMA(L1_WMALength);
-                wmaL2 = WMA(L2_WMALength);
-                wmaS1 = WMA(S1_WMALength);
-                wmaS2 = WMA(S2_WMALength);
-
-                smaL1 = SMA(L1_SMALength);
-                smaL2 = SMA(L2_SMALength);
-                smaS1 = SMA(S1_SMALength);
-                smaS2 = SMA(S2_SMALength);
-
-                adxL1 = ADX(L1_ADXPeriod);
-                adxL2 = ADX(L2_ADXPeriod);
-                adxS1 = ADX(S1_ADXPeriod);
-                adxS2 = ADX(S2_ADXPeriod);
-
-                emaL2 = EMA(L2_EmaLength);
-                emaS1 = EMA(S1_EmaLength);
-                emaS2 = EMA(S2_EmaLength);
-
-                // EMA indicators remain internal in the public strategy build.
-
-                heartbeatReporter = new StrategyHeartbeatReporter(
-                    HeartbeatStrategyName,
-                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
+                // ── Heartbeat reporter (TopstepX API access) ─────────────────
+                if (Category != null)
+                {
+                    try
+                    {
+                        heartbeatReporter = new StrategyHeartbeatReporter(
+                            HeartbeatStrategyName,
+                            System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
+                    }
+                    catch { heartbeatReporter = null; }
+                }
             }
             else if (State == State.Realtime)
             {
@@ -2058,632 +6185,146 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     heartbeatReporter.Dispose();
                     heartbeatReporter = null;
                 }
-
                 DisposeInfoBoxOverlay();
-            }
-        }
-
-        private string GetEntrySignalPrefix(int direction)
-        {
-            return direction == 1 ? LongEntrySignal : ShortEntrySignal;
-        }
-
-        private string BuildManagedEntrySignal(int direction)
-        {
-            return GetEntrySignalPrefix(direction);
-        }
-
-        private string BuildExitSignalName(string reason)
-        {
-            return StrategySignalPrefix + (reason ?? string.Empty);
-        }
-
-        private bool IsLongEntryOrderName(string orderName)
-        {
-            return !string.IsNullOrWhiteSpace(orderName)
-                && string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal);
-        }
-
-        private bool IsShortEntryOrderName(string orderName)
-        {
-            return !string.IsNullOrWhiteSpace(orderName)
-                && string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal);
-        }
-
-        private string GetOpenLongEntrySignal()
-        {
-            return LongEntrySignal;
-        }
-
-        private string GetOpenShortEntrySignal()
-        {
-            return ShortEntrySignal;
-        }
-
-        private string GetActiveEntrySignal()
-        {
-            if (Position.MarketPosition == MarketPosition.Long)
-                return GetOpenLongEntrySignal();
-            if (Position.MarketPosition == MarketPosition.Short)
-                return GetOpenShortEntrySignal();
-            if (currentTradeDirection > 0)
-                return GetOpenLongEntrySignal();
-            if (currentTradeDirection < 0)
-                return GetOpenShortEntrySignal();
-            if (!string.IsNullOrWhiteSpace(activeBucket))
-                return activeBucket.StartsWith("L", StringComparison.Ordinal) ? GetOpenLongEntrySignal() : GetOpenShortEntrySignal();
-
-            return managedEntrySignal ?? string.Empty;
-        }
-
-        private void ConfigureInitialProtectiveOrders(string entrySignal, double stopLoss, double takeProfit)
-        {
-            SetStopLoss(CalculationMode.Price, stopLoss);
-            if (takeProfit > 0)
-                SetProfitTarget(CalculationMode.Price, takeProfit);
-        }
-
-        private void ExitAllPositions(string reason)
-        {
-            string exitSignal = BuildExitSignalName(reason);
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                if (string.Equals(reason, "ForceClose", StringComparison.Ordinal))
-                    ExitLong(Math.Max(1, Position.Quantity), exitSignal, GetOpenLongEntrySignal());
-                else
-                    ExitLong(exitSignal);
-            }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                if (string.Equals(reason, "ForceClose", StringComparison.Ordinal))
-                    ExitShort(Math.Max(1, Position.Quantity), exitSignal, GetOpenShortEntrySignal());
-                else
-                    ExitShort(exitSignal);
-            }
-        }
-
-        private bool IsAccountBalanceBlocked()
-        {
-            if (MaxAccountBalance <= 0.0)
-                return false;
-
-            double balance;
-            if (!TryGetCurrentNetLiquidation(out balance))
-                return false;
-
-            if (balance >= MaxAccountBalance && !maxAccountLimitHit)
-            {
-                maxAccountLimitHit = true;
-                Print(string.Format(
-                    CultureInfo.InvariantCulture,
-                    "{0} - Max account balance reached | netLiq={1:0.00} target={2:0.00}",
-                    Time[0],
-                    balance,
-                    MaxAccountBalance));
-            }
-
-            if (!maxAccountLimitHit)
-                return false;
-
-            CancelAllOrders();
-            ExitAllPositions("MaxAccountBalance");
-            return true;
-        }
-
-        private bool TryGetCurrentNetLiquidation(out double netLiquidation)
-        {
-            netLiquidation = 0.0;
-            if (Account == null)
-                return false;
-
-            try
-            {
-                netLiquidation = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
-                if (netLiquidation > 0.0)
-                    return true;
-
-                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
-                double unrealized = Position.MarketPosition != MarketPosition.Flat
-                    ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
-                    : 0.0;
-                netLiquidation = realizedCash + unrealized;
-                return realizedCash > 0.0 || Position.MarketPosition != MarketPosition.Flat;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
-        {
-            bool isMinuteSeries = BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute;
-            bool timeframeMatches = isMinuteSeries && BarsPeriod.Value == requiredMinutes;
-            isConfiguredTimeframeValid = timeframeMatches;
-            if (timeframeMatches)
-                return;
-
-            string actualTimeframe = BarsPeriod == null
-                ? "Unknown"
-                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
-            string message = string.Format(
-                CultureInfo.InvariantCulture,
-                "{0} must run on a {1}-minute chart. Current chart is {2}. Trading is disabled until timeframe is corrected.",
-                Name,
-                requiredMinutes,
-                actualTimeframe);
-            Print("Timeframe validation failed | " + message);
-            ShowTimeframeValidationPopup(message);
-        }
-
-        private void ShowTimeframeValidationPopup(string message)
-        {
-            if (timeframePopupShown)
-                return;
-
-            timeframePopupShown = true;
-            if (System.Windows.Application.Current == null)
-                return;
-
-            try
-            {
-                System.Windows.Application.Current.Dispatcher.Invoke(
-                    () =>
-                    {
-                        System.Windows.MessageBox.Show(
-                            message,
-                            "Invalid Timeframe",
-                            System.Windows.MessageBoxButton.OK,
-                            System.Windows.MessageBoxImage.Warning);
-                    });
-            }
-            catch
-            {
-            }
-        }
-
-        private void ValidateRequiredPrimaryInstrument()
-        {
-            string instrumentName = Instrument != null && Instrument.MasterInstrument != null
-                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
-                : string.Empty;
-            bool instrumentMatches = instrumentName == "NQ" || instrumentName == "MNQ";
-            isConfiguredInstrumentValid = instrumentMatches;
-            if (instrumentMatches)
-                return;
-
-            string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
-            string message = string.Format(
-                CultureInfo.InvariantCulture,
-                "{0} must run on NQ or MNQ. Current instrument is {1}. Trading is disabled until instrument is corrected.",
-                Name,
-                actualInstrument);
-            Print("Instrument validation failed | " + message);
-            ShowInstrumentValidationPopup(message);
-        }
-
-        private void ShowInstrumentValidationPopup(string message)
-        {
-            if (instrumentPopupShown)
-                return;
-
-            instrumentPopupShown = true;
-            if (System.Windows.Application.Current == null)
-                return;
-
-            try
-            {
-                System.Windows.Application.Current.Dispatcher.Invoke(
-                    () =>
-                    {
-                        System.Windows.MessageBox.Show(
-                            message,
-                            "Invalid Instrument",
-                            System.Windows.MessageBoxButton.OK,
-                            System.Windows.MessageBoxImage.Warning);
-                    });
-            }
-            catch
-            {
-            }
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  OnBarUpdate
-        // ════════════════════════════════════════════════════════════════════════
-
-        // v1.10: Convert a time-of-day to session-relative minutes.
-        // Returns how many minutes after the session start the given time is.
-        // Wraps negative values by adding 1440 so that times before session start
-        // (which in a midnight-crossing session means they are near end of session
-        // the following day) are correctly placed after session start.
-        // Example: SessionStart=18:00 → 18:00→0, 00:00→360, 14:30→1230, 17:59→1439.
-        private double ToSessionMinutes(TimeSpan timeOfDay)
-        {
-            double sessionStartMin = TimeSpan.Parse(SessionStartTime).TotalMinutes;
-            double minutes = timeOfDay.TotalMinutes - sessionStartMin;
-            if (minutes < 0) minutes += 1440.0;
-            return minutes;
-        }
-
-        private DateTime GetSessionAnchorDate(DateTime barTime)
-        {
-            TimeSpan sessionStartTOD = TimeSpan.Parse(SessionStartTime);
-            return barTime.TimeOfDay >= sessionStartTOD ? barTime.Date : barTime.Date.AddDays(-1);
-        }
-
-        private DateTime GetSessionDateTime(DateTime barTime, TimeSpan timeOfDay)
-        {
-            DateTime sessionStart = GetSessionAnchorDate(barTime).Date + TimeSpan.Parse(SessionStartTime);
-            return sessionStart.AddMinutes(ToSessionMinutes(timeOfDay));
-        }
-
-        private bool TryGetConfiguredWindow(DateTime barTime, string startTimeText, string endTimeText, out DateTime windowStart, out DateTime windowEnd)
-        {
-            windowStart = DateTime.MinValue;
-            windowEnd = DateTime.MinValue;
-
-            TimeSpan startTime = TimeSpan.Parse(startTimeText);
-            TimeSpan endTime = TimeSpan.Parse(endTimeText);
-
-            windowStart = GetSessionDateTime(barTime, startTime);
-            windowEnd = GetSessionDateTime(barTime, endTime);
-            return windowEnd > windowStart;
-        }
-
-        private bool IsSkipWindowConfigured()
-        {
-            return EnableSkipTime && TimeSpan.Parse(SkipTimeStart) != TimeSpan.Parse(SkipTimeEnd);
-        }
-
-        private bool IsInSkipWindow(DateTime barTime)
-        {
-            DateTime windowStart;
-            DateTime windowEnd;
-            return TryGetSkipWindow(barTime, out windowStart, out windowEnd)
-                && barTime >= windowStart
-                && barTime < windowEnd;
-        }
-
-        private bool TryGetSkipWindow(DateTime barTime, out DateTime windowStart, out DateTime windowEnd)
-        {
-            if (!IsSkipWindowConfigured())
-            {
-                windowStart = DateTime.MinValue;
-                windowEnd = DateTime.MinValue;
-                return false;
-            }
-
-            return TryGetConfiguredWindow(barTime, SkipTimeStart, SkipTimeEnd, out windowStart, out windowEnd);
-        }
-
-        private bool IsNewsWindowConfigured()
-        {
-            return UseNewsSkip && NewsBlockMinutes > 0 && NewsDates.Count > 0;
-        }
-
-        private bool IsInNewsSkipWindow(DateTime barTime)
-        {
-            DateTime windowStart;
-            DateTime windowEnd;
-            return TryGetNewsWindow(barTime, out windowStart, out windowEnd)
-                && barTime >= windowStart
-                && barTime < windowEnd;
-        }
-
-        private bool TryGetNewsWindow(DateTime barTime, out DateTime windowStart, out DateTime windowEnd)
-        {
-            windowStart = DateTime.MinValue;
-            windowEnd = DateTime.MinValue;
-
-            if (!IsNewsWindowConfigured())
-                return false;
-
-            for (int i = 0; i < NewsDates.Count; i++)
-            {
-                DateTime newsTime = NewsDates[i];
-                if (newsTime.Date != barTime.Date)
-                    continue;
-
-                DateTime candidateWindowStart = newsTime.AddMinutes(-NewsBlockMinutes);
-                DateTime candidateWindowEnd = newsTime.AddMinutes(NewsBlockMinutes);
-                if (barTime < candidateWindowStart || barTime >= candidateWindowEnd)
-                    continue;
-
-                windowStart = candidateWindowStart;
-                windowEnd = candidateWindowEnd;
-                return true;
-            }
-
-            return false;
-        }
-
-        private void DrawSessionTimeWindows()
-        {
-            if (CurrentBar < 1)
-                return;
-
-            DrawSessionBackground(Time[0]);
-            DrawForceCloseLine(Time[0]);
-            DrawSkipWindow(Time[0]);
-            DrawNewsWindow(Time[0]);
-        }
-
-        private void DrawSessionBackground(DateTime barTime)
-        {
-            DateTime sessionStart;
-            DateTime sessionEnd;
-            if (!TryGetConfiguredWindow(barTime, TradeWindowStart, SessionEndTime, out sessionStart, out sessionEnd))
-                return;
-
-            string rectTag = string.Format("Hugo_SessionFill_{0:yyyyMMdd_HHmm}", sessionStart);
-            if (DrawObjects[rectTag] != null)
-                return;
-
-            Draw.Rectangle(
-                this,
-                rectTag,
-                false,
-                sessionStart,
-                0,
-                sessionEnd,
-                30000,
-                Brushes.Transparent,
-                Brushes.Gold,
-                10).ZOrder = -1;
-        }
-
-        private void DrawSkipWindow(DateTime barTime)
-        {
-            DateTime windowStart;
-            DateTime windowEnd;
-            if (!TryGetSkipWindow(barTime, out windowStart, out windowEnd))
-                return;
-
-            int startBarsAgo = Bars.GetBar(windowStart);
-            int endBarsAgo = Bars.GetBar(windowEnd);
-            if (startBarsAgo < 0 || endBarsAgo < 0)
-                return;
-
-            var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
-            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
-            try
-            {
-                if (areaBrush.CanFreeze)
-                    areaBrush.Freeze();
-                if (lineBrush.CanFreeze)
-                    lineBrush.Freeze();
-            }
-            catch
-            {
-            }
-
-            string tagBase = string.Format("Hugo_Skip_{0:yyyyMMdd_HHmm}", windowStart);
-            Draw.Rectangle(
-                this,
-                tagBase + "_Rect",
-                false,
-                windowStart,
-                0,
-                windowEnd,
-                30000,
-                lineBrush,
-                areaBrush,
-                2).ZOrder = -1;
-
-            Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
-            Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
-        }
-
-        private void DrawForceCloseLine(DateTime barTime)
-        {
-            DateTime lineTime = GetSessionDateTime(barTime, TimeSpan.Parse(ForceCloseTime));
-            string tag = string.Format("Hugo_ForceClose_{0:yyyyMMdd_HHmm}", lineTime);
-            Draw.VerticalLine(this, tag, lineTime, Brushes.Red, DashStyleHelper.DashDot, 2);
-        }
-
-        private void DrawNewsWindow(DateTime barTime)
-        {
-            if (!UseNewsSkip)
-                return;
-
-            for (int i = 0; i < NewsDates.Count; i++)
-            {
-                DateTime newsTime = NewsDates[i];
-                if (newsTime.Date != barTime.Date)
-                    continue;
-
-                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
-                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
-
-                int startBarsAgo = Bars.GetBar(windowStart);
-                int endBarsAgo = Bars.GetBar(windowEnd);
-                if (startBarsAgo < 0 || endBarsAgo < 0)
-                    continue;
-
-                var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
-                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
-                try
-                {
-                    if (areaBrush.CanFreeze)
-                        areaBrush.Freeze();
-                    if (lineBrush.CanFreeze)
-                        lineBrush.Freeze();
-                }
-                catch
-                {
-                }
-
-                string tagBase = string.Format("Hugo_News_{0:yyyyMMdd_HHmm}", newsTime);
-                if (DrawObjects[tagBase + "_Rect"] != null)
-                    continue;
-
-                Draw.Rectangle(
-                    this,
-                    tagBase + "_Rect",
-                    false,
-                    windowStart,
-                    0,
-                    windowEnd,
-                    30000,
-                    lineBrush,
-                    areaBrush,
-                    2).ZOrder = -1;
-
-                Draw.VerticalLine(this, tagBase + "_Start", windowStart, lineBrush, DashStyleHelper.DashDot, 2);
-                Draw.VerticalLine(this, tagBase + "_End", windowEnd, lineBrush, DashStyleHelper.DashDot, 2);
             }
         }
 
         protected override void OnBarUpdate()
         {
-            if (CurrentBar < 1) return;
+            if (CurrentBar < BarsRequiredToTrade) return;
 
-            DrawSessionTimeWindows();
-            UpdateInfoBox();
+            // ── Chart overlays (realtime only) ───────────────────────────────
+            if (ChartControl != null)
+            {
+                DrawSessionTimeWindows();
+                UpdateInfoBox();
+            }
 
+            // ── Configuration validation guard ───────────────────────────────
             if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
             {
-                CancelAllOrders();
-                ExitAllPositions("InvalidConfiguration");
+                if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; }
+                if (Position.MarketPosition == MarketPosition.Long)  ExitLong("InvalidConfig");
+                if (Position.MarketPosition == MarketPosition.Short) ExitShort("InvalidConfig");
                 return;
             }
 
+            // ── Max account balance guard ────────────────────────────────────
             if (IsAccountBalanceBlocked())
                 return;
 
-            if (CurrentBar < BarsRequiredToTrade) return;
-
-            // ── Session reset (midnight-crossing safe) ───────────────────────
-            // Anchor the "trading day" to the session start time so a session that
-            // begins at 18:00 and runs to 17:00 the next calendar day is treated as
-            // a single session, not split at midnight.
-            TimeSpan barTOD         = Time[0].TimeOfDay;
-            DateTime sessionDate    = GetSessionAnchorDate(Time[0]);
+            // ── Daily reset (session-anchored, midnight-crossing safe) ────────
+            TimeSpan barTOD          = Time[0].TimeOfDay;
+            TimeSpan sessionStartTOD = TimeSpan.Parse(SessionStartTime);
+            DateTime sessionDate     = barTOD >= sessionStartTOD ? Time[0].Date : Time[0].Date.AddDays(-1);
 
             if (sessionDate != currentSessionDate)
             {
-                globalDailyPnL          = 0;
-                lastTradeDate           = Time[0].Date;
-                currentSessionDate      = sessionDate;
-                globalDailyLossLimitHit = false;
+                globalDailyPnL            = 0;
+                currentSessionDate        = sessionDate;
+                globalDailyLossLimitHit   = false;
                 globalDailyProfitLimitHit = false;
-                globalDailyTradeCount   = 0;
-                lastTradeDirection      = 0;
-                lastTradePnL            = 0;
-                pendingLongFilterWait   = false;
-                pendingShortFilterWait  = false;
-                pendingFilterBucket     = null;
-                inSkipWindow            = false;
-                inNewsSkipWindow        = false;
-
-                dailyPnL_L1 = dailyPnL_L2 = dailyPnL_S1 = dailyPnL_S2 = 0;
-                dailyTradeCount_L1 = dailyTradeCount_L2 = dailyTradeCount_S1 = dailyTradeCount_S2 = 0;
-                dailyLossHit_L1 = dailyLossHit_L2 = dailyLossHit_S1 = dailyLossHit_S2 = false;
-                dailyProfitHit_L1 = dailyProfitHit_L2 = dailyProfitHit_S1 = dailyProfitHit_S2 = false;
+                globalDailyTradeCount     = 0;
+                lastTradeDirection        = new int[5];
+                lastTradePnL              = new double[5];
+                ResetAllBucketCounters();
             }
 
-            // ── Time guards (midnight-crossing safe) ─────────────────────────
-            // Convert all times to session-relative minutes so that comparisons work
-            // correctly even when the session spans midnight (e.g. 18:00 – 17:00).
-            // ToSessionMinutes(t) returns how many minutes after session-start t is.
-            // A session that starts at 18:00 maps: 18:00→0, 23:59→359, 00:00→360,
-            // 14:30→1230, 15:50→1310, 17:00→1380. Simple >= / < then works.
-            double barSM             = ToSessionMinutes(barTOD);
-            double tradeWindowStartSM = ToSessionMinutes(TimeSpan.Parse(TradeWindowStart));
-            double lastEntrySM       = ToSessionMinutes(TimeSpan.Parse(LastEntryTime));
-            double forceCloseSM      = ToSessionMinutes(TimeSpan.Parse(ForceCloseTime));
-            double sessionEndSM      = ToSessionMinutes(TimeSpan.Parse(SessionEndTime));
+            // ── Resolve bar's session ────────────────────────────────────────
+            double barSM      = ToSessionMinutes(barTOD);
+            int    barSession = ResolveActiveSession(barSM);
 
-            bool isWithinSession   = barSM >= tradeWindowStartSM && barSM < sessionEndSM;
-            bool canEnterNewTrades = barSM >= tradeWindowStartSM && barSM <= lastEntrySM;
-            // ForceClose: fire from forceCloseSM onwards (no upper bound).
-            // Re-issues exit every bar until position is flat.
-            // When flat, still return early to block new entries after ForceClose time.
-            bool shouldForceClose = barSM >= forceCloseSM;
-
-            if (shouldForceClose)
+            // ── Force Close: fires on the position's OWN session ─────────────
+            if (Position.MarketPosition != MarketPosition.Flat && activeSession != 0
+                && GetSessEnableForceClose(activeSession))
             {
-                CancelAllOrders();
-                ResetSignals();
-                ExitAllPositions("ForceClose");
-                return;
+                double fcSM  = GetSessForceCloseSM(activeSession);
+                double endSM = GetSessSessionEndSM(activeSession);
+                bool inFC    = fcSM <= endSM ? barSM >= fcSM : barSM >= fcSM || barSM < endSM;
+                if (inFC)
+                {
+                    CancelAllOrders(); ResetSignals();
+                    if (Position.MarketPosition == MarketPosition.Long)
+                        ExitLong(Math.Max(1, Position.Quantity), "ForceClose", LongEntrySignalName);
+                    else if (Position.MarketPosition == MarketPosition.Short)
+                        ExitShort(Math.Max(1, Position.Quantity), "ForceClose", ShortEntrySignalName);
+                    return;
+                }
             }
 
-            // ── Skip Time Window ─────────────────────────────────────────────
-            if (IsSkipWindowConfigured())
+            // ── Block new entries past force close or outside session ─────────
+            bool newEntriesBlockedByFC = false;
+            if (barSession != 0 && GetSessEnableForceClose(barSession))
             {
-                bool nowInSkip = IsInSkipWindow(Time[0]);
+                double fcSM  = GetSessForceCloseSM(barSession);
+                double endSM = GetSessSessionEndSM(barSession);
+                newEntriesBlockedByFC = fcSM <= endSM ? barSM >= fcSM && barSM < endSM : barSM >= fcSM || barSM < endSM;
+            }
+
+            bool isWithinAnySession = barSession != 0;
+            bool canEnterNewTrades  = false;
+            if (barSession != 0)
+            {
+                double tws  = GetSessTradeWindowStartSM(barSession);
+                double last = GetSessLastEntrySM(barSession);
+                bool inWindow = last >= tws ? barSM >= tws && barSM <= last : barSM >= tws || barSM <= last;
+                canEnterNewTrades = inWindow && !newEntriesBlockedByFC;
+            }
+
+            if (!canEnterNewTrades && entryOrder != null) { CancelOrder(entryOrder); ResetSignals(); }
+
+            // ── Skip Time Window (global) ────────────────────────────────────
+            if (EnableSkipTime)
+            {
+                double skipStartSM = SM(SkipTimeStart);
+                double skipEndSM   = SM(SkipTimeEnd);
+                bool nowInSkip = skipEndSM >= skipStartSM
+                    ? barSM >= skipStartSM && barSM < skipEndSM
+                    : barSM >= skipStartSM || barSM < skipEndSM;
 
                 if (nowInSkip && !inSkipWindow)
                 {
-                    // Entering skip window
                     inSkipWindow = true;
-                    Print(Time[0] + " - Skip window started (" + SkipTimeStart + " - " + SkipTimeEnd + "). No new entries.");
+                    Print(Time[0] + " - Skip window started. No new entries.");
                     if (FlattenAtSkipStart)
                     {
-                        CancelAllOrders();
-                        ResetSignals();
-                        ExitAllPositions("SkipWindow");
-                        Print(Time[0] + " - Flatten at skip start: position and orders cleared.");
+                        if (Position.MarketPosition == MarketPosition.Long)  ExitLong("SkipWindowFlat");
+                        if (Position.MarketPosition == MarketPosition.Short) ExitShort("SkipWindowFlat");
+                        CancelAllOrders(); ResetSignals();
                     }
-                    else
-                    {
-                        CancelPendingEntryWork();
-                    }
+                    else { if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; } }
                 }
                 else if (!nowInSkip && inSkipWindow)
                 {
                     inSkipWindow = false;
-                    Print(Time[0] + " - Skip window ended. Resuming normal trading.");
+                    Print(Time[0] + " - Skip window ended.");
                 }
-
-                // Manage existing position during skip window normally, just block new entries
-                if (inSkipWindow && Position.MarketPosition == MarketPosition.Flat)
-                    return;
+                if (inSkipWindow && Position.MarketPosition == MarketPosition.Flat) return;
             }
 
+            // ── News Skip Window ─────────────────────────────────────────────
             if (IsNewsWindowConfigured())
             {
                 bool nowInNewsSkip = IsInNewsSkipWindow(Time[0]);
-
                 if (nowInNewsSkip && !inNewsSkipWindow)
                 {
                     inNewsSkipWindow = true;
-                    DateTime newsWindowStart;
-                    DateTime newsWindowEnd;
-                    string newsLabel = TryGetNewsWindow(Time[0], out newsWindowStart, out newsWindowEnd)
-                        ? newsWindowStart.AddMinutes(NewsBlockMinutes).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
-                        : "scheduled news";
-                    Print(Time[0] + " - News skip window started around " + newsLabel + ". No new entries.");
+                    Print(Time[0] + " - News skip window started. No new entries.");
                     if (FlattenAtNewsStart)
                     {
-                        CancelAllOrders();
+                        if (Position.MarketPosition == MarketPosition.Long)  ExitLong("NewsSkip");
+                        if (Position.MarketPosition == MarketPosition.Short) ExitShort("NewsSkip");
+                        if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; }
                         ResetSignals();
-                        ExitAllPositions("NewsSkip");
-                        Print(Time[0] + " - Flatten at news start: position and orders cleared.");
                     }
-                    else
-                    {
-                        CancelPendingEntryWork();
-                    }
+                    else { if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; } }
                 }
                 else if (!nowInNewsSkip && inNewsSkipWindow)
                 {
                     inNewsSkipWindow = false;
-                    Print(Time[0] + " - News skip window ended. Resuming normal trading.");
+                    Print(Time[0] + " - News skip window ended.");
                 }
-
-                if (inNewsSkipWindow && Position.MarketPosition == MarketPosition.Flat)
-                    return;
-            }
-
-            if (!canEnterNewTrades)
-            {
-                if (entryOrder != null) { CancelOrder(entryOrder); ResetSignals(); }
-                pendingLongFilterWait  = false;
-                pendingShortFilterWait = false;
-                pendingFilterBucket    = null;
+                if (inNewsSkipWindow && Position.MarketPosition == MarketPosition.Flat) return;
             }
 
             // ── Global Daily P&L guards ──────────────────────────────────────
@@ -2698,909 +6339,472 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (EnableGlobalMaxDailyLoss && totalGlobalPnL <= -GlobalMaxDailyLoss)
             {
                 globalDailyLossLimitHit = true;
+                if (Position.MarketPosition == MarketPosition.Long)  ExitLong("GlobalMaxLoss");
+                if (Position.MarketPosition == MarketPosition.Short) ExitShort("GlobalMaxLoss");
                 CancelAllOrders(); ResetSignals();
-                ExitAllPositions("GlobalMaxLoss");
-                Print(Time[0] + " - GLOBAL Max daily LOSS limit hit: " + totalGlobalPnL + " pts. Trading halted.");
+                Print(Time[0] + " - GLOBAL Max LOSS hit: " + totalGlobalPnL + " pts.");
                 return;
             }
-
             if (EnableGlobalMaxDailyProfit && totalGlobalPnL >= GlobalMaxDailyProfit)
             {
                 globalDailyProfitLimitHit = true;
+                if (Position.MarketPosition == MarketPosition.Long)  ExitLong("GlobalMaxProfit");
+                if (Position.MarketPosition == MarketPosition.Short) ExitShort("GlobalMaxProfit");
                 CancelAllOrders(); ResetSignals();
-                ExitAllPositions("GlobalMaxProfit");
-                Print(Time[0] + " - GLOBAL Max daily PROFIT limit hit: " + totalGlobalPnL + " pts. Trading halted.");
+                Print(Time[0] + " - GLOBAL Max PROFIT hit: " + totalGlobalPnL + " pts.");
                 return;
             }
-
-            if (globalDailyLossLimitHit || globalDailyProfitLimitHit || !isWithinSession)
-                return;
-
+            if (globalDailyLossLimitHit || globalDailyProfitLimitHit || !isWithinAnySession) return;
             if (EnableGlobalMaxTradesPerDay && globalDailyTradeCount >= GlobalMaxTradesPerDay
-                && Position.MarketPosition == MarketPosition.Flat)
-                return;
+                && Position.MarketPosition == MarketPosition.Flat) return;
 
-            // ── Per-bucket P&L guard for active position ─────────────────────
-            if (Position.MarketPosition != MarketPosition.Flat && activeBucket != null)
+            // ── Per-bucket P&L guard ─────────────────────────────────────────
+            if (Position.MarketPosition != MarketPosition.Flat && activeBucket != null && activeSession != 0)
             {
-                double bucketTotalPnL = GetBucketDailyPnL(activeBucket) + unrealizedPnL;
-
-                if (B_EnableMaxDailyLoss(activeBucket) && bucketTotalPnL <= -B_MaxDailyLoss(activeBucket))
+                double bucketPnL = GetBucketDailyPnL(activeSession, activeBucket) + unrealizedPnL;
+                if (B_EnableMaxDailyLoss(activeSession, activeBucket) && bucketPnL <= -B_MaxDailyLoss(activeSession, activeBucket))
                 {
-                    SetBucketLossHit(activeBucket, true);
+                    SetBucketLossHit(activeSession, activeBucket, true);
+                    if (Position.MarketPosition == MarketPosition.Long)  ExitLong("Sess" + activeSession + "_" + activeBucket + "_MaxLoss");
+                    if (Position.MarketPosition == MarketPosition.Short) ExitShort("Sess" + activeSession + "_" + activeBucket + "_MaxLoss");
                     CancelAllOrders(); ResetSignals();
-                    ExitAllPositions(activeBucket + "_MaxLoss");
-                    Print(Time[0] + " - " + activeBucket + " Max daily LOSS limit hit: " + bucketTotalPnL + " pts.");
+                    Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Max LOSS hit: " + bucketPnL + " pts.");
                     return;
                 }
-
-                if (B_EnableMaxDailyProfit(activeBucket) && bucketTotalPnL >= B_MaxDailyProfit(activeBucket))
+                if (B_EnableMaxDailyProfit(activeSession, activeBucket) && bucketPnL >= B_MaxDailyProfit(activeSession, activeBucket))
                 {
-                    SetBucketProfitHit(activeBucket, true);
+                    SetBucketProfitHit(activeSession, activeBucket, true);
+                    if (Position.MarketPosition == MarketPosition.Long)  ExitLong("Sess" + activeSession + "_" + activeBucket + "_MaxProfit");
+                    if (Position.MarketPosition == MarketPosition.Short) ExitShort("Sess" + activeSession + "_" + activeBucket + "_MaxProfit");
                     CancelAllOrders(); ResetSignals();
-                    ExitAllPositions(activeBucket + "_MaxProfit");
-                    Print(Time[0] + " - " + activeBucket + " Max daily PROFIT limit hit: " + bucketTotalPnL + " pts.");
+                    Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Max PROFIT hit: " + bucketPnL + " pts.");
                     return;
                 }
             }
 
-            // ── EMA crossover detection (per-bucket EMAs) ────────────────────
-            // For longs: check if Close crosses above EITHER L1 or L2 EMA
-            // For shorts: check if Close crosses below EITHER S1 or S2 EMA
-            bool crossAboveL1 = L1_Enable && CurrentBar >= L1_EmaLength && Close[0] > emaL1[0] && Close[1] <= emaL1[1];
-            bool crossAboveL2 = L2_Enable && CurrentBar >= L2_EmaLength && Close[0] > emaL2[0] && Close[1] <= emaL2[1];
-            bool crossBelowS1 = S1_Enable && CurrentBar >= S1_EmaLength && Close[0] < emaS1[0] && Close[1] >= emaS1[1];
-            bool crossBelowS2 = S2_Enable && CurrentBar >= S2_EmaLength && Close[0] < emaS2[0] && Close[1] >= emaS2[1];
-
-            bool anyLongCross  = crossAboveL1 || crossAboveL2;
-            bool anyShortCross = crossBelowS1 || crossBelowS2;
-
-            // ── Manage open position ─────────────────────────────────────────
-            if (Position.MarketPosition != MarketPosition.Flat && activeBucket != null)
+            // ── EMA crossover detection (bar's session indicators) ────────────
+            bool anyLongCross = false, anyShortCross = false;
+            if (barSession != 0)
             {
-                EMA activeEma = GetEma(activeBucket);
+                EMA bsL1 = GetEma(barSession, "L1");
+                EMA bsL2 = GetEma(barSession, "L2");
+                EMA bsS1 = GetEma(barSession, "S1");
+                EMA bsS2 = GetEma(barSession, "S2");
+                bool crossAboveL1 = IsBucketEnabled(barSession, "L1") && CurrentBar >= B_EmaLength(barSession, "L1") && Close[0] > bsL1[0] && Close[1] <= bsL1[1];
+                bool crossAboveL2 = IsBucketEnabled(barSession, "L2") && CurrentBar >= B_EmaLength(barSession, "L2") && Close[0] > bsL2[0] && Close[1] <= bsL2[1];
+                bool crossBelowS1 = IsBucketEnabled(barSession, "S1") && CurrentBar >= B_EmaLength(barSession, "S1") && Close[0] < bsS1[0] && Close[1] >= bsS1[1];
+                bool crossBelowS2 = IsBucketEnabled(barSession, "S2") && CurrentBar >= B_EmaLength(barSession, "S2") && Close[0] < bsS2[0] && Close[1] >= bsS2[1];
+                anyLongCross  = crossAboveL1 || crossAboveL2;
+                anyShortCross = crossBelowS1 || crossBelowS2;
+            }
 
-                // v1.06: Max Bars In Trade
-                if (B_EnableMaxBarsInTrade(activeBucket) && entryBar > 0
-                    && (CurrentBar - entryBar) >= B_MaxBarsInTrade(activeBucket))
-                {
-                    Print(Time[0] + " - " + activeBucket + " Max bars in trade reached ("
-                        + (CurrentBar - entryBar) + " bars). Exiting.");
-                    ExitAllPositions("MaxBarsExit");
-                    return;
-                }
+            // ── Manage open position (uses position's OWN session) ────────────
+            if (Position.MarketPosition != MarketPosition.Flat && activeBucket != null && activeSession != 0)
+            {
+                EMA activeEma = GetEma(activeSession, activeBucket);
 
                 CheckBreakEven();
-
-                // v1.06: SL to Entry on EMA Cross (per-bucket, one-way ratchet)
-                CheckSLToEntryOnEMA(activeEma);
-
-                if (B_StopLossType(activeBucket) == Hugo_StopLossTypeEnum.EMATrailing)
+                if (B_StopLossType(activeSession, activeBucket) == Hugo_StopLossTypeEnum.EMATrailing)
                     UpdateEMATrailingStop(activeEma);
-
                 ManagePriceTrailingStop();
 
-                if (B_TakeProfitType(activeBucket) == Hugo_TakeProfitTypeEnum.EMACross)
+                if (B_TakeProfitType(activeSession, activeBucket) == Hugo_TakeProfitTypeEnum.EMACross)
                 {
                     if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
-                    { ExitLong(BuildExitSignalName("EMACrossExit")); return; }
+                    { ExitLong("EMACrossExit"); return; }
                     if (Position.MarketPosition == MarketPosition.Short && Close[0] > activeEma[0] && Close[1] <= activeEma[1])
-                    { ExitShort(BuildExitSignalName("EMACrossExit")); return; }
+                    { ExitShort("EMACrossExit"); return; }
                 }
 
-                // Opposite signal exit: use the active bucket's EMA
                 if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
-                    ExitLong(BuildExitSignalName("OppositeSignal"));
+                    ExitLong("OppositeSignal");
                 else if (Position.MarketPosition == MarketPosition.Short && Close[0] > activeEma[0] && Close[1] <= activeEma[1])
-                    ExitShort(BuildExitSignalName("OppositeSignal"));
+                    ExitShort("OppositeSignal");
             }
 
-            // ── Cancel pending limit order on opposite signal ────────────────
+            // ── Cancel pending limit on opposite signal ───────────────────────
             if (entryOrder != null)
             {
                 if ((pendingDirection == 1 && anyShortCross) || (pendingDirection == -1 && anyLongCross))
-                {
-                    CancelOrder(entryOrder);
-                    ResetSignals();
-                }
+                { CancelOrder(entryOrder); ResetSignals(); }
             }
 
-            // Cancel filter wait on opposite signal
-            if (pendingLongFilterWait  && anyShortCross) { pendingLongFilterWait  = false; pendingFilterBucket = null; }
-            if (pendingShortFilterWait && anyLongCross)  { pendingShortFilterWait = false; pendingFilterBucket = null; }
-
-            // ── Pullback wait: expire on MaxBarsToWait ───────────────────────
-            if (entryOrder != null && activeBucket != null)
-            {
-                int maxWait = B_MaxBarsToWait(activeBucket);
-                if (maxWait > 0 && CurrentBar - signalBar >= maxWait)
-                {
-                    CancelOrder(entryOrder);
-                    ResetSignals();
-                }
-            }
-
-            // ── Only process entries when flat and no pending order ───────────
-            if (Position.MarketPosition != MarketPosition.Flat || entryOrder != null || !canEnterNewTrades)
-                return;
-
-            if (EnableGlobalMaxTradesPerDay && globalDailyTradeCount >= GlobalMaxTradesPerDay)
-                return;
-
-            // ── Filter-wait resolution ───────────────────────────────────────
-            if (pendingLongFilterWait && pendingFilterBucket != null)
-            {
-                if (CurrentBar - filterWaitStartBar >= B_FilterWaitMaxBars(pendingFilterBucket))
-                {
-                    pendingLongFilterWait = false;
-                    pendingFilterBucket   = null;
-                }
-                else if (PassesSignalQualityFilters(true, pendingFilterBucket))
-                {
-                    string bucket = pendingFilterBucket;
-                    pendingLongFilterWait  = false;
-                    pendingFilterBucket    = null;
-                    longSignalActive       = true;
-                    signalBar              = CurrentBar;
-                    crossoverCandleHigh    = High[0];
-                    crossoverCandleLow     = Low[0];
-                    signalEmaValue         = GetEma(bucket)[0];
-                    pendingDirection       = 1;
-                    activeBucket           = bucket;
-                    ProcessLongEntry();
-                    return;
-                }
-                return;
-            }
-
-            if (pendingShortFilterWait && pendingFilterBucket != null)
-            {
-                if (CurrentBar - filterWaitStartBar >= B_FilterWaitMaxBars(pendingFilterBucket))
-                {
-                    pendingShortFilterWait = false;
-                    pendingFilterBucket    = null;
-                }
-                else if (PassesSignalQualityFilters(false, pendingFilterBucket))
-                {
-                    string bucket = pendingFilterBucket;
-                    pendingShortFilterWait = false;
-                    pendingFilterBucket    = null;
-                    shortSignalActive      = true;
-                    signalBar              = CurrentBar;
-                    crossoverCandleHigh    = High[0];
-                    crossoverCandleLow     = Low[0];
-                    signalEmaValue         = GetEma(bucket)[0];
-                    pendingDirection       = -1;
-                    activeBucket           = bucket;
-                    ProcessShortEntry();
-                    return;
-                }
-                return;
-            }
+            if (Position.MarketPosition != MarketPosition.Flat || entryOrder != null || !canEnterNewTrades) return;
+            if (EnableGlobalMaxTradesPerDay && globalDailyTradeCount >= GlobalMaxTradesPerDay) return;
+            if (barSession == 0) return;
+            if (EnableSkipTime && inSkipWindow) return;
+            if (IsNewsWindowConfigured() && inNewsSkipWindow) return;
 
             // ── New signal detection ─────────────────────────────────────────
             double candleRange = High[0] - Low[0];
 
-            // Block new entries during skip window
-            if ((IsSkipWindowConfigured() && inSkipWindow) || (IsNewsWindowConfigured() && inNewsSkipWindow)) return;
-
             if (anyLongCross)
             {
-                string bucket = ResolveBucket(1, candleRange);
-                if (bucket == null)
-                {
-                    Print(Time[0] + " - Long signal: candle range " + candleRange.ToString("F2") + " pts — no matching bucket. Skipped.");
-                    return;
-                }
-
-                if (!IsDirectionAllowed(1, bucket)) return;
-                if (!PassesEmaSlopeFilter(true, bucket)) return;
-                if (!PassesWMAFilter(true, bucket)) return;
-                if (!PassesSMAFilter(true, bucket)) return;
-                if (!PassesADXFilter(bucket)) return;
-
+                string bucket = ResolveBucket(barSession, 1, candleRange);
+                if (bucket == null) { Print(Time[0] + " - Sess" + barSession + " Long: no matching bucket."); return; }
+                if (!IsDirectionAllowed(1, barSession, bucket)) return;
+                if (!PassesEmaSlopeFilter(true, barSession, bucket)) return;
+                if (!PassesWMAFilter(true, barSession, bucket)) return;
+                if (!PassesBodyPctFilter(candleRange, barSession, bucket)) return;
                 crossoverCandleHigh = High[0];
                 crossoverCandleLow  = Low[0];
-                signalEmaValue      = GetEma(bucket)[0];
-
-                if (!PassesSignalQualityFilters(true, bucket))
-                {
-                    if (B_EnableFilterWaitBars(bucket))
-                    {
-                        pendingLongFilterWait = true;
-                        pendingFilterBucket   = bucket;
-                        filterWaitStartBar    = CurrentBar;
-                        Print(Time[0] + " - " + bucket + " Long signal: candle failed quality filters. Waiting up to " + B_FilterWaitMaxBars(bucket) + " bars.");
-                    }
-                    return;
-                }
-
-                longSignalActive  = true;
-                shortSignalActive = false;
-                signalBar         = CurrentBar;
-                pendingDirection  = 1;
-                activeBucket      = bucket;
-                Print(Time[0] + " - " + bucket + " Long signal. Candle range: " + candleRange.ToString("F2") + " pts.");
+                longSignalActive    = true;
+                shortSignalActive   = false;
+                signalBar           = CurrentBar;
+                pendingDirection    = 1;
+                activeBucket        = bucket;
+                activeSession       = barSession;
+                Print(Time[0] + " - Sess" + barSession + " " + bucket + " Long signal. Range: " + candleRange.ToString("F2") + " pts.");
                 ProcessLongEntry();
             }
             else if (anyShortCross)
             {
-                string bucket = ResolveBucket(-1, candleRange);
-                if (bucket == null)
-                {
-                    Print(Time[0] + " - Short signal: candle range " + candleRange.ToString("F2") + " pts — no matching bucket. Skipped.");
-                    return;
-                }
-
-                if (!IsDirectionAllowed(-1, bucket)) return;
-                if (!PassesEmaSlopeFilter(false, bucket)) return;
-                if (!PassesWMAFilter(false, bucket)) return;
-                if (!PassesSMAFilter(false, bucket)) return;
-                if (!PassesADXFilter(bucket)) return;
-
+                string bucket = ResolveBucket(barSession, -1, candleRange);
+                if (bucket == null) { Print(Time[0] + " - Sess" + barSession + " Short: no matching bucket."); return; }
+                if (!IsDirectionAllowed(-1, barSession, bucket)) return;
+                if (!PassesEmaSlopeFilter(false, barSession, bucket)) return;
+                if (!PassesWMAFilter(false, barSession, bucket)) return;
+                if (!PassesBodyPctFilter(candleRange, barSession, bucket)) return;
                 crossoverCandleHigh = High[0];
                 crossoverCandleLow  = Low[0];
-                signalEmaValue      = GetEma(bucket)[0];
-
-                if (!PassesSignalQualityFilters(false, bucket))
-                {
-                    if (B_EnableFilterWaitBars(bucket))
-                    {
-                        pendingShortFilterWait = true;
-                        pendingFilterBucket    = bucket;
-                        filterWaitStartBar     = CurrentBar;
-                        Print(Time[0] + " - " + bucket + " Short signal: candle failed quality filters. Waiting up to " + B_FilterWaitMaxBars(bucket) + " bars.");
-                    }
-                    return;
-                }
-
-                shortSignalActive = true;
-                longSignalActive  = false;
-                signalBar         = CurrentBar;
-                pendingDirection  = -1;
-                activeBucket      = bucket;
-                Print(Time[0] + " - " + bucket + " Short signal. Candle range: " + candleRange.ToString("F2") + " pts.");
+                shortSignalActive   = true;
+                longSignalActive    = false;
+                signalBar           = CurrentBar;
+                pendingDirection    = -1;
+                activeBucket        = bucket;
+                activeSession       = barSession;
+                Print(Time[0] + " - Sess" + barSession + " " + bucket + " Short signal. Range: " + candleRange.ToString("F2") + " pts.");
                 ProcessShortEntry();
             }
         }
 
         // ════════════════════════════════════════════════════════════════════════
-        //  Price Trailing Stop — Uses active bucket's parameters
+        //  Entry Processing — Immediate only
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void ProcessLongEntry()
+        {
+            int sess = activeSession; string b = activeBucket;
+            EMA e = GetEma(sess, b);
+            currentTradeDirection = 1;
+            double stopLoss   = CalculateStopLoss(true, sess, b, e);
+            double takeProfit = CalculateTakeProfit(true, Close[0], stopLoss, sess, b);
+            if (B_MaxStopLoss(sess, b) > 0)
+            {
+                double slDist = Close[0] - stopLoss;
+                if (slDist > B_MaxStopLoss(sess, b)) stopLoss = Close[0] - B_MaxStopLoss(sess, b);
+            }
+
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], ContractQuantity))
+            {
+                Print(Time[0] + " - Sess" + sess + " " + b + " Long entry confirmation declined.");
+                ResetSignals(); activeBucket = null; activeSession = 0; currentTradeDirection = 0;
+                return;
+            }
+
+            entryPrice          = Close[0];
+            currentStopPrice    = stopLoss;
+            breakEvenMoved      = false;
+            initialStopDistance = entryPrice - stopLoss;
+            initialTPDistance   = B_TakeProfitType(sess, b) != Hugo_TakeProfitTypeEnum.EMACross ? takeProfit - entryPrice : 0;
+            ResetTrailState();
+            SetStopLoss(CalculationMode.Price, stopLoss);
+            if (B_TakeProfitType(sess, b) != Hugo_TakeProfitTypeEnum.EMACross)
+                SetProfitTarget(CalculationMode.Price, takeProfit);
+            EnterLong(ContractQuantity, LongEntrySignalName);
+        }
+
+        private void ProcessShortEntry()
+        {
+            int sess = activeSession; string b = activeBucket;
+            EMA e = GetEma(sess, b);
+            currentTradeDirection = -1;
+            double stopLoss   = CalculateStopLoss(false, sess, b, e);
+            double takeProfit = CalculateTakeProfit(false, Close[0], stopLoss, sess, b);
+            if (B_MaxStopLoss(sess, b) > 0)
+            {
+                double slDist = stopLoss - Close[0];
+                if (slDist > B_MaxStopLoss(sess, b)) stopLoss = Close[0] + B_MaxStopLoss(sess, b);
+            }
+
+            if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], ContractQuantity))
+            {
+                Print(Time[0] + " - Sess" + sess + " " + b + " Short entry confirmation declined.");
+                ResetSignals(); activeBucket = null; activeSession = 0; currentTradeDirection = 0;
+                return;
+            }
+
+            entryPrice          = Close[0];
+            currentStopPrice    = stopLoss;
+            breakEvenMoved      = false;
+            initialStopDistance = stopLoss - entryPrice;
+            initialTPDistance   = B_TakeProfitType(sess, b) != Hugo_TakeProfitTypeEnum.EMACross ? entryPrice - takeProfit : 0;
+            ResetTrailState();
+            SetStopLoss(CalculationMode.Price, stopLoss);
+            if (B_TakeProfitType(sess, b) != Hugo_TakeProfitTypeEnum.EMACross)
+                SetProfitTarget(CalculationMode.Price, takeProfit);
+            EnterShort(ContractQuantity, ShortEntrySignalName);
+        }
+
+        private double CalculateStopLoss(bool isLong, int sess, string b, EMA e)
+        {
+            switch (B_StopLossType(sess, b))
+            {
+                case Hugo_StopLossTypeEnum.Fixed:
+                    return isLong ? Close[0] - B_FixedStopLoss(sess, b) : Close[0] + B_FixedStopLoss(sess, b);
+                case Hugo_StopLossTypeEnum.CandleHighLow:
+                    return isLong ? crossoverCandleLow - B_StopLossOffset(sess, b) : crossoverCandleHigh + B_StopLossOffset(sess, b);
+                case Hugo_StopLossTypeEnum.EMAFixed:
+                case Hugo_StopLossTypeEnum.EMATrailing:
+                    return isLong ? e[0] - B_StopLossOffset(sess, b) : e[0] + B_StopLossOffset(sess, b);
+                case Hugo_StopLossTypeEnum.CandleMultiple:
+                {
+                    double cr = crossoverCandleHigh - crossoverCandleLow;
+                    double dist = cr * B_SLCandleMultiplier(sess, b);
+                    return isLong ? Close[0] - dist : Close[0] + dist;
+                }
+                default:
+                    return isLong ? Close[0] - B_FixedStopLoss(sess, b) : Close[0] + B_FixedStopLoss(sess, b);
+            }
+        }
+
+        private double CalculateTakeProfit(bool isLong, double entry, double stopLoss, int sess, string b)
+        {
+            double risk = isLong ? entry - stopLoss : stopLoss - entry;
+            switch (B_TakeProfitType(sess, b))
+            {
+                case Hugo_TakeProfitTypeEnum.RiskReward:
+                    return isLong ? entry + risk * B_RiskRewardRatio(sess, b) : entry - risk * B_RiskRewardRatio(sess, b);
+                case Hugo_TakeProfitTypeEnum.Fixed:
+                    return isLong ? entry + B_FixedTakeProfit(sess, b) : entry - B_FixedTakeProfit(sess, b);
+                case Hugo_TakeProfitTypeEnum.EMACross:
+                    return isLong ? entry + 1000 : entry - 1000;
+                case Hugo_TakeProfitTypeEnum.CandleMultiple:
+                {
+                    double cr = crossoverCandleHigh - crossoverCandleLow;
+                    return isLong ? entry + cr * B_TPCandleMultiplier(sess, b) : entry - cr * B_TPCandleMultiplier(sess, b);
+                }
+                default:
+                    return isLong ? entry + B_FixedTakeProfit(sess, b) : entry - B_FixedTakeProfit(sess, b);
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Filters
+        // ════════════════════════════════════════════════════════════════════════
+
+        private bool IsDirectionAllowed(int dir, int sess, string b)
+        {
+            if (!B_EnableDirectionFlip(sess, b)) return true;
+            if (lastTradeDirection[sess] == 0)          return true;
+            if (dir != lastTradeDirection[sess])        return true;
+            return false;
+        }
+
+        private bool PassesEmaSlopeFilter(bool isLong, int sess, string b)
+        {
+            if (!B_EnableEmaSlope(sess, b)) return true;
+            int slopeBars = B_EmaSlopeBars(sess, b);
+            if (CurrentBar < slopeBars) return false;
+            EMA e = GetEma(sess, b);
+            double emaNow = e[0], emaThen = e[slopeBars];
+            if (emaThen == 0) return false;
+            double slopePct = (emaNow - emaThen) / emaThen * 100.0;
+            switch (B_EmaSlopeMode(sess, b))
+            {
+                case Hugo_EmaSlopeModeEnum.DirectionEnforced:
+                    return isLong ? slopePct >= B_EmaSlopeMinPct(sess, b) : slopePct <= -B_EmaSlopeMinPct(sess, b);
+                case Hugo_EmaSlopeModeEnum.MagnitudeOnly:
+                    return Math.Abs(slopePct) >= B_EmaSlopeMinPct(sess, b);
+                default: return true;
+            }
+        }
+
+        private bool PassesWMAFilter(bool isLong, int sess, string b)
+        {
+            if (!B_EnableWMAFilter(sess, b)) return true;
+            WMA w = GetWma(sess, b);
+            return isLong ? Close[0] > w[0] : Close[0] < w[0];
+        }
+
+        private bool PassesBodyPctFilter(double candleRange, int sess, string b)
+        {
+            if (!B_EnableBodyPctFilter(sess, b)) return true;
+            if (candleRange <= 0) return false;
+            double bodySize = Math.Abs(Close[0] - Open[0]);
+            return (bodySize / candleRange) * 100.0 >= B_MinBodyPct(sess, b);
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Break Even
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void CheckBreakEven()
+        {
+            if (activeBucket == null || activeSession == 0) return;
+            if (!B_EnableBreakEven(activeSession, activeBucket) || breakEvenMoved || Position.MarketPosition == MarketPosition.Flat) return;
+            bool isLong = Position.MarketPosition == MarketPosition.Long;
+            double profit = isLong ? Close[0] - Position.AveragePrice : Position.AveragePrice - Close[0];
+            double risk   = isLong ? Position.AveragePrice - currentStopPrice : currentStopPrice - Position.AveragePrice;
+            bool trigger  = B_BreakEvenTriggerType(activeSession, activeBucket) == Hugo_BreakEvenTriggerEnum.Points
+                ? profit >= B_BreakEvenTriggerValue(activeSession, activeBucket)
+                : risk > 0 && (profit / risk) >= B_BreakEvenTriggerValue(activeSession, activeBucket);
+            if (!trigger) return;
+            double newStop = isLong
+                ? Position.AveragePrice + B_BreakEvenOffset(activeSession, activeBucket)
+                : Position.AveragePrice - B_BreakEvenOffset(activeSession, activeBucket);
+            SetStopLoss(CalculationMode.Price, newStop);
+            currentStopPrice = newStop;
+            breakEvenMoved   = true;
+            Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Break Even. New stop: " + newStop);
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  EMA Trailing Stop
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void UpdateEMATrailingStop(EMA e)
+        {
+            if (breakEvenMoved || activeBucket == null || activeSession == 0) return;
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                double ns = e[0] - B_StopLossOffset(activeSession, activeBucket);
+                if (ns > currentStopPrice) { SetStopLoss(CalculationMode.Price, ns); currentStopPrice = ns; }
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                double ns = e[0] + B_StopLossOffset(activeSession, activeBucket);
+                if (ns < currentStopPrice) { SetStopLoss(CalculationMode.Price, ns); currentStopPrice = ns; }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Price Trailing Stop
         // ════════════════════════════════════════════════════════════════════════
 
         private void ManagePriceTrailingStop()
         {
-            if (activeBucket == null) return;
-            if (!B_EnablePriceTrail(activeBucket)) return;
-            if (Position.MarketPosition == MarketPosition.Flat) return;
-            if (trailLocked) return;
+            if (activeBucket == null || activeSession == 0) return;
+            if (!B_EnablePriceTrail(activeSession, activeBucket)) return;
+            if (Position.MarketPosition == MarketPosition.Flat || trailLocked) return;
 
             bool isLong = Position.MarketPosition == MarketPosition.Long;
+            bestPriceSinceEntry = isLong ? Math.Max(bestPriceSinceEntry, High[0]) : Math.Min(bestPriceSinceEntry, Low[0]);
+            double profit = isLong ? bestPriceSinceEntry - entryPrice : entryPrice - bestPriceSinceEntry;
 
-            if (isLong)
-                bestPriceSinceEntry = Math.Max(bestPriceSinceEntry, High[0]);
-            else
-                bestPriceSinceEntry = Math.Min(bestPriceSinceEntry, Low[0]);
-
-            double profit = isLong
-                ? bestPriceSinceEntry - entryPrice
-                : entryPrice - bestPriceSinceEntry;
-
-            // Activation check
             if (!trailActivated)
             {
-                double activationThreshold = GetTrailThreshold(B_TrailActivationValue(activeBucket));
-                if (B_TrailActivationValue(activeBucket) <= 0 || profit >= activationThreshold)
+                double thresh = B_TrailActivationMode(activeSession, activeBucket) == Hugo_TrailActivationModeEnum.PctOfRRTarget && initialTPDistance > 0
+                    ? initialTPDistance * B_TrailActivationValue(activeSession, activeBucket) / 100.0
+                    : B_TrailActivationValue(activeSession, activeBucket);
+                if (B_TrailActivationValue(activeSession, activeBucket) <= 0 || profit >= thresh)
                 {
                     trailActivated = true;
-                    Print(Time[0] + " - " + activeBucket + " Price trail ACTIVATED. Profit: " + profit.ToString("F2") + " pts.");
+                    Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Trail ACTIVATED. Profit: " + profit.ToString("F2") + " pts.");
                 }
                 else return;
             }
 
-            // Lock check
-            if (B_EnableTrailLock(activeBucket) && B_TrailLockValue(activeBucket) > 0)
-            {
-                double lockThreshold = GetTrailThreshold(B_TrailLockValue(activeBucket));
-                if (profit >= lockThreshold)
-                {
-                    trailLocked = true;
-                    Print(Time[0] + " - " + activeBucket + " Price trail LOCKED. Stop frozen at: " + currentStopPrice.ToString("F2"));
-                    return;
-                }
-            }
-
-            // Trail distance
-            double trailDist = B_TrailDistanceMode(activeBucket) == Hugo_TrailDistanceModeEnum.FixedPoints
-                ? B_TrailDistanceValue(activeBucket)
-                : (initialStopDistance > 0
-                    ? initialStopDistance * B_TrailDistanceValue(activeBucket) / 100.0
-                    : B_TrailDistanceValue(activeBucket));
-
+            double trailDist = B_TrailDistanceMode(activeSession, activeBucket) == Hugo_TrailDistanceModeEnum.FixedPoints
+                ? B_TrailDistanceValue(activeSession, activeBucket)
+                : initialStopDistance > 0 ? initialStopDistance * B_TrailDistanceValue(activeSession, activeBucket) / 100.0 : B_TrailDistanceValue(activeSession, activeBucket);
             if (trailDist <= 0) return;
 
             double newStop = isLong
                 ? Instrument.MasterInstrument.RoundToTickSize(bestPriceSinceEntry - trailDist)
                 : Instrument.MasterInstrument.RoundToTickSize(bestPriceSinceEntry + trailDist);
 
-            // Step filter
-            if (B_TrailStepTicks(activeBucket) > 0)
+            if (B_TrailStepTicks(activeSession, activeBucket) > 0)
             {
-                double stepDist = B_TrailStepTicks(activeBucket) * TickSize;
+                double stepDist = B_TrailStepTicks(activeSession, activeBucket) * TickSize;
                 double moveDist = isLong ? newStop - currentStopPrice : currentStopPrice - newStop;
                 if (moveDist < stepDist) return;
             }
 
             bool improves = isLong ? newStop > currentStopPrice : newStop < currentStopPrice;
             if (!improves) return;
-
-            if (!TryUpdateProtectiveStop(Position.MarketPosition, newStop, "Trail stop"))
-                return;
-
-            Print(Time[0] + " - " + activeBucket + " Trail stop -> " + currentStopPrice.ToString("F2")
-                + " | Best: " + bestPriceSinceEntry.ToString("F2")
-                + " | Profit: " + profit.ToString("F2") + " pts");
-        }
-
-        private double GetTrailThreshold(double value)
-        {
-            if (activeBucket == null) return value;
-            if (B_TrailActivationMode(activeBucket) == Hugo_TrailActivationModeEnum.PctOfRRTarget && initialTPDistance > 0)
-                return initialTPDistance * value / 100.0;
-            return value;
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Filter Methods — Now bucket-aware
-        // ════════════════════════════════════════════════════════════════════════
-
-        private bool IsDirectionAllowed(int signalDirection, string bucket)
-        {
-            if (!B_EnableDirectionFlip(bucket))                                                    return true;
-            if (lastTradeDirection == 0)                                                           return true;
-            if (signalDirection != lastTradeDirection)                                             return true;
-            if (B_EnableSameDirectionOnLoss(bucket) && lastTradePnL < -B_SameDirectionLossThreshold(bucket)) return true;
-            return false;
-        }
-
-        private bool PassesEmaSlopeFilter(bool isLong, string bucket)
-        {
-            if (!B_EnableEmaSlope(bucket)) return true;
-            int slopeBars = B_EmaSlopeBars(bucket);
-            if (CurrentBar < slopeBars) return false;
-
-            EMA e = GetEma(bucket);
-            double emaNow  = e[0];
-            double emaThen = e[slopeBars];
-            if (emaThen == 0) return false;
-
-            double slopePct = (emaNow - emaThen) / emaThen * 100.0;
-
-            switch (B_EmaSlopeMode(bucket))
-            {
-                case Hugo_EmaSlopeModeEnum.DirectionEnforced:
-                    return isLong ? slopePct >= B_EmaSlopeMinPct(bucket) : slopePct <= -B_EmaSlopeMinPct(bucket);
-                case Hugo_EmaSlopeModeEnum.MagnitudeOnly:
-                    return Math.Abs(slopePct) >= B_EmaSlopeMinPct(bucket);
-                default:
-                    return true;
-            }
-        }
-
-        private bool PassesSignalQualityFilters(bool isLong, string bucket)
-        {
-            double candleRange = High[0] - Low[0];
-            double bodySize    = Math.Abs(Close[0] - Open[0]);
-
-            if (B_EnableCandleSizeFilter(bucket))
-            {
-                if (candleRange < B_MinCandleSize(bucket)) return false;
-                if (B_MaxCandleSize(bucket) > 0 && candleRange > B_MaxCandleSize(bucket)) return false;
-            }
-
-            if (B_EnableBodyPctFilter(bucket))
-            {
-                if (candleRange <= 0) return false;
-                if ((bodySize / candleRange) * 100.0 < B_MinBodyPct(bucket)) return false;
-            }
-
-            if (B_EnableCloseDistanceFilter(bucket))
-            {
-                EMA e = GetEma(bucket);
-                double closeDist = isLong ? Close[0] - e[0] : e[0] - Close[0];
-                if (closeDist < B_MinCloseDistance(bucket)) return false;
-            }
-
-            return true;
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Entry Processing — Uses active bucket's parameters
-        // ════════════════════════════════════════════════════════════════════════
-
-        private void ProcessLongEntry()
-        {
-            string b = activeBucket;
-            EMA e    = GetEma(b);
-
-            currentTradeDirection = 1;
-            double stopLoss   = CalculateStopLoss(true, b, e);
-            double takeProfit = CalculateTakeProfitFromEntry(true, Close[0], stopLoss, b);
-
-            if (B_MaxStopLoss(b) > 0)
-            {
-                double entryEst = B_EntryType(b) == Hugo_EntryTypeEnum.Immediate ? Close[0] : e[0] - B_PullbackOffset(b);
-                double slDist   = entryEst - stopLoss;
-                if (slDist > B_MaxStopLoss(b)) stopLoss = entryEst - B_MaxStopLoss(b);
-            }
-
-            if (B_EntryType(b) == Hugo_EntryTypeEnum.Immediate)
-            {
-                double targetPrice = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross ? takeProfit : 0;
-                if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], ContractQuantity))
-                {
-                    Print(Time[0] + " - Long entry confirmation declined.");
-                    ResetSignals();
-                    activeBucket = null;
-                    currentTradeDirection = 0;
-                    currentTargetPrice = 0;
-                    return;
-                }
-
-                entryPrice          = Close[0];
-                currentStopPrice    = stopLoss;
-                currentTargetPrice  = targetPrice;
-                breakEvenMoved      = false;
-                entryBar            = CurrentBar;
-                slMovedToEntryOnEMA = false;
-
-                initialStopDistance = entryPrice - stopLoss;
-                initialTPDistance   = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross
-                    ? takeProfit - entryPrice : 0;
-                ResetTrailState();
-
-                managedEntrySignal = BuildManagedEntrySignal(1);
-                ConfigureInitialProtectiveOrders(managedEntrySignal, stopLoss, currentTargetPrice);
-                EnterLong(ContractQuantity, managedEntrySignal);
-            }
-            else
-            {
-                double limitPrice = e[0] - B_PullbackOffset(b);
-                if (!CanPlaceLongLimitSafely(limitPrice, "Long pullback"))
-                {
-                    ResetSignals();
-                    activeBucket = null;
-                    currentTradeDirection = 0;
-                    currentTargetPrice = 0;
-                    return;
-                }
-
-                if (B_StopLossType(b) == Hugo_StopLossTypeEnum.Fixed)
-                    stopLoss = limitPrice - B_FixedStopLoss(b);
-                else if (B_StopLossType(b) == Hugo_StopLossTypeEnum.EMAFixed || B_StopLossType(b) == Hugo_StopLossTypeEnum.EMATrailing)
-                    stopLoss = e[0] - B_StopLossOffset(b);
-
-                if (B_MaxStopLoss(b) > 0)
-                {
-                    double slDist = limitPrice - stopLoss;
-                    if (slDist > B_MaxStopLoss(b)) stopLoss = limitPrice - B_MaxStopLoss(b);
-                }
-
-                if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", limitPrice, ContractQuantity))
-                {
-                    Print(Time[0] + " - Long entry confirmation declined.");
-                    ResetSignals();
-                    activeBucket = null;
-                    currentTradeDirection = 0;
-                    currentTargetPrice = 0;
-                    return;
-                }
-
-                currentStopPrice    = stopLoss;
-                entryPrice          = limitPrice;
-                breakEvenMoved      = false;
-                entryBar            = CurrentBar;
-                slMovedToEntryOnEMA = false;
-
-                currentTargetPrice  = 0;
-                if (B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross)
-                {
-                    takeProfit = CalculateTakeProfitFromEntry(true, limitPrice, stopLoss, b);
-                    currentTargetPrice = takeProfit;
-                }
-
-                initialStopDistance = limitPrice - stopLoss;
-                initialTPDistance   = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross
-                    ? takeProfit - limitPrice : 0;
-                ResetTrailState();
-
-                managedEntrySignal = BuildManagedEntrySignal(1);
-                ConfigureInitialProtectiveOrders(managedEntrySignal, stopLoss, currentTargetPrice);
-                entryOrder = EnterLongLimit(ContractQuantity, limitPrice, managedEntrySignal);
-            }
-        }
-
-        private void ProcessShortEntry()
-        {
-            string b = activeBucket;
-            EMA e    = GetEma(b);
-
-            currentTradeDirection = -1;
-            double stopLoss   = CalculateStopLoss(false, b, e);
-            double takeProfit = CalculateTakeProfitFromEntry(false, Close[0], stopLoss, b);
-
-            if (B_MaxStopLoss(b) > 0)
-            {
-                double entryEst = B_EntryType(b) == Hugo_EntryTypeEnum.Immediate ? Close[0] : e[0] + B_PullbackOffset(b);
-                double slDist   = stopLoss - entryEst;
-                if (slDist > B_MaxStopLoss(b)) stopLoss = entryEst + B_MaxStopLoss(b);
-            }
-
-            if (B_EntryType(b) == Hugo_EntryTypeEnum.Immediate)
-            {
-                double targetPrice = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross ? takeProfit : 0;
-                if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], ContractQuantity))
-                {
-                    Print(Time[0] + " - Short entry confirmation declined.");
-                    ResetSignals();
-                    activeBucket = null;
-                    currentTradeDirection = 0;
-                    currentTargetPrice = 0;
-                    return;
-                }
-
-                entryPrice          = Close[0];
-                currentStopPrice    = stopLoss;
-                currentTargetPrice  = targetPrice;
-                breakEvenMoved      = false;
-                entryBar            = CurrentBar;
-                slMovedToEntryOnEMA = false;
-
-                initialStopDistance = stopLoss - entryPrice;
-                initialTPDistance   = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross
-                    ? entryPrice - takeProfit : 0;
-                ResetTrailState();
-
-                managedEntrySignal = BuildManagedEntrySignal(-1);
-                ConfigureInitialProtectiveOrders(managedEntrySignal, stopLoss, currentTargetPrice);
-                EnterShort(ContractQuantity, managedEntrySignal);
-            }
-            else
-            {
-                double limitPrice = e[0] + B_PullbackOffset(b);
-                if (!CanPlaceShortLimitSafely(limitPrice, "Short pullback"))
-                {
-                    ResetSignals();
-                    activeBucket = null;
-                    currentTradeDirection = 0;
-                    currentTargetPrice = 0;
-                    return;
-                }
-
-                if (B_StopLossType(b) == Hugo_StopLossTypeEnum.Fixed)
-                    stopLoss = limitPrice + B_FixedStopLoss(b);
-                else if (B_StopLossType(b) == Hugo_StopLossTypeEnum.EMAFixed || B_StopLossType(b) == Hugo_StopLossTypeEnum.EMATrailing)
-                    stopLoss = e[0] + B_StopLossOffset(b);
-
-                if (B_MaxStopLoss(b) > 0)
-                {
-                    double slDist = stopLoss - limitPrice;
-                    if (slDist > B_MaxStopLoss(b)) stopLoss = limitPrice + B_MaxStopLoss(b);
-                }
-
-                if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", limitPrice, ContractQuantity))
-                {
-                    Print(Time[0] + " - Short entry confirmation declined.");
-                    ResetSignals();
-                    activeBucket = null;
-                    currentTradeDirection = 0;
-                    currentTargetPrice = 0;
-                    return;
-                }
-
-                currentStopPrice    = stopLoss;
-                entryPrice          = limitPrice;
-                breakEvenMoved      = false;
-                entryBar            = CurrentBar;
-                slMovedToEntryOnEMA = false;
-
-                currentTargetPrice  = 0;
-                if (B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross)
-                {
-                    takeProfit = CalculateTakeProfitFromEntry(false, limitPrice, stopLoss, b);
-                    currentTargetPrice = takeProfit;
-                }
-
-                initialStopDistance = stopLoss - limitPrice;
-                initialTPDistance   = B_TakeProfitType(b) != Hugo_TakeProfitTypeEnum.EMACross
-                    ? limitPrice - takeProfit : 0;
-                ResetTrailState();
-
-                managedEntrySignal = BuildManagedEntrySignal(-1);
-                ConfigureInitialProtectiveOrders(managedEntrySignal, stopLoss, currentTargetPrice);
-                entryOrder = EnterShortLimit(ContractQuantity, limitPrice, managedEntrySignal);
-            }
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Stop Loss / Take Profit Calculations — Bucket-aware
-        // ════════════════════════════════════════════════════════════════════════
-
-        private double CalculateStopLoss(bool isLong, string b, EMA e)
-        {
-            switch (B_StopLossType(b))
-            {
-                case Hugo_StopLossTypeEnum.Fixed:
-                    return isLong ? Close[0] - B_FixedStopLoss(b) : Close[0] + B_FixedStopLoss(b);
-                case Hugo_StopLossTypeEnum.CandleHighLow:
-                    return isLong ? crossoverCandleLow - B_StopLossOffset(b) : crossoverCandleHigh + B_StopLossOffset(b);
-                case Hugo_StopLossTypeEnum.EMAFixed:
-                case Hugo_StopLossTypeEnum.EMATrailing:
-                    return isLong ? e[0] - B_StopLossOffset(b) : e[0] + B_StopLossOffset(b);
-                case Hugo_StopLossTypeEnum.CandleMultiple:
-                {
-                    double candleRange = crossoverCandleHigh - crossoverCandleLow;
-                    double slDist = candleRange * B_SLCandleMultiplier(b);
-                    return isLong ? Close[0] - slDist : Close[0] + slDist;
-                }
-                default:
-                    return isLong ? Close[0] - B_FixedStopLoss(b) : Close[0] + B_FixedStopLoss(b);
-            }
-        }
-
-        private double CalculateTakeProfitFromEntry(bool isLong, double entry, double stopLoss, string b)
-        {
-            double risk = isLong ? entry - stopLoss : stopLoss - entry;
-            switch (B_TakeProfitType(b))
-            {
-                case Hugo_TakeProfitTypeEnum.RiskReward:
-                    return isLong ? entry + risk * B_RiskRewardRatio(b) : entry - risk * B_RiskRewardRatio(b);
-                case Hugo_TakeProfitTypeEnum.Fixed:
-                    return isLong ? entry + B_FixedTakeProfit(b) : entry - B_FixedTakeProfit(b);
-                case Hugo_TakeProfitTypeEnum.EMACross:
-                    return isLong ? entry + 1000 : entry - 1000;
-                case Hugo_TakeProfitTypeEnum.CandleMultiple:
-                {
-                    double candleRange = crossoverCandleHigh - crossoverCandleLow;
-                    return isLong ? entry + candleRange * B_TPCandleMultiplier(b)
-                                 : entry - candleRange * B_TPCandleMultiplier(b);
-                }
-                default:
-                    return isLong ? entry + B_FixedTakeProfit(b) : entry - B_FixedTakeProfit(b);
-            }
-        }
-
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  v1.07: Entry Filters — WMA, SMA, ADX
-        // ════════════════════════════════════════════════════════════════════════
-
-        private bool PassesWMAFilter(bool isLong, string bucket)
-        {
-            if (!B_EnableWMAFilter(bucket)) return true;
-            WMA w = GetWma(bucket);
-            return isLong ? Close[0] > w[0] : Close[0] < w[0];
-        }
-
-        private bool PassesSMAFilter(bool isLong, string bucket)
-        {
-            if (!B_EnableSMAFilter(bucket)) return true;
-            SMA s = GetSma(bucket);
-            return isLong ? Close[0] > s[0] : Close[0] < s[0];
-        }
-
-        private bool PassesADXFilter(string bucket)
-        {
-            if (!B_EnableADXFilter(bucket)) return true;
-            double val = GetAdx(bucket)[0];
-            return val >= B_ADXMin(bucket) && val <= B_ADXMax(bucket);
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Break-Even & EMA Trailing Stop — Bucket-aware
-        // ════════════════════════════════════════════════════════════════════════
-
-        private void CheckBreakEven()
-        {
-            if (activeBucket == null) return;
-            if (!B_EnableBreakEven(activeBucket) || breakEvenMoved || Position.MarketPosition == MarketPosition.Flat)
-                return;
-
-            double profit = 0, risk = 0;
-
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                profit = Close[0] - Position.AveragePrice;
-                risk   = Position.AveragePrice - currentStopPrice;
-            }
-            else
-            {
-                profit = Position.AveragePrice - Close[0];
-                risk   = currentStopPrice - Position.AveragePrice;
-            }
-
-            bool trigger = B_BreakEvenTriggerType(activeBucket) == Hugo_BreakEvenTriggerEnum.Points
-                ? profit >= B_BreakEvenTriggerValue(activeBucket)
-                : risk > 0 && (profit / risk) >= B_BreakEvenTriggerValue(activeBucket);
-
-            if (!trigger) return;
-
-            double newStop = Position.MarketPosition == MarketPosition.Long
-                ? Position.AveragePrice + B_BreakEvenOffset(activeBucket)
-                : Position.AveragePrice - B_BreakEvenOffset(activeBucket);
-
-            if (!TryUpdateProtectiveStop(Position.MarketPosition, newStop, "Break Even"))
-                return;
-
-            breakEvenMoved = true;
-            Print(Time[0] + " - " + activeBucket + " Break Even triggered. New stop: " + currentStopPrice);
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  v1.06: SL to Entry on EMA Cross — Bucket-aware, one-way ratchet
-        // ════════════════════════════════════════════════════════════════════════
-
-        private void CheckSLToEntryOnEMA(EMA e)
-        {
-            if (activeBucket == null) return;
-            if (!B_EnableSLToEntryOnEMA(activeBucket)) return;
-            if (slMovedToEntryOnEMA) return;  // already fired once, do not move back
-            if (Position.MarketPosition == MarketPosition.Flat) return;
-
-            bool isLong  = Position.MarketPosition == MarketPosition.Long;
-            bool emaCrossedPrice = isLong
-                ? e[0] > Close[0] && e[1] <= Close[1]   // EMA crossed above price (bearish for long)
-                : e[0] < Close[0] && e[1] >= Close[1];  // EMA crossed below price (bullish for short)
-
-            if (!emaCrossedPrice) return;
-
-            double offset   = B_SLToEntryOffset(activeBucket);
-            double newStop  = isLong
-                ? entryPrice + offset
-                : entryPrice - offset;
-
-            // Only move stop if it improves (protects capital)
-            bool improves = isLong ? newStop > currentStopPrice : newStop < currentStopPrice;
-            if (!improves) return;
-
-            if (!TryUpdateProtectiveStop(Position.MarketPosition, newStop, "SL to entry on EMA cross"))
-                return;
-
-            slMovedToEntryOnEMA = true;
-            Print(Time[0] + " - " + activeBucket + " SL moved to entry on EMA cross. New stop: "
-                + currentStopPrice.ToString("F2") + " (offset: " + offset + " pts)");
-        }
-
-        private void UpdateEMATrailingStop(EMA e)
-        {
-            if (breakEvenMoved) return;
-            if (activeBucket == null) return;
-
-            double newStop;
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                newStop = e[0] - B_StopLossOffset(activeBucket);
-                if (newStop > currentStopPrice)
-                    TryUpdateProtectiveStop(Position.MarketPosition, newStop, "EMA trail");
-            }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                newStop = e[0] + B_StopLossOffset(activeBucket);
-                if (newStop < currentStopPrice)
-                    TryUpdateProtectiveStop(Position.MarketPosition, newStop, "EMA trail");
-            }
+            SetStopLoss(CalculationMode.Price, newStop);
+            currentStopPrice = newStop;
+            Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Trail -> " + newStop.ToString("F2") + " | Profit: " + profit.ToString("F2") + " pts");
         }
 
         // ════════════════════════════════════════════════════════════════════════
         //  Helpers
         // ════════════════════════════════════════════════════════════════════════
 
+        private void ResetAllBucketCounters()
+        {
+            dailyPnL_Sess1_L1        = 0;
+            dailyTradeCount_Sess1_L1 = 0;
+            dailyLossHit_Sess1_L1    = false;
+            dailyProfitHit_Sess1_L1  = false;
+            dailyPnL_Sess1_L2        = 0;
+            dailyTradeCount_Sess1_L2 = 0;
+            dailyLossHit_Sess1_L2    = false;
+            dailyProfitHit_Sess1_L2  = false;
+            dailyPnL_Sess1_S1        = 0;
+            dailyTradeCount_Sess1_S1 = 0;
+            dailyLossHit_Sess1_S1    = false;
+            dailyProfitHit_Sess1_S1  = false;
+            dailyPnL_Sess1_S2        = 0;
+            dailyTradeCount_Sess1_S2 = 0;
+            dailyLossHit_Sess1_S2    = false;
+            dailyProfitHit_Sess1_S2  = false;
+            dailyPnL_Sess2_L1        = 0;
+            dailyTradeCount_Sess2_L1 = 0;
+            dailyLossHit_Sess2_L1    = false;
+            dailyProfitHit_Sess2_L1  = false;
+            dailyPnL_Sess2_L2        = 0;
+            dailyTradeCount_Sess2_L2 = 0;
+            dailyLossHit_Sess2_L2    = false;
+            dailyProfitHit_Sess2_L2  = false;
+            dailyPnL_Sess2_S1        = 0;
+            dailyTradeCount_Sess2_S1 = 0;
+            dailyLossHit_Sess2_S1    = false;
+            dailyProfitHit_Sess2_S1  = false;
+            dailyPnL_Sess2_S2        = 0;
+            dailyTradeCount_Sess2_S2 = 0;
+            dailyLossHit_Sess2_S2    = false;
+            dailyProfitHit_Sess2_S2  = false;
+            dailyPnL_Sess3_L1        = 0;
+            dailyTradeCount_Sess3_L1 = 0;
+            dailyLossHit_Sess3_L1    = false;
+            dailyProfitHit_Sess3_L1  = false;
+            dailyPnL_Sess3_L2        = 0;
+            dailyTradeCount_Sess3_L2 = 0;
+            dailyLossHit_Sess3_L2    = false;
+            dailyProfitHit_Sess3_L2  = false;
+            dailyPnL_Sess3_S1        = 0;
+            dailyTradeCount_Sess3_S1 = 0;
+            dailyLossHit_Sess3_S1    = false;
+            dailyProfitHit_Sess3_S1  = false;
+            dailyPnL_Sess3_S2        = 0;
+            dailyTradeCount_Sess3_S2 = 0;
+            dailyLossHit_Sess3_S2    = false;
+            dailyProfitHit_Sess3_S2  = false;
+            dailyPnL_Sess4_L1        = 0;
+            dailyTradeCount_Sess4_L1 = 0;
+            dailyLossHit_Sess4_L1    = false;
+            dailyProfitHit_Sess4_L1  = false;
+            dailyPnL_Sess4_L2        = 0;
+            dailyTradeCount_Sess4_L2 = 0;
+            dailyLossHit_Sess4_L2    = false;
+            dailyProfitHit_Sess4_L2  = false;
+            dailyPnL_Sess4_S1        = 0;
+            dailyTradeCount_Sess4_S1 = 0;
+            dailyLossHit_Sess4_S1    = false;
+            dailyProfitHit_Sess4_S1  = false;
+            dailyPnL_Sess4_S2        = 0;
+            dailyTradeCount_Sess4_S2 = 0;
+            dailyLossHit_Sess4_S2    = false;
+            dailyProfitHit_Sess4_S2  = false;
+        }
+
         private void ResetTrailState()
         {
             bestPriceSinceEntry = entryPrice;
             trailActivated      = false;
             trailLocked         = false;
-        }
-
-        private void CancelPendingEntryWork()
-        {
-            if (entryOrder != null)
-            {
-                CancelOrder(entryOrder);
-                entryOrder = null;
-            }
-
-            pendingLongFilterWait  = false;
-            pendingShortFilterWait = false;
-            pendingFilterBucket    = null;
-        }
-
-        private double GetReferencePriceForProtectiveStop(MarketPosition positionDirection)
-        {
-            if (positionDirection == MarketPosition.Long)
-            {
-                double bid = GetCurrentBid();
-                if (bid > 0)
-                    return bid;
-            }
-            else if (positionDirection == MarketPosition.Short)
-            {
-                double ask = GetCurrentAsk();
-                if (ask > 0)
-                    return ask;
-            }
-
-            return Close[0];
-        }
-
-        private bool CanAmendProtectiveStopForCurrentMarket(MarketPosition positionDirection, double proposedStopPrice)
-        {
-            if (double.IsNaN(proposedStopPrice) || double.IsInfinity(proposedStopPrice) || proposedStopPrice <= 0)
-                return false;
-
-            double referencePrice = GetReferencePriceForProtectiveStop(positionDirection);
-            if (double.IsNaN(referencePrice) || double.IsInfinity(referencePrice) || referencePrice <= 0)
-                return true;
-
-            if (positionDirection == MarketPosition.Long)
-                return proposedStopPrice < referencePrice;
-            if (positionDirection == MarketPosition.Short)
-                return proposedStopPrice > referencePrice;
-
-            return true;
-        }
-
-        private bool TryUpdateProtectiveStop(MarketPosition positionDirection, double proposedStopPrice, string context)
-        {
-            double roundedStop = Instrument.MasterInstrument.RoundToTickSize(proposedStopPrice);
-            if (State == State.Realtime && !CanAmendProtectiveStopForCurrentMarket(positionDirection, roundedStop))
-            {
-                Print(Time[0] + " - " + (activeBucket ?? "?") + " " + context + " skipped: proposed stop "
-                    + roundedStop.ToString("F2") + " is on the wrong side of market for " + positionDirection + ".");
-                return false;
-            }
-
-            SetStopLoss(CalculationMode.Price, roundedStop);
-            currentStopPrice = roundedStop;
-            return true;
-        }
-
-        private bool CanPlaceLongLimitSafely(double limitPrice, string context)
-        {
-            if (State != State.Realtime)
-                return true;
-
-            double referencePrice = GetCurrentAsk();
-            if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
-                referencePrice = Close[0];
-
-            if (referencePrice <= limitPrice)
-            {
-                Print(Time[0] + " - " + (activeBucket ?? "?") + " " + context + " skipped: price "
-                    + referencePrice.ToString("F2") + " already <= limit " + limitPrice.ToString("F2") + ".");
-                return false;
-            }
-
-            return true;
-        }
-
-        private bool CanPlaceShortLimitSafely(double limitPrice, string context)
-        {
-            if (State != State.Realtime)
-                return true;
-
-            double referencePrice = GetCurrentBid();
-            if (referencePrice <= 0 || double.IsNaN(referencePrice) || double.IsInfinity(referencePrice))
-                referencePrice = Close[0];
-
-            if (referencePrice >= limitPrice)
-            {
-                Print(Time[0] + " - " + (activeBucket ?? "?") + " " + context + " skipped: price "
-                    + referencePrice.ToString("F2") + " already >= limit " + limitPrice.ToString("F2") + ".");
-                return false;
-            }
-
-            return true;
         }
 
         private void CancelAllOrders()
@@ -3610,163 +6814,159 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void ResetSignals()
         {
-            longSignalActive       = false;
-            shortSignalActive      = false;
-            pendingDirection       = 0;
-            entryOrder             = null;
-            pendingLongFilterWait  = false;
-            pendingShortFilterWait = false;
-            pendingFilterBucket    = null;
+            longSignalActive  = false;
+            shortSignalActive = false;
+            pendingDirection  = 0;
+            entryOrder        = null;
         }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Order / Execution Callbacks
+        // ════════════════════════════════════════════════════════════════════════
+
+        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice,
+            int quantity, int filled, double averageFillPrice,
+            OrderState orderState, DateTime time, ErrorCode error, string nativeError)
+        {
+            if (order == null) return;
+            if (order.Name == LongEntrySignalName || order.Name == ShortEntrySignalName)
+            {
+                if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
+                {
+                    SendWebhook("cancel");
+                    entryOrder = null; ResetSignals();
+                }
+                else if (orderState == OrderState.Filled)
+                {
+                    entryOrder  = null;
+                    entryPrice  = averageFillPrice;
+                    bestPriceSinceEntry = averageFillPrice;
+                }
+            }
+        }
+
+        protected override void OnExecutionUpdate(Execution execution, string executionId,
+            double price, int quantity, MarketPosition marketPosition,
+            string orderId, DateTime time)
+        {
+            if (execution == null || execution.Order == null) return;
+
+            // ── Webhook: fire on entry fills ─────────────────────────────────
+            string orderName = execution.Order.Name ?? string.Empty;
+            if (orderName == LongEntrySignalName || orderName == ShortEntrySignalName)
+            {
+                string action = orderName == LongEntrySignalName ? "buy" : "sell";
+                bool isMarket = execution.Order.OrderType == OrderType.Market || execution.Order.OrderType == OrderType.StopMarket;
+                SendWebhook(action, price, 0, currentStopPrice, isMarket, quantity);
+                return;
+            }
+
+            if (Position.MarketPosition != MarketPosition.Flat) return;
+
+            double tradePnL = 0;
+            if (SystemPerformance != null && SystemPerformance.AllTrades.Count > 0)
+                tradePnL = SystemPerformance.AllTrades[SystemPerformance.AllTrades.Count - 1].ProfitPoints;
+
+            globalDailyPnL        += tradePnL;
+            globalDailyTradeCount += 1;
+            if (activeBucket != null && activeSession != 0)
+            {
+                AddBucketDailyPnL(activeSession, activeBucket, tradePnL);
+                IncBucketTradeCount(activeSession, activeBucket);
+            }
+            lastTradeDirection[activeSession] = currentTradeDirection;
+            lastTradePnL[activeSession]       = tradePnL;
+            Print(Time[0] + " - Sess" + activeSession + " " + (activeBucket ?? "?") + " Trade #" + globalDailyTradeCount
+                + " closed. " + (lastTradeDirection[activeSession] == 1 ? "Long" : "Short")
+                + ". P&L: " + tradePnL + " pts. Global: " + globalDailyPnL + " pts.");
+
+            // ── Webhook: fire exit ───────────────────────────────────────────
+            SendWebhook("exit", 0, 0, 0, true, quantity);
+
+            ResetSignals();
+            breakEvenMoved      = false;
+            activeBucket        = null;
+            activeSession       = 0;
+            ResetTrailState();
+            initialStopDistance = 0;
+            initialTPDistance   = 0;
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Commercial: Entry Confirmation
+        // ════════════════════════════════════════════════════════════════════════
 
         private bool ShowEntryConfirmation(string orderType, double price, int quantity)
         {
-            if (State != State.Realtime)
-                return true;
-
+            if (State != State.Realtime) return true;
             bool result = false;
-            if (System.Windows.Application.Current == null)
-                return false;
-
+            if (System.Windows.Application.Current == null) return false;
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 string message = string.Format(CultureInfo.InvariantCulture,
-                    "Confirm {0} entry?\nPrice: {1:F2}\nQuantity: {2}",
-                    orderType,
-                    price,
-                    quantity);
-                MessageBoxResult response = System.Windows.MessageBox.Show(
-                    message,
-                    "Entry Confirmation",
-                    System.Windows.MessageBoxButton.YesNo,
-                    System.Windows.MessageBoxImage.Question);
+                    "Confirm {0} entry?\nPrice: {1:F2}\nQuantity: {2}", orderType, price, quantity);
+                MessageBoxResult response = System.Windows.MessageBox.Show(message, "Entry Confirmation",
+                    System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
                 result = response == System.Windows.MessageBoxResult.Yes;
             });
-
             return result;
         }
 
-        private bool TryGetEntryWebhookAction(Execution execution, out string action, out bool isMarketEntry)
+        // ════════════════════════════════════════════════════════════════════════
+        //  Commercial: Max Account Balance
+        // ════════════════════════════════════════════════════════════════════════
+
+        private bool IsAccountBalanceBlocked()
         {
-            action = null;
-            isMarketEntry = false;
-
-            if (execution == null || execution.Order == null)
-                return false;
-
-            string orderName = execution.Order.Name ?? string.Empty;
-            if (!IsLongEntryOrderName(orderName) && !IsShortEntryOrderName(orderName))
-                return false;
-
-            action = IsLongEntryOrderName(orderName) ? "buy" : "sell";
-            OrderType orderType = execution.Order.OrderType;
-            isMarketEntry = orderType == OrderType.Market || orderType == OrderType.StopMarket;
+            if (MaxAccountBalance <= 0.0) return false;
+            double balance;
+            if (!TryGetCurrentNetLiquidation(out balance)) return false;
+            if (balance >= MaxAccountBalance && !maxAccountLimitHit)
+            {
+                maxAccountLimitHit = true;
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} - Max account balance reached | netLiq={1:0.00} target={2:0.00}",
+                    Time[0], balance, MaxAccountBalance));
+            }
+            if (!maxAccountLimitHit) return false;
+            if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; }
+            if (Position.MarketPosition == MarketPosition.Long)  ExitLong("MaxAccountBalance");
+            if (Position.MarketPosition == MarketPosition.Short) ExitShort("MaxAccountBalance");
             return true;
         }
 
-        private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
+        private bool TryGetCurrentNetLiquidation(out double netLiquidation)
         {
-            if (execution == null || execution.Order == null)
-                return false;
-
-            if (IsLongEntryOrderName(orderName) || IsShortEntryOrderName(orderName))
-                return false;
-
-            string fromEntry = execution.Order.FromEntrySignal ?? string.Empty;
-            if (IsLongEntryOrderName(fromEntry) || IsShortEntryOrderName(fromEntry))
-                return true;
-
-            return marketPosition == MarketPosition.Flat;
-        }
-
-        private int GetDefaultWebhookQuantity()
-        {
-            return Math.Max(1, ContractQuantity);
-        }
-
-        private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
-        {
-            if (State != State.Realtime)
-                return;
-            if (string.IsNullOrWhiteSpace(WebhookUrl))
-                return;
-
+            netLiquidation = 0.0;
+            if (Account == null) return false;
             try
             {
-                int orderQty = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
-                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
-                    ? WebhookTickerOverride.Trim()
-                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
-                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
-                string json = string.Empty;
-                string action = (eventType ?? string.Empty).ToLowerInvariant();
-
-                if (action == "buy" || action == "sell")
-                {
-                    string takeProfitPart = takeProfit > 0
-                        ? string.Format(CultureInfo.InvariantCulture, ",\"takeProfit\":{{\"limitPrice\":{0}}}", takeProfit)
-                        : string.Empty;
-                    string stopLossPart = stopLoss > 0
-                        ? string.Format(CultureInfo.InvariantCulture, ",\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{0}}}", stopLoss)
-                        : string.Empty;
-
-                    json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"time\":\"{5}\"{6}{7}}}",
-                        ticker,
-                        action,
-                        isMarketEntry ? "market" : "limit",
-                        orderQty,
-                        entryPrice,
-                        timestamp,
-                        takeProfitPart,
-                        stopLossPart);
-                }
-                else if (action == "exit")
-                {
-                    json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"exit\",\"orderType\":\"market\",\"quantityType\":\"fixed_quantity\",\"quantity\":{1},\"cancel\":true,\"time\":\"{2}\"}}",
-                        ticker,
-                        orderQty,
-                        timestamp);
-                }
-                else if (action == "cancel")
-                {
-                    json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"cancel\",\"time\":\"{1}\"}}",
-                        ticker,
-                        timestamp);
-                }
-
-                if (string.IsNullOrWhiteSpace(json))
-                    return;
-
-                using (var client = new System.Net.WebClient())
-                {
-                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
-                    client.UploadString(WebhookUrl, "POST", json);
-                }
+                netLiquidation = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                if (netLiquidation > 0.0) return true;
+                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                double unrealized = Position.MarketPosition != MarketPosition.Flat
+                    ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]) : 0.0;
+                netLiquidation = realizedCash + unrealized;
+                return realizedCash > 0.0 || Position.MarketPosition != MarketPosition.Flat;
             }
-            catch
-            {
-            }
+            catch { return false; }
         }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Commercial: Info Box Overlay
+        // ════════════════════════════════════════════════════════════════════════
 
         private void UpdateInfoBox()
         {
-            if (State != State.Realtime && State != State.Historical)
-                return;
-            if (ChartControl == null || ChartControl.Dispatcher == null)
-                return;
-
+            if (State != State.Realtime && State != State.Historical) return;
+            if (ChartControl == null || ChartControl.Dispatcher == null) return;
             var lines = BuildInfoLines();
             ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines));
         }
 
         private void RenderInfoBoxOverlay(List<(string label, string value, Brush labelBrush, Brush valueBrush)> lines)
         {
-            if (!EnsureInfoBoxOverlay() || infoBoxRowsPanel == null)
-                return;
-
+            if (!EnsureInfoBoxOverlay() || infoBoxRowsPanel == null) return;
             infoBoxRowsPanel.Children.Clear();
             for (int i = 0; i < lines.Count; i++)
             {
@@ -3774,40 +6974,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 bool isFooter = i == lines.Count - 1;
                 var rowBorder = new Border
                 {
-                    Background = (isHeader || isFooter)
-                        ? InfoHeaderFooterGradientBrush
+                    Background = (isHeader || isFooter) ? InfoHeaderFooterGradientBrush
                         : (i % 2 == 0 ? InfoBodyEvenBrush : InfoBodyOddBrush),
                     Padding = new Thickness(6, 2, 6, 2)
                 };
-
                 var text = new TextBlock
                 {
-                    FontFamily = new FontFamily("Segoe UI"),
-                    FontSize = isHeader ? 15 : 14,
-                    FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal,
+                    FontFamily    = new FontFamily("Segoe UI"),
+                    FontSize      = isHeader ? 15 : 14,
+                    FontWeight    = isHeader ? FontWeights.SemiBold : FontWeights.Normal,
                     TextAlignment = (isHeader || isFooter) ? TextAlignment.Center : TextAlignment.Left,
                     HorizontalAlignment = HorizontalAlignment.Stretch
                 };
                 TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
-
                 string label = lines[i].label ?? string.Empty;
                 string value = lines[i].value ?? string.Empty;
-
                 text.Inlines.Add(new Run(label)
                 {
                     Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : (lines[i].labelBrush ?? InfoLabelBrush)
                 });
-
                 if (!string.IsNullOrEmpty(value))
                 {
-                    Brush valueBrush = lines[i].valueBrush ?? InfoValueBrush;
-                    text.Inlines.Add(new Run(" ")
-                    {
-                        Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : (lines[i].labelBrush ?? InfoLabelBrush)
-                    });
-                    text.Inlines.Add(new Run(value) { Foreground = valueBrush });
+                    Brush vb = lines[i].valueBrush ?? InfoValueBrush;
+                    text.Inlines.Add(new Run(" ") { Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : (lines[i].labelBrush ?? InfoLabelBrush) });
+                    text.Inlines.Add(new Run(value) { Foreground = vb });
                 }
-
                 rowBorder.Child = text;
                 infoBoxRowsPanel.Children.Add(rowBorder);
             }
@@ -3815,25 +7006,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool EnsureInfoBoxOverlay()
         {
-            if (ChartControl == null)
-                return false;
-            if (infoBoxContainer != null && infoBoxRowsPanel != null)
-                return true;
-
+            if (ChartControl == null) return false;
+            if (infoBoxContainer != null && infoBoxRowsPanel != null) return true;
             var host = ChartControl.Parent as System.Windows.Controls.Panel;
-            if (host == null)
-                return false;
-
+            if (host == null) return false;
             infoBoxRowsPanel = new StackPanel { Orientation = Orientation.Vertical };
             infoBoxContainer = new Border
             {
                 Child = infoBoxRowsPanel,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(5, 8, 8, 37),
+                VerticalAlignment   = VerticalAlignment.Bottom,
+                Margin     = new Thickness(5, 8, 8, 37),
                 Background = Brushes.Transparent
             };
-
             host.Children.Add(infoBoxContainer);
             System.Windows.Controls.Panel.SetZIndex(infoBoxContainer, int.MaxValue);
             return true;
@@ -3844,36 +7029,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             try
             {
                 if (ChartControl == null || ChartControl.Dispatcher == null)
-                {
-                    infoBoxRowsPanel = null;
-                    infoBoxContainer = null;
-                    return;
-                }
-
+                { infoBoxRowsPanel = null; infoBoxContainer = null; return; }
                 ChartControl.Dispatcher.InvokeAsync(() =>
                 {
                     if (infoBoxContainer != null)
                     {
                         var parent = infoBoxContainer.Parent as System.Windows.Controls.Panel;
-                        if (parent != null)
-                            parent.Children.Remove(infoBoxContainer);
+                        if (parent != null) parent.Children.Remove(infoBoxContainer);
                     }
-
-                    infoBoxRowsPanel = null;
-                    infoBoxContainer = null;
+                    infoBoxRowsPanel = null; infoBoxContainer = null;
                 });
             }
-            catch
-            {
-                infoBoxRowsPanel = null;
-                infoBoxContainer = null;
-            }
+            catch { infoBoxRowsPanel = null; infoBoxContainer = null; }
         }
 
         private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
         {
-            var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
-            lines.Add((string.Format("HUGO v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            var lines = new List<(string, string, Brush, Brush)>();
+            lines.Add(("HUGO Multi v1", string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", ContractQuantity.ToString(CultureInfo.InvariantCulture), Brushes.LightGray, InfoValueBrush));
             if (!UseNewsSkip)
             {
@@ -3883,31 +7056,147 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
                 if (weekNews.Count == 0)
-                {
-                    lines.Add(("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
-                }
+                    lines.Add(("News:", "None this week", Brushes.LightGray, Brushes.IndianRed));
                 else
-                {
                     for (int i = 0; i < weekNews.Count; i++)
                     {
-                        DateTime newsTime = weekNews[i];
-                        bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
-                        string value = newsTime.ToString("ddd", CultureInfo.InvariantCulture) + " " + newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
-                        Brush newsBrush = blockPassed ? PassedNewsRowBrush : InfoValueBrush;
-                        lines.Add(("News:", value, newsBrush, newsBrush));
+                        DateTime nt = weekNews[i];
+                        bool passed = Time[0] > nt.AddMinutes(NewsBlockMinutes);
+                        string val  = nt.ToString("ddd", CultureInfo.InvariantCulture) + " " + nt.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                        Brush nb = passed ? PassedNewsRowBrush : InfoValueBrush;
+                        lines.Add(("News:", val, nb, nb));
                     }
-                }
             }
-            lines.Add(("Current Session:", GetCurrentSessionInfoText(Time[0]), Brushes.LightGray, InfoValueBrush));
+            lines.Add(("Session:", GetCurrentSessionInfoText(Time[0]), Brushes.LightGray, InfoValueBrush));
             lines.Add(("AutoEdge Systems™", string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             return lines;
         }
 
+        private string GetCurrentSessionInfoText(DateTime time)
+        {
+            if (State < State.DataLoaded) return "None";
+            double bsm = ToSessionMinutes(time.TimeOfDay);
+            int sess = ResolveActiveSession(bsm);
+            return sess == 0 ? "None" : string.Format(CultureInfo.InvariantCulture, "Session {0}", sess);
+        }
+
+        private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            try { if (brush.CanFreeze) brush.Freeze(); } catch { }
+            return brush;
+        }
+
+        private static Brush CreateFrozenVerticalGradientBrush(Color top, Color mid, Color bottom)
+        {
+            var brush = new LinearGradientBrush { StartPoint = new Point(0.5, 0.0), EndPoint = new Point(0.5, 1.0) };
+            brush.GradientStops.Add(new GradientStop(top, 0.0));
+            brush.GradientStops.Add(new GradientStop(mid, 0.5));
+            brush.GradientStops.Add(new GradientStop(bottom, 1.0));
+            try { if (brush.CanFreeze) brush.Freeze(); } catch { }
+            return brush;
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Commercial: Chart Drawing (Session windows, skip, news)
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void DrawSessionTimeWindows()
+        {
+            if (CurrentBar < 1) return;
+            DrawSessionBackground(Time[0]);
+            DrawSkipWindow(Time[0]);
+            DrawNewsWindow(Time[0]);
+        }
+
+        private void DrawSessionBackground(DateTime barTime)
+        {
+            for (int s = 1; s <= 4; s++)
+            {
+                if (!GetSessEnable(s)) continue;
+                string twStart = GetSessTradeWindowStartStr(s);
+                string sessEnd = GetSessSessionEndStr(s);
+                if (string.IsNullOrEmpty(twStart) || string.IsNullOrEmpty(sessEnd)) continue;
+                TimeSpan tsS, tsE;
+                if (!TimeSpan.TryParse(twStart, out tsS) || !TimeSpan.TryParse(sessEnd, out tsE)) continue;
+                double startSM = ToSessionMinutes(tsS);
+                double endSM   = ToSessionMinutes(tsE);
+                if (startSM == endSM) continue;
+                string tag = string.Format("HugoMulti_Sess{0}_{1:yyyyMMdd}", s, barTime.Date);
+                if (DrawObjects[tag] != null) continue;
+                DateTime ws = barTime.Date + tsS;
+                DateTime we = barTime.Date + tsE;
+                if (we <= ws) we = we.AddDays(1);
+                Draw.Rectangle(this, tag, false, ws, 0, we, 30000, Brushes.Transparent, Brushes.Gold, 10).ZOrder = -1;
+            }
+        }
+
+        private string GetSessTradeWindowStartStr(int s) { switch(s) { case 1: return Sess1_TradeWindowStart; case 2: return Sess2_TradeWindowStart; case 3: return Sess3_TradeWindowStart; case 4: return Sess4_TradeWindowStart; default: return "00:00"; } }
+        private string GetSessSessionEndStr(int s)        { switch(s) { case 1: return Sess1_SessionEndTime;  case 2: return Sess2_SessionEndTime;  case 3: return Sess3_SessionEndTime;  case 4: return Sess4_SessionEndTime;  default: return "17:00"; } }
+
+        private void DrawSkipWindow(DateTime barTime)
+        {
+            if (!EnableSkipTime || string.IsNullOrEmpty(SkipTimeStart) || string.IsNullOrEmpty(SkipTimeEnd)) return;
+            TimeSpan ss, se;
+            if (!TimeSpan.TryParse(SkipTimeStart, out ss) || !TimeSpan.TryParse(SkipTimeEnd, out se)) return;
+            DateTime ws = barTime.Date + ss;
+            DateTime we = barTime.Date + se;
+            if (we <= ws) we = we.AddDays(1);
+            string tag = string.Format("HugoMulti_Skip_{0:yyyyMMdd_HHmm}", ws);
+            if (DrawObjects[tag + "_Rect"] != null) return;
+            var areaBrush = new SolidColorBrush(Color.FromArgb(60, 255, 0, 0));
+            var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+            try { if (areaBrush.CanFreeze) areaBrush.Freeze(); if (lineBrush.CanFreeze) lineBrush.Freeze(); } catch { }
+            Draw.Rectangle(this, tag + "_Rect", false, ws, 0, we, 30000, lineBrush, areaBrush, 2).ZOrder = -1;
+            Draw.VerticalLine(this, tag + "_Start", ws, Brushes.Red, DashStyleHelper.DashDot, 2);
+            Draw.VerticalLine(this, tag + "_End",   we, Brushes.Red, DashStyleHelper.DashDot, 2);
+        }
+
+        private void DrawNewsWindow(DateTime barTime)
+        {
+            if (!UseNewsSkip) return;
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barTime.Date) continue;
+                DateTime ws = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime we = newsTime.AddMinutes(NewsBlockMinutes);
+                string tag = string.Format("HugoMulti_News_{0:yyyyMMdd_HHmm}", newsTime);
+                if (DrawObjects[tag + "_Rect"] != null) continue;
+                var areaBrush = new SolidColorBrush(Color.FromArgb(60, 255, 165, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
+                try { if (areaBrush.CanFreeze) areaBrush.Freeze(); if (lineBrush.CanFreeze) lineBrush.Freeze(); } catch { }
+                Draw.Rectangle(this, tag + "_Rect", false, ws, 0, we, 30000, lineBrush, areaBrush, 2).ZOrder = -1;
+                Draw.VerticalLine(this, tag + "_Start", ws, lineBrush, DashStyleHelper.DashDot, 2);
+                Draw.VerticalLine(this, tag + "_End",   we, lineBrush, DashStyleHelper.DashDot, 2);
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Commercial: News Skip Window Logic
+        // ════════════════════════════════════════════════════════════════════════
+
+        private bool IsNewsWindowConfigured()
+        {
+            return UseNewsSkip && NewsBlockMinutes > 0 && NewsDates.Count > 0;
+        }
+
+        private bool IsInNewsSkipWindow(DateTime barTime)
+        {
+            if (!IsNewsWindowConfigured()) return false;
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                DateTime ws = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime we = newsTime.AddMinutes(NewsBlockMinutes);
+                if (barTime >= ws && barTime < we) return true;
+            }
+            return false;
+        }
+
         private void EnsureNewsDatesInitialized()
         {
-            if (newsDatesInitialized)
-                return;
-
+            if (newsDatesInitialized) return;
             NewsDates.Clear();
             LoadHardcodedNewsDates();
             NewsDates.Sort();
@@ -3916,9 +7205,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void LoadHardcodedNewsDates()
         {
-            if (string.IsNullOrWhiteSpace(NewsDatesRaw))
-                return;
-
+            if (string.IsNullOrWhiteSpace(NewsDatesRaw)) return;
             string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < entries.Length; i++)
             {
@@ -3933,184 +7220,136 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private List<DateTime> GetCurrentWeekNews(DateTime time)
         {
             EnsureNewsDatesInitialized();
-
             var weekNews = new List<DateTime>();
-            DateTime weekStart = GetWeekStart(time.Date);
-            DateTime weekEnd = weekStart.AddDays(7);
+            DayOfWeek firstDay = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+            int diff = (7 + (time.DayOfWeek - firstDay)) % 7;
+            DateTime weekStart = time.Date.AddDays(-diff);
+            DateTime weekEnd   = weekStart.AddDays(7);
             for (int i = 0; i < NewsDates.Count; i++)
             {
-                DateTime candidate = NewsDates[i];
-                if (candidate >= weekStart && candidate < weekEnd)
-                    weekNews.Add(candidate);
+                DateTime c = NewsDates[i];
+                if (c >= weekStart && c < weekEnd) weekNews.Add(c);
             }
-
             weekNews.Sort();
             return weekNews;
         }
 
-        private DateTime GetWeekStart(DateTime date)
-        {
-            DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
-            int diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
-            return date.AddDays(-diff).Date;
-        }
+        // ════════════════════════════════════════════════════════════════════════
+        //  Commercial: Webhook (TradersPost)
+        // ════════════════════════════════════════════════════════════════════════
 
-        private string GetCurrentSessionInfoText(DateTime time)
+        private void SendWebhook(string eventType, double entryPx = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
         {
-            TimeSpan now = time.TimeOfDay;
-            TimeSpan asiaStart = new TimeSpan(19, 0, 0);
-            TimeSpan londonStart = new TimeSpan(2, 7, 0);
-            TimeSpan newYorkStart = new TimeSpan(9, 42, 0);
-
-            if (now >= asiaStart || now < londonStart)
-                return "Asia";
-            if (now >= londonStart && now < newYorkStart)
-                return "London";
-            return "New York";
-        }
-
-        private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
-        {
-            var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            if (State != State.Realtime) return;
+            if (string.IsNullOrWhiteSpace(WebhookUrl)) return;
             try
             {
-                if (brush.CanFreeze)
-                    brush.Freeze();
-            }
-            catch
-            {
-            }
+                int orderQty = quantityOverride > 0 ? quantityOverride : Math.Max(1, ContractQuantity);
+                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
+                    ? WebhookTickerOverride.Trim()
+                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
+                string json = string.Empty;
+                string action = (eventType ?? string.Empty).ToLowerInvariant();
 
-            return brush;
+                if (action == "buy" || action == "sell")
+                {
+                    string tpPart = takeProfit > 0
+                        ? string.Format(CultureInfo.InvariantCulture, ",\"takeProfit\":{{\"limitPrice\":{0}}}", takeProfit)
+                        : string.Empty;
+                    string slPart = stopLoss > 0
+                        ? string.Format(CultureInfo.InvariantCulture, ",\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{0}}}", stopLoss)
+                        : string.Empty;
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"time\":\"{5}\"{6}{7}}}",
+                        ticker, action, isMarketEntry ? "market" : "limit", orderQty, entryPx, timestamp, tpPart, slPart);
+                }
+                else if (action == "exit")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"exit\",\"orderType\":\"market\",\"quantityType\":\"fixed_quantity\",\"quantity\":{1},\"cancel\":true,\"time\":\"{2}\"}}",
+                        ticker, orderQty, timestamp);
+                }
+                else if (action == "cancel")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"cancel\",\"time\":\"{1}\"}}",
+                        ticker, timestamp);
+                }
+                if (string.IsNullOrWhiteSpace(json)) return;
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    client.UploadString(WebhookUrl, "POST", json);
+                }
+            }
+            catch { }
         }
 
-        private static Brush CreateFrozenVerticalGradientBrush(Color top, Color mid, Color bottom)
+        // ════════════════════════════════════════════════════════════════════════
+        //  Commercial: Timeframe & Instrument Validation (Order Handling Protection)
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
         {
-            var brush = new LinearGradientBrush
-            {
-                StartPoint = new Point(0.5, 0.0),
-                EndPoint = new Point(0.5, 1.0)
-            };
-            brush.GradientStops.Add(new GradientStop(top, 0.0));
-            brush.GradientStops.Add(new GradientStop(mid, 0.5));
-            brush.GradientStops.Add(new GradientStop(bottom, 1.0));
+            bool ok = BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute && BarsPeriod.Value == requiredMinutes;
+            isConfiguredTimeframeValid = ok;
+            if (ok) return;
+            string actual = BarsPeriod == null ? "Unknown"
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
+            string msg = string.Format(CultureInfo.InvariantCulture,
+                "{0} must run on a {1}-minute chart. Current: {2}. Trading disabled until corrected.", Name, requiredMinutes, actual);
+            Print("Timeframe validation failed | " + msg);
+            ShowValidationPopup(msg, "Invalid Timeframe", ref timeframePopupShown);
+        }
+
+        private void ValidateRequiredPrimaryInstrument()
+        {
+            string inst = Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant() : string.Empty;
+            bool ok = inst == "NQ" || inst == "MNQ";
+            isConfiguredInstrumentValid = ok;
+            if (ok) return;
+            string actual = string.IsNullOrWhiteSpace(inst) ? "Unknown" : inst;
+            string msg = string.Format(CultureInfo.InvariantCulture,
+                "{0} must run on NQ or MNQ. Current instrument: {1}. Trading disabled until corrected.", Name, actual);
+            Print("Instrument validation failed | " + msg);
+            ShowValidationPopup(msg, "Invalid Instrument", ref instrumentPopupShown);
+        }
+
+        private void ShowValidationPopup(string message, string title, ref bool shown)
+        {
+            if (shown) return;
+            shown = true;
+            if (ChartControl == null || System.Windows.Application.Current == null) return;
             try
             {
-                if (brush.CanFreeze)
-                    brush.Freeze();
+                System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try { System.Windows.MessageBox.Show(message, title, System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning); }
+                    catch { }
+                }));
             }
-            catch
-            {
-            }
-
-            return brush;
+            catch { }
         }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Commercial: Licensing helper (gets add-on version)
+        // ════════════════════════════════════════════════════════════════════════
 
         private string GetAddOnVersion()
         {
             Assembly assembly = GetType().Assembly;
             Version version = assembly.GetName().Version;
-            return version != null ? version.ToString() : "0.0.0.0";
+            return version != null ? version.ToString() : "1.0.0.0";
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  Order / Execution Callbacks
-        // ════════════════════════════════════════════════════════════════════════
-
-        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice,
-            int quantity, int filled, double averageFillPrice,
-            OrderState orderState, DateTime time, ErrorCode error, string nativeError)
-        {
-            if (order == null)
-                return;
-
-            if (IsLongEntryOrderName(order.Name) || IsShortEntryOrderName(order.Name))
-            {
-                if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
-                {
-                    SendWebhook("cancel");
-                    entryOrder = null;
-                    ResetSignals();
-                    activeBucket = null;
-                    currentTradeDirection = 0;
-                    currentTargetPrice = 0;
-                    if (string.Equals(order.Name ?? string.Empty, managedEntrySignal ?? string.Empty, StringComparison.Ordinal))
-                        managedEntrySignal = string.Empty;
-                }
-                else if (orderState == OrderState.Filled)
-                {
-                    entryOrder  = null;
-                    managedEntrySignal = order.Name ?? managedEntrySignal;
-                    entryPrice  = averageFillPrice;
-                    bestPriceSinceEntry = averageFillPrice;
-                    if (filled < quantity)
-                        Print(Time[0] + " - Partial fill: " + filled + " of " + quantity);
-                }
-            }
-        }
-
-        protected override void OnExecutionUpdate(Execution execution, string executionId,
-            double price, int quantity, MarketPosition marketPosition,
-            string orderId, DateTime time)
-        {
-            if (execution == null || execution.Order == null)
-                return;
-
-            string entryAction;
-            bool isMarketEntry;
-            if (TryGetEntryWebhookAction(execution, out entryAction, out isMarketEntry))
-            {
-                managedEntrySignal = execution.Order.Name ?? managedEntrySignal;
-                SendWebhook(entryAction, price, currentTargetPrice, currentStopPrice, isMarketEntry, quantity);
-                return;
-            }
-
-            if (Position.MarketPosition != MarketPosition.Flat)
-                return;
-
-            double tradePnL = 0;
-            if (SystemPerformance != null && SystemPerformance.AllTrades.Count > 0)
-                tradePnL = SystemPerformance.AllTrades[SystemPerformance.AllTrades.Count - 1].ProfitPoints;
-
-            // Update global P&L
-            globalDailyPnL        += tradePnL;
-            globalDailyTradeCount += 1;
-
-            // Update per-bucket P&L
-            if (activeBucket != null)
-            {
-                AddBucketDailyPnL(activeBucket, tradePnL);
-                IncBucketTradeCount(activeBucket);
-            }
-
-            // Update global direction flip state
-            lastTradeDirection = currentTradeDirection;
-            lastTradePnL       = tradePnL;
-
-            Print(Time[0] + " - " + (activeBucket ?? "?") + " Trade #" + globalDailyTradeCount
-                + " closed. Direction: " + (lastTradeDirection == 1 ? "Long" : "Short")
-                + ". P&L: " + tradePnL + " pts. Global Daily P&L: " + globalDailyPnL + " pts."
-                + (activeBucket != null ? " Bucket P&L: " + GetBucketDailyPnL(activeBucket) + " pts." : ""));
-
-            if (ShouldSendExitWebhook(execution, execution.Order.Name ?? string.Empty, marketPosition))
-                SendWebhook("exit", 0, 0, 0, true, quantity);
-
-            ResetSignals();
-            breakEvenMoved      = false;
-            slMovedToEntryOnEMA = false;
-            entryBar            = 0;
-            ResetTrailState();
-            initialStopDistance = 0;
-            initialTPDistance   = 0;
-            currentTargetPrice  = 0;
-            activeBucket        = null;
-            managedEntrySignal  = string.Empty;
-        }
-    }
+    }   // end class HUGO
 
     // ════════════════════════════════════════════════════════════════════════
-    //  Enums (unchanged from v1.03)
+    //  Enums
     // ════════════════════════════════════════════════════════════════════════
+
     public enum Hugo_EntryTypeEnum        { Immediate, WaitForPullback }
     public enum Hugo_StopLossTypeEnum     { Fixed, CandleHighLow, EMAFixed, EMATrailing, CandleMultiple }
     public enum Hugo_TakeProfitTypeEnum   { RiskReward, Fixed, EMACross, CandleMultiple }
