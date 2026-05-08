@@ -58,11 +58,6 @@ Strategies/EMALimitStrategy.cs
 Strategies/H1M5.cs
 Strategies/Model928.cs
 Strategies/Model930.cs
-Strategies/MultiBot/DuoCore.cs
-Strategies/MultiBot/DuoLogicCore.cs
-Strategies/MultiBot/OrboCore.cs
-Strategies/MultiBot/OrboLogicCore.cs
-Strategies/MultiBot/TradeIntent.cs
 Strategies/NfpCpi.cs
 Strategies/NineThirty.cs
 Strategies/Ninjascrips/
@@ -95,7 +90,6 @@ Strategies/red_news_times.txt
 /EVETesting.cs
 /FiveMin.cs
 /Heiken.cs
-/MultiBot/
 /ORBO.cs
 /ORBOTesting.cs
 /PassChallenge.cs
