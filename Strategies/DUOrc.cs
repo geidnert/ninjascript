@@ -210,6 +210,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int terminalExitPendingBar = -1;
         private MarketPosition terminalExitPendingSide = MarketPosition.Flat;
         private bool emergencyOverfillFlattenSubmitted;
+        private int lastStopOutFlipSubmittedBar = -1;
         private bool missingProtectionWarningPrinted;
         private bool isConfiguredTimeframeValid = true;
         private bool isConfiguredInstrumentValid = true;
@@ -218,6 +219,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const int EntryAtrPeriod = 14;
         private const string LongEntrySignal = "DUOrcLong";
         private const string ShortEntrySignal = "DUOrcShort";
+        private const string LongFlipEntrySignal = "DUOrcFlipLong";
+        private const string ShortFlipEntrySignal = "DUOrcFlipShort";
         // TEMP: Remove this date block after the April 7, 2025 backtest isolation is no longer needed.
         private static readonly DateTime TemporaryBlockedTradingDate = new DateTime(2025, 4, 7);
         private static readonly SessionSlot[] ConfigurableSessionSlots = new[]
@@ -702,6 +705,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0;
                 RequireEntryConfirmation = false;
+                EnableStopOutFlip = true;
 
                 DebugLogging = false;
             }
@@ -828,6 +832,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 asiaTradesThisSession = 0;
                 londonTradesThisSession = 0;
                 newYorkTradesThisSession = 0;
+                lastStopOutFlipSubmittedBar = -1;
                 lastPrintedNewsWeekStart = DateTime.MinValue;
 
                 EnsureNewsDatesInitialized(GetNewsReferenceStrategyTime(), true, true);
@@ -995,6 +1000,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Long)
             {
+                if (TrySubmitStopOutFlip(false, canTradeNow, shortSignal, emaValue))
+                    return;
+
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
                     if (TrySubmitTerminalExit("AdxLevelExit"))
@@ -1037,6 +1045,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
+                if (TrySubmitStopOutFlip(true, canTradeNow, longSignal, emaValue))
+                    return;
+
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
                     if (TrySubmitTerminalExit("AdxLevelExit"))
@@ -1376,6 +1387,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 : price;
             double fillPrice = Instrument.MasterInstrument.RoundToTickSize(effectiveFillPrice);
             bool terminalExitExecution = IsTerminalExitExecution(orderName);
+            MarketPosition stopOutOriginalSide = GetStopOutOriginalSide(execution);
+            bool shouldAttemptStopOutFlip = EnableStopOutFlip
+                && IsStopLossOrderName(orderName)
+                && Position.MarketPosition == MarketPosition.Flat
+                && stopOutOriginalSide != MarketPosition.Flat;
 
             if (IsEntryOrderName(orderName))
             {
@@ -1457,6 +1473,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     FinalizeTradeLines();
                 EndTradeAttempt("exit-" + orderName);
             }
+
+            if (shouldAttemptStopOutFlip)
+                TrySubmitStopOutExecutionFlip(stopOutOriginalSide, fillPrice);
 
             CancelWrongSideProtectiveOrders("execution-" + orderName);
             UpdateInfo();
@@ -1582,12 +1601,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
         private bool IsLongEntryOrderName(string orderName)
         {
-            return string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal);
+            return string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, LongFlipEntrySignal, StringComparison.Ordinal);
         }
 
         private bool IsShortEntryOrderName(string orderName)
         {
-            return string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal);
+            return string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, ShortFlipEntrySignal, StringComparison.Ordinal);
         }
 
         private string GetOpenLongEntrySignal()
@@ -3620,25 +3641,254 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Instrument.MasterInstrument.RoundToTickSize(Close[0]);
         }
 
+        private bool TrySubmitStopOutFlip(bool flipToLong, bool canTradeNow, bool oppositeSignal, double emaValue)
+        {
+            if (!EnableStopOutFlip || !IsStopOutClose(Position.MarketPosition))
+                return false;
+
+            return TrySubmitStopOutFlipEntry(
+                flipToLong,
+                canTradeNow,
+                oppositeSignal,
+                emaValue,
+                GetCurrentStopOutReferencePrice(),
+                "close");
+        }
+
+        private bool TrySubmitStopOutExecutionFlip(MarketPosition stoppedSide, double stopFillPrice)
+        {
+            if (!EnableStopOutFlip || stoppedSide == MarketPosition.Flat || lastStopOutFlipSubmittedBar == CurrentBar)
+                return false;
+
+            if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())) || activeEma == null || CurrentBar < activeEmaPeriod)
+                return false;
+
+            bool flipToLong = stoppedSide == MarketPosition.Short;
+            double emaValue = activeEma[0];
+            bool bullish = Close[0] > Open[0];
+            bool bearish = Close[0] < Open[0];
+            double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
+            double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
+            double entryBodyPoints = Math.Abs(Close[0] - Open[0]);
+            bool entryBodyPasses = activeEntryMinBodyPoints <= 0.0 || entryBodyPoints >= activeEntryMinBodyPoints;
+            bool longSignal = bullish && bodyAbovePercent > 0.0 && entryBodyPasses;
+            bool shortSignal = bearish && bodyBelowPercent > 0.0 && entryBodyPasses;
+            bool oppositeSignal = flipToLong ? longSignal : shortSignal;
+
+            bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
+            bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
+            bool accountBlocked = IsAccountBalanceBlocked();
+            bool forceCloseBlocked = IsForceCloseTimeReached(Time[0]);
+            bool temporaryDateBlocked = IsTemporaryBlockedTradingDate(Time[0]);
+            bool london3FlatBlocked = IsLondon3FlatByTimeReached(Time[0]);
+            double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+            double atrValue = GetCurrentAtrValue();
+            bool adxMinPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
+            bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
+            bool atrMinPass = !inActiveSessionNow || activeMinimumAtrForEntry <= 0.0 || atrValue >= activeMinimumAtrForEntry;
+            bool canTradeNow = inActiveSessionNow
+                && !inNewsSkipNow
+                && !accountBlocked
+                && !forceCloseBlocked
+                && !temporaryDateBlocked
+                && !london3FlatBlocked
+                && adxMinPass
+                && adxMaxPass
+                && atrMinPass;
+
+            return TrySubmitStopOutFlipEntry(
+                flipToLong,
+                canTradeNow,
+                oppositeSignal,
+                emaValue,
+                stopFillPrice,
+                "stop-fill");
+        }
+
+        private bool TrySubmitStopOutFlipEntry(bool flipToLong, bool canTradeNow, bool oppositeSignal, double emaValue, double priorStopPrice, string source)
+        {
+            if (lastStopOutFlipSubmittedBar == CurrentBar)
+                return false;
+
+            string side = flipToLong ? "Long" : "Short";
+            string direction = flipToLong ? "SHORT->LONG" : "LONG->SHORT";
+
+            if (!canTradeNow || !oppositeSignal)
+            {
+                if (DebugLogging)
+                {
+                    LogDebug(string.Format(
+                        "Stop-out flip skipped | direction={0} source={1} canTrade={2} oppositeSignal={3} close={4:0.00} stop={5:0.00}",
+                        direction,
+                        source,
+                        canTradeNow,
+                        oppositeSignal,
+                        Close[0],
+                        priorStopPrice));
+                }
+                return false;
+            }
+
+            BeginTradeAttempt(side);
+
+            if (flipToLong)
+            {
+                CancelOrderIfActive(shortEntryOrder, "StopOutFlipToLong");
+                if (IsOrderActive(longEntryOrder))
+                {
+                    LogDebug(string.Format("Stop-out flip skipped | reason=longOrderActive tracked={0}", FormatOrderRef(longEntryOrder)));
+                    EndTradeAttempt("entry-order-active");
+                    return false;
+                }
+            }
+            else
+            {
+                CancelOrderIfActive(longEntryOrder, "StopOutFlipToShort");
+                if (IsOrderActive(shortEntryOrder))
+                {
+                    LogDebug(string.Format("Stop-out flip skipped | reason=shortOrderActive tracked={0}", FormatOrderRef(shortEntryOrder)));
+                    EndTradeAttempt("entry-order-active");
+                    return false;
+                }
+            }
+
+            double entryPrice = GetInitialEntryPrice();
+            double stopPrice = flipToLong
+                ? BuildLongEntryStopPrice(entryPrice, emaValue)
+                : BuildShortEntryStopPrice(entryPrice, emaValue);
+            int qty = GetEntryQuantity();
+            if (qty <= 0)
+            {
+                LogDebug(string.Format("Stop-out flip skipped | direction={0} reason=contracts-disabled", direction));
+                EndTradeAttempt("contracts-disabled");
+                return false;
+            }
+
+            double takeProfitPoints = GetConfiguredEntryTakeProfitPoints();
+            double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, flipToLong);
+
+            if (RequireEntryConfirmation && !ShowEntryConfirmation(side, entryPrice, qty))
+            {
+                LogDebug(string.Format("Entry confirmation declined | Stop-out flip {0}.", direction));
+                EndTradeAttempt("confirmation-declined");
+                return false;
+            }
+
+            SubmitPreparedInitialEntry(
+                flipToLong,
+                qty,
+                entryPrice,
+                stopPrice,
+                takeProfitPoints,
+                takeProfitPrice,
+                flipToLong ? LongFlipEntrySignal : ShortFlipEntrySignal);
+            DrawStopOutFlipMarker(flipToLong);
+            lastStopOutFlipSubmittedBar = CurrentBar;
+            LogDebug(string.Format(
+                "Stop-out flip {0} | source={1} session={2} entry={3:0.00} stop={4:0.00} priorStop={5:0.00} qty={6}",
+                direction,
+                source,
+                FormatSessionLabel(activeSession),
+                entryPrice,
+                stopPrice,
+                priorStopPrice,
+                qty));
+            return true;
+        }
+
+        private MarketPosition GetStopOutOriginalSide(Execution execution)
+        {
+            if (execution?.Order == null)
+                return MarketPosition.Flat;
+
+            string fromEntrySignal = execution.Order.FromEntrySignal ?? string.Empty;
+            if (IsLongEntryOrderName(fromEntrySignal))
+                return MarketPosition.Long;
+            if (IsShortEntryOrderName(fromEntrySignal))
+                return MarketPosition.Short;
+
+            if (IsLongEntryOrderName(currentPositionEntrySignal))
+                return MarketPosition.Long;
+            if (IsShortEntryOrderName(currentPositionEntrySignal))
+                return MarketPosition.Short;
+
+            if (execution.Order.OrderAction == OrderAction.Sell)
+                return MarketPosition.Long;
+            if (execution.Order.OrderAction == OrderAction.BuyToCover)
+                return MarketPosition.Short;
+
+            return MarketPosition.Flat;
+        }
+
+        private bool IsStopOutClose(MarketPosition side)
+        {
+            double stopPrice = GetCurrentStopOutReferencePrice();
+            if (stopPrice <= 0.0)
+                return false;
+
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
+            double tolerance = TickSize * 0.5;
+
+            if (side == MarketPosition.Long)
+                return closePrice <= stopPrice + tolerance;
+
+            if (side == MarketPosition.Short)
+                return closePrice >= stopPrice - tolerance;
+
+            return false;
+        }
+
+        private double GetCurrentStopOutReferencePrice()
+        {
+            double stopPrice = IsOrderActive(activeStopLossOrder)
+                ? GetWorkingOrderStopPrice(activeStopLossOrder, currentStopPrice)
+                : currentStopPrice;
+
+            return stopPrice > 0.0
+                ? Instrument.MasterInstrument.RoundToTickSize(stopPrice)
+                : 0.0;
+        }
+
+        private void DrawStopOutFlipMarker(bool flipToLong)
+        {
+            string tag = string.Format("DUOrc_StopOutFlip_{0}_{1}", CurrentBar, flipToLong ? "Long" : "Short");
+            string text = flipToLong ? "FLIP LONG" : "FLIP SHORT";
+            double y = flipToLong
+                ? Instrument.MasterInstrument.RoundToTickSize(Low[0] - TickSize * 12.0)
+                : Instrument.MasterInstrument.RoundToTickSize(High[0] + TickSize * 12.0);
+            Brush brush = flipToLong ? Brushes.LimeGreen : Brushes.Red;
+
+            Draw.Text(this, tag, text, 0, y, brush);
+        }
+
         private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
         {
+            SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, isLong ? LongEntrySignal : ShortEntrySignal);
+        }
+
+        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, string entrySignal)
+        {
+            string signalName = string.IsNullOrWhiteSpace(entrySignal)
+                ? (isLong ? LongEntrySignal : ShortEntrySignal)
+                : entrySignal;
+
             if (isLong)
             {
                 pendingLongStopForWebhook = stopPrice;
-                SetStopLossByDistanceTicks(LongEntrySignal, entryPrice, stopPrice);
-                SetProfitTargetByDistanceTicks(LongEntrySignal, takeProfitPoints);
+                SetStopLossByDistanceTicks(signalName, entryPrice, stopPrice);
+                SetProfitTargetByDistanceTicks(signalName, takeProfitPoints);
                 SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, true, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice + takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitLongEntryOrder(quantity, LongEntrySignal);
+                SubmitLongEntryOrder(quantity, signalName);
             }
             else
             {
                 pendingShortStopForWebhook = stopPrice;
-                SetStopLossByDistanceTicks(ShortEntrySignal, entryPrice, stopPrice);
-                SetProfitTargetByDistanceTicks(ShortEntrySignal, takeProfitPoints);
+                SetStopLossByDistanceTicks(signalName, entryPrice, stopPrice);
+                SetProfitTargetByDistanceTicks(signalName, takeProfitPoints);
                 SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, true, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice - takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitShortEntryOrder(quantity, ShortEntrySignal);
+                SubmitShortEntryOrder(quantity, signalName);
             }
         }
 
@@ -8525,6 +8775,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry.", GroupName = "13. Risk", Order = 2)]
         public bool RequireEntryConfirmation { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Stop-Out Flip", Description = "When a 5-minute close is at or through the active stop and the opposite entry setup passes normal entry gates, reverse into the opposite direction.", GroupName = "13. Risk", Order = 3)]
+        public bool EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
