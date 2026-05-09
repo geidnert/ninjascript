@@ -14,10 +14,16 @@ using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
 
 
-namespace NinjaTrader.NinjaScript.Strategies
+namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class PassChallenge : Strategy
     {
+
+        public PassChallenge()
+        {
+            VendorLicense(1469);
+        }
+
 		[NinjaScriptProperty]
         [Display(Name = "Hour", Description = "Hour of entry", Order = 1, GroupName = "Time Management")]
         public int EntryHour { get; set; }
