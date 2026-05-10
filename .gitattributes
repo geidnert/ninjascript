@@ -1,0 +1,5 @@
+* text=auto
+
+# Keep source files stable across macOS, Windows, and NinjaTrader edits.
+*.cs text eol=lf
+*.csproj text eol=lf
