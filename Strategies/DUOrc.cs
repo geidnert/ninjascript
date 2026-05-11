@@ -687,9 +687,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaSessionBrush = Brushes.DarkCyan;
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
-                ShowEmaOnChart = true;
-                ShowAdxOnChart = true;
-                ShowAdxThresholdLines = true;
+                ShowEmaOnChart = false;
+                ShowAdxOnChart = false;
+                ShowAdxThresholdLines = false;
 
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
@@ -713,6 +713,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 ValidateRequiredPrimaryTimeframe(5);
                 ValidateRequiredPrimaryInstrument();
+                ShowEmaOnChart = false;
+                ShowAdxOnChart = false;
+                ShowAdxThresholdLines = false;
 
                 emaAsia = EMA(AsiaEmaPeriod);
                 emaAsia2 = EMA(Asia2EmaPeriod);
