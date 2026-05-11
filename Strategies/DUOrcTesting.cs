@@ -169,6 +169,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int activeEmaPeriod;
         private int activeContracts;
         private double activeEntryMinBodyPoints;
+        private double activeEntryCloseBeyondEmaPoints;
         private double activeTakeProfitPoints;
         private double activeMinimumAtrForEntry;
         private int activeAdxPeriod;
@@ -486,6 +487,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaEntryMinBodyPoints = 0;
+                AsiaEntryCloseBeyondEmaPoints = 0;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 29.58;
                 AsiaAdxMaxThreshold = 47.6;
@@ -504,6 +506,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2EntryMinBodyPoints = 0;
+                Asia2EntryCloseBeyondEmaPoints = 0;
                 Asia2AdxPeriod = 14;
                 Asia2AdxThreshold = 15.3;
                 Asia2AdxMaxThreshold = 33;
@@ -522,6 +525,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
                 Asia3EntryMinBodyPoints = 1.5;
+                Asia3EntryCloseBeyondEmaPoints = 0;
                 Asia3AdxPeriod = 14;
                 Asia3AdxThreshold = 18.6;
                 Asia3AdxMaxThreshold = 62;
@@ -541,6 +545,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonEntryMinBodyPoints = 0.5;
+                LondonEntryCloseBeyondEmaPoints = 0;
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 19.47;
                 LondonAdxMaxThreshold = 30.94;
@@ -560,6 +565,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EmaPeriod = 21;
                 London2Contracts = 1;
                 London2EntryMinBodyPoints = 1.5;
+                London2EntryCloseBeyondEmaPoints = 0;
                 London2AdxPeriod = 14;
                 London2AdxThreshold = 15.42;
                 London2AdxMaxThreshold = 31.35;
@@ -580,6 +586,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EmaPeriod = 21;
                 London3Contracts = 1;
                 London3EntryMinBodyPoints = 0.25;
+                London3EntryCloseBeyondEmaPoints = 0;
                 London3AdxPeriod = 14;
                 London3AdxThreshold = 27.15;
                 London3AdxMaxThreshold = 30.45;
@@ -598,6 +605,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaPeriod = 21;
                 NewYorkContracts = 1;
                 NewYorkEntryMinBodyPoints = 4.25;
+                NewYorkEntryCloseBeyondEmaPoints = 0;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 20.1;
                 NewYorkAdxMaxThreshold = 48.7;
@@ -616,6 +624,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EmaPeriod = 21;
                 NewYork2Contracts = 1;
                 NewYork2EntryMinBodyPoints = 0;
+                NewYork2EntryCloseBeyondEmaPoints = 0;
                 NewYork2AdxPeriod = 14;
                 NewYork2AdxThreshold = 14.9;
                 NewYork2AdxMaxThreshold = 25.9;
@@ -634,6 +643,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3EmaPeriod = 21;
                 NewYork3Contracts = 1;
                 NewYork3EntryMinBodyPoints = 0;
+                NewYork3EntryCloseBeyondEmaPoints = 0;
                 NewYork3AdxPeriod = 14;
                 NewYork3AdxThreshold = 18.05;
                 NewYork3AdxMaxThreshold = 24.7;
@@ -652,6 +662,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4EmaPeriod = 21;
                 NewYork4Contracts = 1;
                 NewYork4EntryMinBodyPoints = 4.75;
+                NewYork4EntryCloseBeyondEmaPoints = 0;
                 NewYork4AdxPeriod = 14;
                 NewYork4AdxThreshold = 12.9;
                 NewYork4AdxMaxThreshold = 30.9;
@@ -670,6 +681,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5EmaPeriod = 21;
                 NewYork5Contracts = 1;
                 NewYork5EntryMinBodyPoints = 3;
+                NewYork5EntryCloseBeyondEmaPoints = 0;
                 NewYork5AdxPeriod = 21;
                 NewYork5AdxThreshold = 18.3;
                 NewYork5AdxMaxThreshold = 41.1;
@@ -1002,8 +1014,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool entryBodyPasses = activeEntryMinBodyPoints <= 0.0 || entryBodyPoints >= activeEntryMinBodyPoints;
             bool longSignalBase = bullish && bodyAbovePercent > 0.0;
             bool shortSignalBase = bearish && bodyBelowPercent > 0.0;
-            bool longSignalRaw = longSignalBase && entryBodyPasses;
-            bool shortSignalRaw = shortSignalBase && entryBodyPasses;
+            bool longEntryCloseBeyondEmaPasses = EntryCloseBeyondEmaPasses(true, Close[0], emaValue);
+            bool shortEntryCloseBeyondEmaPasses = EntryCloseBeyondEmaPasses(false, Close[0], emaValue);
+            bool longSignalRaw = longSignalBase && entryBodyPasses && longEntryCloseBeyondEmaPasses;
+            bool shortSignalRaw = shortSignalBase && entryBodyPasses && shortEntryCloseBeyondEmaPasses;
             bool longSignal = longSignalRaw;
             bool shortSignal = shortSignalRaw;
 
@@ -1142,6 +1156,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         emaValue,
                         entryBodyPoints,
                         activeEntryMinBodyPoints));
+                }
+                return;
+            }
+
+            if (activeEntryCloseBeyondEmaPoints > 0.0 && ((longSignalBase && !longEntryCloseBeyondEmaPasses) || (shortSignalBase && !shortEntryCloseBeyondEmaPasses)))
+            {
+                bool closeBlockedLong = longSignalBase && !longEntryCloseBeyondEmaPasses;
+                double distancePoints = GetEntryCloseBeyondEmaDistancePoints(closeBlockedLong, Close[0], emaValue);
+                if (DebugLogging && Position.MarketPosition == MarketPosition.Flat)
+                {
+                    LogDebug(string.Format(
+                        "Setup blocked | side={0} close={1:0.00} ema={2:0.00} reasons=EntryCloseNearEmaPoints distancePoints={3:0.##} minPoints={4:0.##}",
+                        closeBlockedLong ? "Long" : "Short",
+                        Close[0],
+                        emaValue,
+                        distancePoints,
+                        activeEntryCloseBeyondEmaPoints));
                 }
                 return;
             }
@@ -2628,6 +2659,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = AsiaContracts;
                     activeEntryMinBodyPoints = AsiaEntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = AsiaEntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeTrailHardStop = AsiaTrailHardStop;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
@@ -2649,6 +2681,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = Asia2Contracts;
                     activeEntryMinBodyPoints = Asia2EntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = Asia2EntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = Asia2StopPaddingPoints;
                     activeTrailHardStop = Asia2TrailHardStop;
                     activeTakeProfitPoints = Asia2TakeProfitPoints;
@@ -2670,6 +2703,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = Asia3Contracts;
                     activeEntryMinBodyPoints = Asia3EntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = Asia3EntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = Asia3StopPaddingPoints;
                     activeTrailHardStop = Asia3TrailHardStop;
                     activeTakeProfitPoints = Asia3TakeProfitPoints;
@@ -2691,6 +2725,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = LondonContracts;
                     activeEntryMinBodyPoints = LondonEntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = LondonEntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeTrailHardStop = LondonTrailHardStop;
                     activeTakeProfitPoints = LondonTakeProfitPoints;
@@ -2712,6 +2747,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = London2Contracts;
                     activeEntryMinBodyPoints = London2EntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = London2EntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = London2StopPaddingPoints;
                     activeTrailHardStop = London2TrailHardStop;
                     activeTakeProfitPoints = London2TakeProfitPoints;
@@ -2733,6 +2769,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = London3Contracts;
                     activeEntryMinBodyPoints = London3EntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = London3EntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = London3StopPaddingPoints;
                     activeTrailHardStop = London3TrailHardStop;
                     activeTakeProfitPoints = London3TakeProfitPoints;
@@ -2754,6 +2791,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYorkContracts;
                     activeEntryMinBodyPoints = NewYorkEntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = NewYorkEntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeTrailHardStop = NewYorkTrailHardStop;
                     activeTakeProfitPoints = NewYorkTakeProfitPoints;
@@ -2775,6 +2813,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork2Contracts;
                     activeEntryMinBodyPoints = NewYork2EntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = NewYork2EntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = NewYork2StopPaddingPoints;
                     activeTrailHardStop = NewYork2TrailHardStop;
                     activeTakeProfitPoints = NewYork2TakeProfitPoints;
@@ -2796,6 +2835,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork3Contracts;
                     activeEntryMinBodyPoints = NewYork3EntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = NewYork3EntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = NewYork3StopPaddingPoints;
                     activeTrailHardStop = NewYork3TrailHardStop;
                     activeTakeProfitPoints = NewYork3TakeProfitPoints;
@@ -2817,6 +2857,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork4Contracts;
                     activeEntryMinBodyPoints = NewYork4EntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = NewYork4EntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = NewYork4StopPaddingPoints;
                     activeTrailHardStop = NewYork4TrailHardStop;
                     activeTakeProfitPoints = NewYork4TakeProfitPoints;
@@ -2838,6 +2879,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork5Contracts;
                     activeEntryMinBodyPoints = NewYork5EntryMinBodyPoints;
+                    activeEntryCloseBeyondEmaPoints = NewYork5EntryCloseBeyondEmaPoints;
                     activeStopPaddingPoints = NewYork5StopPaddingPoints;
                     activeTrailHardStop = NewYork5TrailHardStop;
                     activeTakeProfitPoints = NewYork5TakeProfitPoints;
@@ -2858,6 +2900,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxAbsoluteExitLevel = 0.0;
                     activeContracts = 0;
                     activeEntryMinBodyPoints = 0.0;
+                    activeEntryCloseBeyondEmaPoints = 0.0;
                     activeStopPaddingPoints = 0.0;
                     activeTrailHardStop = false;
                     activeTakeProfitPoints = 0.0;
@@ -3688,8 +3731,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
             double entryBodyPoints = Math.Abs(Close[0] - Open[0]);
             bool entryBodyPasses = activeEntryMinBodyPoints <= 0.0 || entryBodyPoints >= activeEntryMinBodyPoints;
-            bool longSignal = bullish && bodyAbovePercent > 0.0 && entryBodyPasses;
-            bool shortSignal = bearish && bodyBelowPercent > 0.0 && entryBodyPasses;
+            bool longSignal = bullish && bodyAbovePercent > 0.0 && entryBodyPasses && EntryCloseBeyondEmaPasses(true, Close[0], emaValue);
+            bool shortSignal = bearish && bodyBelowPercent > 0.0 && entryBodyPasses && EntryCloseBeyondEmaPasses(false, Close[0], emaValue);
             bool oppositeSignal = flipToLong ? longSignal : shortSignal;
 
             bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
@@ -4077,6 +4120,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 above = bodyTop - emaValue;
 
             return (above / body) * 100.0;
+        }
+
+        private bool EntryCloseBeyondEmaPasses(bool isLong, double close, double emaValue)
+        {
+            if (activeEntryCloseBeyondEmaPoints <= 0.0)
+                return true;
+
+            double distance = isLong ? close - emaValue : emaValue - close;
+            return distance >= activeEntryCloseBeyondEmaPoints;
+        }
+
+        private double GetEntryCloseBeyondEmaDistancePoints(bool isLong, double close, double emaValue)
+        {
+            double distance = isLong ? close - emaValue : emaValue - close;
+            return Math.Max(0.0, distance);
         }
 
         private double GetBodyPercentBelowEma(double open, double close, double emaValue)
@@ -5150,7 +5208,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} slPad={14:0.##} trailHardSl={15} entryMinBody={16:0.##} candleRev={17}/{18:0.##}/{19:0.##} atrMin={20:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxPeakDd={10:0.##} adxAbsExit={11:0.##} tpPts={12:0.##} contracts={13} slPad={14:0.##} trailHardSl={15} entryMinBody={16:0.##} entryCloseEmaPts={17:0.##} candleRev={18}/{19:0.##}/{20:0.##} atrMin={21:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -5168,6 +5226,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeStopPaddingPoints,
                 activeTrailHardStop,
                 activeEntryMinBodyPoints,
+                activeEntryCloseBeyondEmaPoints,
                 activeCandleReversalExitBars,
                 activeCandleReversalCloseBeyondPoints,
                 activeCandleReversalMinBodyPoints,
@@ -5597,6 +5656,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private (string value, Brush brush) BuildFiveMinuteCloseSignalInfo(SessionSlot infoSession, double adxValue, double atrValue)
         {
+            if (Position.MarketPosition != MarketPosition.Flat)
+                return ("In Trade", Brushes.LimeGreen);
+
             if (!CanEvaluateFiveMinuteCloseSignal(infoSession, adxValue, atrValue))
                 return ("No Trade", Brushes.IndianRed);
 
@@ -5609,10 +5671,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool bullish = closePrice > openPrice;
             bool bearish = closePrice < openPrice;
-            if (bullish && GetBodyPercentAboveEma(openPrice, closePrice, emaValue) > 0.0 && !IsOrderActive(longEntryOrder))
+            if (bullish && GetBodyPercentAboveEma(openPrice, closePrice, emaValue) > 0.0 && EntryCloseBeyondEmaPasses(true, closePrice, emaValue) && !IsOrderActive(longEntryOrder))
                 return ("Long", Brushes.LimeGreen);
 
-            if (bearish && GetBodyPercentBelowEma(openPrice, closePrice, emaValue) > 0.0 && !IsOrderActive(shortEntryOrder))
+            if (bearish && GetBodyPercentBelowEma(openPrice, closePrice, emaValue) > 0.0 && EntryCloseBeyondEmaPasses(false, closePrice, emaValue) && !IsOrderActive(shortEntryOrder))
                 return ("Short", Brushes.LimeGreen);
 
             return ("No Trade", Brushes.IndianRed);
@@ -7645,6 +7707,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 1", Order = 22)]
         public double AsiaEntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 1", Order = 23)]
+        public double AsiaEntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 1", Order = 36)]
@@ -7726,6 +7794,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 2", Order = 22)]
         public double Asia2EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 2", Order = 23)]
+        public double Asia2EntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 2", Order = 36)]
@@ -7807,6 +7881,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 3", Order = 22)]
         public double Asia3EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 3", Order = 23)]
+        public double Asia3EntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 3", Order = 36)]
@@ -7892,6 +7972,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Europe 1", Order = 22)]
         public double LondonEntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Europe 1", Order = 23)]
+        public double LondonEntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Europe 1", Order = 36)]
@@ -7978,6 +8064,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Europe 2", Order = 22)]
         public double London2EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Europe 2", Order = 23)]
+        public double London2EntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Europe 2", Order = 36)]
@@ -8068,6 +8160,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Europe 3", Order = 22)]
         public double London3EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Europe 3", Order = 23)]
+        public double London3EntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Europe 3", Order = 36)]
@@ -8149,6 +8247,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 1", Order = 22)]
         public double NewYorkEntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 1", Order = 23)]
+        public double NewYorkEntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 1", Order = 37)]
@@ -8231,6 +8335,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 2", Order = 22)]
         public double NewYork2EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 2", Order = 23)]
+        public double NewYork2EntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 2", Order = 37)]
@@ -8313,6 +8423,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 3", Order = 22)]
         public double NewYork3EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 3", Order = 23)]
+        public double NewYork3EntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 3", Order = 37)]
@@ -8394,6 +8510,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 4", Order = 22)]
         public double NewYork4EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 4", Order = 23)]
+        public double NewYork4EntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 4", Order = 37)]
@@ -8475,6 +8597,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 5", Order = 22)]
         public double NewYork5EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 5", Order = 23)]
+        public double NewYork5EntryCloseBeyondEmaPoints { get; set; }
+
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 5", Order = 37)]
