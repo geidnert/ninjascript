@@ -5578,8 +5578,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private (string value, Brush brush) BuildFiveMinuteCloseSignalInfo(SessionSlot infoSession, double adxValue, double atrValue)
         {
-            if (Position.MarketPosition != MarketPosition.Flat)
-                return ("In Trade", Brushes.LimeGreen);
+            if (Position.MarketPosition == MarketPosition.Long)
+                return ("In Long Now", Brushes.White);
+            if (Position.MarketPosition == MarketPosition.Short)
+                return ("In Short Now", Brushes.White);
 
             if (!CanEvaluateFiveMinuteCloseSignal(infoSession, adxValue, atrValue))
                 return ("No Trade", Brushes.IndianRed);
