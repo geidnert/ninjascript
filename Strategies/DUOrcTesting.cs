@@ -502,7 +502,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaCandleReversalMinBodyPoints = 0;
 
                 Asia2SessionStart = new TimeSpan(20, 00, 0);
-                Asia2SessionEnd = new TimeSpan(23, 30, 0);
+                Asia2SessionEnd = new TimeSpan(23, 25, 0);
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2EntryMinBodyPoints = 0;
