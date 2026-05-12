@@ -5669,7 +5669,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "{0} Req {1}/Cur {2}",
+                "{0} {1}/{2}",
                 state,
                 thresholdValue > 0.0 ? FormatInfoMetric(thresholdValue) : "Off",
                 FormatInfoMetric(currentValue));
