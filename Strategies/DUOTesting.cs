@@ -782,7 +782,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3HorizontalExitBars = 50;
 
                 UseNewYorkSession = true;
-                NewYorkSessionStart = new TimeSpan(9, 35, 0);
+                NewYorkSessionStart = new TimeSpan(9, 40, 0);
                 NewYorkSessionEnd = new TimeSpan(11, 30, 0);
                 NewYorkSkipStart = TimeSpan.Zero;
                 NewYorkSkipEnd = TimeSpan.Zero;
@@ -6223,7 +6223,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? activeAdxMinSlopePoints.ToString("0.00", CultureInfo.InvariantCulture)
                 : "Off";
             string currentMomentumText = adxSlope.ToString("0.00", CultureInfo.InvariantCulture);
-            lines.Add(("Mom:", configuredMomentumText + "/" + currentMomentumText, Brushes.LightGray, Brushes.LightGray));
+            Brush momentumBrush = !slopeEnabled
+                ? Brushes.LightGray
+                : slopeValid ? Brushes.LimeGreen : Brushes.IndianRed;
+            lines.Add(("Mom:", configuredMomentumText + "/" + currentMomentumText, Brushes.LightGray, momentumBrush));
             if (!UseNewsSkip)
             {
                 lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.LightGray));
