@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using System.Windows.Media;
 using System.ComponentModel.DataAnnotations;
@@ -24,13 +25,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             VendorLicense(1469);
         }
 
+        private const int EntryTriggerWindowSeconds = 5;
+        private static readonly string[] EntryTimeFormats = { @"h\:m\:s", @"h\:mm\:ss", @"hh\:mm\:ss", @"h\:m", @"h\:mm", @"hh\:mm" };
+
+        [Browsable(false)]
 		[NinjaScriptProperty]
         [Display(Name = "Hour", Description = "Hour of entry", Order = 1, GroupName = "Time Management")]
         public int EntryHour { get; set; }
 
+        [Browsable(false)]
 		[NinjaScriptProperty]
         [Display(Name = "Minute", Description = "Minute of entry", Order = 2, GroupName = "Time Management")]
         public int EntryMinute { get; set; }
+
+		[NinjaScriptProperty]
+        [Display(Name = "Entry Time", Description = "Entry time in chart time zone. Use HH:mm:ss, for example 09:29:50.", Order = 1, GroupName = "Time Management")]
+        public string EntryTime { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Contracts", Description = "Number of contracts to take", Order = 1, GroupName = "Trade Management")]
@@ -70,6 +80,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double highSinceEntry = double.NaN;
         private double lowSinceEntry = double.NaN;
 		private DateTime lastSessionDate = DateTime.MinValue;
+        private string lastInvalidEntryTime = null;
 
         protected override void OnStateChange()
         {
@@ -84,6 +95,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NumberOfContracts = 4;
                 EntryHour = 9;
                 EntryMinute = 29;
+                EntryTime = "09:29:50";
                 ProfitPoints = 0;
                 DollarTarget = 3050;
                 DollarStop = 2500;
@@ -120,6 +132,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (BarsInProgress == 1)
             {
                 ManageTrailingStop();
+                TryPlaceScheduledEntry(Times[1][0]);
                 return;
             }
 
@@ -131,107 +144,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (ordersPlaced)
                 return;
-
-            DateTime now = Times[0][0];
-            int entryMinuteTarget = EntryMinute + 1;
-            int entryHourTarget = EntryHour;
-            if (entryMinuteTarget >= 60)
-            {
-                entryMinuteTarget -= 60;
-                entryHourTarget = (entryHourTarget + 1) % 24;
-            }
-
-            if (now.Hour == entryHourTarget &&
-                now.Minute == entryMinuteTarget)
-            {
-                double ask = GetAskPrice();
-                double bid = GetBidPrice();
-                double tick = TickSize;
-
-                Log($"[{State}] Bid: {bid}, Ask: {ask}, TickSize: {tick}");
-
-                double dollarPerPoint = GetDollarPerPoint();
-                double profitPoints = ProfitPoints;
-                double stopPoints = double.NaN;
-                bool useStop = DollarStop > 0;
-                if (!useStop)
-                {
-                    trailingStopDistance = double.NaN;
-                    currentStopPrice = double.NaN;
-                }
-
-                int numberOfContracts = NumberOfContracts;//GetSafeContractCount();
-                Log($"Number of contracts to trade: {numberOfContracts}");
-
-                if (profitPoints == 0 && DollarTarget > 0)
-                {
-                    profitPoints = DollarTarget / (dollarPerPoint * numberOfContracts);
-                    Log($"Calculated profit points from dollar target: {profitPoints}");
-                }
-
-                if (useStop)
-                {
-                    stopPoints = DollarStop / (dollarPerPoint * numberOfContracts);
-                    Log($"Calculated stop points from dollar stop: {stopPoints}");
-                    trailingStopDistance = stopPoints;
-                }
-
-                double longEntry = Instrument.MasterInstrument.RoundToTickSize(bid);
-                double shortEntry = Instrument.MasterInstrument.RoundToTickSize(ask);
-
-                Log($"Calculated longEntry: {longEntry}, shortEntry: {shortEntry}");
-
-                if (LongTrade && !double.IsNaN(longEntry))
-                {
-                    double target = Instrument.MasterInstrument.RoundToTickSize(longEntry + profitPoints);
-                    Log($"Submitting Long Entry at {longEntry} with target {target}");
-                    SetProfitTarget("LongEntry", CalculationMode.Price, target);
-                    if (useStop && !double.IsNaN(stopPoints))
-                    {
-                        double stop = Instrument.MasterInstrument.RoundToTickSize(longEntry - stopPoints);
-                        SetStopLoss("LongEntry", CalculationMode.Price, stop, false);
-                        currentStopPrice = stop;
-                        highSinceEntry = longEntry;
-                        Log($"Long stop set at {stop}");
-                    }
-					
-					if (LimitOrder)
-                    	EnterLongLimit(1, true, numberOfContracts, longEntry, "LongEntry");
-					else
-						EnterLong(1, numberOfContracts, "LongEntry");
-
-                    Log("Long order submitted at: " + now.ToString("HH:mm:ss"));
-                }
-
-                if (!LongTrade && !double.IsNaN(shortEntry))
-                {
-                    double target = Instrument.MasterInstrument.RoundToTickSize(shortEntry - profitPoints);
-                    Log($"Submitting Short Entry at {shortEntry} with target {target}");
-                    SetProfitTarget("ShortEntry", CalculationMode.Price, target);
-                    if (useStop && !double.IsNaN(stopPoints))
-                    {
-                        double stop = Instrument.MasterInstrument.RoundToTickSize(shortEntry + stopPoints);
-                        SetStopLoss("ShortEntry", CalculationMode.Price, stop, false);
-                        currentStopPrice = stop;
-                        lowSinceEntry = shortEntry;
-                        Log($"Short stop set at {stop}");
-                    }
-					if (LimitOrder)
-                    	EnterShortLimit(1, true, numberOfContracts, shortEntry, "ShortEntry");
-					else
-						EnterShort(1, numberOfContracts, "ShortEntry");
-                    
-					Log("Short order submitted at: " + now.ToString("HH:mm:ss"));
-                }
-
-                if (LongTrade && double.IsNaN(longEntry))
-                    Log("No long order submitted due to invalid entry price.");
-
-                if (!LongTrade && double.IsNaN(shortEntry))
-                    Log("No short order submitted due to invalid entry price.");
-
-                ordersPlaced = true;
-            }
         }
 
 		string GetAddOnVersion()
@@ -241,7 +153,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 			return version.ToString();
 		}
 
-		private string GetDebugText() => "Entry time: " + EntryHour + ":" + EntryMinute +  
+		private string GetDebugText() => "Entry time: " + EntryTime +
 										"\nContract: " + NumberOfContracts + 
 										"\nDirection: " + (LongTrade ? "Long" : "Short") +
 										"\nOrder Type: " + (LimitOrder ? "Limit" : "Market") +
@@ -281,6 +193,131 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double GetDollarPerPoint()
         {
             return Instrument.MasterInstrument.PointValue;
+        }
+
+        private bool TryParseEntryTime(out TimeSpan entryTime)
+        {
+            string entryTimeText = string.IsNullOrWhiteSpace(EntryTime) ? string.Empty : EntryTime.Trim();
+            if (TimeSpan.TryParseExact(entryTimeText, EntryTimeFormats, CultureInfo.InvariantCulture, out entryTime))
+            {
+                lastInvalidEntryTime = null;
+                return true;
+            }
+
+            if (!string.Equals(lastInvalidEntryTime, entryTimeText, StringComparison.Ordinal))
+            {
+                Log($"Invalid Entry Time '{EntryTime}'. Use HH:mm:ss, for example 09:29:50.");
+                lastInvalidEntryTime = entryTimeText;
+            }
+            return false;
+        }
+
+        private bool IsInsideEntryWindow(DateTime now, TimeSpan entryTime)
+        {
+            TimeSpan elapsed = now.TimeOfDay - entryTime;
+            return elapsed >= TimeSpan.Zero && elapsed < TimeSpan.FromSeconds(EntryTriggerWindowSeconds);
+        }
+
+        private void TryPlaceScheduledEntry(DateTime now)
+        {
+            if (ordersPlaced)
+                return;
+
+            TimeSpan entryTime;
+            if (!TryParseEntryTime(out entryTime) || !IsInsideEntryWindow(now, entryTime))
+                return;
+
+            PlaceEntryOrder(now);
+            ordersPlaced = true;
+        }
+
+        private void PlaceEntryOrder(DateTime now)
+        {
+            double ask = GetAskPrice();
+            double bid = GetBidPrice();
+            double tick = TickSize;
+
+            Log($"[{State}] Bid: {bid}, Ask: {ask}, TickSize: {tick}");
+
+            double dollarPerPoint = GetDollarPerPoint();
+            double profitPoints = ProfitPoints;
+            double stopPoints = double.NaN;
+            bool useStop = DollarStop > 0;
+            if (!useStop)
+            {
+                trailingStopDistance = double.NaN;
+                currentStopPrice = double.NaN;
+            }
+
+            int numberOfContracts = NumberOfContracts;//GetSafeContractCount();
+            Log($"Number of contracts to trade: {numberOfContracts}");
+
+            if (profitPoints == 0 && DollarTarget > 0)
+            {
+                profitPoints = DollarTarget / (dollarPerPoint * numberOfContracts);
+                Log($"Calculated profit points from dollar target: {profitPoints}");
+            }
+
+            if (useStop)
+            {
+                stopPoints = DollarStop / (dollarPerPoint * numberOfContracts);
+                Log($"Calculated stop points from dollar stop: {stopPoints}");
+                trailingStopDistance = stopPoints;
+            }
+
+            double longEntry = Instrument.MasterInstrument.RoundToTickSize(bid);
+            double shortEntry = Instrument.MasterInstrument.RoundToTickSize(ask);
+
+            Log($"Calculated longEntry: {longEntry}, shortEntry: {shortEntry}");
+
+            if (LongTrade && !double.IsNaN(longEntry))
+            {
+                double target = Instrument.MasterInstrument.RoundToTickSize(longEntry + profitPoints);
+                Log($"Submitting Long Entry at {longEntry} with target {target}");
+                SetProfitTarget("LongEntry", CalculationMode.Price, target);
+                if (useStop && !double.IsNaN(stopPoints))
+                {
+                    double stop = Instrument.MasterInstrument.RoundToTickSize(longEntry - stopPoints);
+                    SetStopLoss("LongEntry", CalculationMode.Price, stop, false);
+                    currentStopPrice = stop;
+                    highSinceEntry = longEntry;
+                    Log($"Long stop set at {stop}");
+                }
+
+                if (LimitOrder)
+                    EnterLongLimit(1, true, numberOfContracts, longEntry, "LongEntry");
+                else
+                    EnterLong(1, numberOfContracts, "LongEntry");
+
+                Log("Long order submitted at: " + now.ToString("HH:mm:ss"));
+            }
+
+            if (!LongTrade && !double.IsNaN(shortEntry))
+            {
+                double target = Instrument.MasterInstrument.RoundToTickSize(shortEntry - profitPoints);
+                Log($"Submitting Short Entry at {shortEntry} with target {target}");
+                SetProfitTarget("ShortEntry", CalculationMode.Price, target);
+                if (useStop && !double.IsNaN(stopPoints))
+                {
+                    double stop = Instrument.MasterInstrument.RoundToTickSize(shortEntry + stopPoints);
+                    SetStopLoss("ShortEntry", CalculationMode.Price, stop, false);
+                    currentStopPrice = stop;
+                    lowSinceEntry = shortEntry;
+                    Log($"Short stop set at {stop}");
+                }
+                if (LimitOrder)
+                    EnterShortLimit(1, true, numberOfContracts, shortEntry, "ShortEntry");
+                else
+                    EnterShort(1, numberOfContracts, "ShortEntry");
+
+                Log("Short order submitted at: " + now.ToString("HH:mm:ss"));
+            }
+
+            if (LongTrade && double.IsNaN(longEntry))
+                Log("No long order submitted due to invalid entry price.");
+
+            if (!LongTrade && double.IsNaN(shortEntry))
+                Log("No short order submitted due to invalid entry price.");
         }
 
         private int GetSafeContractCount()
