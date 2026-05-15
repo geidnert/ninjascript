@@ -338,6 +338,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private readonly Dictionary<string, long> projectXLastOrderIds = new Dictionary<string, long>();
         private string projectXResolvedContractId;
         private string projectXResolvedInstrumentKey;
+        private double projectXLastSyncedStopPrice;
+        private double projectXLastSyncedTargetPrice;
 
         // =====================================================================
         #region OnStateChange
@@ -725,6 +727,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 projectXLastOrderIds.Clear();
                 projectXResolvedContractId = null;
                 projectXResolvedInstrumentKey = string.Empty;
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
             }
             else if (State == State.Transition) { ResetAll(); }
             else if (State == State.Realtime)
@@ -747,6 +751,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 projectXLastOrderIds.Clear();
                 projectXResolvedContractId = null;
                 projectXResolvedInstrumentKey = string.Empty;
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
             }
         }
 
@@ -1255,7 +1261,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 string entryWebhookAction;
                 bool isMarketEntry;
                 if (TryGetEntryWebhookAction(exec, out entryWebhookAction, out isMarketEntry))
-                    SendWebhook(entryWebhookAction, tradeEntryPrice, tp, sl, isMarketEntry, qty);
+                {
+                    bool entryWebhookSent = SendWebhook(entryWebhookAction, tradeEntryPrice, tp, sl, isMarketEntry, qty);
+                    if (WebhookProviderType == WebhookProvider.ProjectX && entryWebhookSent)
+                    {
+                        projectXLastSyncedStopPrice = RoundToInstrumentTick(sl);
+                        projectXLastSyncedTargetPrice = RoundToInstrumentTick(tp);
+                    }
+                }
+            }
+
+            if (mp == MarketPosition.Flat)
+            {
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
             }
 
             if (ShouldSendExitWebhook(exec, n, mp))
@@ -1271,9 +1290,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (orderName == BuildExitSignalName("SL"))
                 stopOrder = order;
 
+            TrySyncProjectXProtectiveOrder(order, limitPrice, stopPrice, state);
+
             if (entryOrder!=null && order==entryOrder && (state==OrderState.Cancelled||state==OrderState.Rejected))
             {
                 SendWebhook("cancel");
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
                 entryOrder=null; hasActivePosition=false; activeSessionId=0;
             }
 
@@ -1534,6 +1557,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             opposingBarBenchmark=0; opposingBarBenchmarkSet=false;
             wasInNewsSkipWindow=false;
             entryOrder=null; stopOrder=null; targetOrder=null;
+            projectXLastSyncedStopPrice = 0.0;
+            projectXLastSyncedTargetPrice = 0.0;
             ClearForceFlattenState();
             prevMarketPosition=MarketPosition.Flat;
         }
@@ -1562,6 +1587,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             entryBarSlApplied=false; priceOffsetTrailActive=false; priceOffsetTrailDistance=0;
             opposingBarBenchmark=0; opposingBarBenchmarkSet=false;
             entryOrder=null; stopOrder=null; targetOrder=null;
+            projectXLastSyncedStopPrice = 0.0;
+            projectXLastSyncedTargetPrice = 0.0;
             ClearForceFlattenState();
             activeSessionId=0;
         }
@@ -1739,6 +1766,97 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             OrderType orderType = execution.Order.OrderType;
             isMarketEntry = orderType == OrderType.Market || orderType == OrderType.StopMarket;
             return true;
+        }
+
+        private bool IsProjectXProtectiveOrderActiveState(OrderState orderState)
+        {
+            return orderState == OrderState.Submitted
+                || orderState == OrderState.Accepted
+                || orderState == OrderState.Working
+                || orderState == OrderState.PartFilled;
+        }
+
+        private double RoundToInstrumentTick(double price)
+        {
+            return Instrument != null && Instrument.MasterInstrument != null
+                ? Instrument.MasterInstrument.RoundToTickSize(price)
+                : price;
+        }
+
+        private bool ArePricesEquivalent(double left, double right)
+        {
+            if (left <= 0.0 || right <= 0.0)
+                return false;
+
+            return Math.Abs(left - right) <= TickSize * 0.5;
+        }
+
+        private void TrySyncProjectXProtectiveOrder(Order order, double limitPrice, double stopPrice, OrderState orderState)
+        {
+            if (!UseWebhooks || State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+            if (order == null || Position.MarketPosition == MarketPosition.Flat)
+                return;
+            if (!IsProjectXProtectiveOrderActiveState(orderState))
+                return;
+
+            string orderName = order.Name ?? string.Empty;
+            string targetSignalName = BuildExitSignalName("TP");
+            string stopSignalName = BuildExitSignalName("SL");
+
+            if (string.Equals(orderName, stopSignalName, StringComparison.Ordinal))
+            {
+                double actualStopPrice = stopPrice > 0.0 ? RoundToInstrumentTick(stopPrice) : RoundToInstrumentTick(order.StopPrice);
+                if (actualStopPrice <= 0.0 || ArePricesEquivalent(projectXLastSyncedStopPrice, actualStopPrice))
+                    return;
+
+                if (SyncProjectXProtectivePrice(actualStopPrice, true))
+                    projectXLastSyncedStopPrice = actualStopPrice;
+            }
+            else if (string.Equals(orderName, targetSignalName, StringComparison.Ordinal))
+            {
+                double actualTargetPrice = limitPrice > 0.0 ? RoundToInstrumentTick(limitPrice) : RoundToInstrumentTick(order.LimitPrice);
+                if (actualTargetPrice <= 0.0 || ArePricesEquivalent(projectXLastSyncedTargetPrice, actualTargetPrice))
+                    return;
+
+                if (SyncProjectXProtectivePrice(actualTargetPrice, false))
+                    projectXLastSyncedTargetPrice = actualTargetPrice;
+            }
+        }
+
+        private bool SyncProjectXProtectivePrice(double price, bool isStopOrder)
+        {
+            if (price <= 0.0)
+                return false;
+            if (!EnsureProjectXSession())
+                return false;
+
+            List<ProjectXAccountInfo> targetAccounts;
+            string contractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+                return false;
+
+            bool modifiedAny = false;
+            foreach (var account in targetAccounts)
+            {
+                try
+                {
+                    if (ProjectXModifyProtectiveOrders(account.Id, contractId, price, isStopOrder))
+                        modifiedAny = true;
+                }
+                catch (Exception ex)
+                {
+                    LogProjectX(string.Format(
+                        "ProjectX protective sync error | kind={0} accountId={1} contractId={2} price={3:0.00} error={4}",
+                        isStopOrder ? "stop" : "target",
+                        account.Id,
+                        contractId,
+                        price,
+                        ex.Message));
+                }
+            }
+
+            return modifiedAny;
         }
 
         private bool SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
@@ -2260,6 +2378,96 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string GetProjectXOrderKey(int accountId, string contractId)
         {
             return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
+        }
+
+        private bool ProjectXModifyProtectiveOrders(int accountId, string contractId, double price, bool isStopOrder)
+        {
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return false;
+
+            int expectedSide = Position.MarketPosition == MarketPosition.Long ? 1 : 0;
+            int expectedType = isStopOrder ? 4 : 1;
+            bool modifiedAny = false;
+
+            foreach (var order in ExtractProjectXOrders(searchResponse))
+            {
+                object contractObj;
+                if (!order.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object typeObj;
+                int type;
+                if (!order.TryGetValue("type", out typeObj) || !TryConvertToInt(typeObj, out type) || type != expectedType)
+                    continue;
+
+                object sideObj;
+                int side;
+                if (!order.TryGetValue("side", out sideObj) || !TryConvertToInt(sideObj, out side) || side != expectedSide)
+                    continue;
+
+                object idObj;
+                long orderId;
+                if (!order.TryGetValue("id", out idObj) || !TryConvertToLong(idObj, out orderId) || orderId <= 0)
+                    continue;
+
+                object sizeObj;
+                int size;
+                if (!order.TryGetValue("size", out sizeObj) || !TryConvertToInt(sizeObj, out size) || size <= 0)
+                    size = Math.Max(1, Position.Quantity);
+
+                object existingPriceObj;
+                double existingPrice;
+                if (isStopOrder)
+                {
+                    if (order.TryGetValue("stopPrice", out existingPriceObj)
+                        && existingPriceObj != null
+                        && double.TryParse(existingPriceObj.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out existingPrice)
+                        && ArePricesEquivalent(RoundToInstrumentTick(existingPrice), price))
+                        continue;
+                }
+                else
+                {
+                    if (order.TryGetValue("limitPrice", out existingPriceObj)
+                        && existingPriceObj != null
+                        && double.TryParse(existingPriceObj.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out existingPrice)
+                        && ArePricesEquivalent(RoundToInstrumentTick(existingPrice), price))
+                        continue;
+                }
+
+                string response = ProjectXModifyOrder(accountId, orderId, size, isStopOrder ? (double?)null : price, isStopOrder ? (double?)price : null);
+                if (!string.IsNullOrWhiteSpace(response))
+                    modifiedAny = true;
+            }
+
+            if (!modifiedAny)
+            {
+                LogProjectX(string.Format(
+                    "ProjectX protective sync skipped | kind={0} accountId={1} contractId={2} price={3:0.00} reason=no-open-order",
+                    isStopOrder ? "stop" : "target",
+                    accountId,
+                    contractId,
+                    price));
+            }
+
+            return modifiedAny;
+        }
+
+        private string ProjectXModifyOrder(int accountId, long orderId, int size, double? limitPrice, double? stopPrice)
+        {
+            string json = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"orderId\":{1},\"size\":{2},\"limitPrice\":{3},\"stopPrice\":{4},\"trailPrice\":null}}",
+                accountId,
+                orderId,
+                size > 0 ? size.ToString(CultureInfo.InvariantCulture) : "null",
+                limitPrice.HasValue ? limitPrice.Value.ToString(CultureInfo.InvariantCulture) : "null",
+                stopPrice.HasValue ? stopPrice.Value.ToString(CultureInfo.InvariantCulture) : "null");
+            return ProjectXPost("/api/Order/modify", json, true);
         }
 
         private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
