@@ -54,8 +54,11 @@
     <Reference Include="SharpDX.Direct2D1">
       <HintPath>C:\Program Files\NinjaTrader 8\bin\SharpDX.Direct2D1.dll</HintPath>
     </Reference>
+    <Reference Include="VendorLicensing">
+      <HintPath>C:\Users\Andreas\Documents\NinjaTrader 8\bin\Custom\VendorLicensing.dll</HintPath>
+    </Reference>
     <Reference Include="NinjaTrader.Vendor">
-      <HintPath>C:\Users\geidn\Documents\NinjaTrader 8\bin\Custom\NinjaTrader.Vendor.dll</HintPath>
+      <HintPath>C:\Users\Andreas\Documents\NinjaTrader 8\bin\Custom\NinjaTrader.Vendor.dll</HintPath>
     </Reference>
     <Reference Include="WindowsBase">
       <HintPath>C:\Windows\Microsoft.NET\Framework\v4.0.30319\WPF\WindowsBase.dll</HintPath>
@@ -367,7 +370,6 @@
     <Compile Include="Indicators\MyCustomIndicator.cs" />
     <Compile Include="Indicators\VendorLicenseDemo.cs" />
     <Compile Include="AddOns\TradeMessengerAddOn.cs" />
-    <Compile Include="Strategies\PerformanceStratTests\RealtimeReplayHistoricalComparisonsTest.cs" />
     <Compile Include="Strategies\DiscordNotifier.cs" />
     <Compile Include="Strategies\DR.cs" />
     <Compile Include="Strategies\DRStrategy.cs" />
@@ -386,7 +388,6 @@
     <Compile Include="Strategies\ThreeBarWickTestScalping.cs" />
     <Compile Include="Strategies\WickTest.cs" />
     <Compile Include="NinjaTrader.Vendor.cs" />
-    <Compile Include="VendorLicensing.cs" />
     <Compile Include="Strategies\Heiken.cs" />
     <Compile Include="Strategies\H1M5.cs" />
     <Compile Include="Indicators\VixBingHttpTest.cs" />
@@ -421,6 +422,8 @@
     <Compile Include="Strategies\HUGOTesting.cs" />
     <Compile Include="obj\x64\Release\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
     <Compile Include="Strategies\DUOrc.cs" />
+    <Compile Include="Strategies\EMAC.cs" />
+    <Compile Include="VendorLicensing.cs" />
     <Compile Include="Strategies\DUOrcTesting.cs" />
   </ItemGroup>
   <ItemGroup>
