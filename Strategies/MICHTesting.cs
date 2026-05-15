@@ -10,6 +10,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Xml.Serialization;
@@ -252,6 +254,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static readonly List<DateTime> NewsDates = new List<DateTime>();
         private static bool newsDatesInitialized;
 
+        private Border infoBoxContainer;
+        private StackPanel infoBoxRowsPanel;
+        private bool legacyInfoDrawingsCleared;
+        private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
+            Color.FromArgb(240, 0x2A, 0x2F, 0x45),
+            Color.FromArgb(240, 0x1E, 0x23, 0x36),
+            Color.FromArgb(240, 0x14, 0x18, 0x28));
+        private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
+        private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
+        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(255, 0xFF, 0x8C, 0x00);
+        private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
+        private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
+        private static readonly Brush PassedNewsRowBrush = CreateFrozenBrush(30, 211, 211, 211);
+        private static readonly FontFamily InfoEmojiFontFamily = new FontFamily("Segoe UI Emoji");
+        private static readonly FontFamily InfoSymbolFontFamily = new FontFamily("Segoe UI Symbol");
+        private static readonly HashSet<string> InfoEmojiTokens = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "✔", "✅", "❌", "✖", "⛔", "⬜", "🕒", "🚫"
+        };
+        private static readonly HashSet<string> InfoSymbolTokens = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "■", "□", "●", "○", "▲", "▼", "◆", "◇"
+        };
+
         public MICHTesting()
         {
             VendorLicense(1235);
@@ -310,6 +336,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime       currentSessionDate;
         private int            tradeDirection;
         private double         signalCandleRange;
+        private int            lastInfoSessionId;
         private double         priorCandleHigh;
         private double         priorCandleLow;
         private double         originalStopPrice;
@@ -760,6 +787,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 projectXResolvedInstrumentKey = string.Empty;
                 projectXLastSyncedStopPrice = 0.0;
                 projectXLastSyncedTargetPrice = 0.0;
+                DisposeInfoBoxOverlay();
             }
         }
 
@@ -946,6 +974,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CurrentBar < minBars) return;
 
             CheckSessionReset();
+            DrawSessionTimeWindows();
+            UpdateInfoBox();
+
             if (FlattenOnBlockedWindowTransition)
                 HandleTimeWindowTransitions();
 
@@ -3445,6 +3476,398 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             return confirmed;
         }
+
+        #region Drawing Helpers
+
+        private void DrawSessionTimeWindows()
+        {
+            if (CurrentBar < 1) return;
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+            {
+                if (!S_Active(sid)) continue;
+                DrawSessionBackground(Time[0], sid);
+            }
+            DrawNewsWindows(Time[0]);
+        }
+
+        private void DrawSessionBackground(DateTime barTime, int sid)
+        {
+            DateTime sessionStart = barTime.Date + S_TradeWindowStart(sid).TimeOfDay;
+            DateTime sessionEnd = barTime.Date + S_ForcedCloseTime(sid).TimeOfDay;
+            if (S_ForcedCloseTime(sid).TimeOfDay <= S_TradeWindowStart(sid).TimeOfDay)
+                sessionEnd = sessionEnd.AddDays(1);
+            if (sessionEnd <= sessionStart) return;
+
+            int parentGroup = ParentGroupOf(sid);
+            Brush fillBrush = parentGroup == 1 ? Brushes.Gold : parentGroup == 2 ? Brushes.CornflowerBlue : Brushes.MediumSeaGreen;
+            string rectTag = string.Format("MICHTesting_{0}Fill_{1:yyyyMMdd_HHmm}", S_Label(sid), sessionStart);
+            if (DrawObjects[rectTag] != null) return;
+            Draw.Rectangle(this, rectTag, false, sessionStart, 0, sessionEnd, 30000, Brushes.Transparent, fillBrush, 10).ZOrder = -1;
+        }
+
+        private void DrawNewsWindows(DateTime barTime)
+        {
+            if (!UseNewsSkip) return;
+            EnsureNewsDatesInitialized();
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barTime.Date) continue;
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+                var areaBrush = new SolidColorBrush(Color.FromArgb(200, 255, 0, 0));
+                var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
+                try { if (areaBrush.CanFreeze) areaBrush.Freeze(); if (lineBrush.CanFreeze) lineBrush.Freeze(); } catch { }
+                string tagBase = string.Format("MICHTesting_News_{0:yyyyMMdd_HHmm}", newsTime);
+                if (DrawObjects[tagBase + "_Rect"] != null) continue;
+                Draw.Rectangle(this, tagBase + "_Rect", false, windowStart, 0, windowEnd, 30000, lineBrush, areaBrush, 2).ZOrder = -1;
+            }
+        }
+
+        #endregion
+
+        #region Info Box
+
+        private enum InfoValueRunKind { Default, Emoji, Symbol }
+
+        private void UpdateInfoBox()
+        {
+            if (State != State.Realtime && State != State.Historical) return;
+            if (ChartControl == null || ChartControl.Dispatcher == null) return;
+            var lines = BuildInfoLines();
+            if (!legacyInfoDrawingsCleared)
+            {
+                RemoveLegacyInfoBoxDrawings();
+                legacyInfoDrawingsCleared = true;
+            }
+            ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines));
+        }
+
+        private void RenderInfoBoxOverlay(List<Tuple<string, string, Brush, Brush>> lines)
+        {
+            if (!EnsureInfoBoxOverlay() || infoBoxRowsPanel == null) return;
+            infoBoxRowsPanel.Children.Clear();
+            for (int i = 0; i < lines.Count; i++)
+            {
+                bool isHeader = i == 0;
+                bool isFooter = i == lines.Count - 1;
+                var rowBorder = new Border
+                {
+                    Background = (isHeader || isFooter) ? InfoHeaderFooterGradientBrush : (i % 2 == 0 ? InfoBodyEvenBrush : InfoBodyOddBrush),
+                    Padding = new Thickness(6, 2, 6, 2)
+                };
+                var text = new TextBlock
+                {
+                    FontFamily = new FontFamily("Segoe UI"),
+                    FontSize = isHeader ? 15 : 14,
+                    FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal,
+                    TextAlignment = (isHeader || isFooter) ? TextAlignment.Center : TextAlignment.Left,
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
+                string label = lines[i].Item1 ?? string.Empty;
+                string value = lines[i].Item2 ?? string.Empty;
+                string normalizedValue = NormalizeInfoValueToken(value);
+                bool valueUsesEmojiRendering = ClassifyInfoValueRunKind(normalizedValue) == InfoValueRunKind.Emoji;
+                TextOptions.SetTextRenderingMode(text, valueUsesEmojiRendering ? TextRenderingMode.Grayscale : TextRenderingMode.ClearType);
+                text.Inlines.Add(new Run(label) { Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : InfoLabelBrush });
+                if (!string.IsNullOrEmpty(value))
+                {
+                    text.Inlines.Add(new Run(" ") { Foreground = (isHeader || isFooter) ? InfoHeaderTextBrush : InfoLabelBrush });
+                    Brush stateValueBrush = lines[i].Item4;
+                    if (stateValueBrush == null || stateValueBrush == Brushes.Transparent) stateValueBrush = lines[i].Item3;
+                    if (stateValueBrush == null || stateValueBrush == Brushes.Transparent) stateValueBrush = InfoValueBrush;
+                    text.Inlines.Add(BuildInfoValueRun(normalizedValue, stateValueBrush));
+                }
+                rowBorder.Child = text;
+                infoBoxRowsPanel.Children.Add(rowBorder);
+            }
+        }
+
+        private Run BuildInfoValueRun(string value, Brush stateValueBrush)
+        {
+            string safeValue = value ?? string.Empty;
+            string normalizedValue = NormalizeInfoValueToken(safeValue);
+            switch (ClassifyInfoValueRunKind(normalizedValue))
+            {
+                case InfoValueRunKind.Emoji:
+                    var emojiRun = new Run(normalizedValue) { FontFamily = InfoEmojiFontFamily, Foreground = stateValueBrush };
+                    TextOptions.SetTextRenderingMode(emojiRun, TextRenderingMode.Grayscale);
+                    return emojiRun;
+                case InfoValueRunKind.Symbol:
+                    return new Run(normalizedValue) { FontFamily = InfoSymbolFontFamily, Foreground = stateValueBrush };
+                default:
+                    return new Run(normalizedValue) { Foreground = stateValueBrush };
+            }
+        }
+
+        private string NormalizeInfoValueToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return value ?? string.Empty;
+            string token = value.Trim();
+            if (token == "○" || token == "◯" || token == "⚪") return "⛔";
+            return value;
+        }
+
+        private InfoValueRunKind ClassifyInfoValueRunKind(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return InfoValueRunKind.Default;
+            string token = value.Trim();
+            if (InfoEmojiTokens.Contains(token) || ContainsEmojiCodePoint(token)) return InfoValueRunKind.Emoji;
+            if (InfoSymbolTokens.Contains(token)) return InfoValueRunKind.Symbol;
+            return InfoValueRunKind.Default;
+        }
+
+        private bool ContainsEmojiCodePoint(string text)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                int cp = text[i];
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    cp = char.ConvertToUtf32(text[i], text[i + 1]);
+                    i++;
+                }
+                if ((cp >= 0x1F300 && cp <= 0x1FAFF) || (cp >= 0x2600 && cp <= 0x27BF)) return true;
+            }
+            return false;
+        }
+
+        private bool EnsureInfoBoxOverlay()
+        {
+            if (ChartControl == null) return false;
+            if (infoBoxContainer != null && infoBoxRowsPanel != null) return true;
+            var host = ChartControl.Parent as System.Windows.Controls.Panel;
+            if (host == null) return false;
+            infoBoxRowsPanel = new StackPanel { Orientation = Orientation.Vertical };
+            infoBoxContainer = new Border
+            {
+                Child = infoBoxRowsPanel,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(5, 8, 8, 37),
+                Background = Brushes.Transparent
+            };
+            host.Children.Add(infoBoxContainer);
+            System.Windows.Controls.Panel.SetZIndex(infoBoxContainer, int.MaxValue);
+            return true;
+        }
+
+        private void DisposeInfoBoxOverlay()
+        {
+            try
+            {
+                if (ChartControl == null || ChartControl.Dispatcher == null)
+                {
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                    return;
+                }
+
+                ChartControl.Dispatcher.InvokeAsync(() =>
+                {
+                    if (infoBoxContainer != null)
+                    {
+                        var parent = infoBoxContainer.Parent as System.Windows.Controls.Panel;
+                        if (parent != null) parent.Children.Remove(infoBoxContainer);
+                    }
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                });
+            }
+            catch
+            {
+                infoBoxRowsPanel = null;
+                infoBoxContainer = null;
+            }
+        }
+
+        private void RemoveLegacyInfoBoxDrawings()
+        {
+            RemoveDrawObject("Info");
+            RemoveDrawObject("myStatusLabel_bg");
+            for (int i = 0; i < 64; i++)
+            {
+                RemoveDrawObject(string.Format("myStatusLabel_bg_{0}", i));
+                RemoveDrawObject(string.Format("myStatusLabel_label_{0}", i));
+                RemoveDrawObject(string.Format("myStatusLabel_val_{0}", i));
+            }
+        }
+
+        private bool IsInSessionDisplayWindow(int sid, DateTime time)
+        {
+            double barSM = ToSessionMinutes(time.TimeOfDay);
+            double startSM = ToSessionMinutes(S_TradeWindowStart(sid).TimeOfDay);
+            double endSM = ToSessionMinutes(S_ForcedCloseTime(sid).TimeOfDay);
+            return barSM >= startSM && barSM < endSM;
+        }
+
+        private int DetermineDisplaySession(DateTime time)
+        {
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+            {
+                if (S_Active(sid) && IsInSessionDisplayWindow(sid, time))
+                    return sid;
+            }
+            return 0;
+        }
+
+        private int GetDefaultEnabledSessionId()
+        {
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+            {
+                if (S_Active(sid)) return sid;
+            }
+            return 0;
+        }
+
+        private int GetInfoSessionId()
+        {
+            if (activeSessionId > 0)
+            {
+                lastInfoSessionId = activeSessionId;
+                return activeSessionId;
+            }
+
+            int displaySessionId = DetermineDisplaySession(Time[0]);
+            if (displaySessionId > 0)
+            {
+                lastInfoSessionId = displaySessionId;
+                return displaySessionId;
+            }
+
+            if (lastInfoSessionId > 0)
+                return lastInfoSessionId;
+
+            lastInfoSessionId = GetDefaultEnabledSessionId();
+            return lastInfoSessionId;
+        }
+
+        private int ParentGroupOf(int sid)
+        {
+            return sid <= 3 ? 1 : sid <= 6 ? 2 : 3;
+        }
+
+        private string FormatInfoSessionLabel(int sid)
+        {
+            switch (sid)
+            {
+                case 1: return "New York A";
+                case 2: return "New York B";
+                case 3: return "New York C";
+                case 4: return "London A";
+                case 5: return "London B";
+                case 6: return "London C";
+                case 7: return "Asia A";
+                case 8: return "Asia B";
+                case 9: return "Asia C";
+                default: return "Off";
+            }
+        }
+
+        private string BuildContractsInfoText(int sid)
+        {
+            if (sid >= 1 && sid <= SubSessionCount)
+                return S_Contracts(sid).ToString(CultureInfo.InvariantCulture);
+
+            if (Position != null && Position.Quantity > 0)
+                return Position.Quantity.ToString(CultureInfo.InvariantCulture);
+
+            int defaultSid = GetDefaultEnabledSessionId();
+            return defaultSid >= 1 && defaultSid <= SubSessionCount
+                ? S_Contracts(defaultSid).ToString(CultureInfo.InvariantCulture)
+                : "Off";
+        }
+
+        private List<Tuple<string, string, Brush, Brush>> BuildInfoLines()
+        {
+            var lines = new List<Tuple<string, string, Brush, Brush>>();
+            int infoSessionId = GetInfoSessionId();
+            lines.Add(InfoLine(string.Format("MICHTesting v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add(InfoLine("Contracts:", BuildContractsInfoText(infoSessionId), Brushes.LightGray, InfoValueBrush));
+
+            if (!UseNewsSkip)
+            {
+                lines.Add(InfoLine("News:", "Disabled", Brushes.LightGray, InfoValueBrush));
+            }
+            else
+            {
+                List<DateTime> weekNews = GetCurrentWeekNews(Time[0]);
+                if (weekNews.Count == 0)
+                {
+                    lines.Add(InfoLine("News:", "🚫", Brushes.LightGray, Brushes.IndianRed));
+                }
+                else
+                {
+                    for (int i = 0; i < weekNews.Count; i++)
+                    {
+                        DateTime newsTime = weekNews[i];
+                        bool blockPassed = Time[0] > newsTime.AddMinutes(NewsBlockMinutes);
+                        string value = newsTime.ToString("ddd", CultureInfo.InvariantCulture) + " " + newsTime.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                        Brush newsBrush = blockPassed ? PassedNewsRowBrush : Brushes.LightGray;
+                        lines.Add(InfoLine("News:", value, newsBrush, newsBrush));
+                    }
+                }
+            }
+
+            lines.Add(InfoLine("Session:", FormatInfoSessionLabel(infoSessionId), Brushes.LightGray, InfoValueBrush));
+            lines.Add(InfoLine("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
+            return lines;
+        }
+
+        private Tuple<string, string, Brush, Brush> InfoLine(string label, string value, Brush labelBrush, Brush valueBrush)
+        {
+            return new Tuple<string, string, Brush, Brush>(label, value, labelBrush, valueBrush);
+        }
+
+        private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            try { if (brush.CanFreeze) brush.Freeze(); } catch { }
+            return brush;
+        }
+
+        private static Brush CreateFrozenVerticalGradientBrush(Color top, Color mid, Color bottom)
+        {
+            var brush = new LinearGradientBrush { StartPoint = new Point(0.5, 0.0), EndPoint = new Point(0.5, 1.0) };
+            brush.GradientStops.Add(new GradientStop(top, 0.0));
+            brush.GradientStops.Add(new GradientStop(mid, 0.5));
+            brush.GradientStops.Add(new GradientStop(bottom, 1.0));
+            try { if (brush.CanFreeze) brush.Freeze(); } catch { }
+            return brush;
+        }
+
+        private string GetAddOnVersion()
+        {
+            Assembly assembly = GetType().Assembly;
+            Version version = assembly.GetName().Version;
+            return version != null ? version.ToString() : "0.0.0.0";
+        }
+
+        private List<DateTime> GetCurrentWeekNews(DateTime time)
+        {
+            EnsureNewsDatesInitialized();
+            var weekNews = new List<DateTime>();
+            DateTime weekStart = GetWeekStart(time.Date);
+            DateTime weekEnd = weekStart.AddDays(7);
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime candidate = NewsDates[i];
+                if (candidate >= weekStart && candidate < weekEnd)
+                    weekNews.Add(candidate);
+            }
+            weekNews.Sort();
+            return weekNews;
+        }
+
+        private DateTime GetWeekStart(DateTime date)
+        {
+            DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+            int diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
+            return date.AddDays(-diff).Date;
+        }
+
+        #endregion
 
         private void CancelWorkingEntryOrder()
         {
