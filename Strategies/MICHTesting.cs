@@ -1405,6 +1405,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return dir==1 ? priorCandleLow-extra*TickSize : priorCandleHigh+extra*TickSize;
         }
 
+        private double GetReferencePriceForProtectiveStop(MarketPosition positionDirection)
+        {
+            if (positionDirection == MarketPosition.Long)
+            {
+                double bid = GetCurrentBid();
+                if (bid > 0)
+                    return bid;
+            }
+            else if (positionDirection == MarketPosition.Short)
+            {
+                double ask = GetCurrentAsk();
+                if (ask > 0)
+                    return ask;
+            }
+
+            return Close[0];
+        }
+
+        private bool CanAmendProtectiveStopForCurrentMarket(MarketPosition positionDirection, double proposedStopPrice)
+        {
+            if (double.IsNaN(proposedStopPrice) || double.IsInfinity(proposedStopPrice) || proposedStopPrice <= 0)
+                return false;
+
+            double referencePrice = GetReferencePriceForProtectiveStop(positionDirection);
+            if (double.IsNaN(referencePrice) || double.IsInfinity(referencePrice) || referencePrice <= 0)
+                return true;
+
+            if (positionDirection == MarketPosition.Long)
+                return proposedStopPrice < referencePrice;
+            if (positionDirection == MarketPosition.Short)
+                return proposedStopPrice > referencePrice;
+
+            return true;
+        }
+
         #endregion
 
         // =====================================================================
@@ -1425,8 +1460,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 : tradeEntryPrice-SD_BreakevenOffsetTicks(sid,d)*TickSize;
             be=Instrument.MasterInstrument.RoundToTickSize(be);
             string eName=GetEntrySignalName(d);
-            if (d==1 &&be>originalStopPrice&&be<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,be,BuildExitSignalName("SL"),eName);  originalStopPrice=be; breakEvenApplied=true; }
-            if (d==-1&&be<originalStopPrice&&be>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,be,BuildExitSignalName("SL"),eName); originalStopPrice=be; breakEvenApplied=true; }
+            if (d==1 &&be>originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long,be)) { ExitLongStopMarket(0,true,Position.Quantity,be,BuildExitSignalName("SL"),eName);  originalStopPrice=be; breakEvenApplied=true; }
+            if (d==-1&&be<originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short,be)) { ExitShortStopMarket(0,true,Position.Quantity,be,BuildExitSignalName("SL"),eName); originalStopPrice=be; breakEvenApplied=true; }
         }
 
         private void ManageEntryBarSl(int sid)
@@ -1438,12 +1473,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (d==1&&Position.MarketPosition==MarketPosition.Long&&Close[1]>Open[1])
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(Low[1]-SD_SlExtraTicks(sid,d)*TickSize);
-                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
+                if (ns>originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long,ns)) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
             if (d==-1&&Position.MarketPosition==MarketPosition.Short&&Close[1]<Open[1])
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(High[1]+SD_SlExtraTicks(sid,d)*TickSize);
-                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
+                if (ns<originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short,ns)) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
         }
 
@@ -1455,12 +1490,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (d==1&&Position.MarketPosition==MarketPosition.Long)
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(GetLowerMAForTrail(sid,d)-SD_TrailOffsetTicks(sid,d)*TickSize);
-                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
+                if (ns>originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long,ns)) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
             else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(GetUpperMAForTrail(sid,d)+SD_TrailOffsetTicks(sid,d)*TickSize);
-                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
+                if (ns<originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short,ns)) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
         }
 
@@ -1472,12 +1507,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (d==1&&Position.MarketPosition==MarketPosition.Long)
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(Low[offset]-SD_SlExtraTicks(sid,d)*TickSize);
-                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
+                if (ns>originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long,ns)) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
             else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(High[offset]+SD_SlExtraTicks(sid,d)*TickSize);
-                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
+                if (ns<originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short,ns)) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
         }
 
@@ -1497,7 +1532,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (priceOffsetTrailActive)
                 {
                     double ns=Instrument.MasterInstrument.RoundToTickSize(Close[0]-priceOffsetTrailDistance);
-                    if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
+                    if (ns>originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Long,ns)) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
                 }
             }
             else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
@@ -1511,7 +1546,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (priceOffsetTrailActive)
                 {
                     double ns=Instrument.MasterInstrument.RoundToTickSize(Close[0]+priceOffsetTrailDistance);
-                    if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
+                    if (ns<originalStopPrice&&CanAmendProtectiveStopForCurrentMarket(MarketPosition.Short,ns)) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
                 }
             }
         }
