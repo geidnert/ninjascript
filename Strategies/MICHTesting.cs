@@ -324,6 +324,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double         opposingBarBenchmark;
         private bool           wasInNewsSkipWindow;
         private bool           maxAccountLimitHit;
+        private bool           isConfiguredTimeframeValid = true;
+        private bool           isConfiguredInstrumentValid = true;
+        private bool           timeframePopupShown;
+        private bool           instrumentPopupShown;
         private MarketPosition prevMarketPosition;
         private Order          entryOrder;
         private Order          stopOrder;
@@ -718,6 +722,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     swingInd[sid] = Swing(Math.Max(SD_SwingStrength(sid,1), SD_SwingStrength(sid,-1)));
                 }
 
+                ValidateRequiredPrimaryTimeframe(5);
+                ValidateRequiredPrimaryInstrument();
                 heartbeatReporter = new StrategyHeartbeatReporter(
                     HeartbeatStrategyName,
                     System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
@@ -910,6 +916,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
+            {
+                CancelWorkingEntryOrder();
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    FlattenAndCancel("InvalidConfiguration");
+                return;
+            }
+
             // Minimum bars check across all active sessions
             int minBars = 20;
             for (int sid = 1; sid <= SubSessionCount; sid++)
@@ -3064,6 +3078,83 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string GetEntrySignalName(int direction) { return direction == 1 ? LongEntrySignal : ShortEntrySignal; }
         private string BuildExitSignalName(string reason) { return StrategySignalPrefix + reason; }
+
+        private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
+        {
+            bool isMinuteSeries = BarsPeriod != null && BarsPeriod.BarsPeriodType == NinjaTrader.Data.BarsPeriodType.Minute;
+            bool timeframeMatches = isMinuteSeries && BarsPeriod.Value == requiredMinutes;
+            isConfiguredTimeframeValid = timeframeMatches;
+            if (timeframeMatches) return;
+
+            string actualTimeframe = BarsPeriod == null
+                ? "Unknown"
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", BarsPeriod.Value, BarsPeriod.BarsPeriodType);
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on a {1}-minute chart. Current chart is {2}.",
+                Name,
+                requiredMinutes,
+                actualTimeframe);
+
+            Print("Timeframe validation failed | " + message);
+            if (timeframePopupShown) return;
+
+            timeframePopupShown = true;
+            try
+            {
+                if (System.Windows.Application.Current != null)
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Timeframe",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Print("Failed to show timeframe popup: " + ex.Message);
+            }
+        }
+
+        private void ValidateRequiredPrimaryInstrument()
+        {
+            string instrumentName = Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+            bool instrumentMatches = instrumentName == "NQ" || instrumentName == "MNQ";
+            isConfiguredInstrumentValid = instrumentMatches;
+            if (instrumentMatches) return;
+
+            string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0} must run on NQ or MNQ. Current instrument is {1}.",
+                Name,
+                actualInstrument);
+
+            Print("Instrument validation failed | " + message);
+            if (instrumentPopupShown) return;
+
+            instrumentPopupShown = true;
+            try
+            {
+                if (System.Windows.Application.Current != null)
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        System.Windows.MessageBox.Show(
+                            message,
+                            "Invalid Instrument",
+                            System.Windows.MessageBoxButton.OK,
+                            System.Windows.MessageBoxImage.Warning);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Print("Failed to show instrument popup: " + ex.Message);
+            }
+        }
 
         private bool ShowEntryConfirmation(string orderType, double price, int quantity)
         {
