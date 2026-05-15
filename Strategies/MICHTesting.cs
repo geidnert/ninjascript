@@ -24,6 +24,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class MICHTesting : Strategy
     {
+        private const string StrategySignalPrefix = "MICH";
+        private const string LongEntrySignal = StrategySignalPrefix + "Long";
+        private const string ShortEntrySignal = StrategySignalPrefix + "Short";
+
         public MICHTesting()
         {
             VendorLicense(1235);
@@ -842,7 +846,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             priorCandleLow    = pL;
 
             int qty = Math.Max(1, S_Contracts(sid));
-            string name = dir==1 ? "LongEntry" : "ShortEntry";
+            string name = GetEntrySignalName(dir);
             MichalEntryMode mode = SD_EntryMode(sid,dir);
             if (mode == MichalEntryMode.LimitOffset)
             {
@@ -871,8 +875,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int qty, MarketPosition mp, string orderId, DateTime time)
         {
             if (exec.Order == null) return;
-            string n = exec.Order.Name;
-            if ((n=="LongEntry"||n=="ShortEntry") && exec.Order.OrderState==OrderState.Filled && !hasActivePosition)
+            string n = exec.Order.Name ?? string.Empty;
+            if ((n==LongEntrySignal||n==ShortEntrySignal) && exec.Order.OrderState==OrderState.Filled && !hasActivePosition)
             {
                 tradeEntryPrice=exec.Price; hasActivePosition=true;
                 barsSinceEntry=0; breakEvenApplied=false; entryBarSlApplied=false;
@@ -880,7 +884,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 opposingBarBenchmark=0; opposingBarBenchmarkSet=false;
 
                 int sid=activeSessionId; int d=tradeDirection;
-                string eName = d==1?"LongEntry":"ShortEntry";
+                string eName = GetEntrySignalName(d);
                 double tp = CalculateTakeProfit(sid,d,tradeEntryPrice);
                 double sl = CalculateStopLoss(sid,d);
 
@@ -888,8 +892,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else       { if(tp>=tradeEntryPrice) tp=tradeEntryPrice-SD_TakeProfitTicks(sid,d)*TickSize; if(sl<=tradeEntryPrice) sl=tradeEntryPrice+4*TickSize; }
                 originalStopPrice=sl;
 
-                if (d==1) { ExitLongLimit(0,true,Position.Quantity,tp,"TP",eName); ExitLongStopMarket(0,true,Position.Quantity,sl,"SL",eName); }
-                else      { ExitShortLimit(0,true,Position.Quantity,tp,"TP",eName); ExitShortStopMarket(0,true,Position.Quantity,sl,"SL",eName); }
+                if (d==1) { ExitLongLimit(0,true,Position.Quantity,tp,BuildExitSignalName("TP"),eName); ExitLongStopMarket(0,true,Position.Quantity,sl,BuildExitSignalName("SL"),eName); }
+                else      { ExitShortLimit(0,true,Position.Quantity,tp,BuildExitSignalName("TP"),eName); ExitShortStopMarket(0,true,Position.Quantity,sl,BuildExitSignalName("SL"),eName); }
                 Print(string.Format("{0} | [{1}] FILLED {2} @ {3:F2} | TP={4:F2} SL={5:F2}",
                     time,S_Label(sid),d==1?"LONG":"SHORT",tradeEntryPrice,tp,sl));
             }
@@ -974,9 +978,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ? tradeEntryPrice+SD_BreakevenOffsetTicks(sid,d)*TickSize
                 : tradeEntryPrice-SD_BreakevenOffsetTicks(sid,d)*TickSize;
             be=Instrument.MasterInstrument.RoundToTickSize(be);
-            string eName=d==1?"LongEntry":"ShortEntry";
-            if (d==1 &&be>originalStopPrice&&be<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,be,"SL",eName);  originalStopPrice=be; breakEvenApplied=true; }
-            if (d==-1&&be<originalStopPrice&&be>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,be,"SL",eName); originalStopPrice=be; breakEvenApplied=true; }
+            string eName=GetEntrySignalName(d);
+            if (d==1 &&be>originalStopPrice&&be<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,be,BuildExitSignalName("SL"),eName);  originalStopPrice=be; breakEvenApplied=true; }
+            if (d==-1&&be<originalStopPrice&&be>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,be,BuildExitSignalName("SL"),eName); originalStopPrice=be; breakEvenApplied=true; }
         }
 
         private void ManageEntryBarSl(int sid)
@@ -984,16 +988,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int d=tradeDirection;
             if (!SD_MoveSlToEntryBar(sid,d)||entryBarSlApplied||barsSinceEntry!=1) return;
             entryBarSlApplied=true;
-            string eName=d==1?"LongEntry":"ShortEntry";
+            string eName=GetEntrySignalName(d);
             if (d==1&&Position.MarketPosition==MarketPosition.Long&&Close[1]>Open[1])
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(Low[1]-SD_SlExtraTicks(sid,d)*TickSize);
-                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
             if (d==-1&&Position.MarketPosition==MarketPosition.Short&&Close[1]<Open[1])
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(High[1]+SD_SlExtraTicks(sid,d)*TickSize);
-                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
         }
 
@@ -1001,16 +1005,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             int d=tradeDirection;
             if (barsSinceEntry < SD_TrailDelayBars(sid,d)) return;
-            string eName=d==1?"LongEntry":"ShortEntry";
+            string eName=GetEntrySignalName(d);
             if (d==1&&Position.MarketPosition==MarketPosition.Long)
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(GetLowerMAForTrail(sid,d)-SD_TrailOffsetTicks(sid,d)*TickSize);
-                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
             else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(GetUpperMAForTrail(sid,d)+SD_TrailOffsetTicks(sid,d)*TickSize);
-                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
         }
 
@@ -1018,16 +1022,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             int d=tradeDirection; int offset=SD_TrailCandleOffset(sid,d);
             if (offset<=0||barsSinceEntry<offset+SD_TrailDelayBars(sid,d)) return;
-            string eName=d==1?"LongEntry":"ShortEntry";
+            string eName=GetEntrySignalName(d);
             if (d==1&&Position.MarketPosition==MarketPosition.Long)
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(Low[offset]-SD_SlExtraTicks(sid,d)*TickSize);
-                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
             else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
             {
                 double ns=Instrument.MasterInstrument.RoundToTickSize(High[offset]+SD_SlExtraTicks(sid,d)*TickSize);
-                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
             }
         }
 
@@ -1035,7 +1039,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             int d=tradeDirection;
             if (!SD_EnablePriceOffsetTrail(sid,d)||tradeEntryPrice==0) return;
-            string eName=d==1?"LongEntry":"ShortEntry";
+            string eName=GetEntrySignalName(d);
             if (d==1&&Position.MarketPosition==MarketPosition.Long)
             {
                 if (!priceOffsetTrailActive&&GetLowerMAForTrail(sid,d)>originalStopPrice)
@@ -1047,7 +1051,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (priceOffsetTrailActive)
                 {
                     double ns=Instrument.MasterInstrument.RoundToTickSize(Close[0]-priceOffsetTrailDistance);
-                    if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                    if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
                 }
             }
             else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
@@ -1061,7 +1065,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (priceOffsetTrailActive)
                 {
                     double ns=Instrument.MasterInstrument.RoundToTickSize(Close[0]+priceOffsetTrailDistance);
-                    if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                    if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,BuildExitSignalName("SL"),eName); originalStopPrice=ns; }
                 }
             }
         }
@@ -1109,12 +1113,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (d==-1&&Position.MarketPosition==MarketPosition.Short&&bull)
             {
                 if (!opposingBarBenchmarkSet) { opposingBarBenchmark=Close[0]; opposingBarBenchmarkSet=true; }
-                else if (Close[0]>opposingBarBenchmark) ExitShort(Position.Quantity,"OppBarExit","ShortEntry");
+                else if (Close[0]>opposingBarBenchmark) ExitShort(Position.Quantity,BuildExitSignalName("OppBarExit"),ShortEntrySignal);
             }
             if (d== 1&&Position.MarketPosition==MarketPosition.Long&&bear)
             {
                 if (!opposingBarBenchmarkSet) { opposingBarBenchmark=Close[0]; opposingBarBenchmarkSet=true; }
-                else if (Close[0]<opposingBarBenchmark) ExitLong(Position.Quantity,"OppBarExit","LongEntry");
+                else if (Close[0]<opposingBarBenchmark) ExitLong(Position.Quantity,BuildExitSignalName("OppBarExit"),LongEntrySignal);
             }
         }
 
@@ -1194,9 +1198,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void FlattenAndCancel(string reason)
         {
             CancelWorkingEntryOrder();
-            if (Position.MarketPosition==MarketPosition.Long)  ExitLong(Position.Quantity,"ForcedExit","LongEntry");
-            if (Position.MarketPosition==MarketPosition.Short) ExitShort(Position.Quantity,"ForcedExit","ShortEntry");
+            if (Position.MarketPosition==MarketPosition.Long)  ExitLong(Position.Quantity,BuildExitSignalName("ForcedExit"),LongEntrySignal);
+            if (Position.MarketPosition==MarketPosition.Short) ExitShort(Position.Quantity,BuildExitSignalName("ForcedExit"),ShortEntrySignal);
         }
+
+        private string GetEntrySignalName(int direction) { return direction == 1 ? LongEntrySignal : ShortEntrySignal; }
+        private string BuildExitSignalName(string reason) { return StrategySignalPrefix + reason; }
         private void CancelWorkingEntryOrder()
         {
             if (entryOrder!=null && (entryOrder.OrderState==OrderState.Working||entryOrder.OrderState==OrderState.Accepted))
