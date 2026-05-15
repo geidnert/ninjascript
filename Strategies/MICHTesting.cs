@@ -377,6 +377,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
                 FlattenOnBlockedWindowTransition = false;
+                DebugLogging = false;
                 UseWebhooks = false;
                 WebhookProviderType = WebhookProvider.TradersPost;
                 WebhookUrl = string.Empty;
@@ -1860,7 +1861,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
                 catch (Exception ex)
                 {
-                    LogProjectX(string.Format(
+                    LogDebug(string.Format(
                         "ProjectX protective sync error | kind={0} accountId={1} contractId={2} price={3:0.00} error={4}",
                         isStopOrder ? "stop" : "target",
                         account.Id,
@@ -1881,12 +1882,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (WebhookProviderType == WebhookProvider.ProjectX)
             {
                 int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
+                LogDebug(string.Format(
+                    "Webhook attempt | provider=ProjectX event={0} qty={1} market={2} entry={3:0.00} tp={4:0.00} sl={5:0.00}",
+                    eventType,
+                    orderQtyForProvider,
+                    isMarketEntry,
+                    entryPrice,
+                    takeProfit,
+                    stopLoss));
                 return SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
             }
 
             if (string.IsNullOrWhiteSpace(WebhookUrl))
             {
-                Print(string.Format("{0} | Webhook skipped | provider=TradersPost event={1} reason=empty-url", Time[0], eventType));
+                LogDebug(string.Format("Webhook skipped | provider=TradersPost event={0} reason=empty-url", eventType));
                 return false;
             }
 
@@ -1933,7 +1942,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 if (string.IsNullOrWhiteSpace(json))
+                {
+                    LogDebug(string.Format(
+                        "Webhook skipped | provider=TradersPost event={0} reason=empty-payload qty={1}",
+                        eventType,
+                        orderQty));
                     return false;
+                }
+
+                LogDebug(string.Format(
+                    "Webhook attempt | provider=TradersPost event={0} action={1} qty={2} market={3} url={4}",
+                    eventType,
+                    action,
+                    orderQty,
+                    isMarketEntry,
+                    WebhookUrl));
+                LogDebug(string.Format("Webhook payload | {0}", json));
 
                 using (var client = new System.Net.WebClient())
                 {
@@ -1941,11 +1965,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     client.UploadString(WebhookUrl, "POST", json);
                 }
 
+                LogDebug(string.Format("Webhook sent | provider=TradersPost event={0} action={1} qty={2}", eventType, action, orderQty));
                 return true;
             }
             catch (Exception ex)
             {
-                Print(string.Format("{0} | Webhook error | event={1} error={2}", Time[0], eventType, ex.Message));
+                LogDebug(string.Format("Webhook error | event={0} error={1}", eventType, ex.Message));
                 return false;
             }
         }
@@ -1973,12 +1998,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 .Replace("\n", "\\n");
         }
 
+        private void LogMessage(string message, bool forceLog)
+        {
+            if (!forceLog && !DebugLogging)
+                return;
+
+            if (Bars == null || CurrentBar < 0)
+            {
+                Print(string.Format("{0} | {1}", HeartbeatStrategyName, message));
+                return;
+            }
+
+            Print(string.Format("{0} | {3} | bar={1} | {2}", Time[0], CurrentBar, message, HeartbeatStrategyName));
+        }
+
+        private void LogDebug(string message)
+        {
+            LogMessage(message, false);
+        }
+
+        private void LogProjectXDiscovery(string message)
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            LogDebug(message);
+        }
+
+        private void LogProjectXStatus(string message)
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            LogMessage(message, true);
+        }
+
         private void LogProjectX(string message)
         {
-            if (Bars == null || CurrentBar < 0)
-                Print(string.Format("{0} | {1}", HeartbeatStrategyName, message));
-            else
-                Print(string.Format("{0} | {1}", Time[0], message));
+            LogProjectXStatus(message);
         }
 
         private void RunProjectXStartupPreflight()
@@ -1986,7 +2043,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!UseWebhooks || WebhookProviderType != WebhookProvider.ProjectX)
                 return;
 
-            LogProjectX(string.Format(
+            LogProjectXDiscovery(string.Format(
                 "ProjectX startup preflight begin | instrument={0} accounts={1} baseUrl={2}",
                 GetProjectXInstrumentKey(),
                 ProjectXTradeAllAccounts ? "<all>" : (ProjectXAccountId ?? string.Empty),
@@ -1994,7 +2051,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (!EnsureProjectXSession())
             {
-                LogProjectX("ProjectX startup preflight failed | stage=auth");
+                LogProjectXDiscovery("ProjectX startup preflight failed | stage=auth");
                 return;
             }
 
@@ -2002,11 +2059,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string contractId;
             if (!TryGetProjectXTargets(out targetAccounts, out contractId))
             {
-                LogProjectX("ProjectX startup preflight failed | stage=targets");
+                LogProjectXDiscovery("ProjectX startup preflight failed | stage=targets");
                 return;
             }
 
-            LogProjectX(string.Format(
+            LogProjectXStatus(string.Format(
+                "ProjectX webhook targets | count={0} contractId={1}",
+                targetAccounts.Count,
+                contractId ?? string.Empty));
+            foreach (var account in targetAccounts)
+            {
+                LogProjectXStatus(string.Format(
+                    "ProjectX target account | id={0} name={1}",
+                    account.Id,
+                    account.Name ?? string.Empty));
+            }
+
+            LogProjectXDiscovery(string.Format(
                 "ProjectX startup preflight ready | accounts={0} contractId={1}",
                 FormatProjectXAccountsForLog(targetAccounts),
                 contractId));
@@ -2015,12 +2084,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
         {
             if (!EnsureProjectXSession())
+            {
+                LogDebug(string.Format("Webhook skipped | provider=ProjectX event={0} reason=auth-unavailable", eventType));
                 return false;
+            }
 
             List<ProjectXAccountInfo> targetAccounts;
             string contractId;
             if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+            {
+                LogDebug(string.Format("Webhook skipped | provider=ProjectX event={0} reason=account-selection-or-contract-unavailable", eventType));
                 return false;
+            }
+
+            LogDebug(string.Format(
+                "ProjectX targets | event={0} accounts={1} contractId={2}",
+                eventType,
+                FormatProjectXAccountsForLog(targetAccounts),
+                contractId));
 
             bool sentAny = false;
             string action = (eventType ?? string.Empty).ToLowerInvariant();
@@ -2049,7 +2130,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
                 catch (Exception ex)
                 {
-                    LogProjectX(string.Format(
+                    LogDebug(string.Format(
                         "ProjectX account error | event={0} accountId={1} accountName={2} error={3}",
                         eventType,
                         account.Id,
@@ -2085,7 +2166,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 JsonEscape(ProjectXUsername),
                 JsonEscape(ProjectXApiKey));
 
-            string response = ProjectXPost("/api/Auth/loginKey", loginJson, false);
+            string response = ProjectXPost("/api/Auth/loginKey", loginJson, false, true);
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                LogProjectX("ProjectX login failed | reason=empty-response");
+                return false;
+            }
+
             string token;
             if (!TryGetJsonString(response, "token", out token))
             {
@@ -2118,6 +2205,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (ProjectXTradeAllAccounts)
             {
                 targetAccounts = accounts.Where(a => a.CanTrade).ToList();
+                if (targetAccounts.Count == 0)
+                    LogProjectX("ProjectX account selection failed | reason=no-tradable-accounts");
                 return targetAccounts.Count > 0;
             }
 
@@ -2130,6 +2219,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             var matchedAccounts = new List<ProjectXAccountInfo>();
             var matchedIds = new HashSet<int>();
+            var unmatchedSelectors = new List<string>();
             foreach (string selector in selectors)
             {
                 int accountId;
@@ -2137,9 +2227,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     ? accounts.Where(a => a.CanTrade && a.Id == accountId).ToList()
                     : accounts.Where(a => a.CanTrade && string.Equals(a.Name ?? string.Empty, selector, StringComparison.OrdinalIgnoreCase)).ToList();
 
+                if (matches.Count == 0)
+                {
+                    unmatchedSelectors.Add(selector);
+                    continue;
+                }
+
                 foreach (var match in matches)
                     if (matchedIds.Add(match.Id))
                         matchedAccounts.Add(match);
+            }
+
+            if (unmatchedSelectors.Count > 0)
+            {
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX account selection unmatched | selectors={0}",
+                    string.Join(", ", unmatchedSelectors.ToArray())));
             }
 
             targetAccounts = matchedAccounts;
@@ -2156,13 +2259,36 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return true;
             }
 
-            string response = ProjectXPost("/api/Account/search", "{\"onlyActiveAccounts\":true}", true);
+            string response = ProjectXPost("/api/Account/search", "{\"onlyActiveAccounts\":true}", true, true);
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                LogProjectX("ProjectX warning | no webhooks will be sent because no ProjectX accounts were found.");
+                LogProjectXDiscovery("ProjectX account load failed | reason=empty-response");
+                accounts = null;
+                return false;
+            }
+
             accounts = ExtractProjectXAccounts(response).ToList();
             projectXAccounts = accounts.Count > 0 ? accounts : null;
 
+            LogProjectX("ProjectX accounts found | count=" + accounts.Count);
             if (accounts.Count == 0)
-                LogProjectX("ProjectX account load failed | reason=no-accounts");
-            return accounts.Count > 0;
+            {
+                LogProjectX("ProjectX warning | no webhooks will be sent because no ProjectX accounts were found.");
+                return false;
+            }
+
+            foreach (var account in accounts)
+            {
+                LogProjectX(string.Format(
+                    "ProjectX account | id={0} name={1} canTrade={2} isVisible={3}",
+                    account.Id,
+                    account.Name ?? string.Empty,
+                    account.CanTrade,
+                    account.IsVisible));
+            }
+
+            return true;
         }
 
         private bool TryResolveProjectXContractId(out string contractId)
@@ -2172,6 +2298,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!string.IsNullOrWhiteSpace(ProjectXContractId))
             {
                 contractId = ProjectXContractId.Trim();
+                projectXResolvedInstrumentKey = GetProjectXInstrumentKey();
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX contract override | instrument={0} contractId={1}",
+                    projectXResolvedInstrumentKey,
+                    contractId));
                 return true;
             }
 
@@ -2185,7 +2316,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             string root = GetProjectXInstrumentRoot();
             if (string.IsNullOrWhiteSpace(root))
+            {
+                LogProjectXDiscovery("ProjectX contract resolve failed | reason=empty-instrument-root");
                 return false;
+            }
 
             DateTime expiry;
             string desiredSuffix = TryGetInstrumentExpiry(out expiry) || TryParseInstrumentExpiryFromFullName(out expiry)
@@ -2198,11 +2332,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             ProjectXContractInfo selected = SelectProjectXContract(root, desiredSuffix, contracts);
             if (selected == null || string.IsNullOrWhiteSpace(selected.Id))
+            {
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX contract resolve failed | root={0} desiredSuffix={1} candidates={2}",
+                    root,
+                    string.IsNullOrWhiteSpace(desiredSuffix) ? "<none>" : desiredSuffix,
+                    contracts != null ? contracts.Count : 0));
                 return false;
+            }
 
             contractId = selected.Id;
             projectXResolvedContractId = contractId;
             projectXResolvedInstrumentKey = instrumentKey;
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract resolved | instrument={0} root={1} desiredSuffix={2} contractId={3} name={4} active={5}",
+                instrumentKey,
+                root,
+                string.IsNullOrWhiteSpace(desiredSuffix) ? "<none>" : desiredSuffix,
+                selected.Id,
+                selected.Name ?? string.Empty,
+                selected.ActiveContract));
             return true;
         }
 
@@ -2218,6 +2367,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TrySearchProjectXContractsByText(root, root, out contracts) && contracts.Count > 0)
                 return true;
 
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract search failed | root={0} desiredSuffix={1}",
+                root,
+                string.IsNullOrWhiteSpace(desiredSuffix) ? "<none>" : desiredSuffix));
             return false;
         }
 
@@ -2244,6 +2397,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             contracts = ExtractProjectXContracts(response)
                 .Where(c => DoesProjectXContractMatchRoot(c, root))
                 .ToList();
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract search | searchText={0} live={1} matches={2}",
+                searchText,
+                live,
+                contracts.Count));
             return !string.IsNullOrWhiteSpace(response);
         }
 
@@ -2460,7 +2618,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (!modifiedAny)
             {
-                LogProjectX(string.Format(
+                LogDebug(string.Format(
                     "ProjectX protective sync skipped | kind={0} accountId={1} contractId={2} price={3:0.00} reason=no-open-order",
                     isStopOrder ? "stop" : "target",
                     accountId,
@@ -2533,18 +2691,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             ProjectXCancelOrders(accountId, contractId);
             if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+            {
+                LogDebug(string.Format(
+                    "ProjectX prepare failed | stage=cancel-clear accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
                 return false;
+            }
 
             int positionSize;
             if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
             {
                 ProjectXClosePosition(accountId, contractId);
                 if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                {
+                    LogDebug(string.Format(
+                        "ProjectX prepare failed | stage=flat accountId={0} contractId={1} positionSize={2}",
+                        accountId,
+                        contractId,
+                        positionSize));
                     return false;
+                }
 
                 ProjectXCancelOrders(accountId, contractId);
                 if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                {
+                    LogDebug(string.Format(
+                        "ProjectX prepare failed | stage=post-close-cancel accountId={0} contractId={1}",
+                        accountId,
+                        contractId));
                     return false;
+                }
             }
 
             return true;
@@ -2553,17 +2730,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void ProjectXFlattenPosition(int accountId, string contractId)
         {
             ProjectXCancelOrders(accountId, contractId);
-            WaitForProjectXOrdersCleared(accountId, contractId, 4000);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                LogDebug(string.Format(
+                    "ProjectX flatten warning | stage=cancel-clear accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
 
             int positionSize;
             if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
             {
                 ProjectXClosePosition(accountId, contractId);
-                WaitForProjectXFlat(accountId, contractId, 4000);
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                    LogDebug(string.Format(
+                        "ProjectX flatten warning | stage=flat accountId={0} contractId={1} positionSize={2}",
+                        accountId,
+                        contractId,
+                        positionSize));
             }
 
             ProjectXCancelOrders(accountId, contractId);
-            WaitForProjectXOrdersCleared(accountId, contractId, 4000);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                LogDebug(string.Format(
+                    "ProjectX flatten warning | stage=post-close-cancel accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
         }
 
         private string ProjectXClosePosition(int accountId, string contractId)
@@ -2678,9 +2868,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string ProjectXPost(string path, string json, bool requiresAuth)
         {
+            return ProjectXPost(path, json, requiresAuth, false);
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuth, bool alwaysLog)
+        {
             string baseUrl = ProjectXApiBaseUrl != null ? ProjectXApiBaseUrl.TrimEnd('/') : string.Empty;
             if (string.IsNullOrWhiteSpace(baseUrl))
                 return null;
+
+            if (alwaysLog)
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX request | url={0}{1} auth={2} payload={3}",
+                    baseUrl,
+                    path,
+                    requiresAuth,
+                    SanitizeProjectXJsonForLog(json)));
+            else
+                LogDebug(string.Format(
+                    "ProjectX request | url={0}{1} auth={2} payload={3}",
+                    baseUrl,
+                    path,
+                    requiresAuth,
+                    SanitizeProjectXJsonForLog(json)));
 
             try
             {
@@ -2690,16 +2900,47 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (requiresAuth && !string.IsNullOrWhiteSpace(projectXSessionToken))
                         client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
 
-                    return client.UploadString(baseUrl + path, "POST", json);
+                    string response = client.UploadString(baseUrl + path, "POST", json);
+                    if (alwaysLog)
+                        LogProjectXDiscovery(string.Format(
+                            "ProjectX response | url={0}{1} body={2}",
+                            baseUrl,
+                            path,
+                            SanitizeProjectXJsonForLog(response)));
+                    else
+                        LogDebug(string.Format(
+                            "ProjectX response | url={0}{1} body={2}",
+                            baseUrl,
+                            path,
+                            SanitizeProjectXJsonForLog(response)));
+                    return response;
                 }
             }
             catch (System.Net.WebException ex)
             {
-                return ReadWebExceptionResponse(ex);
+                string errorBody = ReadWebExceptionResponse(ex);
+                if (alwaysLog)
+                    LogProjectXDiscovery(string.Format(
+                        "ProjectX request failed | url={0}{1} error={2} body={3}",
+                        baseUrl,
+                        path,
+                        ex.Message,
+                        SanitizeProjectXJsonForLog(errorBody)));
+                else
+                    LogDebug(string.Format(
+                        "ProjectX request failed | url={0}{1} error={2} body={3}",
+                        baseUrl,
+                        path,
+                        ex.Message,
+                        SanitizeProjectXJsonForLog(errorBody)));
+                return errorBody;
             }
             catch (Exception ex)
             {
-                LogProjectX(string.Format("ProjectX request failed | url={0}{1} error={2}", baseUrl, path, ex.Message));
+                if (alwaysLog)
+                    LogProjectXDiscovery(string.Format("ProjectX request failed | url={0}{1} error={2}", baseUrl, path, ex.Message));
+                else
+                    LogDebug(string.Format("ProjectX request failed | url={0}{1} error={2}", baseUrl, path, ex.Message));
                 return null;
             }
         }
@@ -2723,6 +2964,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 return null;
             }
+        }
+
+        private string SanitizeProjectXJsonForLog(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return string.Empty;
+
+            string sanitized = json;
+            sanitized = RedactProjectXJsonValue(sanitized, "apiKey");
+            sanitized = RedactProjectXJsonValue(sanitized, "loginKey");
+            sanitized = RedactProjectXJsonValue(sanitized, "token");
+            sanitized = RedactProjectXJsonValue(sanitized, "newToken");
+            return sanitized;
+        }
+
+        private string RedactProjectXJsonValue(string json, string key)
+        {
+            if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(key))
+                return json ?? string.Empty;
+
+            return Regex.Replace(
+                json,
+                "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"[^\"]*\"",
+                "\"" + key + "\":\"***\"");
         }
 
         private int PriceToTicks(double priceDistance)
@@ -3206,6 +3471,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty][Display(Name="Use News Skip",Order=7,GroupName="0. Global")] public bool UseNewsSkip {get;set;}
         [NinjaScriptProperty][Range(0,60)][Display(Name="News Block Minutes",Order=8,GroupName="0. Global")] public int NewsBlockMinutes {get;set;}
         [NinjaScriptProperty][Display(Name="Flatten On Blocked Window",Description="If enabled, flatten when entering a no-new-trades or news-block window.",Order=9,GroupName="0. Global")] public bool FlattenOnBlockedWindowTransition {get;set;}
+        [NinjaScriptProperty][Browsable(false)][Display(Name="Debug Logging",Order=10,GroupName="0. Global")] public bool DebugLogging {get;set;}
 
         [NinjaScriptProperty][Display(Name="Use Webhooks",Description="Enable outbound order webhooks.",Order=0,GroupName="12. Webhooks")] public bool UseWebhooks {get;set;}
         [NinjaScriptProperty][Display(Name="Webhook Provider",Description="Select webhook target: TradersPost or ProjectX.",Order=1,GroupName="12. Webhooks")] public WebhookProvider WebhookProviderType {get;set;}
