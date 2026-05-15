@@ -82,6 +82,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double         priceOffsetTrailDistance;
         private bool           opposingBarBenchmarkSet;
         private double         opposingBarBenchmark;
+        private bool           maxAccountLimitHit;
         private MarketPosition prevMarketPosition;
         private Order          entryOrder;
         private StrategyHeartbeatReporter heartbeatReporter;
@@ -114,6 +115,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 SessionStartTime = DateTime.Parse("18:00", System.Globalization.CultureInfo.InvariantCulture);
                 RequireEntryConfirmation = false;
+                MaxAccountBalance = 0.0;
                 NyEnable = true;  EuEnable = true;  AsEnable = true;
                 NyAEngulfingExitAfterBars=0; NyAEngulfingExitPaddingTicks=10;
                 NyBEngulfingExitAfterBars=13; NyBEngulfingExitPaddingTicks=16;
@@ -644,6 +646,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CurrentBar < minBars) return;
 
             CheckSessionReset();
+
+            if (IsAccountBalanceBlocked())
+            {
+                prevMarketPosition = Position.MarketPosition;
+                return;
+            }
 
             // Forced close for active session
             if (activeSessionId > 0 && S_EnableForcedClose(activeSessionId) && IsInSessionForcedClose(activeSessionId))
@@ -1231,6 +1239,57 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (Position.MarketPosition==MarketPosition.Short) ExitShort(Position.Quantity,BuildExitSignalName("ForcedExit"),ShortEntrySignal);
         }
 
+        private bool IsAccountBalanceBlocked()
+        {
+            if (MaxAccountBalance <= 0.0)
+                return false;
+
+            double balance;
+            if (!TryGetCurrentNetLiquidation(out balance))
+                return false;
+
+            if (balance >= MaxAccountBalance && !maxAccountLimitHit)
+            {
+                maxAccountLimitHit = true;
+                Print(string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "Max account balance reached | netLiq={0:0.00} target={1:0.00}",
+                    balance,
+                    MaxAccountBalance));
+            }
+
+            if (!maxAccountLimitHit)
+                return false;
+
+            FlattenAndCancel("MaxBalance");
+            return true;
+        }
+
+        private bool TryGetCurrentNetLiquidation(out double netLiquidation)
+        {
+            netLiquidation = 0.0;
+            if (Account == null)
+                return false;
+
+            try
+            {
+                netLiquidation = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                if (netLiquidation > 0.0)
+                    return true;
+
+                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                double unrealized = Position.MarketPosition != MarketPosition.Flat
+                    ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                    : 0.0;
+                netLiquidation = realizedCash + unrealized;
+                return realizedCash > 0.0 || Position.MarketPosition != MarketPosition.Flat;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private string GetEntrySignalName(int direction) { return direction == 1 ? LongEntrySignal : ShortEntrySignal; }
         private string BuildExitSignalName(string reason) { return StrategySignalPrefix + reason; }
 
@@ -1276,6 +1335,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty][Display(Name="NY Enable (Parent)",Order=3,GroupName="0. Global")] public bool NyEnable {get;set;}
         [NinjaScriptProperty][Display(Name="EU Enable (Parent)",Order=4,GroupName="0. Global")] public bool EuEnable {get;set;}
         [NinjaScriptProperty][Display(Name="AS Enable (Parent)",Order=5,GroupName="0. Global")] public bool AsEnable {get;set;}
+        [NinjaScriptProperty][Range(0.0,double.MaxValue)][Display(Name="Max Account Balance",Description="When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.",Order=6,GroupName="0. Global")] public double MaxAccountBalance {get;set;}
 
         // ── Global MA (entry) ─────────────────────────────────────────────────
         [NinjaScriptProperty][Range(1,500)][Display(Name="MA Period",  Order=10,GroupName="0. Global")] public int    GlobalMaPeriod  {get;set;}
