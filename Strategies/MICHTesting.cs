@@ -113,6 +113,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IsInstantiatedOnEachOptimizationIteration = true;
 
                 SessionStartTime = DateTime.Parse("18:00", System.Globalization.CultureInfo.InvariantCulture);
+                RequireEntryConfirmation = false;
                 NyEnable = true;  EuEnable = true;  AsEnable = true;
                 NyAEngulfingExitAfterBars=0; NyAEngulfingExitPaddingTicks=10;
                 NyBEngulfingExitAfterBars=13; NyBEngulfingExitPaddingTicks=16;
@@ -858,15 +859,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 { Print(string.Format("{0} | [{1}] {2} REJECT: SL:TP {3:F2}>{4:F2}", Time[0],S_Label(sid),dir==1?"LONG":"SHORT",slDist/tpDist,maxRatio)); return; }
             }
 
+            int qty = Math.Max(1, S_Contracts(sid));
+            string name = GetEntrySignalName(dir);
+            MichalEntryMode mode = SD_EntryMode(sid,dir);
+            double plannedEntryPrice = close;
+            if (mode == MichalEntryMode.LimitOffset)
+                plannedEntryPrice = dir==1 ? close - SD_LimitOffsetTicks(sid,dir)*TickSize : close + SD_LimitOffsetTicks(sid,dir)*TickSize;
+            else if (mode == MichalEntryMode.LimitRetracement)
+                plannedEntryPrice = dir==1 ? close - range * (SD_LimitRetracementPct(sid,dir)/100.0) : close + range * (SD_LimitRetracementPct(sid,dir)/100.0);
+
+            if (RequireEntryConfirmation && !ShowEntryConfirmation(dir==1 ? "Long" : "Short", plannedEntryPrice, qty))
+                return;
+
             activeSessionId   = sid;
             tradeDirection    = dir;
             signalCandleRange = range;
             priorCandleHigh   = pH;
             priorCandleLow    = pL;
 
-            int qty = Math.Max(1, S_Contracts(sid));
-            string name = GetEntrySignalName(dir);
-            MichalEntryMode mode = SD_EntryMode(sid,dir);
             if (mode == MichalEntryMode.LimitOffset)
             {
                 double lp = dir==1 ? close - SD_LimitOffsetTicks(sid,dir)*TickSize : close + SD_LimitOffsetTicks(sid,dir)*TickSize;
@@ -1223,6 +1233,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private string GetEntrySignalName(int direction) { return direction == 1 ? LongEntrySignal : ShortEntrySignal; }
         private string BuildExitSignalName(string reason) { return StrategySignalPrefix + reason; }
+
+        private bool ShowEntryConfirmation(string orderType, double price, int quantity)
+        {
+            if (State != State.Realtime) return true;
+            if (System.Windows.Application.Current == null) return false;
+
+            bool confirmed = false;
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                string message = string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "Confirm {0} entry?\nPrice: {1:F2}\nQuantity: {2}",
+                    orderType,
+                    price,
+                    quantity);
+
+                confirmed = System.Windows.MessageBox.Show(
+                    message,
+                    "Entry Confirmation",
+                    System.Windows.MessageBoxButton.YesNo,
+                    System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes;
+            });
+
+            return confirmed;
+        }
+
         private void CancelWorkingEntryOrder()
         {
             if (entryOrder!=null && (entryOrder.OrderState==OrderState.Working||entryOrder.OrderState==OrderState.Accepted))
@@ -1236,9 +1272,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // ── Global ─────────────────────────────────────────────────────────────
         [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Session Start Time",Order=1,GroupName="0. Global")] public DateTime SessionStartTime {get;set;}
-        [NinjaScriptProperty][Display(Name="NY Enable (Parent)",Order=2,GroupName="0. Global")] public bool NyEnable {get;set;}
-        [NinjaScriptProperty][Display(Name="EU Enable (Parent)",Order=3,GroupName="0. Global")] public bool EuEnable {get;set;}
-        [NinjaScriptProperty][Display(Name="AS Enable (Parent)",Order=4,GroupName="0. Global")] public bool AsEnable {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Entry Confirmation",Order=2,GroupName="0. Global")] public bool RequireEntryConfirmation {get;set;}
+        [NinjaScriptProperty][Display(Name="NY Enable (Parent)",Order=3,GroupName="0. Global")] public bool NyEnable {get;set;}
+        [NinjaScriptProperty][Display(Name="EU Enable (Parent)",Order=4,GroupName="0. Global")] public bool EuEnable {get;set;}
+        [NinjaScriptProperty][Display(Name="AS Enable (Parent)",Order=5,GroupName="0. Global")] public bool AsEnable {get;set;}
 
         // ── Global MA (entry) ─────────────────────────────────────────────────
         [NinjaScriptProperty][Range(1,500)][Display(Name="MA Period",  Order=10,GroupName="0. Global")] public int    GlobalMaPeriod  {get;set;}
