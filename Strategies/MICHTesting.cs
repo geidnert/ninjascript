@@ -344,6 +344,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
                 FlattenOnBlockedWindowTransition = false;
+                UseWebhooks = false;
+                WebhookProviderType = WebhookProvider.TradersPost;
+                WebhookUrl = string.Empty;
+                WebhookTickerOverride = string.Empty;
                 NyEnable = true;  EuEnable = true;  AsEnable = true;
                 NyAEngulfingExitAfterBars=0; NyAEngulfingExitPaddingTicks=10;
                 NyBEngulfingExitAfterBars=13; NyBEngulfingExitPaddingTicks=16;
@@ -1200,7 +1204,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 else      { targetOrder = ExitShortLimit(0,true,Position.Quantity,tp,BuildExitSignalName("TP"),eName); stopOrder = ExitShortStopMarket(0,true,Position.Quantity,sl,BuildExitSignalName("SL"),eName); }
                 Print(string.Format("{0} | [{1}] FILLED {2} @ {3:F2} | TP={4:F2} SL={5:F2}",
                     time,S_Label(sid),d==1?"LONG":"SHORT",tradeEntryPrice,tp,sl));
+
+                string entryWebhookAction;
+                bool isMarketEntry;
+                if (TryGetEntryWebhookAction(exec, out entryWebhookAction, out isMarketEntry))
+                    SendWebhook(entryWebhookAction, tradeEntryPrice, tp, sl, isMarketEntry, qty);
             }
+
+            if (ShouldSendExitWebhook(exec, n, mp))
+                SendWebhook("exit", 0, 0, 0, true, qty);
         }
 
         protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice,
@@ -1213,7 +1225,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 stopOrder = order;
 
             if (entryOrder!=null && order==entryOrder && (state==OrderState.Cancelled||state==OrderState.Rejected))
-            { entryOrder=null; hasActivePosition=false; activeSessionId=0; }
+            {
+                SendWebhook("cancel");
+                entryOrder=null; hasActivePosition=false; activeSessionId=0;
+            }
 
             if (forceFlattenInProgress
                 && Position.MarketPosition != MarketPosition.Flat
@@ -1638,6 +1653,147 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             newsDatesInitialized = true;
         }
 
+        private bool ShouldSendExitWebhook(Execution execution, string orderName, MarketPosition marketPosition)
+        {
+            if (execution == null || execution.Order == null)
+                return false;
+
+            if (orderName == LongEntrySignal || orderName == ShortEntrySignal)
+                return false;
+
+            string fromEntry = execution.Order.FromEntrySignal ?? string.Empty;
+            if (fromEntry == LongEntrySignal || fromEntry == ShortEntrySignal)
+                return true;
+
+            string normalized = orderName ?? string.Empty;
+            if (normalized.Length == 0)
+                return marketPosition == MarketPosition.Flat;
+
+            return normalized.StartsWith(StrategySignalPrefix, StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("Stop loss", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("Profit target", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("Exit on session close", StringComparison.OrdinalIgnoreCase)
+                || marketPosition == MarketPosition.Flat;
+        }
+
+        private bool TryGetEntryWebhookAction(Execution execution, out string action, out bool isMarketEntry)
+        {
+            action = null;
+            isMarketEntry = false;
+
+            if (execution == null || execution.Order == null)
+                return false;
+
+            string orderName = execution.Order.Name ?? string.Empty;
+            if (orderName != LongEntrySignal && orderName != ShortEntrySignal)
+                return false;
+
+            action = orderName == LongEntrySignal ? "buy" : "sell";
+            OrderType orderType = execution.Order.OrderType;
+            isMarketEntry = orderType == OrderType.Market || orderType == OrderType.StopMarket;
+            return true;
+        }
+
+        private bool SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
+        {
+            if (!UseWebhooks || State != State.Realtime)
+                return false;
+
+            if (WebhookProviderType == WebhookProvider.ProjectX)
+            {
+                Print(string.Format("{0} | Webhook skipped | provider=ProjectX event={1} reason=not-enabled-in-this-step", Time[0], eventType));
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(WebhookUrl))
+            {
+                Print(string.Format("{0} | Webhook skipped | provider=TradersPost event={1} reason=empty-url", Time[0], eventType));
+                return false;
+            }
+
+            try
+            {
+                int orderQty = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
+                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
+                    ? WebhookTickerOverride.Trim()
+                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
+                string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", System.Globalization.CultureInfo.InvariantCulture);
+                string action = (eventType ?? string.Empty).ToLowerInvariant();
+                string json = string.Empty;
+
+                if (action == "buy" || action == "sell")
+                {
+                    json = string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"time\":\"{5}\",\"takeProfit\":{{\"limitPrice\":{6}}},\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{7}}}}}",
+                        JsonEscape(ticker),
+                        action,
+                        isMarketEntry ? "market" : "limit",
+                        orderQty,
+                        entryPrice,
+                        JsonEscape(now),
+                        takeProfit,
+                        stopLoss);
+                }
+                else if (action == "exit")
+                {
+                    json = string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"exit\",\"orderType\":\"market\",\"quantityType\":\"fixed_quantity\",\"quantity\":{1},\"cancel\":true,\"time\":\"{2}\"}}",
+                        JsonEscape(ticker),
+                        orderQty,
+                        JsonEscape(now));
+                }
+                else if (action == "cancel")
+                {
+                    json = string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"cancel\",\"time\":\"{1}\"}}",
+                        JsonEscape(ticker),
+                        JsonEscape(now));
+                }
+
+                if (string.IsNullOrWhiteSpace(json))
+                    return false;
+
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    client.UploadString(WebhookUrl, "POST", json);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format("{0} | Webhook error | event={1} error={2}", Time[0], eventType, ex.Message));
+                return false;
+            }
+        }
+
+        private int GetDefaultWebhookQuantity()
+        {
+            if (Position != null && Position.MarketPosition != MarketPosition.Flat && Math.Abs(Position.Quantity) > 0)
+                return Math.Abs(Position.Quantity);
+
+            if (activeSessionId > 0)
+                return Math.Max(1, S_Contracts(activeSessionId));
+
+            return Math.Max(1, GlobalContracts);
+        }
+
+        private string JsonEscape(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
+
+            return value
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n");
+        }
+
         private bool IsAccountBalanceBlocked()
         {
             if (MaxAccountBalance <= 0.0)
@@ -1742,6 +1898,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty][Display(Name="Use News Skip",Order=7,GroupName="0. Global")] public bool UseNewsSkip {get;set;}
         [NinjaScriptProperty][Range(0,60)][Display(Name="News Block Minutes",Order=8,GroupName="0. Global")] public int NewsBlockMinutes {get;set;}
         [NinjaScriptProperty][Display(Name="Flatten On Blocked Window",Description="If enabled, flatten when entering a no-new-trades or news-block window.",Order=9,GroupName="0. Global")] public bool FlattenOnBlockedWindowTransition {get;set;}
+
+        [NinjaScriptProperty][Display(Name="Use Webhooks",Description="Enable outbound order webhooks.",Order=0,GroupName="12. Webhooks")] public bool UseWebhooks {get;set;}
+        [NinjaScriptProperty][Display(Name="Webhook Provider",Description="Select webhook target. ProjectX routing is added in a separate step.",Order=1,GroupName="12. Webhooks")] public WebhookProvider WebhookProviderType {get;set;}
+        [NinjaScriptProperty][Display(Name="TradersPost Webhook URL",Description="HTTP endpoint for TradersPost order webhooks.",Order=2,GroupName="12. Webhooks")] public string WebhookUrl {get;set;}
+        [NinjaScriptProperty][Display(Name="Webhook Ticker Override",Description="Optional TradersPost ticker override. Leave empty to use the chart instrument.",Order=3,GroupName="12. Webhooks")] public string WebhookTickerOverride {get;set;}
 
         // ── Global MA (entry) ─────────────────────────────────────────────────
         [NinjaScriptProperty][Range(1,500)][Display(Name="MA Period",  Order=10,GroupName="0. Global")] public int    GlobalMaPeriod  {get;set;}
@@ -2330,5 +2491,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     public enum MichalEntryMode  { Market, LimitOffset, LimitRetracement }
     public enum MichalTPMode     { FixedTicks, SwingPoint, CandleMultiple }
     public enum BEMode2          { FixedTicks, CandlePercent }
+    public enum WebhookProvider  { TradersPost, ProjectX }
     #endregion
 }
