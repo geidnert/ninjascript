@@ -28,6 +28,225 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string LongEntrySignal = StrategySignalPrefix + "Long";
         private const string ShortEntrySignal = StrategySignalPrefix + "Short";
         private const string HeartbeatStrategyName = "MICHTesting";
+        private static readonly string NewsDatesRaw =
+@"2025-01-02,08:30
+2025-01-08,08:30
+2025-01-08,14:00
+2025-01-10,08:30
+2025-01-14,08:30
+2025-01-15,08:30
+2025-01-16,08:30
+2025-01-23,08:30
+2025-01-29,14:00
+2025-01-30,08:30
+2025-01-31,08:30
+2025-02-06,08:30
+2025-02-07,08:30
+2025-02-12,08:30
+2025-02-13,08:30
+2025-02-14,08:30
+2025-02-19,14:00
+2025-02-20,08:30
+2025-02-27,08:30
+2025-02-28,08:30
+2025-03-06,08:30
+2025-03-07,08:30
+2025-03-12,08:30
+2025-03-13,08:30
+2025-03-17,08:30
+2025-03-19,14:00
+2025-03-20,08:30
+2025-03-27,08:30
+2025-03-28,08:30
+2025-04-03,08:30
+2025-04-04,08:30
+2025-04-09,14:00
+2025-04-10,08:30
+2025-04-11,08:30
+2025-04-16,08:30
+2025-04-17,08:30
+2025-04-24,08:30
+2025-04-30,08:30
+2025-05-01,08:30
+2025-05-02,08:30
+2025-05-07,14:00
+2025-05-08,08:30
+2025-05-13,08:30
+2025-05-15,08:30
+2025-05-22,08:30
+2025-05-28,14:00
+2025-05-29,08:30
+2025-05-30,08:30
+2025-06-05,08:30
+2025-06-06,08:30
+2025-06-11,08:30
+2025-06-12,08:30
+2025-06-17,08:30
+2025-06-18,08:30
+2025-06-18,14:00
+2025-06-26,08:30
+2025-06-27,08:30
+2025-07-03,08:30
+2025-07-09,14:00
+2025-07-10,08:30
+2025-07-15,08:30
+2025-07-16,08:30
+2025-07-17,08:30
+2025-07-24,08:30
+2025-07-30,08:30
+2025-07-30,14:00
+2025-07-31,08:30
+2025-08-01,08:30
+2025-08-07,08:30
+2025-08-12,08:30
+2025-08-14,08:30
+2025-08-15,08:30
+2025-08-20,14:00
+2025-08-21,08:30
+2025-08-28,08:30
+2025-08-29,08:30
+2025-09-04,08:30
+2025-09-05,08:30
+2025-09-10,08:30
+2025-09-11,08:30
+2025-09-16,08:30
+2025-09-17,14:00
+2025-09-18,08:30
+2025-09-25,08:30
+2025-09-26,08:30
+2025-10-08,14:00
+2025-10-24,08:30
+2025-10-29,14:00
+2025-11-19,14:00
+2025-11-20,08:30
+2025-11-25,08:30
+2025-11-26,08:30
+2025-12-04,08:30
+2025-12-10,08:30
+2025-12-10,14:00
+2025-12-11,08:30
+2025-12-16,08:30
+2025-12-18,08:30
+2025-12-23,08:30
+2025-12-24,08:30
+2025-12-30,14:00
+2025-12-31,08:30
+2026-01-08,08:30
+2026-01-09,08:30
+2026-01-13,08:30
+2026-01-14,08:30
+2026-01-15,08:30
+2026-01-21,08:30
+2026-01-22,08:30
+2026-01-28,14:00
+2026-01-29,08:30
+2026-01-30,08:30
+2026-02-05,08:30
+2026-02-10,08:30
+2026-02-11,08:30
+2026-02-12,08:30
+2026-02-13,08:30
+2026-02-18,14:00
+2026-02-19,08:30
+2026-02-20,08:30
+2026-02-26,08:30
+2026-02-27,08:30
+2026-03-05,08:30
+2026-03-06,08:30
+2026-03-11,08:30
+2026-03-12,08:30
+2026-03-13,08:30
+2026-03-16,08:30
+2026-03-18,08:30
+2026-03-18,14:00
+2026-03-19,08:30
+2026-03-26,08:30
+2026-04-02,08:30
+2026-04-03,08:30
+2026-04-08,14:00
+2026-04-09,08:30
+2026-04-10,08:30
+2026-04-14,08:30
+2026-04-16,08:30
+2026-04-23,08:30
+2026-04-29,14:00
+2026-04-30,08:30
+2026-05-07,08:30
+2026-05-08,08:30
+2026-05-12,08:30
+2026-05-13,08:30
+2026-05-14,08:30
+2026-05-20,14:00
+2026-05-21,08:30
+2026-05-28,08:30
+2026-06-04,08:30
+2026-06-05,08:30
+2026-06-10,08:30
+2026-06-11,08:30
+2026-06-17,08:30
+2026-06-17,14:00
+2026-06-18,08:30
+2026-06-25,08:30
+2026-07-02,08:30
+2026-07-08,14:00
+2026-07-09,08:30
+2026-07-14,08:30
+2026-07-15,08:30
+2026-07-16,08:30
+2026-07-23,08:30
+2026-07-29,14:00
+2026-07-30,08:30
+2026-07-31,08:30
+2026-08-06,08:30
+2026-08-07,08:30
+2026-08-12,08:30
+2026-08-13,08:30
+2026-08-14,08:30
+2026-08-19,14:00
+2026-08-20,08:30
+2026-08-26,08:30
+2026-08-27,08:30
+2026-09-03,08:30
+2026-09-04,08:30
+2026-09-10,08:30
+2026-09-11,08:30
+2026-09-16,08:30
+2026-09-16,14:00
+2026-09-17,08:30
+2026-09-24,08:30
+2026-09-30,08:30
+2026-10-01,08:30
+2026-10-02,08:30
+2026-10-07,14:00
+2026-10-08,08:30
+2026-10-14,08:30
+2026-10-15,08:30
+2026-10-22,08:30
+2026-10-28,14:00
+2026-10-29,08:30
+2026-10-30,08:30
+2026-11-05,08:30
+2026-11-06,08:30
+2026-11-10,08:30
+2026-11-12,08:30
+2026-11-13,08:30
+2026-11-17,08:30
+2026-11-18,14:00
+2026-11-19,08:30
+2026-11-25,08:30
+2026-12-03,08:30
+2026-12-04,08:30
+2026-12-09,14:00
+2026-12-10,08:30
+2026-12-15,08:30
+2026-12-16,08:30
+2026-12-17,08:30
+2026-12-23,08:30
+2026-12-24,08:30
+2026-12-30,14:00
+2026-12-31,08:30";
+        private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static bool newsDatesInitialized;
 
         public MICHTesting()
         {
@@ -82,6 +301,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double         priceOffsetTrailDistance;
         private bool           opposingBarBenchmarkSet;
         private double         opposingBarBenchmark;
+        private bool           wasInNewsSkipWindow;
         private bool           maxAccountLimitHit;
         private MarketPosition prevMarketPosition;
         private Order          entryOrder;
@@ -116,6 +336,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SessionStartTime = DateTime.Parse("18:00", System.Globalization.CultureInfo.InvariantCulture);
                 RequireEntryConfirmation = false;
                 MaxAccountBalance = 0.0;
+                UseNewsSkip = false;
+                NewsBlockMinutes = 1;
+                FlattenOnBlockedWindowTransition = false;
                 NyEnable = true;  EuEnable = true;  AsEnable = true;
                 NyAEngulfingExitAfterBars=0; NyAEngulfingExitPaddingTicks=10;
                 NyBEngulfingExitAfterBars=13; NyBEngulfingExitPaddingTicks=16;
@@ -646,6 +869,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (CurrentBar < minBars) return;
 
             CheckSessionReset();
+            if (FlattenOnBlockedWindowTransition)
+                HandleTimeWindowTransitions();
 
             if (IsAccountBalanceBlocked())
             {
@@ -722,6 +947,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
         private int DetermineEntrySession()
         {
+            if (IsInNewsSkipWindow(Time[0])) return 0;
+
             for (int sid = 1; sid <= SubSessionCount; sid++)
                 if (S_Active(sid) && !subLimitsReached[sid] && IsInSessionTradeWindow(sid)) return sid;
             return 0;
@@ -742,6 +969,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double barSM   = ToSessionMinutes(Time[0].TimeOfDay);
             double closeSM = ToSessionMinutes(S_ForcedCloseTime(sid).TimeOfDay);
             return barSM >= closeSM;
+        }
+
+        private bool IsInNewsSkipWindow(DateTime time)
+        {
+            if (!UseNewsSkip) return false;
+            EnsureNewsDatesInitialized();
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != time.Date) continue;
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+                if (time >= windowStart && time < windowEnd) return true;
+            }
+
+            return false;
         }
 
         #endregion
@@ -1192,6 +1436,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             breakEvenApplied=false; entryBarSlApplied=false;
             priceOffsetTrailActive=false; priceOffsetTrailDistance=0;
             opposingBarBenchmark=0; opposingBarBenchmarkSet=false;
+            wasInNewsSkipWindow=false;
             entryOrder=null; prevMarketPosition=MarketPosition.Flat;
         }
 
@@ -1237,6 +1482,55 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             CancelWorkingEntryOrder();
             if (Position.MarketPosition==MarketPosition.Long)  ExitLong(Position.Quantity,BuildExitSignalName("ForcedExit"),LongEntrySignal);
             if (Position.MarketPosition==MarketPosition.Short) ExitShort(Position.Quantity,BuildExitSignalName("ForcedExit"),ShortEntrySignal);
+        }
+
+        private void HandleTimeWindowTransitions()
+        {
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+            {
+                if (!S_Active(sid)) continue;
+
+                bool inNoTrades = S_EnableNoNewTradesAfter(sid)
+                    && ToSessionMinutes(Time[0].TimeOfDay) >= ToSessionMinutes(S_NoNewTradesAfter(sid).TimeOfDay);
+                bool wasNoTrades = subWasInNoTradesAfterWindow[sid];
+
+                if (FlattenOnBlockedWindowTransition && activeSessionId == sid && !wasNoTrades && inNoTrades)
+                    FlattenAndCancel("NoTradesAfter");
+
+                subWasInNoTradesAfterWindow[sid] = inNoTrades;
+            }
+
+            bool inNewsSkip = IsInNewsSkipWindow(Time[0]);
+            if (FlattenOnBlockedWindowTransition && !wasInNewsSkipWindow && inNewsSkip)
+                FlattenAndCancel("NewsSkip");
+            wasInNewsSkipWindow = inNewsSkip;
+        }
+
+        private void EnsureNewsDatesInitialized()
+        {
+            if (newsDatesInitialized) return;
+
+            NewsDates.Clear();
+            if (!string.IsNullOrWhiteSpace(NewsDatesRaw))
+            {
+                string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < entries.Length; i++)
+                {
+                    DateTime parsed;
+                    if (!DateTime.TryParse(
+                        entries[i],
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeLocal,
+                        out parsed))
+                        continue;
+
+                    if (!NewsDates.Contains(parsed))
+                        NewsDates.Add(parsed);
+                }
+            }
+
+            NewsDates.Sort();
+            newsDatesInitialized = true;
         }
 
         private bool IsAccountBalanceBlocked()
@@ -1336,6 +1630,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty][Display(Name="EU Enable (Parent)",Order=4,GroupName="0. Global")] public bool EuEnable {get;set;}
         [NinjaScriptProperty][Display(Name="AS Enable (Parent)",Order=5,GroupName="0. Global")] public bool AsEnable {get;set;}
         [NinjaScriptProperty][Range(0.0,double.MaxValue)][Display(Name="Max Account Balance",Description="When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.",Order=6,GroupName="0. Global")] public double MaxAccountBalance {get;set;}
+        [NinjaScriptProperty][Display(Name="Use News Skip",Order=7,GroupName="0. Global")] public bool UseNewsSkip {get;set;}
+        [NinjaScriptProperty][Range(0,60)][Display(Name="News Block Minutes",Order=8,GroupName="0. Global")] public int NewsBlockMinutes {get;set;}
+        [NinjaScriptProperty][Display(Name="Flatten On Blocked Window",Description="If enabled, flatten when entering a no-new-trades or news-block window.",Order=9,GroupName="0. Global")] public bool FlattenOnBlockedWindowTransition {get;set;}
 
         // ── Global MA (entry) ─────────────────────────────────────────────────
         [NinjaScriptProperty][Range(1,500)][Display(Name="MA Period",  Order=10,GroupName="0. Global")] public int    GlobalMaPeriod  {get;set;}
