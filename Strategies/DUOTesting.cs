@@ -549,6 +549,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime realtimeInfoPreviewBarTime = DateTime.MinValue;
         private double realtimeInfoPreviewHigh = double.NaN;
         private double realtimeInfoPreviewLow = double.NaN;
+        private double realtimeInfoPreviewClose = double.NaN;
         private const double RealtimeInfoRefreshSeconds = 1.0;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
             Color.FromArgb(240, 0x2A, 0x2F, 0x45),
@@ -1707,11 +1708,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 realtimeInfoPreviewBarTime = barTime;
                 realtimeInfoPreviewHigh = Math.Max(High[0], price);
                 realtimeInfoPreviewLow = Math.Min(Low[0], price);
+                realtimeInfoPreviewClose = price;
                 return;
             }
 
             realtimeInfoPreviewHigh = Math.Max(realtimeInfoPreviewHigh, price);
             realtimeInfoPreviewLow = Math.Min(realtimeInfoPreviewLow, price);
+            realtimeInfoPreviewClose = price;
         }
 
         private void RefreshInfoFromRealtimeTick()
@@ -3199,6 +3202,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return hasConfiguredSession ? nextSlot : SessionSlot.None;
+        }
+
+        private SessionSlot DetermineCurrentSessionForTime(DateTime time)
+        {
+            foreach (SessionSlot slot in ConfigurableSessionSlots)
+            {
+                if (IsSessionConfigured(slot) && TimeInSession(slot, time))
+                    return slot;
+            }
+
+            return SessionSlot.None;
         }
 
         private SessionSlot GetFirstConfiguredSession()
@@ -5798,17 +5812,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case SessionSlot.Asia3:
                     return "Asia3";
                 case SessionSlot.London:
-                    return "London1";
+                    return "Europe1";
                 case SessionSlot.London2:
-                    return "London2";
+                    return "Europe2";
                 case SessionSlot.London3:
-                    return "London3";
+                    return "Europe3";
                 case SessionSlot.NewYork:
-                    return "NewYork1";
+                    return "America1";
                 case SessionSlot.NewYork2:
-                    return "NewYork2";
+                    return "America2";
                 case SessionSlot.NewYork3:
-                    return "NewYork3";
+                    return "America3";
                 default:
                     return "None";
             }
@@ -6202,7 +6216,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool adxMinEnabled = activeAdxThreshold > 0.0;
             bool adxMaxEnabled = activeAdxMaxThreshold > 0.0;
             bool slopeEnabled = activeAdxMinSlopePoints > 0.0;
-            bool aboveMin = !adxMinEnabled || adxValue >= activeAdxThreshold;
             bool belowMin = adxMinEnabled && adxValue < activeAdxThreshold;
             bool overMax = adxMaxEnabled && adxValue > activeAdxMaxThreshold;
             bool slopeValid = !slopeEnabled || adxSlope >= activeAdxMinSlopePoints;
@@ -6211,40 +6224,39 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Brush paBrush;
             if (overMax)
             {
-                paState = FormatInfoStateMetric("Peaking", adxValue, activeAdxMaxThreshold);
+                paState = FormatInfoThresholdMetric("Peaking", activeAdxMaxThreshold, adxValue);
                 paBrush = Brushes.OrangeRed;
             }
             else if (belowMin)
             {
-                paState = FormatInfoStateMetric("Weak", adxValue, activeAdxThreshold);
+                paState = FormatInfoThresholdMetric("Weak", activeAdxThreshold, adxValue);
                 paBrush = Brushes.IndianRed;
-            }
-            else if (aboveMin && slopeValid)
-            {
-                paState = slopeEnabled
-                    ? FormatInfoStateMetric("Trending", adxSlope, activeAdxMinSlopePoints)
-                    : FormatInfoStateMetric("Trending", adxValue, activeAdxThreshold);
-                paBrush = Brushes.LimeGreen;
             }
             else
             {
-                paState = slopeEnabled
-                    ? FormatInfoStateMetric("Ranging", adxSlope, activeAdxMinSlopePoints)
-                    : "Ranging";
-                paBrush = Brushes.Gold;
+                double normalThreshold = adxMinEnabled ? activeAdxThreshold : (adxMaxEnabled ? activeAdxMaxThreshold : 0.0);
+                paState = FormatInfoThresholdMetric("Normal", normalThreshold, adxValue);
+                paBrush = Brushes.LimeGreen;
             }
+
+            string momentumState = slopeEnabled
+                ? (slopeValid ? "Trending" : "Ranging")
+                : "Off";
+            string momentumText = slopeEnabled
+                ? FormatInfoThresholdMetric(momentumState, activeAdxMinSlopePoints, adxSlope)
+                : string.Format(CultureInfo.InvariantCulture, "Off/{0}", FormatInfoMetric(adxSlope));
+            Brush momentumBrush = !slopeEnabled
+                ? Brushes.LightGray
+                : slopeValid ? Brushes.LimeGreen : Brushes.IndianRed;
+            double atrValue = GetCurrentAtrValue();
+            SessionSlot infoSession = DetermineCurrentSessionForTime(Time[0]);
+            var closeSignal = BuildFiveMinuteCloseSignalInfo(infoSession, adxValue, adxSlope, atrValue);
 
             lines.Add((string.Format("DUOTesting v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", contractsText, Brushes.LightGray, Brushes.LightGray));
             lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
-            string configuredMomentumText = activeAdxMinSlopePoints > 0.0
-                ? activeAdxMinSlopePoints.ToString("0.00", CultureInfo.InvariantCulture)
-                : "Off";
-            string currentMomentumText = adxSlope.ToString("0.00", CultureInfo.InvariantCulture);
-            Brush momentumBrush = !slopeEnabled
-                ? Brushes.LightGray
-                : slopeValid ? Brushes.LimeGreen : Brushes.IndianRed;
-            lines.Add(("Mom:", configuredMomentumText + "/" + currentMomentumText, Brushes.LightGray, momentumBrush));
+            lines.Add(("Mom:", momentumText, Brushes.LightGray, momentumBrush));
+            lines.Add(("5m Close:", closeSignal.value, Brushes.LightGray, closeSignal.brush));
             if (!UseNewsSkip)
             {
                 lines.Add(("News:", "Disabled", Brushes.LightGray, Brushes.LightGray));
@@ -6279,20 +6291,127 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
-            lines.Add(("Session:", FormatSessionLabel(activeSession), Brushes.LightGray, Brushes.LightGray));
+            lines.Add(("Session:", FormatSessionLabel(infoSession), Brushes.LightGray, Brushes.LightGray));
             lines.Add(("AutoEdge Systems™", string.Empty, InfoLabelBrush, Brushes.Transparent));
 
             return lines;
         }
 
-        private string FormatInfoStateMetric(string state, double currentValue, double thresholdValue)
+        private (string value, Brush brush) BuildFiveMinuteCloseSignalInfo(SessionSlot infoSession, double adxValue, double adxSlope, double atrValue)
+        {
+            if (Position.MarketPosition == MarketPosition.Long)
+                return ("In Long Now", Brushes.White);
+            if (Position.MarketPosition == MarketPosition.Short)
+                return ("In Short Now", Brushes.White);
+
+            if (!CanEvaluateFiveMinuteCloseSignal(infoSession, adxValue, adxSlope, atrValue))
+                return ("No Trade", Brushes.IndianRed);
+
+            double closePrice = GetInfoClosePrice();
+            double openPrice = Open[0];
+            double emaValue = activeEma[0];
+            bool bullish = closePrice > openPrice;
+            bool bearish = closePrice < openPrice;
+            bool allowLong = activeTradeDirection != SessionTradeDirection.ShortOnly;
+            bool allowShort = activeTradeDirection != SessionTradeDirection.LongOnly;
+
+            if (allowLong && bullish && GetBodyPercentAboveEma(openPrice, closePrice, emaValue) > 0.0 && !IsOrderActive(longEntryOrder))
+            {
+                double entryPrice = GetEntryPriceForDirection(closePrice, true, activeEntryOffsetPoints);
+                double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue, Time[0]);
+                if (IsWithinMaxStopLossPoints(GetPlannedStopLossPoints(entryPrice, stopPrice)))
+                    return ("Long", Brushes.LimeGreen);
+            }
+
+            if (allowShort && bearish && GetBodyPercentBelowEma(openPrice, closePrice, emaValue) > 0.0 && !IsOrderActive(shortEntryOrder))
+            {
+                double entryPrice = GetEntryPriceForDirection(closePrice, false, activeEntryOffsetPoints);
+                double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue, Time[0]);
+                if (IsWithinMaxStopLossPoints(GetPlannedStopLossPoints(entryPrice, stopPrice)))
+                    return ("Short", Brushes.LimeGreen);
+            }
+
+            return ("No Trade", Brushes.IndianRed);
+        }
+
+        private bool CanEvaluateFiveMinuteCloseSignal(SessionSlot infoSession, double adxValue, double adxSlope, double atrValue)
+        {
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
+                return false;
+
+            if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())))
+                return false;
+
+            if (infoSession == SessionSlot.None || activeSession != infoSession)
+                return false;
+
+            if (IsForceCloseTimeReached(Time[0]) || IsTemporaryBlockedTradingDate(Time[0]) || TimeInNewsSkip(Time[0]))
+                return false;
+
+            if (IsNewYorkFamily(infoSession) && IsNewYorkSkipTime(infoSession, Time[0]))
+                return false;
+
+            if (IsAsiaSundayBlocked(infoSession, Time[0]))
+                return false;
+
+            if (IsAccountBalanceInfoBlocked() || Position.MarketPosition != MarketPosition.Flat)
+                return false;
+
+            if (terminalExitPending || IsOrderActive(activeExitOrder) || GetEntryQuantity() <= 0)
+                return false;
+
+            if (activeEma == null || CurrentBar < activeEmaPeriod)
+                return false;
+
+            if (activeAdxThreshold > 0.0 && adxValue < activeAdxThreshold)
+                return false;
+
+            if (activeAdxMaxThreshold > 0.0 && adxValue > activeAdxMaxThreshold)
+                return false;
+
+            if (activeAdxMinSlopePoints > 0.0 && adxSlope < activeAdxMinSlopePoints)
+                return false;
+
+            if (activeMinimumAtrForEntry > 0.0 && atrValue < activeMinimumAtrForEntry)
+                return false;
+
+            return true;
+        }
+
+        private bool IsAccountBalanceInfoBlocked()
+        {
+            if (MaxAccountBalance <= 0.0)
+                return false;
+
+            if (accountBalanceLimitReached)
+                return true;
+
+            double balance;
+            return TryGetCurrentCashValue(out balance) && balance >= MaxAccountBalance;
+        }
+
+        private double GetInfoClosePrice()
+        {
+            double closePrice = Close[0];
+            if (useRealtimeInfoPreview
+                && realtimeInfoPreviewBarTime == Time[0]
+                && !double.IsNaN(realtimeInfoPreviewClose)
+                && !double.IsInfinity(realtimeInfoPreviewClose))
+            {
+                closePrice = realtimeInfoPreviewClose;
+            }
+
+            return Instrument.MasterInstrument.RoundToTickSize(closePrice);
+        }
+
+        private string FormatInfoThresholdMetric(string state, double thresholdValue, double currentValue)
         {
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "{0} {1}/{2}",
                 state,
-                FormatInfoMetric(currentValue),
-                FormatInfoMetric(thresholdValue));
+                thresholdValue > 0.0 ? FormatInfoMetric(thresholdValue) : "Off",
+                FormatInfoMetric(currentValue));
         }
 
         private string FormatInfoMetric(double value)
