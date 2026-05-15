@@ -3,8 +3,12 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Web.Script.Serialization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -253,6 +257,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             VendorLicense(1235);
         }
 
+        private sealed class ProjectXAccountInfo
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public bool CanTrade { get; set; }
+            public bool IsVisible { get; set; }
+        }
+
+        private sealed class ProjectXContractInfo
+        {
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public string Description { get; set; }
+            public string SymbolId { get; set; }
+            public bool ActiveContract { get; set; }
+        }
+
         //  Session IDs:  1=NY-A  2=NY-B  3=NY-C
         //                4=EU-A  5=EU-B  6=EU-C
         //                7=AS-A  8=AS-B  9=AS-C
@@ -311,6 +332,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool           forceFlattenOrderSubmitted;
         private string         forceFlattenReason;
         private StrategyHeartbeatReporter heartbeatReporter;
+        private string projectXSessionToken;
+        private DateTime projectXTokenAcquiredUtc;
+        private List<ProjectXAccountInfo> projectXAccounts;
+        private readonly Dictionary<string, long> projectXLastOrderIds = new Dictionary<string, long>();
+        private string projectXResolvedContractId;
+        private string projectXResolvedInstrumentKey;
 
         // =====================================================================
         #region OnStateChange
@@ -348,6 +375,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 WebhookProviderType = WebhookProvider.TradersPost;
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
+                ProjectXApiBaseUrl = "https://api.topstepx.com";
+                ProjectXTradeAllAccounts = false;
+                ProjectXUsername = string.Empty;
+                ProjectXApiKey = string.Empty;
+                ProjectXAccountId = string.Empty;
+                ProjectXContractId = string.Empty;
                 NyEnable = true;  EuEnable = true;  AsEnable = true;
                 NyAEngulfingExitAfterBars=0; NyAEngulfingExitPaddingTicks=10;
                 NyBEngulfingExitAfterBars=13; NyBEngulfingExitPaddingTicks=16;
@@ -686,12 +719,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 heartbeatReporter = new StrategyHeartbeatReporter(
                     HeartbeatStrategyName,
                     System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
+                projectXSessionToken = null;
+                projectXTokenAcquiredUtc = Core.Globals.MinDate;
+                projectXAccounts = null;
+                projectXLastOrderIds.Clear();
+                projectXResolvedContractId = null;
+                projectXResolvedInstrumentKey = string.Empty;
             }
             else if (State == State.Transition) { ResetAll(); }
             else if (State == State.Realtime)
             {
                 if (heartbeatReporter != null)
                     heartbeatReporter.Start();
+
+                RunProjectXStartupPreflight();
             }
             else if (State == State.Terminated)
             {
@@ -700,6 +741,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     heartbeatReporter.Dispose();
                     heartbeatReporter = null;
                 }
+                projectXSessionToken = null;
+                projectXTokenAcquiredUtc = Core.Globals.MinDate;
+                projectXAccounts = null;
+                projectXLastOrderIds.Clear();
+                projectXResolvedContractId = null;
+                projectXResolvedInstrumentKey = string.Empty;
             }
         }
 
@@ -1701,8 +1748,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (WebhookProviderType == WebhookProvider.ProjectX)
             {
-                Print(string.Format("{0} | Webhook skipped | provider=ProjectX event={1} reason=not-enabled-in-this-step", Time[0], eventType));
-                return false;
+                int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
+                return SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
             }
 
             if (string.IsNullOrWhiteSpace(WebhookUrl))
@@ -1792,6 +1839,968 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 .Replace("\"", "\\\"")
                 .Replace("\r", "\\r")
                 .Replace("\n", "\\n");
+        }
+
+        private void LogProjectX(string message)
+        {
+            if (Bars == null || CurrentBar < 0)
+                Print(string.Format("{0} | {1}", HeartbeatStrategyName, message));
+            else
+                Print(string.Format("{0} | {1}", Time[0], message));
+        }
+
+        private void RunProjectXStartupPreflight()
+        {
+            if (!UseWebhooks || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            LogProjectX(string.Format(
+                "ProjectX startup preflight begin | instrument={0} accounts={1} baseUrl={2}",
+                GetProjectXInstrumentKey(),
+                ProjectXTradeAllAccounts ? "<all>" : (ProjectXAccountId ?? string.Empty),
+                ProjectXApiBaseUrl ?? string.Empty));
+
+            if (!EnsureProjectXSession())
+            {
+                LogProjectX("ProjectX startup preflight failed | stage=auth");
+                return;
+            }
+
+            List<ProjectXAccountInfo> targetAccounts;
+            string contractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+            {
+                LogProjectX("ProjectX startup preflight failed | stage=targets");
+                return;
+            }
+
+            LogProjectX(string.Format(
+                "ProjectX startup preflight ready | accounts={0} contractId={1}",
+                FormatProjectXAccountsForLog(targetAccounts),
+                contractId));
+        }
+
+        private bool SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        {
+            if (!EnsureProjectXSession())
+                return false;
+
+            List<ProjectXAccountInfo> targetAccounts;
+            string contractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+                return false;
+
+            bool sentAny = false;
+            string action = (eventType ?? string.Empty).ToLowerInvariant();
+            foreach (var account in targetAccounts)
+            {
+                try
+                {
+                    if (action == "buy" || action == "sell")
+                    {
+                        if (ProjectXPrepareForEntry(account.Id, contractId))
+                        {
+                            string response = ProjectXPlaceOrder(action, account.Id, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+                            sentAny = sentAny || !string.IsNullOrWhiteSpace(response);
+                        }
+                    }
+                    else if (action == "exit")
+                    {
+                        ProjectXFlattenPosition(account.Id, contractId);
+                        sentAny = true;
+                    }
+                    else if (action == "cancel")
+                    {
+                        ProjectXCancelOrders(account.Id, contractId);
+                        sentAny = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogProjectX(string.Format(
+                        "ProjectX account error | event={0} accountId={1} accountName={2} error={3}",
+                        eventType,
+                        account.Id,
+                        account.Name ?? string.Empty,
+                        ex.Message));
+                }
+            }
+
+            return sentAny;
+        }
+
+        private bool EnsureProjectXSession()
+        {
+            if (string.IsNullOrWhiteSpace(ProjectXApiBaseUrl))
+            {
+                LogProjectX("ProjectX login failed | reason=empty-base-url");
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(projectXSessionToken) &&
+                (DateTime.UtcNow - projectXTokenAcquiredUtc).TotalHours < 23)
+                return true;
+
+            if (string.IsNullOrWhiteSpace(ProjectXUsername) || string.IsNullOrWhiteSpace(ProjectXApiKey))
+            {
+                LogProjectX("ProjectX login failed | reason=missing-credentials");
+                return false;
+            }
+
+            string loginJson = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"userName\":\"{0}\",\"apiKey\":\"{1}\"}}",
+                JsonEscape(ProjectXUsername),
+                JsonEscape(ProjectXApiKey));
+
+            string response = ProjectXPost("/api/Auth/loginKey", loginJson, false);
+            string token;
+            if (!TryGetJsonString(response, "token", out token))
+            {
+                LogProjectX("ProjectX login failed | reason=missing-token");
+                return false;
+            }
+
+            projectXSessionToken = token;
+            projectXTokenAcquiredUtc = DateTime.UtcNow;
+            projectXAccounts = null;
+            projectXLastOrderIds.Clear();
+            projectXResolvedContractId = null;
+            projectXResolvedInstrumentKey = string.Empty;
+            LogProjectX("ProjectX login succeeded");
+            return true;
+        }
+
+        private bool TryGetProjectXTargets(out List<ProjectXAccountInfo> targetAccounts, out string contractId)
+        {
+            targetAccounts = null;
+            contractId = null;
+
+            if (!TryResolveProjectXContractId(out contractId))
+                return false;
+
+            List<ProjectXAccountInfo> accounts;
+            if (!TryLoadProjectXAccounts(out accounts))
+                return false;
+
+            if (ProjectXTradeAllAccounts)
+            {
+                targetAccounts = accounts.Where(a => a.CanTrade).ToList();
+                return targetAccounts.Count > 0;
+            }
+
+            var selectors = ParseProjectXAccountSelectors(ProjectXAccountId);
+            if (selectors.Count == 0)
+            {
+                LogProjectX("ProjectX account selection failed | reason=no-selection");
+                return false;
+            }
+
+            var matchedAccounts = new List<ProjectXAccountInfo>();
+            var matchedIds = new HashSet<int>();
+            foreach (string selector in selectors)
+            {
+                int accountId;
+                List<ProjectXAccountInfo> matches = int.TryParse(selector, NumberStyles.Integer, CultureInfo.InvariantCulture, out accountId)
+                    ? accounts.Where(a => a.CanTrade && a.Id == accountId).ToList()
+                    : accounts.Where(a => a.CanTrade && string.Equals(a.Name ?? string.Empty, selector, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                foreach (var match in matches)
+                    if (matchedIds.Add(match.Id))
+                        matchedAccounts.Add(match);
+            }
+
+            targetAccounts = matchedAccounts;
+            if (targetAccounts.Count == 0)
+                LogProjectX("ProjectX account selection failed | reason=no-matching-tradable-accounts");
+            return targetAccounts.Count > 0;
+        }
+
+        private bool TryLoadProjectXAccounts(out List<ProjectXAccountInfo> accounts)
+        {
+            if (projectXAccounts != null && projectXAccounts.Count > 0)
+            {
+                accounts = projectXAccounts;
+                return true;
+            }
+
+            string response = ProjectXPost("/api/Account/search", "{\"onlyActiveAccounts\":true}", true);
+            accounts = ExtractProjectXAccounts(response).ToList();
+            projectXAccounts = accounts.Count > 0 ? accounts : null;
+
+            if (accounts.Count == 0)
+                LogProjectX("ProjectX account load failed | reason=no-accounts");
+            return accounts.Count > 0;
+        }
+
+        private bool TryResolveProjectXContractId(out string contractId)
+        {
+            contractId = null;
+
+            if (!string.IsNullOrWhiteSpace(ProjectXContractId))
+            {
+                contractId = ProjectXContractId.Trim();
+                return true;
+            }
+
+            string instrumentKey = GetProjectXInstrumentKey();
+            if (!string.IsNullOrWhiteSpace(projectXResolvedContractId) &&
+                string.Equals(projectXResolvedInstrumentKey, instrumentKey, StringComparison.OrdinalIgnoreCase))
+            {
+                contractId = projectXResolvedContractId;
+                return true;
+            }
+
+            string root = GetProjectXInstrumentRoot();
+            if (string.IsNullOrWhiteSpace(root))
+                return false;
+
+            DateTime expiry;
+            string desiredSuffix = TryGetInstrumentExpiry(out expiry) || TryParseInstrumentExpiryFromFullName(out expiry)
+                ? GetProjectXFuturesMonthCode(expiry.Month) + expiry.ToString("yy", CultureInfo.InvariantCulture)
+                : string.Empty;
+
+            List<ProjectXContractInfo> contracts;
+            if (!TrySearchProjectXContracts(root, desiredSuffix, out contracts))
+                return false;
+
+            ProjectXContractInfo selected = SelectProjectXContract(root, desiredSuffix, contracts);
+            if (selected == null || string.IsNullOrWhiteSpace(selected.Id))
+                return false;
+
+            contractId = selected.Id;
+            projectXResolvedContractId = contractId;
+            projectXResolvedInstrumentKey = instrumentKey;
+            return true;
+        }
+
+        private bool TrySearchProjectXContracts(string root, string desiredSuffix, out List<ProjectXContractInfo> contracts)
+        {
+            contracts = null;
+
+            string primarySearchText = !string.IsNullOrWhiteSpace(desiredSuffix) ? root + desiredSuffix : root;
+            if (TrySearchProjectXContractsByText(primarySearchText, root, out contracts) && contracts.Count > 0)
+                return true;
+
+            if (!string.Equals(primarySearchText, root, StringComparison.OrdinalIgnoreCase) &&
+                TrySearchProjectXContractsByText(root, root, out contracts) && contracts.Count > 0)
+                return true;
+
+            return false;
+        }
+
+        private bool TrySearchProjectXContractsByText(string searchText, string root, out List<ProjectXContractInfo> contracts)
+        {
+            if (TrySearchProjectXContractsByText(searchText, root, true, out contracts) && contracts.Count > 0)
+                return true;
+
+            if (TrySearchProjectXContractsByText(searchText, root, false, out contracts) && contracts.Count > 0)
+                return true;
+
+            contracts = new List<ProjectXContractInfo>();
+            return false;
+        }
+
+        private bool TrySearchProjectXContractsByText(string searchText, string root, bool live, out List<ProjectXContractInfo> contracts)
+        {
+            string requestJson = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"live\":{0},\"searchText\":\"{1}\"}}",
+                live ? "true" : "false",
+                JsonEscape(searchText));
+            string response = ProjectXPost("/api/Contract/search", requestJson, true);
+            contracts = ExtractProjectXContracts(response)
+                .Where(c => DoesProjectXContractMatchRoot(c, root))
+                .ToList();
+            return !string.IsNullOrWhiteSpace(response);
+        }
+
+        private ProjectXContractInfo SelectProjectXContract(string root, string desiredSuffix, List<ProjectXContractInfo> contracts)
+        {
+            if (contracts == null || contracts.Count == 0)
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(desiredSuffix))
+            {
+                var exactMatches = contracts
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Id) &&
+                        c.Id.EndsWith("." + desiredSuffix, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (exactMatches.Count > 0)
+                    return exactMatches.FirstOrDefault(c => c.ActiveContract) ?? exactMatches[0];
+            }
+
+            var activeMatches = contracts.Where(c => c.ActiveContract).ToList();
+            return activeMatches.Count > 0 ? activeMatches[0] : contracts[0];
+        }
+
+        private bool DoesProjectXContractMatchRoot(ProjectXContractInfo contract, string root)
+        {
+            if (contract == null || string.IsNullOrWhiteSpace(root))
+                return false;
+
+            string expectedSymbolId = "F.US." + root;
+            return (!string.IsNullOrWhiteSpace(contract.SymbolId) && string.Equals(contract.SymbolId, expectedSymbolId, StringComparison.OrdinalIgnoreCase))
+                || (!string.IsNullOrWhiteSpace(contract.Id) && contract.Id.IndexOf(".US." + root + ".", StringComparison.OrdinalIgnoreCase) >= 0)
+                || (!string.IsNullOrWhiteSpace(contract.Name) && contract.Name.StartsWith(root, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private string GetProjectXInstrumentKey()
+        {
+            if (Instrument == null)
+                return string.Empty;
+
+            string fullName = Instrument.FullName ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(fullName) ? fullName.Trim().ToUpperInvariant() : GetProjectXInstrumentRoot();
+        }
+
+        private string GetProjectXInstrumentRoot()
+        {
+            return Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+        }
+
+        private bool TryGetInstrumentExpiry(out DateTime expiry)
+        {
+            expiry = Core.Globals.MinDate;
+            if (Instrument == null)
+                return false;
+
+            try
+            {
+                PropertyInfo property = Instrument.GetType().GetProperty("Expiry", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+                if (property == null)
+                    return false;
+
+                object raw = property.GetValue(Instrument, null);
+                if (!(raw is DateTime))
+                    return false;
+
+                DateTime dt = (DateTime)raw;
+                if (dt.Year < 2000)
+                    return false;
+
+                expiry = dt;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryParseInstrumentExpiryFromFullName(out DateTime expiry)
+        {
+            expiry = Core.Globals.MinDate;
+            string fullName = Instrument != null ? (Instrument.FullName ?? string.Empty).Trim().ToUpperInvariant() : string.Empty;
+            if (string.IsNullOrWhiteSpace(fullName))
+                return false;
+
+            Match match = Regex.Match(fullName, @"\b(?<month>\d{1,2})[-/](?<year>\d{2,4})\b");
+            if (!match.Success)
+                return false;
+
+            int month;
+            int year;
+            if (!int.TryParse(match.Groups["month"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out month) ||
+                !int.TryParse(match.Groups["year"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out year))
+                return false;
+
+            if (year < 100)
+                year += 2000;
+            if (month < 1 || month > 12 || year < 2000)
+                return false;
+
+            expiry = new DateTime(year, month, 1);
+            return true;
+        }
+
+        private string GetProjectXFuturesMonthCode(int month)
+        {
+            switch (month)
+            {
+                case 1: return "F";
+                case 2: return "G";
+                case 3: return "H";
+                case 4: return "J";
+                case 5: return "K";
+                case 6: return "M";
+                case 7: return "N";
+                case 8: return "Q";
+                case 9: return "U";
+                case 10: return "V";
+                case 11: return "X";
+                case 12: return "Z";
+                default: return string.Empty;
+            }
+        }
+
+        private List<string> ParseProjectXAccountSelectors(string raw)
+        {
+            return (raw ?? string.Empty)
+                .Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private string FormatProjectXAccountsForLog(IEnumerable<ProjectXAccountInfo> accounts)
+        {
+            if (accounts == null)
+                return "<none>";
+
+            var items = accounts
+                .Select(a => string.Format(CultureInfo.InvariantCulture, "{0}:{1}", a.Id, a.Name ?? string.Empty))
+                .ToArray();
+            return items.Length > 0 ? string.Join(", ", items) : "<none>";
+        }
+
+        private string GetProjectXOrderKey(int accountId, string contractId)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
+        }
+
+        private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        {
+            int orderSide = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            int orderType = isMarketEntry ? 2 : 1;
+            int normalizedQuantity = Math.Max(1, quantity);
+            double entry = Instrument != null && Instrument.MasterInstrument != null
+                ? Instrument.MasterInstrument.RoundToTickSize(entryPrice)
+                : entryPrice;
+            bool isLong = orderSide == 0;
+            int tpTicks = NormalizeProjectXBracketTicks(PriceToTicks(takeProfit - entry), 4, isLong ? 1 : -1);
+            int slTicks = NormalizeProjectXBracketTicks(PriceToTicks(stopLoss - entry), 1, isLong ? -1 : 1);
+
+            string limitPart = isMarketEntry
+                ? string.Empty
+                : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", entry);
+
+            string json = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":{6},\"type\":1,\"ticks\":{7}}},\"stopLossBracket\":{{\"quantity\":{6},\"type\":4,\"ticks\":{8}}}}}",
+                accountId,
+                JsonEscape(contractId),
+                orderType,
+                orderSide,
+                normalizedQuantity,
+                limitPart,
+                normalizedQuantity,
+                tpTicks,
+                slTicks);
+
+            string response = ProjectXPost("/api/Order/place", json, true);
+            long orderId;
+            if (TryGetJsonLong(response, "orderId", out orderId))
+                projectXLastOrderIds[GetProjectXOrderKey(accountId, contractId)] = orderId;
+            return response;
+        }
+
+        private int NormalizeProjectXBracketTicks(int rawTicks, int minAbsTicks, int zeroTickDirection)
+        {
+            int direction = rawTicks == 0 ? Math.Sign(zeroTickDirection) : Math.Sign(rawTicks);
+            int absTicks = Math.Abs(rawTicks);
+            if (absTicks < minAbsTicks)
+                absTicks = minAbsTicks;
+            return direction * absTicks;
+        }
+
+        private bool ProjectXPrepareForEntry(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                return false;
+
+            int positionSize;
+            if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                    return false;
+
+                ProjectXCancelOrders(accountId, contractId);
+                if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private void ProjectXFlattenPosition(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+            WaitForProjectXOrdersCleared(accountId, contractId, 4000);
+
+            int positionSize;
+            if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+                WaitForProjectXFlat(accountId, contractId, 4000);
+            }
+
+            ProjectXCancelOrders(accountId, contractId);
+            WaitForProjectXOrdersCleared(accountId, contractId, 4000);
+        }
+
+        private string ProjectXClosePosition(int accountId, string contractId)
+        {
+            string json = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\"}}",
+                accountId,
+                JsonEscape(contractId));
+            return ProjectXPost("/api/Position/closeContract", json, true);
+        }
+
+        private void ProjectXCancelOrders(int accountId, string contractId)
+        {
+            foreach (long orderId in GetProjectXOpenOrderIds(accountId, contractId))
+            {
+                string cancelJson = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{{\"accountId\":{0},\"orderId\":{1}}}",
+                    accountId,
+                    orderId);
+                ProjectXPost("/api/Order/cancel", cancelJson, true);
+            }
+
+            projectXLastOrderIds.Remove(GetProjectXOrderKey(accountId, contractId));
+        }
+
+        private bool WaitForProjectXFlat(int accountId, string contractId, int timeoutMs)
+        {
+            DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow <= deadlineUtc)
+            {
+                int positionSize;
+                if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize == 0)
+                    return true;
+                System.Threading.Thread.Sleep(150);
+            }
+
+            return false;
+        }
+
+        private bool WaitForProjectXOrdersCleared(int accountId, string contractId, int timeoutMs)
+        {
+            DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow <= deadlineUtc)
+            {
+                if (GetProjectXOpenOrderIds(accountId, contractId).Count == 0)
+                    return true;
+                System.Threading.Thread.Sleep(150);
+            }
+
+            return false;
+        }
+
+        private List<long> GetProjectXOpenOrderIds(int accountId, string contractId)
+        {
+            var orderIds = new List<long>();
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return orderIds;
+
+            foreach (var order in ExtractProjectXOrders(searchResponse))
+            {
+                object contractObj;
+                if (!order.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object idObj;
+                long id;
+                if (order.TryGetValue("id", out idObj) && TryConvertToLong(idObj, out id) && id > 0)
+                    orderIds.Add(id);
+            }
+
+            return orderIds;
+        }
+
+        private bool TryGetProjectXOpenPositionSize(int accountId, string contractId, out int signedSize)
+        {
+            signedSize = 0;
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Position/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return false;
+
+            foreach (var position in ExtractProjectXPositions(searchResponse))
+            {
+                object contractObj;
+                if (!position.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object typeObj;
+                object sizeObj;
+                int type;
+                int size;
+                if (!position.TryGetValue("type", out typeObj) || !TryConvertToInt(typeObj, out type))
+                    continue;
+                if (!position.TryGetValue("size", out sizeObj) || !TryConvertToInt(sizeObj, out size) || size <= 0)
+                    continue;
+
+                signedSize += type == 2 ? -size : size;
+            }
+
+            return true;
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuth)
+        {
+            string baseUrl = ProjectXApiBaseUrl != null ? ProjectXApiBaseUrl.TrimEnd('/') : string.Empty;
+            if (string.IsNullOrWhiteSpace(baseUrl))
+                return null;
+
+            try
+            {
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    if (requiresAuth && !string.IsNullOrWhiteSpace(projectXSessionToken))
+                        client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
+
+                    return client.UploadString(baseUrl + path, "POST", json);
+                }
+            }
+            catch (System.Net.WebException ex)
+            {
+                return ReadWebExceptionResponse(ex);
+            }
+            catch (Exception ex)
+            {
+                LogProjectX(string.Format("ProjectX request failed | url={0}{1} error={2}", baseUrl, path, ex.Message));
+                return null;
+            }
+        }
+
+        private string ReadWebExceptionResponse(System.Net.WebException ex)
+        {
+            if (ex == null || ex.Response == null)
+                return null;
+
+            try
+            {
+                using (var stream = ex.Response.GetResponseStream())
+                {
+                    if (stream == null)
+                        return null;
+                    using (var reader = new System.IO.StreamReader(stream))
+                        return reader.ReadToEnd();
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private int PriceToTicks(double priceDistance)
+        {
+            if (TickSize <= 0.0)
+                return 0;
+            return (int)Math.Round(priceDistance / TickSize, MidpointRounding.AwayFromZero);
+        }
+
+        private bool TryGetJsonString(string json, string key, out string value)
+        {
+            value = null;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                value = raw.ToString();
+                return !string.IsNullOrWhiteSpace(value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetJsonLong(string json, string key, out long value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return TryConvertToLong(raw, out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetJsonBool(string json, string key, out bool value)
+        {
+            value = false;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return TryConvertToBool(raw, out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private IEnumerable<ProjectXAccountInfo> ExtractProjectXAccounts(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            Dictionary<string, object> data;
+            try
+            {
+                data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("accounts", out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict == null)
+                    continue;
+
+                object idObj;
+                int id;
+                if (!dict.TryGetValue("id", out idObj) || !TryConvertToInt(idObj, out id) || id <= 0)
+                    continue;
+
+                object nameObj;
+                object canTradeObj;
+                object isVisibleObj;
+                bool canTrade;
+                bool isVisible;
+                dict.TryGetValue("name", out nameObj);
+                dict.TryGetValue("canTrade", out canTradeObj);
+                dict.TryGetValue("isVisible", out isVisibleObj);
+                TryConvertToBool(canTradeObj, out canTrade);
+                TryConvertToBool(isVisibleObj, out isVisible);
+
+                yield return new ProjectXAccountInfo
+                {
+                    Id = id,
+                    Name = nameObj != null ? nameObj.ToString() : string.Empty,
+                    CanTrade = canTrade,
+                    IsVisible = isVisible
+                };
+            }
+        }
+
+        private IEnumerable<ProjectXContractInfo> ExtractProjectXContracts(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            Dictionary<string, object> data;
+            try
+            {
+                data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("contracts", out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict == null)
+                    continue;
+
+                object idObj;
+                if (!dict.TryGetValue("id", out idObj) || idObj == null)
+                    continue;
+
+                object nameObj;
+                object descriptionObj;
+                object symbolIdObj;
+                object activeObj;
+                bool activeContract;
+                dict.TryGetValue("name", out nameObj);
+                dict.TryGetValue("description", out descriptionObj);
+                dict.TryGetValue("symbolId", out symbolIdObj);
+                dict.TryGetValue("activeContract", out activeObj);
+                TryConvertToBool(activeObj, out activeContract);
+
+                yield return new ProjectXContractInfo
+                {
+                    Id = idObj.ToString(),
+                    Name = nameObj != null ? nameObj.ToString() : string.Empty,
+                    Description = descriptionObj != null ? descriptionObj.ToString() : string.Empty,
+                    SymbolId = symbolIdObj != null ? symbolIdObj.ToString() : string.Empty,
+                    ActiveContract = activeContract
+                };
+            }
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXOrders(string json)
+        {
+            return ExtractProjectXDictionaryArray(json, "orders");
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXPositions(string json)
+        {
+            return ExtractProjectXDictionaryArray(json, "positions");
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXDictionaryArray(string json, string key)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            Dictionary<string, object> data;
+            try
+            {
+                data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict != null)
+                    yield return dict;
+            }
+        }
+
+        private bool TryConvertToInt(object raw, out int value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+            if (raw is int)
+            {
+                value = (int)raw;
+                return true;
+            }
+            if (raw is long)
+            {
+                long longValue = (long)raw;
+                if (longValue < int.MinValue || longValue > int.MaxValue)
+                    return false;
+                value = (int)longValue;
+                return true;
+            }
+            if (raw is decimal)
+            {
+                value = (int)(decimal)raw;
+                return true;
+            }
+            if (raw is double)
+            {
+                value = (int)(double)raw;
+                return true;
+            }
+            return int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToLong(object raw, out long value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+            if (raw is int)
+            {
+                value = (int)raw;
+                return true;
+            }
+            if (raw is long)
+            {
+                value = (long)raw;
+                return true;
+            }
+            if (raw is decimal)
+            {
+                decimal decimalValue = (decimal)raw;
+                if (decimalValue < long.MinValue || decimalValue > long.MaxValue)
+                    return false;
+                value = (long)decimalValue;
+                return true;
+            }
+            if (raw is double)
+            {
+                double doubleValue = (double)raw;
+                if (doubleValue < long.MinValue || doubleValue > long.MaxValue)
+                    return false;
+                value = (long)doubleValue;
+                return true;
+            }
+            return long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToBool(object raw, out bool value)
+        {
+            value = false;
+            if (raw == null)
+                return false;
+            if (raw is bool)
+            {
+                value = (bool)raw;
+                return true;
+            }
+            return bool.TryParse(raw.ToString(), out value);
         }
 
         private bool IsAccountBalanceBlocked()
@@ -1900,9 +2909,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty][Display(Name="Flatten On Blocked Window",Description="If enabled, flatten when entering a no-new-trades or news-block window.",Order=9,GroupName="0. Global")] public bool FlattenOnBlockedWindowTransition {get;set;}
 
         [NinjaScriptProperty][Display(Name="Use Webhooks",Description="Enable outbound order webhooks.",Order=0,GroupName="12. Webhooks")] public bool UseWebhooks {get;set;}
-        [NinjaScriptProperty][Display(Name="Webhook Provider",Description="Select webhook target. ProjectX routing is added in a separate step.",Order=1,GroupName="12. Webhooks")] public WebhookProvider WebhookProviderType {get;set;}
+        [NinjaScriptProperty][Display(Name="Webhook Provider",Description="Select webhook target: TradersPost or ProjectX.",Order=1,GroupName="12. Webhooks")] public WebhookProvider WebhookProviderType {get;set;}
         [NinjaScriptProperty][Display(Name="TradersPost Webhook URL",Description="HTTP endpoint for TradersPost order webhooks.",Order=2,GroupName="12. Webhooks")] public string WebhookUrl {get;set;}
         [NinjaScriptProperty][Display(Name="Webhook Ticker Override",Description="Optional TradersPost ticker override. Leave empty to use the chart instrument.",Order=3,GroupName="12. Webhooks")] public string WebhookTickerOverride {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX API Base URL",Description="ProjectX gateway base URL.",Order=4,GroupName="12. Webhooks")] public string ProjectXApiBaseUrl {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX Trade All Accounts",Description="If enabled, route ProjectX orders to every tradable account returned by ProjectX.",Order=5,GroupName="12. Webhooks")] public bool ProjectXTradeAllAccounts {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX Username",Description="ProjectX login username.",Order=6,GroupName="12. Webhooks")] public string ProjectXUsername {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX API Key",Description="ProjectX API key.",Order=7,GroupName="12. Webhooks")] public string ProjectXApiKey {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX Accounts",Description="Comma-separated ProjectX account ids or exact account names.",Order=8,GroupName="12. Webhooks")] public string ProjectXAccountId {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX Contract ID",Description="Optional direct contract id override.",Order=9,GroupName="12. Webhooks")] public string ProjectXContractId {get;set;}
 
         // ── Global MA (entry) ─────────────────────────────────────────────────
         [NinjaScriptProperty][Range(1,500)][Display(Name="MA Period",  Order=10,GroupName="0. Global")] public int    GlobalMaPeriod  {get;set;}
