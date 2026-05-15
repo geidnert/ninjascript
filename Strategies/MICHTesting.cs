@@ -27,6 +27,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string StrategySignalPrefix = "MICH";
         private const string LongEntrySignal = StrategySignalPrefix + "Long";
         private const string ShortEntrySignal = StrategySignalPrefix + "Short";
+        private const string HeartbeatStrategyName = "MICHTesting";
 
         public MICHTesting()
         {
@@ -83,6 +84,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double         opposingBarBenchmark;
         private MarketPosition prevMarketPosition;
         private Order          entryOrder;
+        private StrategyHeartbeatReporter heartbeatReporter;
 
         // =====================================================================
         #region OnStateChange
@@ -445,8 +447,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     adxShort[sid] = ADX(SD_AdxPeriod(sid, -1));
                     swingInd[sid] = Swing(Math.Max(SD_SwingStrength(sid,1), SD_SwingStrength(sid,-1)));
                 }
+
+                heartbeatReporter = new StrategyHeartbeatReporter(
+                    HeartbeatStrategyName,
+                    System.IO.Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "TradeMessengerHeartbeats.csv"));
             }
             else if (State == State.Transition) { ResetAll(); }
+            else if (State == State.Realtime)
+            {
+                if (heartbeatReporter != null)
+                    heartbeatReporter.Start();
+            }
+            else if (State == State.Terminated)
+            {
+                if (heartbeatReporter != null)
+                {
+                    heartbeatReporter.Dispose();
+                    heartbeatReporter = null;
+                }
+            }
         }
 
         #endregion
