@@ -3701,6 +3701,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Instrument.MasterInstrument.RoundToTickSize(Close[0]);
         }
 
+        private double GetStopOutFlipSignalClose(double stopFillPrice)
+        {
+            double closePrice;
+            if (IsUsableStopOutFlipPrice(stopFillPrice))
+            {
+                closePrice = stopFillPrice;
+            }
+            else if (State == State.Realtime
+                && realtimeInfoPreviewBarTime == Time[0]
+                && IsUsableStopOutFlipPrice(realtimeInfoPreviewClose))
+            {
+                closePrice = realtimeInfoPreviewClose;
+            }
+            else
+            {
+                closePrice = Close[0];
+            }
+
+            return Instrument.MasterInstrument.RoundToTickSize(closePrice);
+        }
+
+        private double GetStopOutFlipAdxValue()
+        {
+            double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+
+            double previewAdx;
+            double previewSlope;
+            if (TryCalculateRealtimeAdxPreview(out previewAdx, out previewSlope))
+                adxValue = previewAdx;
+
+            return adxValue;
+        }
+
+        private static bool IsUsableStopOutFlipPrice(double price)
+        {
+            return price > 0.0 && !double.IsNaN(price) && !double.IsInfinity(price);
+        }
+
         private bool TrySubmitStopOutFlip(bool flipToLong, bool canTradeNow, bool oppositeSignal, double emaValue)
         {
             if (!EnableStopOutFlip || !IsStopOutClose(Position.MarketPosition))
@@ -3712,12 +3750,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 oppositeSignal,
                 emaValue,
                 GetCurrentStopOutReferencePrice(),
-                "close");
+                "close",
+                Close[0],
+                false);
         }
 
         private bool TrySubmitStopOutExecutionFlip(MarketPosition stoppedSide, double stopFillPrice)
         {
-            if (!EnableStopOutFlip || stoppedSide == MarketPosition.Flat || lastStopOutFlipSubmittedBar == CurrentBar)
+            if (!EnableStopOutFlip || stoppedSide == MarketPosition.Flat)
                 return false;
 
             if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())) || activeEma == null || CurrentBar < activeEmaPeriod)
@@ -3725,14 +3765,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool flipToLong = stoppedSide == MarketPosition.Short;
             double emaValue = activeEma[0];
-            bool bullish = Close[0] > Open[0];
-            bool bearish = Close[0] < Open[0];
-            double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
-            double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
-            double entryBodyPoints = Math.Abs(Close[0] - Open[0]);
+            double signalClose = GetStopOutFlipSignalClose(stopFillPrice);
+            bool bullish = signalClose > Open[0];
+            bool bearish = signalClose < Open[0];
+            double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], signalClose, emaValue);
+            double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], signalClose, emaValue);
+            double entryBodyPoints = Math.Abs(signalClose - Open[0]);
             bool entryBodyPasses = activeEntryMinBodyPoints <= 0.0 || entryBodyPoints >= activeEntryMinBodyPoints;
-            bool longSignal = bullish && bodyAbovePercent > 0.0 && entryBodyPasses && EntryCloseBeyondEmaPasses(true, Close[0], emaValue);
-            bool shortSignal = bearish && bodyBelowPercent > 0.0 && entryBodyPasses && EntryCloseBeyondEmaPasses(false, Close[0], emaValue);
+            bool longSignal = bullish && bodyAbovePercent > 0.0 && entryBodyPasses && EntryCloseBeyondEmaPasses(true, signalClose, emaValue);
+            bool shortSignal = bearish && bodyBelowPercent > 0.0 && entryBodyPasses && EntryCloseBeyondEmaPasses(false, signalClose, emaValue);
             bool oppositeSignal = flipToLong ? longSignal : shortSignal;
 
             bool inNewsSkipNow = TimeInNewsSkip(Time[0]);
@@ -3741,7 +3782,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool forceCloseBlocked = IsForceCloseTimeReached(Time[0]);
             bool temporaryDateBlocked = IsTemporaryBlockedTradingDate(Time[0]);
             bool london3FlatBlocked = IsLondon3FlatByTimeReached(Time[0]);
-            double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
+            double adxValue = GetStopOutFlipAdxValue();
             double atrValue = GetCurrentAtrValue();
             bool adxMinPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
             bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
@@ -3762,14 +3803,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 oppositeSignal,
                 emaValue,
                 stopFillPrice,
-                "stop-fill");
+                "stop-fill",
+                signalClose,
+                true);
         }
 
-        private bool TrySubmitStopOutFlipEntry(bool flipToLong, bool canTradeNow, bool oppositeSignal, double emaValue, double priorStopPrice, string source)
+        private bool TrySubmitStopOutFlipEntry(bool flipToLong, bool canTradeNow, bool oppositeSignal, double emaValue, double priorStopPrice, string source, double signalClosePrice, bool allowSameBarFlip)
         {
-            if (lastStopOutFlipSubmittedBar == CurrentBar)
+            if (!allowSameBarFlip && lastStopOutFlipSubmittedBar == CurrentBar)
                 return false;
 
+            double entryReferencePrice = IsUsableStopOutFlipPrice(signalClosePrice)
+                ? Instrument.MasterInstrument.RoundToTickSize(signalClosePrice)
+                : GetInitialEntryPrice();
             string side = flipToLong ? "Long" : "Short";
             string direction = flipToLong ? "SHORT->LONG" : "LONG->SHORT";
 
@@ -3783,7 +3829,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         source,
                         canTradeNow,
                         oppositeSignal,
-                        Close[0],
+                        entryReferencePrice,
                         priorStopPrice));
                 }
                 return false;
@@ -3812,7 +3858,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
             }
 
-            double entryPrice = GetInitialEntryPrice();
+            double entryPrice = entryReferencePrice;
             double stopPrice = flipToLong
                 ? BuildLongEntryStopPrice(entryPrice, emaValue)
                 : BuildShortEntryStopPrice(entryPrice, emaValue);
