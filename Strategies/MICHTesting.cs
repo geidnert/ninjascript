@@ -3517,25 +3517,133 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void DrawSessionTimeWindows()
         {
             if (CurrentBar < 1) return;
-            for (int sid = 1; sid <= SubSessionCount; sid++)
+
+            DateTime anchorDate = GetTradingSessionAnchorDate(Time[0]);
+            RemoveRawSessionBackgroundDrawings(anchorDate);
+
+            List<Tuple<int, DateTime, DateTime>> windows = BuildResolvedSessionDrawWindows(anchorDate);
+            for (int i = 0; i < windows.Count; i++)
             {
-                if (!S_Active(sid)) continue;
-                DrawSessionBackground(Time[0], sid);
+                Tuple<int, DateTime, DateTime> window = windows[i];
+                DrawSessionBackground(window.Item1, window.Item2, window.Item3);
             }
             DrawNewsWindows(Time[0]);
         }
 
-        private void DrawSessionBackground(DateTime barTime, int sid)
+        private DateTime GetTradingSessionAnchorDate(DateTime time)
         {
-            DateTime sessionStart = barTime.Date + S_TradeWindowStart(sid).TimeOfDay;
-            DateTime sessionEnd = barTime.Date + S_ForcedCloseTime(sid).TimeOfDay;
-            if (S_ForcedCloseTime(sid).TimeOfDay <= S_TradeWindowStart(sid).TimeOfDay)
+            TimeSpan sessionStart = SessionStartTime.TimeOfDay;
+            return time.TimeOfDay >= sessionStart ? time.Date : time.Date.AddDays(-1);
+        }
+
+        private DateTime ResolveTradingSessionTime(DateTime anchorDate, TimeSpan timeOfDay)
+        {
+            DateTime resolved = anchorDate + timeOfDay;
+            if (timeOfDay < SessionStartTime.TimeOfDay)
+                resolved = resolved.AddDays(1);
+            return resolved;
+        }
+
+        private DateTime GetSessionEntryWindowStart(DateTime anchorDate, int sid)
+        {
+            return ResolveTradingSessionTime(anchorDate, S_TradeWindowStart(sid).TimeOfDay);
+        }
+
+        private DateTime GetSessionEntryWindowEnd(DateTime anchorDate, int sid)
+        {
+            TimeSpan endTime = S_EnableNoNewTradesAfter(sid)
+                ? S_NoNewTradesAfter(sid).TimeOfDay
+                : S_ForcedCloseTime(sid).TimeOfDay;
+            DateTime sessionStart = GetSessionEntryWindowStart(anchorDate, sid);
+            DateTime sessionEnd = ResolveTradingSessionTime(anchorDate, endTime);
+            if (sessionEnd <= sessionStart)
                 sessionEnd = sessionEnd.AddDays(1);
+            return sessionEnd;
+        }
+
+        private List<Tuple<int, DateTime, DateTime>> BuildResolvedSessionDrawWindows(DateTime anchorDate)
+        {
+            var rawWindows = new List<Tuple<int, DateTime, DateTime>>();
+            var boundaries = new List<DateTime>();
+
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+            {
+                if (!S_Active(sid)) continue;
+
+                DateTime sessionStart = GetSessionEntryWindowStart(anchorDate, sid);
+                DateTime sessionEnd = GetSessionEntryWindowEnd(anchorDate, sid);
+                if (sessionEnd <= sessionStart) continue;
+
+                rawWindows.Add(Tuple.Create(sid, sessionStart, sessionEnd));
+                boundaries.Add(sessionStart);
+                boundaries.Add(sessionEnd);
+            }
+
+            boundaries.Sort();
+
+            var uniqueBoundaries = new List<DateTime>();
+            for (int i = 0; i < boundaries.Count; i++)
+            {
+                if (uniqueBoundaries.Count == 0 || boundaries[i] != uniqueBoundaries[uniqueBoundaries.Count - 1])
+                    uniqueBoundaries.Add(boundaries[i]);
+            }
+
+            var resolvedWindows = new List<Tuple<int, DateTime, DateTime>>();
+            for (int i = 0; i < uniqueBoundaries.Count - 1; i++)
+            {
+                DateTime segmentStart = uniqueBoundaries[i];
+                DateTime segmentEnd = uniqueBoundaries[i + 1];
+                if (segmentEnd <= segmentStart) continue;
+
+                DateTime midpoint = segmentStart + TimeSpan.FromTicks((segmentEnd - segmentStart).Ticks / 2);
+                int selectedSid = 0;
+                for (int w = 0; w < rawWindows.Count; w++)
+                {
+                    Tuple<int, DateTime, DateTime> rawWindow = rawWindows[w];
+                    if (midpoint >= rawWindow.Item2 && midpoint < rawWindow.Item3)
+                    {
+                        selectedSid = rawWindow.Item1;
+                        break;
+                    }
+                }
+
+                if (selectedSid == 0) continue;
+
+                if (resolvedWindows.Count > 0)
+                {
+                    Tuple<int, DateTime, DateTime> previous = resolvedWindows[resolvedWindows.Count - 1];
+                    if (previous.Item1 == selectedSid && previous.Item3 == segmentStart)
+                    {
+                        resolvedWindows[resolvedWindows.Count - 1] = Tuple.Create(selectedSid, previous.Item2, segmentEnd);
+                        continue;
+                    }
+                }
+
+                resolvedWindows.Add(Tuple.Create(selectedSid, segmentStart, segmentEnd));
+            }
+
+            return resolvedWindows;
+        }
+
+        private void RemoveRawSessionBackgroundDrawings(DateTime anchorDate)
+        {
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+            {
+                if (!S_Active(sid)) continue;
+
+                DateTime sessionStart = GetSessionEntryWindowStart(anchorDate, sid);
+                string rawTag = string.Format("MICHTesting_{0}Fill_{1:yyyyMMdd_HHmm}", S_Label(sid), sessionStart);
+                RemoveDrawObject(rawTag);
+            }
+        }
+
+        private void DrawSessionBackground(int sid, DateTime sessionStart, DateTime sessionEnd)
+        {
             if (sessionEnd <= sessionStart) return;
 
             int parentGroup = ParentGroupOf(sid);
             Brush fillBrush = parentGroup == 1 ? Brushes.Gold : parentGroup == 2 ? Brushes.CornflowerBlue : Brushes.MediumSeaGreen;
-            string rectTag = string.Format("MICHTesting_{0}Fill_{1:yyyyMMdd_HHmm}", S_Label(sid), sessionStart);
+            string rectTag = string.Format("MICHTesting_{0}Fill_{1:yyyyMMdd_HHmm}_{2:yyyyMMdd_HHmm}", S_Label(sid), sessionStart, sessionEnd);
             if (DrawObjects[rectTag] != null) return;
             Draw.Rectangle(this, rectTag, false, sessionStart, 0, sessionEnd, 30000, Brushes.Transparent, fillBrush, 10).ZOrder = -1;
         }
