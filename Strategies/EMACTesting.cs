@@ -22,6 +22,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool longNegativeSlopeSeen;
         private bool longCloseBelowSeen;
         private bool longSetupActive;
+        private bool longRunFromEmaSeen;
+        private int longEntriesThisSetup;
         private double lastLongEntryPrice;
         private double lastLongStopPrice;
         private double lastLongTargetPrice;
@@ -29,10 +31,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool shortPositiveSlopeSeen;
         private bool shortCloseAboveSeen;
         private bool shortSetupActive;
+        private bool shortRunFromEmaSeen;
+        private int shortEntriesThisSetup;
         private double lastShortEntryPrice;
         private double lastShortStopPrice;
         private double lastShortTargetPrice;
         private int currentPositionEntryBar = -1;
+        private bool wasWithinSession;
 
         public EMACTesting()
         {
@@ -58,6 +63,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EntryMinRunFromEmaPoints = 43.75;
                 LimitOffsetPoints = -0.75;
                 Contracts = 1;
+                MaxPullbackEntriesPerSetup = 5;
                 StopLossPoints = 11.0;
                 TakeProfitType = EMACTesting_TakeProfitType.FixedPoints;
                 FixedTakeProfitPoints = 450.0;
@@ -93,49 +99,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             double emaValue = ema[0];
             double emaSlopePoints = GetEmaSlopePoints();
+            bool isWithinSession = IsWithinAnySession(Time[0]);
+            bool justLeftSession = wasWithinSession && !isWithinSession;
+            wasWithinSession = isWithinSession;
 
-            TryExitCandleReversal();
-
-            if (!IsWithinAnySession(Time[0]))
+            if (justLeftSession)
             {
                 ResetLongSequence();
                 ResetShortSequence();
+            }
 
-                if (CloseAtSessionEnd && Position.MarketPosition == MarketPosition.Long)
+            if (CanSubmitManagedOrders())
+                TryExitCandleReversal();
+
+            if (!isWithinSession)
+            {
+                if (CanSubmitManagedOrders())
+                {
+                    CancelOrderIfActive(longEntryOrder);
+                    CancelOrderIfActive(shortEntryOrder);
+                }
+
+                if (CloseAtSessionEnd && CanSubmitManagedOrders() && Position.MarketPosition == MarketPosition.Long)
                     ExitLong("SessionExit", LongEntrySignal);
-                else if (CloseAtSessionEnd && Position.MarketPosition == MarketPosition.Short)
+                else if (CloseAtSessionEnd && CanSubmitManagedOrders() && Position.MarketPosition == MarketPosition.Short)
                     ExitShort("SessionExit", ShortEntrySignal);
-
-                return;
             }
 
             if (Position.MarketPosition == MarketPosition.Flat)
             {
-                if (longEntryOrder == null && !shortSetupActive)
+                if (longEntryOrder == null)
                     WatchForLongSequence(emaValue, emaSlopePoints);
 
-                if (shortEntryOrder == null && !longSetupActive)
+                if (shortEntryOrder == null)
                     WatchForShortSequence(emaValue, emaSlopePoints);
             }
 
             if (Position.MarketPosition != MarketPosition.Flat)
                 return;
 
-            if (longSetupActive && Close[0] < emaValue)
-            {
-                ResetLongSequence();
-                return;
-            }
+            UpdateRunFromEmaState(emaValue, emaSlopePoints);
 
-            if (shortSetupActive && Close[0] > emaValue)
-            {
-                ResetShortSequence();
+            if (!isWithinSession)
                 return;
-            }
 
-            if (longSetupActive && EntryEmaSlopePasses(true, emaSlopePoints) && EntryMinRunFromEmaPasses(true, emaValue))
+            if (longSetupActive && longRunFromEmaSeen && CanEnterSetup(true))
                 SubmitOrUpdateLimit(true, emaValue, emaSlopePoints);
-            else if (shortSetupActive && EntryEmaSlopePasses(false, emaSlopePoints) && EntryMinRunFromEmaPasses(false, emaValue))
+            else if (shortSetupActive && shortRunFromEmaSeen && CanEnterSetup(false))
                 SubmitOrUpdateLimit(false, emaValue, emaSlopePoints);
         }
 
@@ -150,7 +160,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!longCloseBelowSeen || Close[0] <= emaValue)
                 return;
 
-            ResetShortSequence();
+            if (!longSetupActive)
+                longEntriesThisSetup = 0;
+
             longSetupActive = true;
         }
 
@@ -165,12 +177,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!shortCloseAboveSeen || Close[0] >= emaValue)
                 return;
 
-            ResetLongSequence();
+            if (!shortSetupActive)
+                shortEntriesThisSetup = 0;
+
             shortSetupActive = true;
         }
 
         private void SubmitOrUpdateLimit(bool isLong, double emaValue, double emaSlopePoints)
         {
+            if (!CanSubmitManagedOrders())
+                return;
+
             string entrySignal = isLong ? LongEntrySignal : ShortEntrySignal;
             Order entryOrder = isLong ? longEntryOrder : shortEntryOrder;
             double entryPrice = isLong
@@ -305,6 +322,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 : slopePoints <= -requiredSlope;
         }
 
+        private bool CanEnterSetup(bool isLong)
+        {
+            return isLong
+                ? longEntriesThisSetup < MaxPullbackEntriesPerSetup
+                : shortEntriesThisSetup < MaxPullbackEntriesPerSetup;
+        }
+
+        private void UpdateRunFromEmaState(double emaValue, double emaSlopePoints)
+        {
+            if (longSetupActive && !longRunFromEmaSeen
+                && EntryEmaSlopePasses(true, emaSlopePoints)
+                && EntryMinRunFromEmaPasses(true, emaValue))
+            {
+                ResetShortSequence();
+                longRunFromEmaSeen = true;
+            }
+
+            if (shortSetupActive && !shortRunFromEmaSeen
+                && EntryEmaSlopePasses(false, emaSlopePoints)
+                && EntryMinRunFromEmaPasses(false, emaValue))
+            {
+                ResetLongSequence();
+                shortRunFromEmaSeen = true;
+            }
+        }
+
         private bool EntryMinRunFromEmaPasses(bool isLong, double emaValue)
         {
             double requiredDistance = Math.Abs(EntryMinRunFromEmaPoints);
@@ -314,6 +357,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return isLong
                 ? Close[0] >= emaValue + requiredDistance
                 : Close[0] <= emaValue - requiredDistance;
+        }
+
+        private bool CanSubmitManagedOrders()
+        {
+            return State != State.Historical || !IsPlaybackAccount();
+        }
+
+        private bool IsPlaybackAccount()
+        {
+            return Account != null
+                && !string.IsNullOrEmpty(Account.Name)
+                && Account.Name.IndexOf("Playback", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private bool TryExitCandleReversal()
@@ -468,11 +523,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void ResetLongSequence()
         {
-            CancelOrderIfActive(longEntryOrder);
+            if (CanSubmitManagedOrders())
+                CancelOrderIfActive(longEntryOrder);
 
             longNegativeSlopeSeen = false;
             longCloseBelowSeen = false;
             longSetupActive = false;
+            longRunFromEmaSeen = false;
+            longEntriesThisSetup = 0;
             lastLongEntryPrice = 0.0;
             lastLongStopPrice = 0.0;
             lastLongTargetPrice = 0.0;
@@ -480,11 +538,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void ResetShortSequence()
         {
-            CancelOrderIfActive(shortEntryOrder);
+            if (CanSubmitManagedOrders())
+                CancelOrderIfActive(shortEntryOrder);
 
             shortPositiveSlopeSeen = false;
             shortCloseAboveSeen = false;
             shortSetupActive = false;
+            shortRunFromEmaSeen = false;
+            shortEntriesThisSetup = 0;
             lastShortEntryPrice = 0.0;
             lastShortStopPrice = 0.0;
             lastShortTargetPrice = 0.0;
@@ -510,20 +571,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (isLongEntry)
                 {
-                    longSetupActive = false;
                     longEntryOrder = null;
+                    longRunFromEmaSeen = false;
+                    longEntriesThisSetup++;
                 }
                 else
                 {
-                    shortSetupActive = false;
                     shortEntryOrder = null;
+                    shortRunFromEmaSeen = false;
+                    shortEntriesThisSetup++;
                 }
 
                 currentPositionEntryBar = CurrentBar;
-                longNegativeSlopeSeen = false;
-                longCloseBelowSeen = false;
-                shortPositiveSlopeSeen = false;
-                shortCloseAboveSeen = false;
             }
             else if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
             {
@@ -569,8 +628,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Contracts", Description = "Order quantity per entry.", GroupName = "Parameters", Order = 4)]
         public int Contracts { get; set; }
 
+        [Range(1, int.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Max Pullback Entries Per Setup", Description = "Maximum number of EMA pullback fills allowed after one valid run from the EMA.", GroupName = "Parameters", Order = 5)]
+        public int MaxPullbackEntriesPerSetup { get; set; }
+
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Stop Loss Points", Description = "Fixed stop distance from the limit entry.", GroupName = "Parameters", Order = 5)]
+        [Display(Name = "Stop Loss Points", Description = "Fixed stop distance from the limit entry.", GroupName = "Parameters", Order = 6)]
         public double StopLossPoints { get; set; }
 
         [NinjaScriptProperty]
