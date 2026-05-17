@@ -592,7 +592,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3CandleReversalCloseBeyondPoints = 0.25;
                 London3CandleReversalMinBodyPoints = 7.5;
 
-                NewYorkSessionStart = new TimeSpan(9, 30, 0);
+                NewYorkSessionStart = new TimeSpan(9, 35, 0);
                 NewYorkSessionEnd = new TimeSpan(10, 00, 0);
                 NewYorkEmaPeriod = 21;
                 NewYorkContracts = 1;
