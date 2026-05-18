@@ -3785,7 +3785,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 takeProfitPoints,
                 takeProfitPrice,
                 flipToLong ? LongFlipEntrySignal : ShortFlipEntrySignal);
-            DrawStopOutFlipMarker(flipToLong);
             lastStopOutFlipSubmittedBar = CurrentBar;
             LogDebug(string.Format(
                 "Stop-out flip {0} | source={1} session={2} entry={3:0.00} stop={4:0.00} priorStop={5:0.00} qty={6}",
@@ -3850,18 +3849,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return stopPrice > 0.0
                 ? Instrument.MasterInstrument.RoundToTickSize(stopPrice)
                 : 0.0;
-        }
-
-        private void DrawStopOutFlipMarker(bool flipToLong)
-        {
-            string tag = string.Format("DUOrc_StopOutFlip_{0}_{1}", CurrentBar, flipToLong ? "Long" : "Short");
-            string text = flipToLong ? "FLIP LONG" : "FLIP SHORT";
-            double y = flipToLong
-                ? Instrument.MasterInstrument.RoundToTickSize(Low[0] - TickSize * 12.0)
-                : Instrument.MasterInstrument.RoundToTickSize(High[0] + TickSize * 12.0);
-            Brush brush = flipToLong ? Brushes.LimeGreen : Brushes.Red;
-
-            Draw.Text(this, tag, text, 0, y, brush);
         }
 
         private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
@@ -5579,9 +5566,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private (string value, Brush brush) BuildFiveMinuteCloseSignalInfo(SessionSlot infoSession, double adxValue, double atrValue)
         {
             if (Position.MarketPosition == MarketPosition.Long)
-                return ("In Long Now", Brushes.White);
+                return ("IN LONG NOW", Brushes.LimeGreen);
             if (Position.MarketPosition == MarketPosition.Short)
-                return ("In Short Now", Brushes.White);
+                return ("IN SHORT NOW", Brushes.IndianRed);
 
             if (!CanEvaluateFiveMinuteCloseSignal(infoSession, adxValue, atrValue))
                 return ("No Trade", Brushes.IndianRed);
