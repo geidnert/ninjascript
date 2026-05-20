@@ -573,7 +573,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IsInstantiatedOnEachOptimizationIteration = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
 
-                UseAsiaSession = true;
                 AsiaSessionStart = new TimeSpan(18, 30, 0);
                 AsiaSessionEnd = new TimeSpan(20, 00, 0);
                 AsiaBlockSundayTrades = false;
@@ -608,7 +607,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxDdRiskModeTakeProfitPoints = 80.75;
                 AsiaHorizontalExitBars = 70;
 
-                UseAsia2Session = true;
                 Asia2SessionStart = new TimeSpan(20, 00, 0);
                 Asia2SessionEnd = new TimeSpan(23, 59, 0);
                 Asia2BlockSundayTrades = false;
@@ -643,7 +641,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2AdxDdRiskModeTakeProfitPoints = 44.0;
                 Asia2HorizontalExitBars = 60;
 
-                UseAsia3Session = true;
                 Asia3SessionStart = TimeSpan.Zero;
                 Asia3SessionEnd = new TimeSpan(2, 00, 0);
                 Asia3BlockSundayTrades = false;
@@ -678,7 +675,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3AdxDdRiskModeTakeProfitPoints = 31.0;
                 Asia3HorizontalExitBars = 63;
 
-                UseLondonSession = true;
                 LondonSessionStart = new TimeSpan(1, 45, 0);
                 LondonSessionEnd = new TimeSpan(3, 00, 0);
                 AutoShiftLondon = true;
@@ -713,7 +709,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonAdxDdRiskModeTakeProfitPoints = 10.0;
                 LondonHorizontalExitBars = 54;
 
-                UseLondon2Session = true;
                 London2SessionStart = new TimeSpan(3, 00, 0);
                 London2SessionEnd = new TimeSpan(5, 00, 0);
                 AutoShiftLondon2 = true;
@@ -748,7 +743,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2AdxDdRiskModeTakeProfitPoints = 87.5;
                 London2HorizontalExitBars = 52;
 
-                UseLondon3Session = true;
                 London3SessionStart = new TimeSpan(5, 00, 0);
                 London3SessionEnd = new TimeSpan(8, 00, 0);
                 London3FlatByTime = "09:00:00";
@@ -784,7 +778,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3AdxDdRiskModeTakeProfitPoints = 56.75;
                 London3HorizontalExitBars = 50;
 
-                UseNewYorkSession = true;
                 NewYorkSessionStart = new TimeSpan(9, 40, 0);
                 NewYorkSessionEnd = new TimeSpan(11, 30, 0);
                 NewYorkSkipStart = TimeSpan.Zero;
@@ -823,7 +816,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxDdRiskModeTakeProfitPoints = 72.5;
                 NewYorkHorizontalExitBars = 34;
 
-                UseNewYork2Session = true;
                 NewYork2SessionStart = new TimeSpan(11, 30, 0);
                 NewYork2SessionEnd = new TimeSpan(14, 00, 0);
                 NewYork2SkipStart = new TimeSpan(12, 00, 0);
@@ -862,7 +854,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2AdxDdRiskModeTakeProfitPoints = 53.5;
                 NewYork2HorizontalExitBars = 43;
 
-                UseNewYork3Session = true;
                 NewYork3SessionStart = new TimeSpan(14, 00, 0);
                 NewYork3SessionEnd = new TimeSpan(17, 00, 0);
                 NewYork3SkipStart = TimeSpan.Zero;
@@ -3231,23 +3222,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (slot)
             {
                 case SessionSlot.Asia:
-                    return UseAsiaSession && AsiaSessionStart != AsiaSessionEnd;
+                    return AsiaContracts > 0 && AsiaSessionStart != AsiaSessionEnd;
                 case SessionSlot.Asia2:
-                    return UseAsia2Session && Asia2SessionStart != Asia2SessionEnd;
+                    return Asia2Contracts > 0 && Asia2SessionStart != Asia2SessionEnd;
                 case SessionSlot.Asia3:
-                    return UseAsia3Session && Asia3SessionStart != Asia3SessionEnd;
+                    return Asia3Contracts > 0 && Asia3SessionStart != Asia3SessionEnd;
                 case SessionSlot.London:
-                    return UseLondonSession && LondonSessionStart != LondonSessionEnd;
+                    return LondonContracts > 0 && LondonSessionStart != LondonSessionEnd;
                 case SessionSlot.London2:
-                    return UseLondon2Session && London2SessionStart != London2SessionEnd;
+                    return London2Contracts > 0 && London2SessionStart != London2SessionEnd;
                 case SessionSlot.London3:
-                    return UseLondon3Session && London3SessionStart != London3SessionEnd;
+                    return London3Contracts > 0 && London3SessionStart != London3SessionEnd;
                 case SessionSlot.NewYork:
-                    return UseNewYorkSession && NewYorkSessionStart != NewYorkSessionEnd;
+                    return NewYorkContracts > 0 && NewYorkSessionStart != NewYorkSessionEnd;
                 case SessionSlot.NewYork2:
-                    return UseNewYork2Session && NewYork2SessionStart != NewYork2SessionEnd;
+                    return NewYork2Contracts > 0 && NewYork2SessionStart != NewYork2SessionEnd;
                 case SessionSlot.NewYork3:
-                    return UseNewYork3Session && NewYork3SessionStart != NewYork3SessionEnd;
+                    return NewYork3Contracts > 0 && NewYork3SessionStart != NewYork3SessionEnd;
                 default:
                     return false;
             }
@@ -4719,28 +4710,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (slot)
             {
                 case SessionSlot.Asia:
-                    if (!UseAsiaSession || AsiaSessionStart == AsiaSessionEnd)
+                    if (AsiaContracts <= 0 || AsiaSessionStart == AsiaSessionEnd)
                         return false;
                     start = AsiaSessionStart;
                     end = AsiaSessionEnd;
                     return true;
 
                 case SessionSlot.Asia2:
-                    if (!UseAsia2Session || Asia2SessionStart == Asia2SessionEnd)
+                    if (Asia2Contracts <= 0 || Asia2SessionStart == Asia2SessionEnd)
                         return false;
                     start = Asia2SessionStart;
                     end = Asia2SessionEnd;
                     return true;
 
                 case SessionSlot.Asia3:
-                    if (!UseAsia3Session || Asia3SessionStart == Asia3SessionEnd)
+                    if (Asia3Contracts <= 0 || Asia3SessionStart == Asia3SessionEnd)
                         return false;
                     start = Asia3SessionStart;
                     end = Asia3SessionEnd;
                     return true;
 
                 case SessionSlot.London:
-                    if (!UseLondonSession || LondonSessionStart == LondonSessionEnd)
+                    if (LondonContracts <= 0 || LondonSessionStart == LondonSessionEnd)
                         return false;
                     start = LondonSessionStart;
                     end = LondonSessionEnd;
@@ -4753,7 +4744,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return true;
 
                 case SessionSlot.London2:
-                    if (!UseLondon2Session || London2SessionStart == London2SessionEnd)
+                    if (London2Contracts <= 0 || London2SessionStart == London2SessionEnd)
                         return false;
                     start = London2SessionStart;
                     end = London2SessionEnd;
@@ -4766,7 +4757,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return true;
 
                 case SessionSlot.London3:
-                    if (!UseLondon3Session || London3SessionStart == London3SessionEnd)
+                    if (London3Contracts <= 0 || London3SessionStart == London3SessionEnd)
                         return false;
                     start = London3SessionStart;
                     end = London3SessionEnd;
@@ -4779,21 +4770,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return true;
 
                 case SessionSlot.NewYork:
-                    if (!UseNewYorkSession || NewYorkSessionStart == NewYorkSessionEnd)
+                    if (NewYorkContracts <= 0 || NewYorkSessionStart == NewYorkSessionEnd)
                         return false;
                     start = NewYorkSessionStart;
                     end = NewYorkSessionEnd;
                     return true;
 
                 case SessionSlot.NewYork2:
-                    if (!UseNewYork2Session || NewYork2SessionStart == NewYork2SessionEnd)
+                    if (NewYork2Contracts <= 0 || NewYork2SessionStart == NewYork2SessionEnd)
                         return false;
                     start = NewYork2SessionStart;
                     end = NewYork2SessionEnd;
                     return true;
 
                 case SessionSlot.NewYork3:
-                    if (!UseNewYork3Session || NewYork3SessionStart == NewYork3SessionEnd)
+                    if (NewYork3Contracts <= 0 || NewYork3SessionStart == NewYork3SessionEnd)
                         return false;
                     start = NewYork3SessionStart;
                     end = NewYork3SessionEnd;
@@ -5029,21 +5020,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (slot)
             {
                 case SessionSlot.NewYork:
-                    if (!UseNewYorkSession || NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
+                    if (NewYorkContracts <= 0 || NewYorkSkipStart == TimeSpan.Zero || NewYorkSkipEnd == TimeSpan.Zero)
                         return false;
                     start = NewYorkSkipStart;
                     end = NewYorkSkipEnd;
                     return true;
 
                 case SessionSlot.NewYork2:
-                    if (!UseNewYork2Session || NewYork2SkipStart == TimeSpan.Zero || NewYork2SkipEnd == TimeSpan.Zero)
+                    if (NewYork2Contracts <= 0 || NewYork2SkipStart == TimeSpan.Zero || NewYork2SkipEnd == TimeSpan.Zero)
                         return false;
                     start = NewYork2SkipStart;
                     end = NewYork2SkipEnd;
                     return true;
 
                 case SessionSlot.NewYork3:
-                    if (!UseNewYork3Session || NewYork3SkipStart == TimeSpan.Zero || NewYork3SkipEnd == TimeSpan.Zero)
+                    if (NewYork3Contracts <= 0 || NewYork3SkipStart == TimeSpan.Zero || NewYork3SkipEnd == TimeSpan.Zero)
                         return false;
                     start = NewYork3SkipStart;
                     end = NewYork3SkipEnd;
@@ -6209,7 +6200,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
         {
             var lines = new List<(string label, string value, Brush labelBrush, Brush valueBrush)>();
-            string contractsText = Math.Max(1, activeContracts).ToString(CultureInfo.InvariantCulture);
+            string contractsText = Math.Max(0, activeContracts).ToString(CultureInfo.InvariantCulture);
             double adxValue;
             double adxSlope;
             GetInfoAdxValues(out adxValue, out adxSlope);
@@ -6619,7 +6610,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private int GetEntryQuantity()
         {
-            int baseQty = Math.Max(1, activeContracts);
+            int baseQty = Math.Max(0, activeContracts);
             return baseQty;
         }
 
@@ -6743,7 +6734,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (WebhookProviderType == WebhookProvider.ProjectX)
             {
-                int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : Math.Max(1, activeContracts);
+                int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : Math.Max(0, activeContracts);
                 LogDebug(string.Format(
                     "Webhook attempt | provider=ProjectX event={0} qty={1} market={2} entry={3:0.00} tp={4:0.00} sl={5:0.00}",
                     eventType,
@@ -6763,7 +6754,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             try
             {
-                int orderQty = quantityOverride > 0 ? quantityOverride : Math.Max(1, activeContracts);
+                int orderQty = quantityOverride > 0 ? quantityOverride : Math.Max(0, activeContracts);
                 string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
                     ? WebhookTickerOverride.Trim()
                     : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
@@ -8335,11 +8326,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     yield return dict;
             }
         }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Asia 1 Session(18:30-20:00)", Description = "Enable trading logic during the Asia 1 time window.", GroupName = "Asia 1", Order = 0)]
-        public bool UseAsiaSession { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "Asia 1 session start time in chart time zone.", GroupName = "Asia 1", Order = 1)]
@@ -8362,8 +8348,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int AsiaEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia 1 entries.", GroupName = "Asia 1", Order = 5)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 1 entries. 0 disables this session.", GroupName = "Asia 1", Order = 5)]
         public int AsiaContracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8533,12 +8519,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 1 entries and flips while ATR(14) is below this value.", GroupName = "Asia 1", Order = 37)]
         public double AsiaAtrMinimum { get; set; }
-
-
-        [NinjaScriptProperty]
-        [Display(Name = "Asia 2 Session(20:00-23:59)", Description = "Enable trading logic during the Asia 2 time window.", GroupName = "Asia 2", Order = 0)]
-        public bool UseAsia2Session { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "Asia 2 session start time in chart time zone.", GroupName = "Asia 2", Order = 1)]
@@ -8561,8 +8541,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int Asia2EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia 2 entries.", GroupName = "Asia 2", Order = 5)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 2 entries. 0 disables this session.", GroupName = "Asia 2", Order = 5)]
         public int Asia2Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8732,12 +8712,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 2 entries and flips while ATR(14) is below this value.", GroupName = "Asia 2", Order = 37)]
         public double Asia2AtrMinimum { get; set; }
-
-
-        [NinjaScriptProperty]
-        [Display(Name = "Asia 3 Session(00:00-02:00)", Description = "Enable trading logic during the Asia 3 time window.", GroupName = "Asia 3", Order = 0)]
-        public bool UseAsia3Session { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "Asia 3 session start time in chart time zone.", GroupName = "Asia 3", Order = 1)]
@@ -8760,8 +8734,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int Asia3EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia 3 entries.", GroupName = "Asia 3", Order = 5)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 3 entries. 0 disables this session.", GroupName = "Asia 3", Order = 5)]
         public int Asia3Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -8931,11 +8905,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 3 entries and flips while ATR(14) is below this value.", GroupName = "Asia 3", Order = 37)]
         public double Asia3AtrMinimum { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "London 1 Session(01:45-03:00)", Description = "Enable trading logic during the London 1 time window.", GroupName = "London 1", Order = 0)]
-        public bool UseLondonSession { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "London 1 session start time in chart time zone.", GroupName = "London 1", Order = 1)]
@@ -8958,8 +8927,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int LondonEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for London 1 entries.", GroupName = "London 1", Order = 5)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 1 entries. 0 disables this session.", GroupName = "London 1", Order = 5)]
         public int LondonContracts { get; set; }
 
         [NinjaScriptProperty]
@@ -9128,12 +9097,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 1 entries and flips while ATR(14) is below this value.", GroupName = "London 1", Order = 37)]
         public double LondonAtrMinimum { get; set; }
-
-
-        [NinjaScriptProperty]
-        [Display(Name = "London 2 Session(03:00-05:00)", Description = "Enable trading logic during the London 2 time window.", GroupName = "London 2", Order = 0)]
-        public bool UseLondon2Session { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "London 2 session start time in chart time zone.", GroupName = "London 2", Order = 1)]
@@ -9156,8 +9119,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int London2EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for London 2 entries.", GroupName = "London 2", Order = 5)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 2 entries. 0 disables this session.", GroupName = "London 2", Order = 5)]
         public int London2Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -9326,12 +9289,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 2 entries and flips while ATR(14) is below this value.", GroupName = "London 2", Order = 37)]
         public double London2AtrMinimum { get; set; }
-
-
-        [NinjaScriptProperty]
-        [Display(Name = "London 3 Session(05:00-08:55)", Description = "Enable trading logic during the London 3 time window.", GroupName = "London 3", Order = 0)]
-        public bool UseLondon3Session { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "London 3 session start time in chart time zone.", GroupName = "London 3", Order = 1)]
@@ -9359,8 +9316,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int London3EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for London 3 entries.", GroupName = "London 3", Order = 5)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for London 3 entries. 0 disables this session.", GroupName = "London 3", Order = 5)]
         public int London3Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -9529,11 +9486,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new London 3 entries and flips while ATR(14) is below this value.", GroupName = "London 3", Order = 37)]
         public double London3AtrMinimum { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York 1 Session(09:35-11:30)", Description = "Enable trading logic during the New York 1 time window.", GroupName = "New York 1", Order = 0)]
-        public bool UseNewYorkSession { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "New York 1 session start time in chart time zone.", GroupName = "New York 1", Order = 1)]
@@ -9561,8 +9513,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYorkEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 1 entries.", GroupName = "New York 1", Order = 6)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 1 entries. 0 disables this session.", GroupName = "New York 1", Order = 6)]
         public int NewYorkContracts { get; set; }
 
         [NinjaScriptProperty]
@@ -9748,12 +9700,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 1 entries and flips while ATR(14) is below this value.", GroupName = "New York 1", Order = 38)]
         public double NewYorkAtrMinimum { get; set; }
-
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York 2 Session(11:30-14:00)", Description = "Enable trading logic during the New York 2 time window.", GroupName = "New York 2", Order = 0)]
-        public bool UseNewYork2Session { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "New York 2 session start time in chart time zone.", GroupName = "New York 2", Order = 1)]
@@ -9781,8 +9727,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYork2EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 2 entries.", GroupName = "New York 2", Order = 6)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 2 entries. 0 disables this session.", GroupName = "New York 2", Order = 6)]
         public int NewYork2Contracts { get; set; }
 
         [NinjaScriptProperty]
@@ -9968,12 +9914,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new New York 2 entries and flips while ATR(14) is below this value.", GroupName = "New York 2", Order = 38)]
         public double NewYork2AtrMinimum { get; set; }
-
-
-        [NinjaScriptProperty]
-        [Display(Name = "New York 3 Session(14:00-17:00)", Description = "Enable trading logic during the New York 3 time window.", GroupName = "New York 3", Order = 0)]
-        public bool UseNewYork3Session { get; set; }
-
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "New York 3 session start time in chart time zone.", GroupName = "New York 3", Order = 1)]
@@ -10001,8 +9941,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int NewYork3EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for New York 3 entries.", GroupName = "New York 3", Order = 6)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Contracts", Description = "Base contracts for New York 3 entries. 0 disables this session.", GroupName = "New York 3", Order = 6)]
         public int NewYork3Contracts { get; set; }
 
         [NinjaScriptProperty]
