@@ -3174,7 +3174,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private SessionSlot DetermineSessionForTime(DateTime time)
         {
-            TimeSpan now = time.TimeOfDay;
+            DateTime gateTime = GetHistoricalTimeGateTime(time);
+            TimeSpan now = gateTime.TimeOfDay;
             SessionSlot nextSlot = SessionSlot.None;
             DateTime nextStart = DateTime.MaxValue;
             bool hasConfiguredSession = false;
@@ -3183,15 +3184,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 TimeSpan start;
                 TimeSpan end;
-                if (!IsSessionConfigured(slot) || !TryGetSessionWindow(slot, time, out start, out end))
+                if (!IsSessionConfigured(slot) || !TryGetSessionWindow(slot, gateTime, out start, out end))
                     continue;
 
                 hasConfiguredSession = true;
                 if (IsTimeInRange(now, start, end))
                     return slot;
 
-                DateTime candidateStart = time.Date + start;
-                if (candidateStart <= time)
+                DateTime candidateStart = gateTime.Date + start;
+                if (candidateStart <= gateTime)
                     candidateStart = candidateStart.AddDays(1);
 
                 if (candidateStart < nextStart)
@@ -3874,11 +3875,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsForceCloseTimeReached(DateTime barTime)
         {
+            DateTime gateTime = GetHistoricalTimeGateTime(barTime);
             DateTime forceCloseDateTime;
-            if (!TryGetForceCloseDateTime(barTime, out forceCloseDateTime))
+            if (!TryGetForceCloseDateTime(gateTime, out forceCloseDateTime))
                 return false;
 
-            return barTime >= forceCloseDateTime;
+            return gateTime >= forceCloseDateTime;
         }
 
         private bool IsTemporaryBlockedTradingDate(DateTime barTime)
@@ -3916,7 +3918,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!TryParseLondon3FlatByTime(out flatByTime))
                 return false;
 
-            return barTime.TimeOfDay >= flatByTime;
+            return GetHistoricalTimeGateTime(barTime).TimeOfDay >= flatByTime;
         }
 
         private bool TryParseConfiguredForceCloseTime(out TimeSpan forceCloseTime)
@@ -4485,7 +4487,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (activeHvSlStartTime == activeHvSlEndTime)
                 return false;
 
-            return IsTimeInRange(time.TimeOfDay, activeHvSlStartTime, activeHvSlEndTime);
+            return IsTimeInRange(GetHistoricalTimeGateTime(time).TimeOfDay, activeHvSlStartTime, activeHvSlEndTime);
         }
 
         private double GetAdxSlopePoints()
@@ -4698,12 +4700,35 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool TimeInSession(SessionSlot slot, DateTime time)
         {
+            DateTime gateTime = GetHistoricalTimeGateTime(time);
             TimeSpan start;
             TimeSpan end;
-            if (!TryGetSessionWindow(slot, time, out start, out end))
+            if (!TryGetSessionWindow(slot, gateTime, out start, out end))
                 return false;
 
-            return IsTimeInRange(time.TimeOfDay, start, end);
+            return IsTimeInRange(gateTime.TimeOfDay, start, end);
+        }
+
+        private DateTime GetHistoricalTimeGateTime(DateTime time)
+        {
+            return ShouldShiftHistoricalTimeGates()
+                ? time.AddMinutes(GetHistoricalTimeGateShiftMinutes())
+                : time;
+        }
+
+        private bool ShouldShiftHistoricalTimeGates()
+        {
+            return State == State.Historical
+                && BarsPeriod != null
+                && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute
+                && BarsPeriod.Value > 0;
+        }
+
+        private int GetHistoricalTimeGateShiftMinutes()
+        {
+            return BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute && BarsPeriod.Value > 0
+                ? BarsPeriod.Value
+                : 5;
         }
 
         private bool TryGetSessionWindow(SessionSlot slot, out TimeSpan start, out TimeSpan end)
@@ -5005,7 +5030,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsAsiaSundayBlocked(SessionSlot slot, DateTime time)
         {
-            if (!IsAsiaFamily(slot) || time.DayOfWeek != DayOfWeek.Sunday)
+            DateTime gateTime = GetHistoricalTimeGateTime(time);
+            if (!IsAsiaFamily(slot) || gateTime.DayOfWeek != DayOfWeek.Sunday)
                 return false;
 
             switch (slot)
@@ -5064,7 +5090,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!TryGetNewYorkSkipWindow(slot, out skipStart, out skipEnd))
                 return false;
 
-            TimeSpan now = time.TimeOfDay;
+            TimeSpan now = GetHistoricalTimeGateTime(time).TimeOfDay;
             if (skipStart < skipEnd)
                 return now >= skipStart && now <= skipEnd;
 
@@ -5716,19 +5742,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!UseNewsSkip)
                 return false;
 
-            EnsureNewsDatesInitialized(time);
+            DateTime gateTime = GetHistoricalTimeGateTime(time);
+            EnsureNewsDatesInitialized(gateTime);
             if (!newsDatesAvailable)
                 return false;
 
             for (int i = 0; i < NewsDates.Count; i++)
             {
                 DateTime newsTime = NewsDates[i];
-                if (newsTime.Date != time.Date)
+                if (newsTime.Date != gateTime.Date)
                     continue;
 
                 DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
                 DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
-                if (time >= windowStart && time <= windowEnd)
+                if (gateTime >= windowStart && gateTime <= windowEnd)
                     return true;
             }
 
@@ -5737,7 +5764,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsSameNewsWeek(DateTime first, DateTime second)
         {
-            return GetWeekStart(GetEtDateForNewsReference(first)) == GetWeekStart(GetEtDateForNewsReference(second));
+            return GetWeekStart(GetEtDateForNewsReference(GetHistoricalTimeGateTime(first))) == GetWeekStart(GetEtDateForNewsReference(GetHistoricalTimeGateTime(second)));
         }
 
         private bool GetSessionClosed(SessionSlot slot)
