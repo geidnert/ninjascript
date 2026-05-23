@@ -74,6 +74,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ProjectX
         }
 
+        public enum InitialEntryType
+        {
+            [Display(Name = "Market Entry")]
+            Market,
+            [Display(Name = "Limit Entry")]
+            EmaLimit
+        }
+
         private enum ProjectXProtectionOrderKind
         {
             StopLoss,
@@ -171,6 +179,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeEntryMinBodyPoints;
         private double activeEntryCloseBeyondEmaPoints;
         private bool activeColorBlindEntry;
+        private InitialEntryType activeEntryType;
         private double activeTakeProfitPoints;
         private double activeMinimumAtrForEntry;
         private int activeAdxPeriod;
@@ -489,6 +498,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaContracts = 1;
                 AsiaEntryMinBodyPoints = 0;
                 AsiaEntryCloseBeyondEmaPoints = 0;
+                AsiaEntryType = InitialEntryType.Market;
                 AsiaColorBlindEntry = false;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 29.58;
@@ -509,6 +519,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2Contracts = 1;
                 Asia2EntryMinBodyPoints = 0;
                 Asia2EntryCloseBeyondEmaPoints = 0;
+                Asia2EntryType = InitialEntryType.Market;
                 Asia2ColorBlindEntry = false;
                 Asia2AdxPeriod = 14;
                 Asia2AdxThreshold = 15.3;
@@ -529,6 +540,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3Contracts = 1;
                 Asia3EntryMinBodyPoints = 1.5;
                 Asia3EntryCloseBeyondEmaPoints = 0;
+                Asia3EntryType = InitialEntryType.Market;
                 Asia3ColorBlindEntry = false;
                 Asia3AdxPeriod = 14;
                 Asia3AdxThreshold = 18.6;
@@ -550,6 +562,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonContracts = 1;
                 LondonEntryMinBodyPoints = 0.5;
                 LondonEntryCloseBeyondEmaPoints = 0;
+                LondonEntryType = InitialEntryType.Market;
                 LondonColorBlindEntry = false;
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 19.47;
@@ -571,6 +584,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2Contracts = 1;
                 London2EntryMinBodyPoints = 1.5;
                 London2EntryCloseBeyondEmaPoints = 0;
+                London2EntryType = InitialEntryType.Market;
                 London2ColorBlindEntry = false;
                 London2AdxPeriod = 14;
                 London2AdxThreshold = 15.42;
@@ -593,6 +607,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3Contracts = 1;
                 London3EntryMinBodyPoints = 0.25;
                 London3EntryCloseBeyondEmaPoints = 0;
+                London3EntryType = InitialEntryType.Market;
                 London3ColorBlindEntry = false;
                 London3AdxPeriod = 14;
                 London3AdxThreshold = 27.15;
@@ -613,6 +628,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkContracts = 1;
                 NewYorkEntryMinBodyPoints = 4.25;
                 NewYorkEntryCloseBeyondEmaPoints = 0;
+                NewYorkEntryType = InitialEntryType.Market;
                 NewYorkColorBlindEntry = false;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 20.1;
@@ -633,6 +649,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2Contracts = 1;
                 NewYork2EntryMinBodyPoints = 0;
                 NewYork2EntryCloseBeyondEmaPoints = 0;
+                NewYork2EntryType = InitialEntryType.Market;
                 NewYork2ColorBlindEntry = false;
                 NewYork2AdxPeriod = 14;
                 NewYork2AdxThreshold = 14.9;
@@ -653,6 +670,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3Contracts = 1;
                 NewYork3EntryMinBodyPoints = 0;
                 NewYork3EntryCloseBeyondEmaPoints = 0;
+                NewYork3EntryType = InitialEntryType.Market;
                 NewYork3ColorBlindEntry = false;
                 NewYork3AdxPeriod = 14;
                 NewYork3AdxThreshold = 18.05;
@@ -673,6 +691,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4Contracts = 1;
                 NewYork4EntryMinBodyPoints = 4.75;
                 NewYork4EntryCloseBeyondEmaPoints = 0;
+                NewYork4EntryType = InitialEntryType.Market;
                 NewYork4ColorBlindEntry = false;
                 NewYork4AdxPeriod = 14;
                 NewYork4AdxThreshold = 12.9;
@@ -693,6 +712,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5Contracts = 1;
                 NewYork5EntryMinBodyPoints = 3;
                 NewYork5EntryCloseBeyondEmaPoints = 0;
+                NewYork5EntryType = InitialEntryType.Market;
                 NewYork5ColorBlindEntry = false;
                 NewYork5AdxPeriod = 21;
                 NewYork5AdxThreshold = 18.3;
@@ -1121,6 +1141,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (!canTradeNow)
             {
+                CancelWorkingEntryOrders();
+
                 if (DebugLogging && Position.MarketPosition == MarketPosition.Flat && (longSignal || shortSignal))
                 {
                     string setupSide = longSignal ? "Long" : "Short";
@@ -1153,6 +1175,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (!entryBodyPasses)
             {
+                CancelWorkingEntryOrders();
+
                 bool bodyBlockedLong = longSignalBase;
                 bool bodyBlockedShort = shortSignalBase;
                 if (DebugLogging && Position.MarketPosition == MarketPosition.Flat && (bodyBlockedLong || bodyBlockedShort))
@@ -1170,6 +1194,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (activeEntryCloseBeyondEmaPoints > 0.0 && ((longSignalBase && !longEntryCloseBeyondEmaPasses) || (shortSignalBase && !shortEntryCloseBeyondEmaPasses)))
             {
+                CancelWorkingEntryOrders();
+
                 bool closeBlockedLong = longSignalBase && !longEntryCloseBeyondEmaPasses;
                 double distancePoints = GetEntryCloseBeyondEmaDistancePoints(closeBlockedLong, Close[0], emaValue);
                 if (DebugLogging && Position.MarketPosition == MarketPosition.Flat)
@@ -1185,6 +1211,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
+            if (!longSignal && !shortSignal)
+            {
+                CancelWorkingEntryOrders();
+                return;
+            }
+
             if (longSignal)
             {
                 BeginTradeAttempt("Long");
@@ -1192,11 +1224,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
                 bool longOrderActive = IsOrderActive(longEntryOrder);
-                double entryPrice = GetInitialEntryPrice();
+                double entryPrice = GetPreparedEntryPrice(true, emaValue);
                 double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue);
                 int qty = GetEntryQuantity();
                 if (qty <= 0)
                 {
+                    CancelWorkingEntryOrders();
                     LogDebug("LONG signal skipped | reason=contracts-disabled");
                     EndTradeAttempt("contracts-disabled");
                     return;
@@ -1205,6 +1238,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double takeProfitPoints = GetConfiguredEntryTakeProfitPoints();
                 double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, true);
 
+                if (longOrderActive)
+                {
+                    if (TryMaintainActiveLimitEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, LongEntrySignal))
+                        return;
+
+                    if (DebugLogging)
+                    {
+                        LogDebug(string.Format("LONG signal skipped | reason=longOrderActive tracked={0}", FormatOrderRef(longEntryOrder)));
+                        EndTradeAttempt("entry-order-active");
+                    }
+                    return;
+                }
+
                 if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", entryPrice, qty))
                 {
                     LogDebug("Entry confirmation declined | LONG.");
@@ -1212,16 +1258,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return;
                 }
 
-                if (!longOrderActive)
-                {
-                    SubmitPreparedInitialEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
-                    LogDebug(string.Format("Place LONG market | session={0} entry={1:0.00} stop={2:0.00} qty={3}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
-                }
-                else if (DebugLogging)
-                {
-                    LogDebug(string.Format("LONG signal skipped | reason=longOrderActive tracked={0}", FormatOrderRef(longEntryOrder)));
-                    EndTradeAttempt("entry-order-active");
-                }
+                SubmitPreparedInitialEntry(true, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, LongEntrySignal, IsMarketEntryMode());
+                LogDebug(string.Format("Place LONG {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", FormatActiveEntryType(), FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
             }
             else if (shortSignal)
             {
@@ -1230,11 +1268,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
                 bool shortOrderActive = IsOrderActive(shortEntryOrder);
-                double entryPrice = GetInitialEntryPrice();
+                double entryPrice = GetPreparedEntryPrice(false, emaValue);
                 double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue);
                 int qty = GetEntryQuantity();
                 if (qty <= 0)
                 {
+                    CancelWorkingEntryOrders();
                     LogDebug("SHORT signal skipped | reason=contracts-disabled");
                     EndTradeAttempt("contracts-disabled");
                     return;
@@ -1243,6 +1282,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 double takeProfitPoints = GetConfiguredEntryTakeProfitPoints();
                 double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, false);
 
+                if (shortOrderActive)
+                {
+                    if (TryMaintainActiveLimitEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, ShortEntrySignal))
+                        return;
+
+                    if (DebugLogging)
+                    {
+                        LogDebug(string.Format("SHORT signal skipped | reason=shortOrderActive tracked={0}", FormatOrderRef(shortEntryOrder)));
+                        EndTradeAttempt("entry-order-active");
+                    }
+                    return;
+                }
+
                 if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", entryPrice, qty))
                 {
                     LogDebug("Entry confirmation declined | SHORT.");
@@ -1250,16 +1302,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return;
                 }
 
-                if (!shortOrderActive)
-                {
-                    SubmitPreparedInitialEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice);
-                    LogDebug(string.Format("Place SHORT market | session={0} entry={1:0.00} stop={2:0.00} qty={3}", FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
-                }
-                else if (DebugLogging)
-                {
-                    LogDebug(string.Format("SHORT signal skipped | reason=shortOrderActive tracked={0}", FormatOrderRef(shortEntryOrder)));
-                    EndTradeAttempt("entry-order-active");
-                }
+                SubmitPreparedInitialEntry(false, qty, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, ShortEntrySignal, IsMarketEntryMode());
+                LogDebug(string.Format("Place SHORT {0} | session={1} entry={2:0.00} stop={3:0.00} qty={4}", FormatActiveEntryType(), FormatSessionLabel(activeSession), entryPrice, stopPrice, qty));
             }
         }
 
@@ -2670,6 +2714,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = AsiaEntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = AsiaEntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = AsiaColorBlindEntry;
+                    activeEntryType = AsiaEntryType;
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeTrailHardStop = AsiaTrailHardStop;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
@@ -2693,6 +2738,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = Asia2EntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = Asia2EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = Asia2ColorBlindEntry;
+                    activeEntryType = Asia2EntryType;
                     activeStopPaddingPoints = Asia2StopPaddingPoints;
                     activeTrailHardStop = Asia2TrailHardStop;
                     activeTakeProfitPoints = Asia2TakeProfitPoints;
@@ -2716,6 +2762,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = Asia3EntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = Asia3EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = Asia3ColorBlindEntry;
+                    activeEntryType = Asia3EntryType;
                     activeStopPaddingPoints = Asia3StopPaddingPoints;
                     activeTrailHardStop = Asia3TrailHardStop;
                     activeTakeProfitPoints = Asia3TakeProfitPoints;
@@ -2739,6 +2786,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = LondonEntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = LondonEntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = LondonColorBlindEntry;
+                    activeEntryType = LondonEntryType;
                     activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeTrailHardStop = LondonTrailHardStop;
                     activeTakeProfitPoints = LondonTakeProfitPoints;
@@ -2762,6 +2810,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = London2EntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = London2EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = London2ColorBlindEntry;
+                    activeEntryType = London2EntryType;
                     activeStopPaddingPoints = London2StopPaddingPoints;
                     activeTrailHardStop = London2TrailHardStop;
                     activeTakeProfitPoints = London2TakeProfitPoints;
@@ -2785,6 +2834,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = London3EntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = London3EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = London3ColorBlindEntry;
+                    activeEntryType = London3EntryType;
                     activeStopPaddingPoints = London3StopPaddingPoints;
                     activeTrailHardStop = London3TrailHardStop;
                     activeTakeProfitPoints = London3TakeProfitPoints;
@@ -2808,6 +2858,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = NewYorkEntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = NewYorkEntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYorkColorBlindEntry;
+                    activeEntryType = NewYorkEntryType;
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeTrailHardStop = NewYorkTrailHardStop;
                     activeTakeProfitPoints = NewYorkTakeProfitPoints;
@@ -2831,6 +2882,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = NewYork2EntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = NewYork2EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYork2ColorBlindEntry;
+                    activeEntryType = NewYork2EntryType;
                     activeStopPaddingPoints = NewYork2StopPaddingPoints;
                     activeTrailHardStop = NewYork2TrailHardStop;
                     activeTakeProfitPoints = NewYork2TakeProfitPoints;
@@ -2854,6 +2906,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = NewYork3EntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = NewYork3EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYork3ColorBlindEntry;
+                    activeEntryType = NewYork3EntryType;
                     activeStopPaddingPoints = NewYork3StopPaddingPoints;
                     activeTrailHardStop = NewYork3TrailHardStop;
                     activeTakeProfitPoints = NewYork3TakeProfitPoints;
@@ -2877,6 +2930,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = NewYork4EntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = NewYork4EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYork4ColorBlindEntry;
+                    activeEntryType = NewYork4EntryType;
                     activeStopPaddingPoints = NewYork4StopPaddingPoints;
                     activeTrailHardStop = NewYork4TrailHardStop;
                     activeTakeProfitPoints = NewYork4TakeProfitPoints;
@@ -2900,6 +2954,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = NewYork5EntryMinBodyPoints;
                     activeEntryCloseBeyondEmaPoints = NewYork5EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYork5ColorBlindEntry;
+                    activeEntryType = NewYork5EntryType;
                     activeStopPaddingPoints = NewYork5StopPaddingPoints;
                     activeTrailHardStop = NewYork5TrailHardStop;
                     activeTakeProfitPoints = NewYork5TakeProfitPoints;
@@ -2922,6 +2977,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryMinBodyPoints = 0.0;
                     activeEntryCloseBeyondEmaPoints = 0.0;
                     activeColorBlindEntry = false;
+                    activeEntryType = InitialEntryType.Market;
                     activeStopPaddingPoints = 0.0;
                     activeTrailHardStop = false;
                     activeTakeProfitPoints = 0.0;
@@ -3723,6 +3779,36 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Instrument.MasterInstrument.RoundToTickSize(Close[0]);
         }
 
+        private bool IsMarketEntryMode()
+        {
+            return activeEntryType != InitialEntryType.EmaLimit;
+        }
+
+        private string FormatActiveEntryType()
+        {
+            return activeEntryType == InitialEntryType.EmaLimit ? "EMA limit" : "market";
+        }
+
+        private double GetPreparedEntryPrice(bool isLong, double emaValue)
+        {
+            return activeEntryType == InitialEntryType.EmaLimit
+                ? GetEmaLimitEntryPrice(isLong, emaValue)
+                : GetInitialEntryPrice();
+        }
+
+        private double GetEmaLimitEntryPrice(bool isLong, double emaValue)
+        {
+            double limitPrice = Instrument.MasterInstrument.RoundToTickSize(emaValue);
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
+
+            if (isLong && limitPrice >= closePrice)
+                limitPrice = Instrument.MasterInstrument.RoundToTickSize(closePrice - TickSize);
+            else if (!isLong && limitPrice <= closePrice)
+                limitPrice = Instrument.MasterInstrument.RoundToTickSize(closePrice + TickSize);
+
+            return limitPrice;
+        }
+
         private bool TrySubmitStopOutFlip(bool flipToLong, bool canTradeNow, bool oppositeSignal, double emaValue)
         {
             if (!EnableStopOutFlip || !IsStopOutClose(Position.MarketPosition))
@@ -3928,10 +4014,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice)
         {
-            SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, isLong ? LongEntrySignal : ShortEntrySignal);
+            SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, isLong ? LongEntrySignal : ShortEntrySignal, true);
         }
 
         private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, string entrySignal)
+        {
+            SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, entrySignal, true);
+        }
+
+        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, string entrySignal, bool isMarketEntry)
         {
             string signalName = string.IsNullOrWhiteSpace(entrySignal)
                 ? (isLong ? LongEntrySignal : ShortEntrySignal)
@@ -3942,29 +4033,83 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 pendingLongStopForWebhook = stopPrice;
                 SetStopLossByDistanceTicks(signalName, entryPrice, stopPrice);
                 SetProfitTargetByDistanceTicks(signalName, takeProfitPoints);
-                SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, true, quantity);
-                StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice + takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitLongEntryOrder(quantity, signalName);
+                SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, isMarketEntry, quantity);
+                StartTradeLines(entryPrice, stopPrice, takeProfitPrice, takeProfitPoints > 0.0);
+                SubmitLongEntryOrder(quantity, signalName, entryPrice, isMarketEntry);
             }
             else
             {
                 pendingShortStopForWebhook = stopPrice;
                 SetStopLossByDistanceTicks(signalName, entryPrice, stopPrice);
                 SetProfitTargetByDistanceTicks(signalName, takeProfitPoints);
-                SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, true, quantity);
-                StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice - takeProfitPoints : 0.0, takeProfitPoints > 0.0);
-                SubmitShortEntryOrder(quantity, signalName);
+                SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, isMarketEntry, quantity);
+                StartTradeLines(entryPrice, stopPrice, takeProfitPrice, takeProfitPoints > 0.0);
+                SubmitShortEntryOrder(quantity, signalName, entryPrice, isMarketEntry);
             }
         }
 
-        private void SubmitLongEntryOrder(int quantity, string signalName)
+        private bool TryMaintainActiveLimitEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, string entrySignal)
         {
-            EnterLong(quantity, signalName);
+            if (activeEntryType != InitialEntryType.EmaLimit)
+                return false;
+
+            Order entryOrder = isLong ? longEntryOrder : shortEntryOrder;
+            if (!IsOrderActive(entryOrder))
+                return false;
+
+            string signalName = string.IsNullOrWhiteSpace(entrySignal)
+                ? (isLong ? LongEntrySignal : ShortEntrySignal)
+                : entrySignal;
+            SetStopLossByDistanceTicks(signalName, entryPrice, stopPrice);
+            SetProfitTargetByDistanceTicks(signalName, takeProfitPoints);
+
+            if (entryOrder.OrderState == OrderState.ChangePending)
+                return true;
+
+            double workingLimitPrice = GetWorkingOrderLimitPrice(entryOrder, 0.0);
+            bool priceChanged = workingLimitPrice <= 0.0 || Math.Abs(workingLimitPrice - entryPrice) > TickSize * 0.5;
+            if (!priceChanged)
+                return true;
+
+            ChangeOrder(entryOrder, quantity, entryPrice, 0.0);
+            UpdatePendingEntryTradeLines(entryPrice, stopPrice, takeProfitPrice, takeProfitPoints > 0.0);
+            SendWebhook("cancel");
+            SendWebhook(isLong ? "buy" : "sell", entryPrice, takeProfitPrice, stopPrice, false, quantity);
+            LogDebug(string.Format(
+                "Update {0} EMA limit | session={1} entry={2:0.00} stop={3:0.00} qty={4}",
+                isLong ? "LONG" : "SHORT",
+                FormatSessionLabel(activeSession),
+                entryPrice,
+                stopPrice,
+                quantity));
+            return true;
         }
 
-        private void SubmitShortEntryOrder(int quantity, string signalName)
+        private void UpdatePendingEntryTradeLines(double entryPrice, double stopPrice, double takeProfitPrice, bool hasTakeProfit)
         {
-            EnterShort(quantity, signalName);
+            if (!tradeLinesActive)
+                return;
+
+            tradeLineEntryPrice = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
+            tradeLineSlPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+            SetTradeLineTakeProfitState(takeProfitPrice, hasTakeProfit);
+            UpdateTradeLines();
+        }
+
+        private void SubmitLongEntryOrder(int quantity, string signalName, double entryPrice, bool isMarketEntry)
+        {
+            if (isMarketEntry)
+                EnterLong(quantity, signalName);
+            else
+                EnterLongLimit(0, true, quantity, entryPrice, signalName);
+        }
+
+        private void SubmitShortEntryOrder(int quantity, string signalName, double entryPrice, bool isMarketEntry)
+        {
+            if (isMarketEntry)
+                EnterShort(quantity, signalName);
+            else
+                EnterShortLimit(0, true, quantity, entryPrice, signalName);
         }
 
         private double GetAdxSlopePoints()
@@ -7755,6 +7900,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double AsiaEntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Asia 1", Order = 21)]
+        public InitialEntryType AsiaEntryType { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 1", Order = 23)]
         public double AsiaEntryCloseBeyondEmaPoints { get; set; }
@@ -7846,6 +7995,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Asia2EntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Asia 2", Order = 21)]
+        public InitialEntryType Asia2EntryType { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 2", Order = 23)]
         public double Asia2EntryCloseBeyondEmaPoints { get; set; }
@@ -7935,6 +8088,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 3", Order = 22)]
         public double Asia3EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Asia 3", Order = 21)]
+        public InitialEntryType Asia3EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
@@ -8032,6 +8189,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LondonEntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Europe 1", Order = 21)]
+        public InitialEntryType LondonEntryType { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Europe 1", Order = 23)]
         public double LondonEntryCloseBeyondEmaPoints { get; set; }
@@ -8126,6 +8287,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Europe 2", Order = 22)]
         public double London2EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Europe 2", Order = 21)]
+        public InitialEntryType London2EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
@@ -8228,6 +8393,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double London3EntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Europe 3", Order = 21)]
+        public InitialEntryType London3EntryType { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Europe 3", Order = 23)]
         public double London3EntryCloseBeyondEmaPoints { get; set; }
@@ -8317,6 +8486,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 1", Order = 22)]
         public double NewYorkEntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 1", Order = 21)]
+        public InitialEntryType NewYorkEntryType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
@@ -8411,6 +8584,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NewYork2EntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 2", Order = 21)]
+        public InitialEntryType NewYork2EntryType { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 2", Order = 23)]
         public double NewYork2EntryCloseBeyondEmaPoints { get; set; }
@@ -8501,6 +8678,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 3", Order = 22)]
         public double NewYork3EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 3", Order = 21)]
+        public InitialEntryType NewYork3EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
@@ -8594,6 +8775,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NewYork4EntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 4", Order = 21)]
+        public InitialEntryType NewYork4EntryType { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 4", Order = 23)]
         public double NewYork4EntryCloseBeyondEmaPoints { get; set; }
@@ -8683,6 +8868,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 5", Order = 22)]
         public double NewYork5EntryMinBodyPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 5", Order = 21)]
+        public InitialEntryType NewYork5EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, double.MaxValue)]
