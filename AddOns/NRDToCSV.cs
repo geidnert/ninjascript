@@ -139,7 +139,7 @@ namespace NinjaTrader.Gui.NinjaScript
                 Margin = new Thickness(margin, 0, margin, margin),
                 ItemsSource = new[]
                 {
-                    new OptionItem<ExportMode>(ExportMode.Replay, "Replay market depth (.nrd -> L2 CSV)"),
+                    new OptionItem<ExportMode>(ExportMode.Replay, "Replay top-of-book/trades (.nrd -> L1 CSV)"),
                     new OptionItem<ExportMode>(ExportMode.Historical, "Historical bars (.ncd -> CSV)"),
                 },
                 SelectedIndex = 0,
@@ -350,7 +350,7 @@ namespace NinjaTrader.Gui.NinjaScript
             if (lDateRange != null)
                 lDateRange.Content = isHistorical
                     ? "Historical data date range to export:"
-                    : "Data date range to convert (optional):";
+                    : "Replay .nrd file date range to convert (optional):";
 
             if (lHistoricalSeries != null)
                 lHistoricalSeries.Visibility = isHistorical ? Visibility.Visible : Visibility.Collapsed;
@@ -563,14 +563,12 @@ namespace NinjaTrader.Gui.NinjaScript
                     Convert.ToInt16(name.Substring(0, 4)),
                     Convert.ToInt16(name.Substring(4, 2)),
                     Convert.ToInt16(name.Substring(6, 2)));
-                DateTime outputDate = sourceDate.AddDays(1);
-
-                if (selectedStartDate.HasValue && outputDate.Date < selectedStartDate.Value.Date)
+                if (selectedStartDate.HasValue && sourceDate.Date < selectedStartDate.Value.Date)
                     continue;
-                if (selectedEndDate.HasValue && outputDate.Date > selectedEndDate.Value.Date)
+                if (selectedEndDate.HasValue && sourceDate.Date > selectedEndDate.Value.Date)
                     continue;
 
-                string csvFileName = string.Format("{0}.csv", Path.Combine(csvDir, instrument.FullName, outputDate.ToString("yyyyMMdd")));
+                string csvFileName = string.Format("{0}.csv", Path.Combine(csvDir, instrument.FullName, sourceDate.ToString("yyyyMMdd")));
                 if (File.Exists(csvFileName))
                 {
                     logout(string.Format("Conversion \"{0}\" to \"{1}\" is done already. Skipped",
@@ -937,9 +935,80 @@ namespace NinjaTrader.Gui.NinjaScript
                 }
             }
 
-            MarketReplay.DumpMarketDepth(entry.Instrument, entry.Date.AddDays(1), entry.Date.AddDays(1), entry.CsvFileName);
+            string temporaryCsvFileName = entry.CsvFileName + ".full.tmp";
+            try
+            {
+                if (File.Exists(temporaryCsvFileName))
+                    File.Delete(temporaryCsvFileName);
+
+                MarketReplay.DumpMarketDepth(entry.Instrument, entry.Date.AddDays(1), entry.Date.AddDays(1), temporaryCsvFileName);
+                int writtenRows = WriteReplayLevel1Csv(temporaryCsvFileName, entry.CsvFileName);
+
+                if (writtenRows < 0)
+                {
+                    logout(string.Format("Conversion \"{0}\" canceled before completion", entry.FromName));
+                    return;
+                }
+
+                logout(string.Format("Filtered \"{0}\" to L1 ask/bid/trade rows ({1} rows)", entry.ToName, writtenRows));
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(temporaryCsvFileName))
+                        File.Delete(temporaryCsvFileName);
+                }
+                catch (Exception error)
+                {
+                    logout(string.Format("WARNING: Unable to delete temporary replay CSV \"{0}\": {1}",
+                        temporaryCsvFileName, error));
+                }
+            }
 
             logout(string.Format("Conversion \"{0}\" to \"{1}\" complete", entry.FromName, entry.ToName));
+        }
+
+        private int WriteReplayLevel1Csv(string sourceCsvFileName, string targetCsvFileName)
+        {
+            int writtenRows = 0;
+            bool canceledDuringWrite = false;
+
+            using (StreamReader reader = new StreamReader(sourceCsvFileName))
+            using (StreamWriter writer = new StreamWriter(targetCsvFileName, false))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (canceling)
+                    {
+                        canceledDuringWrite = true;
+                        break;
+                    }
+
+                    if (!IsReplayLevel1AskBidOrTrade(line))
+                        continue;
+
+                    writer.WriteLine(line);
+                    writtenRows++;
+                }
+            }
+
+            if (canceledDuringWrite)
+            {
+                if (File.Exists(targetCsvFileName))
+                    File.Delete(targetCsvFileName);
+                return -1;
+            }
+
+            return writtenRows;
+        }
+
+        private static bool IsReplayLevel1AskBidOrTrade(string line)
+        {
+            return line.StartsWith("L1;0;", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("L1;1;", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("L1;2;", StringComparison.OrdinalIgnoreCase);
         }
 
         public void Restore(XDocument document, XElement element)
