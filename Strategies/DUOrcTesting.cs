@@ -623,25 +623,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3CandleReversalMinBodyPoints = 7.5;
 
                 NewYorkSessionStart = new TimeSpan(9, 35, 0);
-                NewYorkSessionEnd = new TimeSpan(10, 5, 0);
+                NewYorkSessionEnd = new TimeSpan(10, 0, 0);
                 NewYorkEmaPeriod = 21;
                 NewYorkContracts = 1;
-                NewYorkEntryMinBodyPoints = 4;
+                NewYorkEntryMinBodyPoints = 3.75;
                 NewYorkEntryCloseBeyondEmaPoints = 0;
                 NewYorkEntryType = InitialEntryType.Market;
-                NewYorkColorBlindEntry = true;
+                NewYorkColorBlindEntry = false;
                 NewYorkAdxPeriod = 14;
-                NewYorkAdxThreshold = 19.5;
-                NewYorkAdxMaxThreshold = 47.7;
-                NewYorkAdxPeakDrawdownExitUnits = 10.53;
-                NewYorkAdxAbsoluteExitLevel = 47.06;
-                NewYorkStopPaddingPoints = 187.25;
+                NewYorkAdxThreshold = 33.11;
+                NewYorkAdxMaxThreshold = 48.57;
+                NewYorkAdxPeakDrawdownExitUnits = 9.05;
+                NewYorkAdxAbsoluteExitLevel = 46.8;
+                NewYorkStopPaddingPoints = 166;
                 NewYorkTrailHardStop = true;
-                NewYorkTakeProfitPoints = 220;
-                NewYorkAtrMinimum = 15.47;
+                NewYorkTakeProfitPoints = 143.75;
+                NewYorkAtrMinimum = 16.04;
                 NewYorkCandleReversalExitBars = 5;
-                NewYorkCandleReversalCloseBeyondPoints = 2.25;
-                NewYorkCandleReversalMinBodyPoints = 0.25;
+                NewYorkCandleReversalCloseBeyondPoints = 1;
+                NewYorkCandleReversalMinBodyPoints = 0;
 
                 NewYork2SessionStart = new TimeSpan(10, 5, 0);
                 NewYork2SessionEnd = new TimeSpan(11, 5, 0);
