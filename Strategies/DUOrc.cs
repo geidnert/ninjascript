@@ -5598,8 +5598,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (stateValueBrush == null || stateValueBrush == Brushes.Transparent)
                         stateValueBrush = InfoValueBrush;
 
-                    var valueRun = BuildInfoValueRun(normalizedValue, stateValueBrush);
-                    text.Inlines.Add(valueRun);
+                    if (!TryAddPositionInfoValueRuns(text, normalizedValue))
+                    {
+                        var valueRun = BuildInfoValueRun(normalizedValue, stateValueBrush);
+                        text.Inlines.Add(valueRun);
+                    }
                 }
 
                 rowBorder.Child = text;
@@ -5642,6 +5645,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 default:
                     return new Run(normalizedValue) { Foreground = stateValueBrush };
             }
+        }
+
+        private bool TryAddPositionInfoValueRuns(TextBlock text, string value)
+        {
+            if (text == null)
+                return false;
+
+            if (string.Equals(value, "In Long Now", StringComparison.Ordinal))
+            {
+                text.Inlines.Add(new Run("In ") { Foreground = InfoValueBrush });
+                text.Inlines.Add(new Run("Long") { Foreground = Brushes.LimeGreen });
+                text.Inlines.Add(new Run(" Now") { Foreground = InfoValueBrush });
+                return true;
+            }
+
+            if (string.Equals(value, "In Short Now", StringComparison.Ordinal))
+            {
+                text.Inlines.Add(new Run("In ") { Foreground = InfoValueBrush });
+                text.Inlines.Add(new Run("Short") { Foreground = Brushes.IndianRed });
+                text.Inlines.Add(new Run(" Now") { Foreground = InfoValueBrush });
+                return true;
+            }
+
+            return false;
         }
 
         private string NormalizeInfoValueToken(string value)
@@ -5854,9 +5881,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private (string value, Brush brush) BuildFiveMinuteCloseSignalInfo(SessionSlot infoSession, double adxValue, double atrValue)
         {
             if (Position.MarketPosition == MarketPosition.Long)
-                return ("IN LONG NOW", Brushes.LimeGreen);
+                return ("In Long Now", InfoValueBrush);
             if (Position.MarketPosition == MarketPosition.Short)
-                return ("IN SHORT NOW", Brushes.IndianRed);
+                return ("In Short Now", InfoValueBrush);
 
             if (!CanEvaluateFiveMinuteCloseSignal(infoSession, adxValue, atrValue))
                 return ("No Trade", Brushes.IndianRed);
