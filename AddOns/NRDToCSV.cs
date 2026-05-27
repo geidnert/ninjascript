@@ -563,12 +563,13 @@ namespace NinjaTrader.Gui.NinjaScript
                     Convert.ToInt16(name.Substring(0, 4)),
                     Convert.ToInt16(name.Substring(4, 2)),
                     Convert.ToInt16(name.Substring(6, 2)));
+                DateTime replayDate = sourceDate.AddDays(1);
                 if (selectedStartDate.HasValue && sourceDate.Date < selectedStartDate.Value.Date)
                     continue;
                 if (selectedEndDate.HasValue && sourceDate.Date > selectedEndDate.Value.Date)
                     continue;
 
-                string csvFileName = string.Format("{0}.csv", Path.Combine(csvDir, instrument.FullName, sourceDate.ToString("yyyyMMdd")));
+                string csvFileName = string.Format("{0}.csv", Path.Combine(csvDir, instrument.FullName, replayDate.ToString("yyyyMMdd")));
                 if (File.Exists(csvFileName))
                 {
                     logout(string.Format("Conversion \"{0}\" to \"{1}\" is done already. Skipped",
