@@ -228,6 +228,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool isConfiguredInstrumentValid = true;
         private bool timeframePopupShown;
         private bool instrumentPopupShown;
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
         private const int EntryAtrPeriod = 14;
         private const string LongEntrySignal = "DUOrcLong";
         private const string ShortEntrySignal = "DUOrcShort";
@@ -4646,9 +4648,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     rectTag,
                     false,
                     sessionStart,
-                    0,
+                    VerticalFillLowerPriceBound,
                     sessionEnd,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     Brushes.Transparent,
                     fillBrush,
                     10).ZOrder = -1;
@@ -4706,9 +4708,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     tagBase + "_Rect",
                     false,
                     windowStart,
-                    0,
+                    VerticalFillLowerPriceBound,
                     windowEnd,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     lineBrush,
                     areaBrush,
                     2).ZOrder = -1;
