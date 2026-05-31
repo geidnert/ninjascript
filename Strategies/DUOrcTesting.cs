@@ -645,7 +645,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkCandleReversalCloseBeyondPoints = 1;
                 NewYorkCandleReversalMinBodyPoints = 0;
 
-                NewYork2SessionStart = new TimeSpan(10, 0, 0);
+                NewYork2SessionStart = new TimeSpan(10, 5, 0);
                 NewYork2SessionEnd = new TimeSpan(11, 0, 0);
                 NewYork2EmaPeriod = 21;
                 NewYork2Contracts = 1;
@@ -687,8 +687,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3CandleReversalCloseBeyondPoints = 0;
                 NewYork3CandleReversalMinBodyPoints = 0;
 
-                NewYork4SessionStart = new TimeSpan(12, 5, 0);
-                NewYork4SessionEnd = new TimeSpan(13, 35, 0);
+                NewYork4SessionStart = new TimeSpan(12, 10, 0);
+                NewYork4SessionEnd = new TimeSpan(13, 0, 0);
                 NewYork4EmaPeriod = 21;
                 NewYork4Contracts = 1;
                 NewYork4EntryMinBodyPoints = 5.5;
@@ -734,11 +734,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaSessionBrush = Brushes.DarkCyan;
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
-                ShowEmaOnChart = true;
-                ShowAdxOnChart = true;
-                ShowAdxThresholdLines = true;
-                ShowAtrOnChart = true;
-                ShowAtrThresholdLines = true;
+                ShowEmaOnChart = false;
+                ShowAdxOnChart = false;
+                ShowAdxThresholdLines = false;
+                ShowAtrOnChart = false;
+                ShowAtrThresholdLines = false;
 
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
@@ -754,7 +754,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0;
                 RequireEntryConfirmation = false;
-                EnableStopOutFlip = true;
+                EnableStopOutFlip = false;
 
                 DebugLogging = false;
             }
