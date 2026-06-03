@@ -730,7 +730,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2ExitCrossPoints = 2.0;
                 London2FlipEmaCrossPoints = 6.25;
                 London2MaxStopLossPoints = 133.0;
-                London2TakeProfitPoints = 128.15;
+                London2TakeProfitPoints = 133.15;
                 London2AtrMinimum = 7.8;
                 London2EntryOffsetPoints = 0.0;
                 London2EnableFlipBreakEven = true;
@@ -738,7 +738,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2FlipTakeProfitPoints = 122.0;
                 London2TakeProfitPercentTriggerPercent = 51.0;
                 London2TakeProfitStopMode = TakeProfitStopMode.PercentMove;
-                London2TakeProfitPercentStopMovePercent = 35.5;
+                London2TakeProfitPercentStopMovePercent = 38.0;
                 London2RequireMinAdxForFlips = true;
                 London2EnableAdxDdRiskMode = true;
                 London2AdxDdRiskModeStopLossPoints = 0.25;
@@ -797,7 +797,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkAdxPeakDrawdownExitUnits = 13.6;
                 NewYorkAdxAbsoluteExitLevel = 69.1;
                 NewYorkStopPaddingPoints = 44.0;
-                NewYorkExitCrossPoints = 3.75;
+                NewYorkExitCrossPoints = 3.5;
                 NewYorkFlipEmaCrossPoints = 6.0;
                 NewYorkMaxStopLossPoints = 310.0;
                 NewYorkTakeProfitPoints = 135.0;
@@ -838,7 +838,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2ExitCrossPoints = 13.0;
                 NewYork2FlipEmaCrossPoints = 0.0;
                 NewYork2MaxStopLossPoints = 182.2;
-                NewYork2TakeProfitPoints = 162.25;
+                NewYork2TakeProfitPoints = 169.25;
                 NewYork2AtrMinimum = 17.0;
                 NewYork2HvSlPaddingPoints = 0.0;
                 NewYork2HvSlStartTime = TimeSpan.Zero;
@@ -849,7 +849,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2FlipTakeProfitPoints = 55.0;
                 NewYork2TakeProfitPercentTriggerPercent = 70.0;
                 NewYork2TakeProfitStopMode = TakeProfitStopMode.PercentMove;
-                NewYork2TakeProfitPercentStopMovePercent = 35.0;
+                NewYork2TakeProfitPercentStopMovePercent = 58.5;
                 NewYork2RequireMinAdxForFlips = true;
                 NewYork2EnableAdxDdRiskMode = true;
                 NewYork2AdxDdRiskModeStopLossPoints = 43.0;
