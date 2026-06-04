@@ -760,7 +760,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3AdxMaxThreshold = 42.9;
                 London3AdxMinSlopePoints = 1.0;
                 London3AdxPeakDrawdownExitUnits = 6.8;
-                London3AdxAbsoluteExitLevel = 59.2;
+                London3AdxAbsoluteExitLevel = 58.7;
                 London3StopPaddingPoints = 15.0;
                 London3ExitCrossPoints = 7.25;
                 London3FlipEmaCrossPoints = 3.5;
@@ -787,14 +787,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
                 NewYorkTradeDirection = SessionTradeDirection.Both;
-                NewYorkFlipAdxThreshold = 17.0;
+                NewYorkFlipAdxThreshold = 19.0;
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
                 NewYorkMaxEntryDistanceFromEmaPoints = 39.0;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 15.67;
                 NewYorkAdxMaxThreshold = 60.69;
                 NewYorkAdxMinSlopePoints = 1.63;
-                NewYorkAdxPeakDrawdownExitUnits = 13.6;
+                NewYorkAdxPeakDrawdownExitUnits = 15.1;
                 NewYorkAdxAbsoluteExitLevel = 69.1;
                 NewYorkStopPaddingPoints = 44.0;
                 NewYorkExitCrossPoints = 3.5;
@@ -832,8 +832,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2AdxThreshold = 15.9;
                 NewYork2AdxMaxThreshold = 47.0;
                 NewYork2AdxMinSlopePoints = 1.56;
-                NewYork2AdxPeakDrawdownExitUnits = 8.8;
-                NewYork2AdxAbsoluteExitLevel = 54.0;
+                NewYork2AdxPeakDrawdownExitUnits = 6.8;
+                NewYork2AdxAbsoluteExitLevel = 58.0;
                 NewYork2StopPaddingPoints = 22.75;
                 NewYork2ExitCrossPoints = 13.0;
                 NewYork2FlipEmaCrossPoints = 0.0;
