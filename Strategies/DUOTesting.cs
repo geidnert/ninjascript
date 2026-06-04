@@ -722,12 +722,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2MaxEntryDistanceFromEmaPoints = 9.0;
                 London2AdxPeriod = 14;
                 London2AdxThreshold = 13.5;
-                London2AdxMaxThreshold = 33.8;
+                London2AdxMaxThreshold = 32.8;
                 London2AdxMinSlopePoints = 0.94;
                 London2AdxPeakDrawdownExitUnits = 11.22;
-                London2AdxAbsoluteExitLevel = 51.2;
+                London2AdxAbsoluteExitLevel = 50.2;
                 London2StopPaddingPoints = 24.25;
-                London2ExitCrossPoints = 2.0;
+                London2ExitCrossPoints = 1.875;
                 London2FlipEmaCrossPoints = 6.25;
                 London2MaxStopLossPoints = 133.0;
                 London2TakeProfitPoints = 133.15;
@@ -736,13 +736,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EnableFlipBreakEven = true;
                 London2FlipBreakEvenTriggerPoints = 19.0;
                 London2FlipTakeProfitPoints = 122.0;
-                London2TakeProfitPercentTriggerPercent = 51.0;
+                London2TakeProfitPercentTriggerPercent = 50.0;
                 London2TakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 London2TakeProfitPercentStopMovePercent = 38.0;
                 London2RequireMinAdxForFlips = true;
                 London2EnableAdxDdRiskMode = true;
                 London2AdxDdRiskModeStopLossPoints = 0.25;
-                London2AdxDdRiskModeTakeProfitPoints = 80.0;
+                London2AdxDdRiskModeTakeProfitPoints = 87.5;
                 London2HorizontalExitBars = 52;
 
                 London3SessionStart = new TimeSpan(5, 45, 0);
