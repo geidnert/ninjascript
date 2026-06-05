@@ -231,10 +231,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const double VerticalFillLowerPriceBound = -100000000.0;
         private const double VerticalFillUpperPriceBound = 100000000.0;
         private const int EntryAtrPeriod = 14;
+        private const int EntryVarianceMaxDelaySeconds = 15;
         private const string LongEntrySignal = "DUOrcTestingLong";
         private const string ShortEntrySignal = "DUOrcTestingShort";
         private const string LongFlipEntrySignal = "DUOrcTestingFlipLong";
         private const string ShortFlipEntrySignal = "DUOrcTestingFlipShort";
+        private Random entryVarianceRandom;
+        private bool pendingEntryVarianceActive;
+        private bool pendingEntryVarianceIsLong;
+        private int pendingEntryVarianceQuantity;
+        private double pendingEntryVarianceSignalEntryPrice;
+        private double pendingEntryVarianceSignalStopPrice;
+        private double pendingEntryVarianceTakeProfitPoints;
+        private bool pendingEntryVarianceIsMarketEntry;
+        private string pendingEntryVarianceSignalName = string.Empty;
+        private DateTime pendingEntryVarianceDueUtc = Core.Globals.MinDate;
+        private int pendingEntryVarianceSignalBar = -1;
+        private int pendingEntryVarianceDelaySeconds;
         // TEMP: Remove this date block after the April 7, 2025 backtest isolation is no longer needed.
         private static readonly DateTime TemporaryBlockedTradingDate = new DateTime(2025, 4, 7);
         private static readonly SessionSlot[] ConfigurableSessionSlots = new[]
@@ -754,6 +767,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0;
                 RequireEntryConfirmation = false;
+                EntryVariance = true;
                 EnableStopOutFlip = false;
 
                 DebugLogging = false;
@@ -848,6 +862,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tradeLineEntryPrice = 0.0;
                 tradeLineTpPrice = 0.0;
                 tradeLineSlPrice = 0.0;
+                entryVarianceRandom = new Random(unchecked(Environment.TickCount ^ GetHashCode()));
+                ResetPendingEntryVariance();
                 lock (tradeLineSnapshotsSync)
                     historicalTradeLines.Clear();
                 ApplyInputsForSession(activeSession);
@@ -1225,7 +1241,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug(string.Format("Setup ready | side=Long session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
 
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
-                bool longOrderActive = IsOrderActive(longEntryOrder);
+                bool longOrderActive = IsOrderActive(longEntryOrder) || IsPendingEntryVarianceFor(true);
                 double entryPrice = GetPreparedEntryPrice(true, emaValue);
                 double stopPrice = BuildLongEntryStopPrice(entryPrice, emaValue);
                 int qty = GetEntryQuantity();
@@ -1269,7 +1285,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug(string.Format("Setup ready | side=Short session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
 
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
-                bool shortOrderActive = IsOrderActive(shortEntryOrder);
+                bool shortOrderActive = IsOrderActive(shortEntryOrder) || IsPendingEntryVarianceFor(false);
                 double entryPrice = GetPreparedEntryPrice(false, emaValue);
                 double stopPrice = BuildShortEntryStopPrice(entryPrice, emaValue);
                 int qty = GetEntryQuantity();
@@ -1316,6 +1332,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             TrackRealtimeInfoPreview(marketDataUpdate.Price);
             RefreshInfoFromRealtimeTick();
+            ProcessPendingEntryVariance(marketDataUpdate.Price);
 
             if (State != State.Realtime || Position.MarketPosition == MarketPosition.Flat)
                 return;
@@ -3374,8 +3391,210 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        private bool IsPendingEntryVarianceFor(bool isLong)
+        {
+            return pendingEntryVarianceActive && pendingEntryVarianceIsLong == isLong;
+        }
+
+        private bool ShouldUseEntryVariance(bool isMarketEntry, string signalName)
+        {
+            return EntryVariance
+                && State == State.Realtime
+                && isMarketEntry
+                && Position.MarketPosition == MarketPosition.Flat
+                && (string.Equals(signalName, LongEntrySignal, StringComparison.Ordinal) || string.Equals(signalName, ShortEntrySignal, StringComparison.Ordinal));
+        }
+
+        private bool TryQueueEntryVariance(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, string signalName, bool isMarketEntry)
+        {
+            if (!ShouldUseEntryVariance(isMarketEntry, signalName))
+                return false;
+
+            if (pendingEntryVarianceActive)
+            {
+                LogDebug(string.Format(
+                    "Entry variance skipped | reason=pending-active side={0} pendingSide={1} delay={2}s",
+                    isLong ? "Long" : "Short",
+                    pendingEntryVarianceIsLong ? "Long" : "Short",
+                    pendingEntryVarianceDelaySeconds));
+                return true;
+            }
+
+            int delaySeconds = GetEntryVarianceDelaySeconds();
+            if (delaySeconds <= 0)
+                return false;
+
+            pendingEntryVarianceActive = true;
+            pendingEntryVarianceIsLong = isLong;
+            pendingEntryVarianceQuantity = quantity;
+            pendingEntryVarianceSignalEntryPrice = entryPrice;
+            pendingEntryVarianceSignalStopPrice = stopPrice;
+            pendingEntryVarianceTakeProfitPoints = takeProfitPoints;
+            pendingEntryVarianceIsMarketEntry = isMarketEntry;
+            pendingEntryVarianceSignalName = string.IsNullOrWhiteSpace(signalName)
+                ? (isLong ? LongEntrySignal : ShortEntrySignal)
+                : signalName;
+            pendingEntryVarianceSignalBar = CurrentBar;
+            pendingEntryVarianceDelaySeconds = delaySeconds;
+            pendingEntryVarianceDueUtc = DateTime.UtcNow.AddSeconds(delaySeconds);
+
+            LogDebug(string.Format(
+                "Entry variance armed | side={0} delay={1}s signalEntry={2:0.00} signalStop={3:0.00} qty={4}",
+                isLong ? "Long" : "Short",
+                delaySeconds,
+                entryPrice,
+                stopPrice,
+                quantity));
+            return true;
+        }
+
+        private int GetEntryVarianceDelaySeconds()
+        {
+            if (entryVarianceRandom == null)
+                entryVarianceRandom = new Random(unchecked(Environment.TickCount ^ GetHashCode()));
+
+            return entryVarianceRandom.Next(0, EntryVarianceMaxDelaySeconds + 1);
+        }
+
+        private void ProcessPendingEntryVariance(double lastPrice)
+        {
+            if (!pendingEntryVarianceActive)
+                return;
+
+            if (State != State.Realtime)
+            {
+                CancelPendingEntryVariance("state-" + State);
+                return;
+            }
+
+            if (DateTime.UtcNow < pendingEntryVarianceDueUtc)
+                return;
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                CancelPendingEntryVariance("position-not-flat");
+                return;
+            }
+
+            if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
+            {
+                CancelPendingEntryVariance("invalid-configuration");
+                return;
+            }
+
+            if (IsTerminalExitInFlight())
+            {
+                CancelPendingEntryVariance("terminal-exit-in-flight");
+                return;
+            }
+
+            if (IsOrderActive(longEntryOrder) || IsOrderActive(shortEntryOrder))
+            {
+                CancelPendingEntryVariance("entry-order-active");
+                return;
+            }
+
+            if (activeSession == SessionSlot.None || !TimeInSession(activeSession, Time[0]))
+            {
+                CancelPendingEntryVariance("out-of-session");
+                return;
+            }
+
+            if (TimeInNewsSkip(Time[0]))
+            {
+                CancelPendingEntryVariance("news-skip");
+                return;
+            }
+
+            if (IsAccountBalanceBlocked())
+            {
+                CancelPendingEntryVariance("account-blocked");
+                return;
+            }
+
+            if (IsForceCloseTimeReached(Time[0]))
+            {
+                CancelPendingEntryVariance("force-close");
+                return;
+            }
+
+            if (IsTemporaryBlockedTradingDate(Time[0]))
+            {
+                CancelPendingEntryVariance("temporary-date-block");
+                return;
+            }
+
+            if (IsLondon3FlatByTimeReached(Time[0]))
+            {
+                CancelPendingEntryVariance("london3-flat-by-time");
+                return;
+            }
+
+            if (activeEma == null || CurrentBar < activeEmaPeriod)
+                return;
+
+            bool isLong = pendingEntryVarianceIsLong;
+            int quantity = pendingEntryVarianceQuantity;
+            double entryPrice = GetEntryVarianceMarketEntryPrice(lastPrice);
+            double stopPrice = isLong
+                ? BuildLongEntryStopPrice(entryPrice, activeEma[0])
+                : BuildShortEntryStopPrice(entryPrice, activeEma[0]);
+            double takeProfitPoints = pendingEntryVarianceTakeProfitPoints;
+            double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, isLong);
+            string signalName = pendingEntryVarianceSignalName;
+            int delaySeconds = pendingEntryVarianceDelaySeconds;
+            ResetPendingEntryVariance();
+            SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, signalName, true, true);
+            LogDebug(string.Format(
+                "Entry variance submitted | side={0} delay={1}s entry={2:0.00} stop={3:0.00} qty={4}",
+                isLong ? "Long" : "Short",
+                delaySeconds,
+                entryPrice,
+                stopPrice,
+                quantity));
+        }
+
+        private double GetEntryVarianceMarketEntryPrice(double lastPrice)
+        {
+            double price = lastPrice > 0.0 ? lastPrice : pendingEntryVarianceSignalEntryPrice;
+            if (price <= 0.0)
+                price = Close[0];
+            return Instrument.MasterInstrument.RoundToTickSize(price);
+        }
+
+        private void CancelPendingEntryVariance(string reason)
+        {
+            if (!pendingEntryVarianceActive)
+                return;
+
+            LogDebug(string.Format(
+                "Entry variance cancelled | reason={0} side={1} delay={2}s signalBar={3}",
+                reason,
+                pendingEntryVarianceIsLong ? "Long" : "Short",
+                pendingEntryVarianceDelaySeconds,
+                pendingEntryVarianceSignalBar));
+            ResetPendingEntryVariance();
+            EndTradeAttempt("entry-variance-" + reason);
+        }
+
+        private void ResetPendingEntryVariance()
+        {
+            pendingEntryVarianceActive = false;
+            pendingEntryVarianceIsLong = false;
+            pendingEntryVarianceQuantity = 0;
+            pendingEntryVarianceSignalEntryPrice = 0.0;
+            pendingEntryVarianceSignalStopPrice = 0.0;
+            pendingEntryVarianceTakeProfitPoints = 0.0;
+            pendingEntryVarianceIsMarketEntry = false;
+            pendingEntryVarianceSignalName = string.Empty;
+            pendingEntryVarianceDueUtc = Core.Globals.MinDate;
+            pendingEntryVarianceSignalBar = -1;
+            pendingEntryVarianceDelaySeconds = 0;
+        }
+
         private void CancelWorkingEntryOrders()
         {
+            CancelPendingEntryVariance("cancel-working-entries");
             CancelOrderIfActive(longEntryOrder, "CancelWorkingEntries");
             CancelOrderIfActive(shortEntryOrder, "CancelWorkingEntries");
         }
@@ -4024,11 +4243,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             SubmitPreparedInitialEntry(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, takeProfitPrice, entrySignal, true);
         }
 
-        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, string entrySignal, bool isMarketEntry)
+        private void SubmitPreparedInitialEntry(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, double takeProfitPrice, string entrySignal, bool isMarketEntry, bool bypassEntryVariance = false)
         {
             string signalName = string.IsNullOrWhiteSpace(entrySignal)
                 ? (isLong ? LongEntrySignal : ShortEntrySignal)
                 : entrySignal;
+
+            if (!bypassEntryVariance && TryQueueEntryVariance(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, signalName, isMarketEntry))
+                return;
 
             if (isLong)
             {
@@ -9058,7 +9280,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Stop-Out Flip", Description = "Testing only. When a 5-minute close is at or through the active stop and the opposite entry setup passes normal entry gates, reverse into the opposite direction.", GroupName = "13. Risk", Order = 3)]
+        [Display(Name = "Entry Variance", Description = "If enabled, delay qualifying new realtime market entries by a random 0-15 seconds after the 5-minute close.", GroupName = "13. Risk", Order = 3)]
+        public bool EntryVariance { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "Testing only. When a 5-minute close is at or through the active stop and the opposite entry setup passes normal entry gates, reverse into the opposite direction.", GroupName = "13. Risk", Order = 4)]
         public bool EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
