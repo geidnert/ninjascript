@@ -180,6 +180,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeEntryCloseBeyondEmaPoints;
         private bool activeColorBlindEntry;
         private InitialEntryType activeEntryType;
+        private bool activeEnableStopOutFlip;
         private double activeTakeProfitPoints;
         private double activeMinimumAtrForEntry;
         private int activeAdxPeriod;
@@ -515,6 +516,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEntryCloseBeyondEmaPoints = 0;
                 AsiaEntryType = InitialEntryType.Market;
                 AsiaColorBlindEntry = false;
+                AsiaEnableStopOutFlip = false;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 23.4;
                 AsiaAdxMaxThreshold = 47.55;
@@ -536,6 +538,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2EntryCloseBeyondEmaPoints = 0;
                 Asia2EntryType = InitialEntryType.Market;
                 Asia2ColorBlindEntry = false;
+                Asia2EnableStopOutFlip = false;
                 Asia2AdxPeriod = 14;
                 Asia2AdxThreshold = 15.49;
                 Asia2AdxMaxThreshold = 32.97;
@@ -557,6 +560,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3EntryCloseBeyondEmaPoints = 0;
                 Asia3EntryType = InitialEntryType.Market;
                 Asia3ColorBlindEntry = false;
+                Asia3EnableStopOutFlip = false;
                 Asia3AdxPeriod = 14;
                 Asia3AdxThreshold = 19.9;
                 Asia3AdxMaxThreshold = 45.2;
@@ -579,6 +583,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonEntryCloseBeyondEmaPoints = 0;
                 LondonEntryType = InitialEntryType.Market;
                 LondonColorBlindEntry = false;
+                LondonEnableStopOutFlip = false;
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 16.03;
                 LondonAdxMaxThreshold = 31.35;
@@ -601,6 +606,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EntryCloseBeyondEmaPoints = 0;
                 London2EntryType = InitialEntryType.Market;
                 London2ColorBlindEntry = false;
+                London2EnableStopOutFlip = false;
                 London2AdxPeriod = 14;
                 London2AdxThreshold = 15.42;
                 London2AdxMaxThreshold = 31.35;
@@ -624,6 +630,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EntryCloseBeyondEmaPoints = 0;
                 London3EntryType = InitialEntryType.Market;
                 London3ColorBlindEntry = false;
+                London3EnableStopOutFlip = false;
                 London3AdxPeriod = 14;
                 London3AdxThreshold = 27.15;
                 London3AdxMaxThreshold = 30.45;
@@ -645,6 +652,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEntryCloseBeyondEmaPoints = 0;
                 NewYorkEntryType = InitialEntryType.Market;
                 NewYorkColorBlindEntry = false;
+                NewYorkEnableStopOutFlip = false;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 33.11;
                 NewYorkAdxMaxThreshold = 48.57;
@@ -666,6 +674,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EntryCloseBeyondEmaPoints = 2;
                 NewYork2EntryType = InitialEntryType.Market;
                 NewYork2ColorBlindEntry = false;
+                NewYork2EnableStopOutFlip = false;
                 NewYork2AdxPeriod = 14;
                 NewYork2AdxThreshold = 20.1;
                 NewYork2AdxMaxThreshold = 25.35;
@@ -687,6 +696,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3EntryCloseBeyondEmaPoints = 0;
                 NewYork3EntryType = InitialEntryType.Market;
                 NewYork3ColorBlindEntry = false;
+                NewYork3EnableStopOutFlip = false;
                 NewYork3AdxPeriod = 14;
                 NewYork3AdxThreshold = 17.5;
                 NewYork3AdxMaxThreshold = 24.3;
@@ -708,6 +718,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4EntryCloseBeyondEmaPoints = 0.5;
                 NewYork4EntryType = InitialEntryType.Market;
                 NewYork4ColorBlindEntry = false;
+                NewYork4EnableStopOutFlip = false;
                 NewYork4AdxPeriod = 14;
                 NewYork4AdxThreshold = 12.9;
                 NewYork4AdxMaxThreshold = 30.4;
@@ -729,6 +740,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5EntryCloseBeyondEmaPoints = 1.25;
                 NewYork5EntryType = InitialEntryType.Market;
                 NewYork5ColorBlindEntry = false;
+                NewYork5EnableStopOutFlip = false;
                 NewYork5AdxPeriod = 21;
                 NewYork5AdxThreshold = 18.3;
                 NewYork5AdxMaxThreshold = 22.6;
@@ -768,7 +780,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxAccountBalance = 0;
                 RequireEntryConfirmation = false;
                 EntryVariance = true;
-                EnableStopOutFlip = false;
 
                 DebugLogging = false;
             }
@@ -1499,7 +1510,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double fillPrice = Instrument.MasterInstrument.RoundToTickSize(effectiveFillPrice);
             bool terminalExitExecution = IsTerminalExitExecution(orderName);
             MarketPosition stopOutOriginalSide = GetStopOutOriginalSide(execution);
-            bool shouldAttemptStopOutFlip = EnableStopOutFlip
+            bool shouldAttemptStopOutFlip = activeEnableStopOutFlip
                 && IsStopLossOrderName(orderName)
                 && Position.MarketPosition == MarketPosition.Flat
                 && stopOutOriginalSide != MarketPosition.Flat;
@@ -2734,6 +2745,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = AsiaEntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = AsiaColorBlindEntry;
                     activeEntryType = AsiaEntryType;
+                    activeEnableStopOutFlip = AsiaEnableStopOutFlip;
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeTrailHardStop = AsiaTrailHardStop;
                     activeTakeProfitPoints = AsiaTakeProfitPoints;
@@ -2758,6 +2770,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = Asia2EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = Asia2ColorBlindEntry;
                     activeEntryType = Asia2EntryType;
+                    activeEnableStopOutFlip = Asia2EnableStopOutFlip;
                     activeStopPaddingPoints = Asia2StopPaddingPoints;
                     activeTrailHardStop = Asia2TrailHardStop;
                     activeTakeProfitPoints = Asia2TakeProfitPoints;
@@ -2782,6 +2795,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = Asia3EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = Asia3ColorBlindEntry;
                     activeEntryType = Asia3EntryType;
+                    activeEnableStopOutFlip = Asia3EnableStopOutFlip;
                     activeStopPaddingPoints = Asia3StopPaddingPoints;
                     activeTrailHardStop = Asia3TrailHardStop;
                     activeTakeProfitPoints = Asia3TakeProfitPoints;
@@ -2806,6 +2820,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = LondonEntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = LondonColorBlindEntry;
                     activeEntryType = LondonEntryType;
+                    activeEnableStopOutFlip = LondonEnableStopOutFlip;
                     activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeTrailHardStop = LondonTrailHardStop;
                     activeTakeProfitPoints = LondonTakeProfitPoints;
@@ -2830,6 +2845,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = London2EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = London2ColorBlindEntry;
                     activeEntryType = London2EntryType;
+                    activeEnableStopOutFlip = London2EnableStopOutFlip;
                     activeStopPaddingPoints = London2StopPaddingPoints;
                     activeTrailHardStop = London2TrailHardStop;
                     activeTakeProfitPoints = London2TakeProfitPoints;
@@ -2854,6 +2870,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = London3EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = London3ColorBlindEntry;
                     activeEntryType = London3EntryType;
+                    activeEnableStopOutFlip = London3EnableStopOutFlip;
                     activeStopPaddingPoints = London3StopPaddingPoints;
                     activeTrailHardStop = London3TrailHardStop;
                     activeTakeProfitPoints = London3TakeProfitPoints;
@@ -2878,6 +2895,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = NewYorkEntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYorkColorBlindEntry;
                     activeEntryType = NewYorkEntryType;
+                    activeEnableStopOutFlip = NewYorkEnableStopOutFlip;
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeTrailHardStop = NewYorkTrailHardStop;
                     activeTakeProfitPoints = NewYorkTakeProfitPoints;
@@ -2902,6 +2920,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = NewYork2EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYork2ColorBlindEntry;
                     activeEntryType = NewYork2EntryType;
+                    activeEnableStopOutFlip = NewYork2EnableStopOutFlip;
                     activeStopPaddingPoints = NewYork2StopPaddingPoints;
                     activeTrailHardStop = NewYork2TrailHardStop;
                     activeTakeProfitPoints = NewYork2TakeProfitPoints;
@@ -2926,6 +2945,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = NewYork3EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYork3ColorBlindEntry;
                     activeEntryType = NewYork3EntryType;
+                    activeEnableStopOutFlip = NewYork3EnableStopOutFlip;
                     activeStopPaddingPoints = NewYork3StopPaddingPoints;
                     activeTrailHardStop = NewYork3TrailHardStop;
                     activeTakeProfitPoints = NewYork3TakeProfitPoints;
@@ -2950,6 +2970,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = NewYork4EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYork4ColorBlindEntry;
                     activeEntryType = NewYork4EntryType;
+                    activeEnableStopOutFlip = NewYork4EnableStopOutFlip;
                     activeStopPaddingPoints = NewYork4StopPaddingPoints;
                     activeTrailHardStop = NewYork4TrailHardStop;
                     activeTakeProfitPoints = NewYork4TakeProfitPoints;
@@ -2974,6 +2995,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = NewYork5EntryCloseBeyondEmaPoints;
                     activeColorBlindEntry = NewYork5ColorBlindEntry;
                     activeEntryType = NewYork5EntryType;
+                    activeEnableStopOutFlip = NewYork5EnableStopOutFlip;
                     activeStopPaddingPoints = NewYork5StopPaddingPoints;
                     activeTrailHardStop = NewYork5TrailHardStop;
                     activeTakeProfitPoints = NewYork5TakeProfitPoints;
@@ -2997,6 +3019,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEntryCloseBeyondEmaPoints = 0.0;
                     activeColorBlindEntry = false;
                     activeEntryType = InitialEntryType.Market;
+                    activeEnableStopOutFlip = false;
                     activeStopPaddingPoints = 0.0;
                     activeTrailHardStop = false;
                     activeTakeProfitPoints = 0.0;
@@ -4032,7 +4055,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool TrySubmitStopOutFlip(bool flipToLong, bool canTradeNow, bool oppositeSignal, double emaValue)
         {
-            if (!EnableStopOutFlip || !IsStopOutClose(Position.MarketPosition))
+            if (!activeEnableStopOutFlip || !IsStopOutClose(Position.MarketPosition))
                 return false;
 
             return TrySubmitStopOutFlipEntry(
@@ -4046,7 +4069,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool TrySubmitStopOutExecutionFlip(MarketPosition stoppedSide, double stopFillPrice)
         {
-            if (!EnableStopOutFlip || stoppedSide == MarketPosition.Flat || lastStopOutFlipSubmittedBar == CurrentBar)
+            if (stoppedSide == MarketPosition.Flat || lastStopOutFlipSubmittedBar == CurrentBar)
                 return false;
 
             if (CurrentBar < Math.Max(1, Math.Max(GetMaxConfiguredEmaPeriod(), GetMaxConfiguredAdxPeriod())) || activeEma == null || CurrentBar < activeEmaPeriod)
@@ -8164,6 +8187,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool AsiaColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Asia 1", Order = 25)]
+        public bool AsiaEnableStopOutFlip { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 1", Order = 36)]
         public int AsiaCandleReversalExitBars { get; set; }
@@ -8259,6 +8286,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool Asia2ColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Asia 2", Order = 25)]
+        public bool Asia2EnableStopOutFlip { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 2", Order = 36)]
         public int Asia2CandleReversalExitBars { get; set; }
@@ -8352,6 +8383,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "Asia 3", Order = 24)]
         public bool Asia3ColorBlindEntry { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Asia 3", Order = 25)]
+        public bool Asia3EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -8453,6 +8488,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool LondonColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Europe 1", Order = 25)]
+        public bool LondonEnableStopOutFlip { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Europe 1", Order = 36)]
         public int LondonCandleReversalExitBars { get; set; }
@@ -8551,6 +8590,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "Europe 2", Order = 24)]
         public bool London2ColorBlindEntry { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Europe 2", Order = 25)]
+        public bool London2EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -8657,6 +8700,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool London3ColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Europe 3", Order = 25)]
+        public bool London3EnableStopOutFlip { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Europe 3", Order = 36)]
         public int London3CandleReversalExitBars { get; set; }
@@ -8750,6 +8797,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 1", Order = 24)]
         public bool NewYorkColorBlindEntry { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 1", Order = 25)]
+        public bool NewYorkEnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -8848,6 +8899,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool NewYork2ColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 2", Order = 25)]
+        public bool NewYork2EnableStopOutFlip { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 2", Order = 37)]
         public int NewYork2CandleReversalExitBars { get; set; }
@@ -8942,6 +8997,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 3", Order = 24)]
         public bool NewYork3ColorBlindEntry { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 3", Order = 25)]
+        public bool NewYork3EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -9039,6 +9098,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool NewYork4ColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 4", Order = 25)]
+        public bool NewYork4EnableStopOutFlip { get; set; }
+
+        [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
         [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 4", Order = 37)]
         public int NewYork4CandleReversalExitBars { get; set; }
@@ -9132,6 +9195,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 5", Order = 24)]
         public bool NewYork5ColorBlindEntry { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 5", Order = 25)]
+        public bool NewYork5EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -9283,9 +9350,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Entry Variance", Description = "If enabled, delay qualifying new realtime market entries by a random 0-15 seconds after the 5-minute close.", GroupName = "13. Risk", Order = 3)]
         public bool EntryVariance { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Stop-Out Flip", Description = "Testing only. When a 5-minute close is at or through the active stop and the opposite entry setup passes normal entry gates, reverse into the opposite direction.", GroupName = "13. Risk", Order = 4)]
-        public bool EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
