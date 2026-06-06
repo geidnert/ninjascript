@@ -231,6 +231,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
         private int? projectXLastOrderId;
         private string projectXLastOrderContractId;
+        private ORBOibTestingProjectXOrderRouter projectXRouter;
 
         // ===== Info Box Overlay =====
         private Border infoBoxContainer;
@@ -563,7 +564,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 WebhookUrl = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
-                ProjectXApiBaseUrl = "https://gateway-api-demo.s2f.projectx.com";
+                ProjectXApiBaseUrl = "https://api.topstepx.com";
+                ProjectXTradeAllAccounts = false;
                 ProjectXUsername = string.Empty;
                 ProjectXApiKey = string.Empty;
                 ProjectXAccountId = string.Empty;
@@ -592,6 +594,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ValidateRequiredPrimaryInstrument();
                 startingBalance = Account.Get(AccountItem.CashValue, Currency.UsDollar);
                 EnsureNewsDatesInitialized();
+                InitializeProjectXRouter();
+                if (projectXRouter != null)
+                    projectXRouter.Reset();
+            }
+            else if (State == State.Realtime)
+            {
+                RunProjectXStartupPreflight();
             }
             else if (State == State.Terminated)
             {
@@ -1336,6 +1345,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             currentSignalName = string.Empty;
             confirmationComplete = false; confirmationBarCount = 0;
             longBreakoutOccurred = false; shortBreakoutOccurred = false;
+            if (projectXRouter != null)
+                projectXRouter.ResetProtectiveSync();
         }
 
         private double GetReferencePriceForProtectiveStop(MarketPosition positionDirection)
@@ -1552,6 +1563,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (order == null)
                 return;
+
+            SyncProjectXProtectiveOrder(order, limitPrice, stopPrice, orderState);
 
             string orderName = order.Name ?? string.Empty;
             bool isEntryOrder = IsEntryOrderName(orderName);
@@ -1856,6 +1869,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 beTriggerActive = false; trailStopPrice = 0; bestPriceSinceEntry = 0;
                 trailActivated = false; trailLocked = false;
                 maxAccountLimitHit = false;
+                if (projectXRouter != null)
+                    projectXRouter.ResetProtectiveSync();
                 wasInNoTradesAfterWindow = false; wasInSkipWindow = false; wasInNewsSkipWindow = false;
                 tradeCount = 0; longTradeCount = 0; shortTradeCount = 0;
                 sessionRealizedPnL = 0; sessionProfitLimitHit = false; sessionLossLimitHit = false;
@@ -2481,6 +2496,55 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return date.AddDays(-diff).Date;
         }
 
+        private void InitializeProjectXRouter()
+        {
+            projectXRouter = new ORBOibTestingProjectXOrderRouter(
+                () => ProjectXApiBaseUrl,
+                () => ProjectXUsername,
+                () => ProjectXApiKey,
+                () => ProjectXAccountId,
+                () => ProjectXContractId,
+                () => ProjectXTradeAllAccounts,
+                () => Instrument,
+                () => TickSize,
+                () => Position.MarketPosition,
+                () => Position.Quantity,
+                message => WebhookLog("[ProjectX] " + message),
+                message => WebhookLog("[ProjectX] " + message));
+        }
+
+        private void EnsureProjectXRouter()
+        {
+            if (projectXRouter == null)
+                InitializeProjectXRouter();
+        }
+
+        private void RunProjectXStartupPreflight()
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            EnsureProjectXRouter();
+            if (projectXRouter != null)
+                projectXRouter.RunStartupPreflight();
+        }
+
+        private bool SendProjectXWebhook(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        {
+            EnsureProjectXRouter();
+            return projectXRouter != null && projectXRouter.Send(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+        }
+
+        private void SyncProjectXProtectiveOrder(Order order, double limitPrice, double stopPrice, OrderState orderState)
+        {
+            if (State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            EnsureProjectXRouter();
+            if (projectXRouter != null)
+                projectXRouter.SyncProtectiveOrder(order, limitPrice, stopPrice, orderState, IsEntryOrderName);
+        }
+
         private void SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
         {
             if (State != State.Realtime)
@@ -2497,7 +2561,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     entryPrice,
                     takeProfit,
                     stopLoss));
-                SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
+                SendProjectXWebhook(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
                 return;
             }
 
@@ -4295,9 +4359,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Webhook Provider", Description = "Select webhook target: TradersPost or ProjectX.", GroupName = "O. Webhooks", Order = 1)]
         public WebhookProvider WebhookProviderType { get; set; }
 
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "ProjectX API Base URL", Description = "ProjectX gateway base URL.", GroupName = "O. Webhooks", Order = 2)]
         public string ProjectXApiBaseUrl { get; set; }
+
+        [Browsable(false)]
+        public bool ProjectXTradeAllAccounts { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "ProjectX Username", Description = "ProjectX login username.", GroupName = "O. Webhooks", Order = 3)]
@@ -4308,9 +4376,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public string ProjectXApiKey { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX Account ID", Description = "ProjectX account id used for order routing.", GroupName = "O. Webhooks", Order = 5)]
+        [Display(Name = "ProjectX Accounts", Description = "Comma-separated ProjectX account ids or exact account names.", GroupName = "O. Webhooks", Order = 5)]
         public string ProjectXAccountId { get; set; }
 
+        [Browsable(false)]
         [NinjaScriptProperty]
         [Display(Name = "ProjectX Contract ID", Description = "ProjectX contract id (for example CON.F.US.DA6.M25).", GroupName = "O. Webhooks", Order = 6)]
         public string ProjectXContractId { get; set; }
