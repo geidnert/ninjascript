@@ -222,6 +222,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private EMA emaNewYork2;
         private EMA emaNewYork3;
         private EMA activeEma;
+        private EMA flipTrendEma;
         private ATR takeProfitAtr;
         private DM adxAsia;
         private DM adxAsia2;
@@ -314,6 +315,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const double VerticalFillLowerPriceBound = -100000000.0;
         private const double VerticalFillUpperPriceBound = 100000000.0;
         private const int EntryVarianceMaxDelaySeconds = 15;
+        private const int FlipTrendSeriesIndex = 1;
+        private const int FlipTrendTimeframeMinutes = 15;
+        private const int FlipTrendEmaPeriod = 21;
         private const int TakeProfitAtrPeriod = 14;
         private const string LongEntrySignal = "DUOLong";
         private const string ShortEntrySignal = "DUOShort";
@@ -931,8 +935,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxAccountBalance = 0.0;
                 RequireEntryConfirmation = false;
                 EntryVariance = true;
+                Use15MinuteEmaFlipFilter = true;
 
                 DebugLogging = false;
+            }
+            else if (State == State.Configure)
+            {
+                AddDataSeries(BarsPeriodType.Minute, FlipTrendTimeframeMinutes);
             }
             else if (State == State.DataLoaded)
             {
@@ -948,6 +957,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 emaNewYork = EMA(NewYorkEmaPeriod);
                 emaNewYork2 = EMA(NewYork2EmaPeriod);
                 emaNewYork3 = EMA(NewYork3EmaPeriod);
+                flipTrendEma = EMA(Closes[FlipTrendSeriesIndex], FlipTrendEmaPeriod);
                 takeProfitAtr = ATR(TakeProfitAtrPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
                 adxAsia2 = DM(Asia2AdxPeriod);
@@ -1094,6 +1104,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
+            if (BarsInProgress != 0)
+                return;
+
             if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
             {
                 CancelWorkingEntryOrders();
@@ -1294,12 +1307,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeShortPass;
                     bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
+                    double flipTrendEmaValue;
+                    bool flipTrendPass = FlipTrendEmaFilterPasses(false, Close[0], out flipTrendEmaValue);
                     double flipEntryPrice = GetEntryPriceForDirection(Close[0], false, 0.0);
                     double flipStopPrice = BuildFlipShortStopPrice(flipEntryPrice, emaValue, Time[0]);
                     double flipStopLossPoints = GetPlannedStopLossPoints(flipEntryPrice, flipStopPrice);
                     bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
                     bool flipCrossPass = Close[0] <= emaValue - effectiveFlipEmaCrossPoints;
-                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipTrendPass && flipCrossPass && flipMaxStopPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
@@ -1346,10 +1361,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                                 activeMaxStopLossPoints,
                                 FormatSessionLabel(activeSession)));
                         }
+                        if (!flipTrendPass)
+                        {
+                            LogDebug(string.Format(
+                                "Flip blocked | reason=15mEmaFilter side=Short close={0:0.00} ema15={1} session={2}",
+                                Close[0],
+                                FormatOptionalPrice(flipTrendEmaValue),
+                                FormatSessionLabel(activeSession)));
+                        }
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} atrMinPass={2} directionPass={3} distancePass={4} emaSlopePass={5} bodyPass={6} crossPass={7} maxStopPass={8} below%={9:0.0} minBody%={10:0.0} flipCrossPts={11:0.##} flipSlPts={12:0.00} maxSlPts={13:0.00}",
+                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} atrMinPass={2} directionPass={3} distancePass={4} emaSlopePass={5} bodyPass={6} trend15Pass={7} crossPass={8} maxStopPass={9} below%={10:0.0} minBody%={11:0.0} flipCrossPts={12:0.##} flipSlPts={13:0.00} maxSlPts={14:0.00} ema15={15}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
                                 flipAtrPass,
@@ -1357,13 +1380,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
+                                flipTrendPass,
                                 flipCrossPass,
                                 flipMaxStopPass,
                                 bodyBelowPercent,
                                 FlipBodyThresholdPercent,
                                 effectiveFlipEmaCrossPoints,
                                 flipStopLossPoints,
-                                activeMaxStopLossPoints));
+                                activeMaxStopLossPoints,
+                                FormatOptionalPrice(flipTrendEmaValue)));
                         }
                         if (TrySubmitTerminalExit("EmaExitLong"))
                             LogDebug(string.Format("Exit LONG | close={0:0.00} ema={1:0.00} below%={2:0.0}", Close[0], emaValue, bodyBelowPercent));
@@ -1439,12 +1464,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipDistancePass = distancePasses;
                     bool flipSlopePass = emaSlopeLongPass;
                     bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
+                    double flipTrendEmaValue;
+                    bool flipTrendPass = FlipTrendEmaFilterPasses(true, Close[0], out flipTrendEmaValue);
                     double flipEntryPrice = GetEntryPriceForDirection(Close[0], true, 0.0);
                     double flipStopPrice = BuildFlipLongStopPrice(flipEntryPrice, emaValue, Time[0]);
                     double flipStopLossPoints = GetPlannedStopLossPoints(flipEntryPrice, flipStopPrice);
                     bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
                     bool flipCrossPass = Close[0] >= emaValue + effectiveFlipEmaCrossPoints;
-                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
+                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipTrendPass && flipCrossPass && flipMaxStopPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
@@ -1491,10 +1518,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                                 activeMaxStopLossPoints,
                                 FormatSessionLabel(activeSession)));
                         }
+                        if (!flipTrendPass)
+                        {
+                            LogDebug(string.Format(
+                                "Flip blocked | reason=15mEmaFilter side=Long close={0:0.00} ema15={1} session={2}",
+                                Close[0],
+                                FormatOptionalPrice(flipTrendEmaValue),
+                                FormatSessionLabel(activeSession)));
+                        }
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} atrMinPass={2} directionPass={3} distancePass={4} emaSlopePass={5} bodyPass={6} crossPass={7} maxStopPass={8} above%={9:0.0} minBody%={10:0.0} flipCrossPts={11:0.##} flipSlPts={12:0.00} maxSlPts={13:0.00}",
+                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} atrMinPass={2} directionPass={3} distancePass={4} emaSlopePass={5} bodyPass={6} trend15Pass={7} crossPass={8} maxStopPass={9} above%={10:0.0} minBody%={11:0.0} flipCrossPts={12:0.##} flipSlPts={13:0.00} maxSlPts={14:0.00} ema15={15}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
                                 flipAtrPass,
@@ -1502,13 +1537,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                                 flipDistancePass,
                                 flipSlopePass,
                                 flipBodyPass,
+                                flipTrendPass,
                                 flipCrossPass,
                                 flipMaxStopPass,
                                 bodyAbovePercent,
                                 FlipBodyThresholdPercent,
                                 effectiveFlipEmaCrossPoints,
                                 flipStopLossPoints,
-                                activeMaxStopLossPoints));
+                                activeMaxStopLossPoints,
+                                FormatOptionalPrice(flipTrendEmaValue)));
                         }
                         if (TrySubmitTerminalExit("EmaExitShort"))
                             LogDebug(string.Format("Exit SHORT | close={0:0.00} ema={1:0.00} above%={2:0.0}", Close[0], emaValue, bodyAbovePercent));
@@ -4874,6 +4911,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return true;
 
             return GetEmaSlopePointsPerBar() <= -activeEmaMinSlopePointsPerBar;
+        }
+
+        private bool FlipTrendEmaFilterPasses(bool isLongFlip, double signalPrice, out double emaValue)
+        {
+            bool hasEmaValue = TryGetFlipTrendEmaValue(out emaValue);
+            if (!Use15MinuteEmaFlipFilter)
+                return true;
+
+            if (!hasEmaValue)
+                return false;
+
+            return isLongFlip
+                ? signalPrice > emaValue
+                : signalPrice < emaValue;
+        }
+
+        private bool TryGetFlipTrendEmaValue(out double emaValue)
+        {
+            emaValue = 0.0;
+
+            if (flipTrendEma == null || CurrentBars == null || CurrentBars.Length <= FlipTrendSeriesIndex)
+                return false;
+
+            if (CurrentBars[FlipTrendSeriesIndex] < FlipTrendEmaPeriod)
+                return false;
+
+            emaValue = flipTrendEma[0];
+            return !double.IsNaN(emaValue) && !double.IsInfinity(emaValue);
+        }
+
+        private string FormatOptionalPrice(double price)
+        {
+            if (price <= 0.0 || double.IsNaN(price) || double.IsInfinity(price))
+                return "n/a";
+
+            return price.ToString("0.00", CultureInfo.InvariantCulture);
         }
 
         private void UpdateAdxPeakTracker(double adxValue)
@@ -10265,6 +10338,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Entry Variance", Description = "If enabled, delay qualifying new realtime market entries by a random 0-15 seconds after the 5-minute close.", GroupName = "13. Risk", Order = 3)]
         public bool EntryVariance { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "15m EMA21 Flip Filter", Description = "If enabled, long flips require the signal close above 15m EMA21 and short flips require the signal close below 15m EMA21.", GroupName = "13. Risk", Order = 4)]
+        public bool Use15MinuteEmaFlipFilter { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
