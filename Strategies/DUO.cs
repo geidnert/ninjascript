@@ -869,8 +869,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2AdxDdRiskModeTakeProfitPoints = 95.0;
                 NewYork2HorizontalExitBars = 37;
 
-                NewYork3SessionStart = new TimeSpan(14, 15, 0);
-                NewYork3SessionEnd = new TimeSpan(15, 30, 0);
+                NewYork3SessionStart = new TimeSpan(14, 10, 0);
+                NewYork3SessionEnd = new TimeSpan(15, 20, 0);
                 NewYork3SkipStart = TimeSpan.Zero;
                 NewYork3SkipEnd = TimeSpan.Zero;
                 NewYork3EmaPeriod = 21;
