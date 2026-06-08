@@ -36,6 +36,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Deduct Commissions", Order = 1, GroupName = "PnL")]
         public bool DeductCommissions { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Show Weekly/Monthly Stats", Description = "Show the weekly total, monthly daily average, and monthly total at the bottom of the Discord message.", Order = 1, GroupName = "Display")]
+        public bool ShowWeeklyMonthlyStats { get; set; }
+
         private double entryPrice = 0;
         private bool entryIsShort = false;
         private DateTime entryTime = DateTime.MinValue;
@@ -84,6 +88,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 DiscordChannelId = "";
                 InstanceId = "Default";
                 DeductCommissions = false;
+                ShowWeeklyMonthlyStats = false;
             }
             else if (State == State.Configure)
             {
@@ -502,19 +507,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             sb.AppendLine($"**{FormatPnl(dayTotal)} total**\n");
 
-            double weeklyTotal = 0;
-            foreach (var kvp in dailyPnls)
+            if (ShowWeeklyMonthlyStats)
             {
-                foreach (var trade in kvp.Value.Values)
-                    weeklyTotal += trade;
-            }
+                double weeklyTotal = 0;
+                foreach (var kvp in dailyPnls)
+                {
+                    foreach (var trade in kvp.Value.Values)
+                        weeklyTotal += trade;
+                }
 
-            sb.AppendLine("---");
-            sb.AppendLine($"**Weekly Total: {FormatPnl(weeklyTotal)}**");
-            int monthlyTradingDayCount = CountWeekdaysInMonthToDate(tradingDay);
-            double monthlyDailyAverage = monthlyTradingDayCount > 0 ? monthlyTotal / monthlyTradingDayCount : 0;
-            sb.AppendLine($"**Monthly Daily Average: {FormatPnl(monthlyDailyAverage)}**");
-            sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
+                sb.AppendLine("---");
+                sb.AppendLine($"**Weekly Total: {FormatPnl(weeklyTotal)}**");
+                int monthlyTradingDayCount = CountWeekdaysInMonthToDate(tradingDay);
+                double monthlyDailyAverage = monthlyTradingDayCount > 0 ? monthlyTotal / monthlyTradingDayCount : 0;
+                sb.AppendLine($"**Monthly Daily Average: {FormatPnl(monthlyDailyAverage)}**");
+                sb.AppendLine($"**Monthly Total ({currentMonth}): {FormatPnl(monthlyTotal)}**");
+            }
 
             EnqueueDiscordMessage(sb.ToString(), tradingDay);
         }
