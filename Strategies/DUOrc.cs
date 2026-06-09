@@ -526,8 +526,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaTrailHardStop = true;
                 AsiaTakeProfitPoints = 146.25;
                 AsiaAtrMinimum = 11.74;
-                AsiaCandleReversalExitBars = 13;
-                AsiaCandleReversalCloseBeyondPoints = 8.5;
+                AsiaCandleReversalExitBars = 11;
+                AsiaCandleReversalCloseBeyondPoints = 11;
                 AsiaCandleReversalMinBodyPoints = 0;
 
                 Asia2SessionStart = new TimeSpan(20, 5, 0);
