@@ -513,7 +513,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaEntryMinBodyPoints = 1;
-                AsiaEntryCloseBeyondEmaPoints = 2.25;
+                AsiaEntryCloseBeyondEmaPoints = 1;
                 AsiaEntryType = InitialEntryType.Market;
                 AsiaColorBlindEntry = false;
                 AsiaEnableStopOutFlip = false;
@@ -521,7 +521,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxThreshold = 23.4;
                 AsiaAdxMaxThreshold = 47.55;
                 AsiaAdxPeakDrawdownExitUnits = 0;
-                AsiaAdxAbsoluteExitLevel = 61.4;
+                AsiaAdxAbsoluteExitLevel = 55;
                 AsiaStopPaddingPoints = 50;
                 AsiaTrailHardStop = true;
                 AsiaTakeProfitPoints = 146.25;
@@ -599,7 +599,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 London2SessionStart = new TimeSpan(5, 50, 0);
                 London2SessionEnd = new TimeSpan(7, 0, 0);
-                AutoShiftLondon2 = false;
+                AutoShiftLondon2 = true;
                 London2EmaPeriod = 21;
                 London2Contracts = 0;
                 London2EntryMinBodyPoints = 1.5;
@@ -725,10 +725,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4AdxPeakDrawdownExitUnits = 1.4;
                 NewYork4AdxAbsoluteExitLevel = 30.5;
                 NewYork4StopPaddingPoints = 90.25;
-                NewYork4TrailHardStop = false;
+                NewYork4TrailHardStop = true;
                 NewYork4TakeProfitPoints = 333;
                 NewYork4AtrMinimum = 25.75;
-                NewYork4CandleReversalExitBars = 11;
+                NewYork4CandleReversalExitBars = 7;
                 NewYork4CandleReversalCloseBeyondPoints = 0;
                 NewYork4CandleReversalMinBodyPoints = 0;
 
