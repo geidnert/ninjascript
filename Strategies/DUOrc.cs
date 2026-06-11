@@ -524,7 +524,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxAbsoluteExitLevel = 55;
                 AsiaStopPaddingPoints = 50;
                 AsiaTrailHardStop = true;
-                AsiaTakeProfitPoints = 146.25;
+                AsiaTakeProfitPoints = 141.5;
                 AsiaAtrMinimum = 11.74;
                 AsiaCandleReversalExitBars = 11;
                 AsiaCandleReversalCloseBeyondPoints = 11;
