@@ -350,7 +350,7 @@ namespace NinjaTrader.Gui.NinjaScript
             if (lDateRange != null)
                 lDateRange.Content = isHistorical
                     ? "Historical data date range to export:"
-                    : "Replay .nrd file date range to convert (optional):";
+                    : "Replay CSV date range to produce (optional):";
 
             if (lHistoricalSeries != null)
                 lHistoricalSeries.Visibility = isHistorical ? Visibility.Visible : Visibility.Collapsed;
@@ -564,9 +564,9 @@ namespace NinjaTrader.Gui.NinjaScript
                     Convert.ToInt16(name.Substring(4, 2)),
                     Convert.ToInt16(name.Substring(6, 2)));
                 DateTime replayDate = sourceDate.AddDays(1);
-                if (selectedStartDate.HasValue && sourceDate.Date < selectedStartDate.Value.Date)
+                if (selectedStartDate.HasValue && replayDate.Date < selectedStartDate.Value.Date)
                     continue;
-                if (selectedEndDate.HasValue && sourceDate.Date > selectedEndDate.Value.Date)
+                if (selectedEndDate.HasValue && replayDate.Date > selectedEndDate.Value.Date)
                     continue;
 
                 string csvFileName = string.Format("{0}.csv", Path.Combine(csvDir, instrument.FullName, replayDate.ToString("yyyyMMdd")));
