@@ -512,8 +512,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaSessionEnd = new TimeSpan(19, 55, 0);
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
-                AsiaEntryMinBodyPoints = 1;
-                AsiaEntryCloseBeyondEmaPoints = 1;
+                AsiaEntryMinBodyPoints = 2.25;
+                AsiaEntryCloseBeyondEmaPoints = 0;
                 AsiaEntryType = InitialEntryType.Market;
                 AsiaColorBlindEntry = false;
                 AsiaEnableStopOutFlip = false;
@@ -521,7 +521,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaAdxThreshold = 23.4;
                 AsiaAdxMaxThreshold = 47.55;
                 AsiaAdxPeakDrawdownExitUnits = 0;
-                AsiaAdxAbsoluteExitLevel = 55;
+                AsiaAdxAbsoluteExitLevel = 59;
                 AsiaStopPaddingPoints = 50;
                 AsiaTrailHardStop = true;
                 AsiaTakeProfitPoints = 141.5;
@@ -535,7 +535,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2EntryMinBodyPoints = 0;
-                Asia2EntryCloseBeyondEmaPoints = 2.25;
+                Asia2EntryCloseBeyondEmaPoints = 1.625;
                 Asia2EntryType = InitialEntryType.Market;
                 Asia2ColorBlindEntry = false;
                 Asia2EnableStopOutFlip = false;
@@ -548,15 +548,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2TrailHardStop = false;
                 Asia2TakeProfitPoints = 66.5;
                 Asia2AtrMinimum = 10.13;
-                Asia2CandleReversalExitBars = 11;
+                Asia2CandleReversalExitBars = 10;
                 Asia2CandleReversalCloseBeyondPoints = 15.7;
-                Asia2CandleReversalMinBodyPoints = 8;
+                Asia2CandleReversalMinBodyPoints = 6;
 
                 Asia3SessionStart = TimeSpan.Zero;
                 Asia3SessionEnd = new TimeSpan(3, 5, 0);
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
-                Asia3EntryMinBodyPoints = 0.5;
+                Asia3EntryMinBodyPoints = 1.5;
                 Asia3EntryCloseBeyondEmaPoints = 0;
                 Asia3EntryType = InitialEntryType.Market;
                 Asia3ColorBlindEntry = false;
@@ -565,14 +565,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3AdxThreshold = 21;
                 Asia3AdxMaxThreshold = 45.2;
                 Asia3AdxPeakDrawdownExitUnits = 6;
-                Asia3AdxAbsoluteExitLevel = 39.5;
+                Asia3AdxAbsoluteExitLevel = 41.5;
                 Asia3StopPaddingPoints = 103.5;
                 Asia3TrailHardStop = true;
                 Asia3TakeProfitPoints = 191.5;
                 Asia3AtrMinimum = 9.74;
                 Asia3CandleReversalExitBars = 4;
-                Asia3CandleReversalCloseBeyondPoints = 15.7;
-                Asia3CandleReversalMinBodyPoints = 14.25;
+                Asia3CandleReversalCloseBeyondPoints = 13.7;
+                Asia3CandleReversalMinBodyPoints = 16.25;
 
                 LondonSessionStart = new TimeSpan(3, 20, 0);
                 LondonSessionEnd = new TimeSpan(5, 0, 0);
@@ -587,14 +587,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 13;
                 LondonAdxMaxThreshold = 31.35;
-                LondonAdxPeakDrawdownExitUnits = 14;
-                LondonAdxAbsoluteExitLevel = 50.5;
-                LondonStopPaddingPoints = 68.75;
+                LondonAdxPeakDrawdownExitUnits = 12;
+                LondonAdxAbsoluteExitLevel = 47.5;
+                LondonStopPaddingPoints = 53.75;
                 LondonTrailHardStop = true;
                 LondonTakeProfitPoints = 198.55;
                 LondonAtrMinimum = 11.6;
                 LondonCandleReversalExitBars = 7;
-                LondonCandleReversalCloseBeyondPoints = 7;
+                LondonCandleReversalCloseBeyondPoints = 9;
                 LondonCandleReversalMinBodyPoints = 2;
 
                 London2SessionStart = new TimeSpan(5, 50, 0);
