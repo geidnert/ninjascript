@@ -46,6 +46,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             ShortOnly
         }
 
+        public enum EntrySystemMode
+        {
+            Primary,
+            Secondary,
+            Both
+        }
+
         public enum TakeProfitStopMode
         {
             PercentMove
@@ -222,6 +229,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private EMA emaNewYork2;
         private EMA emaNewYork3;
         private EMA activeEma;
+        private EMA secondaryBiasEma;
         private ATR takeProfitAtr;
         private DM adxAsia;
         private DM adxAsia2;
@@ -237,6 +245,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int activeEmaPeriod;
         private int activeContracts;
         private SessionTradeDirection activeTradeDirection = SessionTradeDirection.Both;
+        private EntrySystemMode activeEntrySystemMode = EntrySystemMode.Primary;
+        private int activeSecondaryContracts;
         private InitialStopMode activeEntryStopMode;
         private double activeEmaMinSlopePointsPerBar;
         private double activeMaxEntryDistanceFromEmaPoints;
@@ -268,6 +278,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeAdxDdRiskModeTakeProfitPoints;
         private int activeHorizontalExitBars;
         private double activeMaxStopLossPoints;
+        private double activeSecondaryEntryLimitDistanceFromEmaPoints;
+        private double activeSecondaryEntryStopDistanceFromEmaPoints;
+        private double activeSecondaryEntryTakeProfitDistanceFromEmaPoints;
+        private double activeSecondaryTakeProfitVariancePoints;
 
         private double pendingLongStopForWebhook;
         private double pendingShortStopForWebhook;
@@ -291,6 +305,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool suppressProjectXNextExecutionExitWebhook;
         private bool flipBreakEvenActivated;
         private bool takeProfitStopTriggered;
+        private bool secondaryLongDoorOpen;
+        private bool secondaryShortDoorOpen;
+        private SessionSlot secondaryLongDoorSession = SessionSlot.None;
+        private SessionSlot secondaryShortDoorSession = SessionSlot.None;
+        private int secondaryLongDoorSignalBar = -1;
+        private int secondaryShortDoorSignalBar = -1;
+        private double secondaryLongDoorTakeProfitVariancePoints;
+        private double secondaryShortDoorTakeProfitVariancePoints;
+        private bool secondaryLongPositionActive;
+        private bool secondaryShortPositionActive;
+        private Random secondaryTakeProfitVarianceRandom;
         private double initialStopPrice;
         private double currentStopPrice;
         private bool adxDdRiskModeApplied;
@@ -319,6 +344,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortEntrySignal = "DUOShort";
         private const string LongFlipEntrySignal = "DUOLong";
         private const string ShortFlipEntrySignal = "DUOShort";
+        private const string LongSecondaryEntrySignal = "DUOLongSecondary";
+        private const string ShortSecondaryEntrySignal = "DUOShortSecondary";
         private Random entryVarianceRandom;
         private bool pendingEntryVarianceActive;
         private bool pendingEntryVarianceIsLong;
@@ -582,7 +609,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Name = GetVersionedStrategyName("DUO");
                 Calculate = Calculate.OnBarClose;
-                EntriesPerDirection = 1;
+                EntriesPerDirection = 2;
                 EntryHandling = EntryHandling.UniqueEntries;
                 IsExitOnSessionCloseStrategy = true;
                 IsInstantiatedOnEachOptimizationIteration = false;
@@ -594,6 +621,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaTradeDirection = SessionTradeDirection.Both;
+                AsiaEntrySystemMode = EntrySystemMode.Primary;
+                AsiaSecondaryContracts = 1;
+                AsiaSecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                AsiaSecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                AsiaSecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                AsiaSecondaryTakeProfitVariancePoints = 0.0;
                 AsiaFlipAdxThreshold = 29.1;
                 AsiaEmaMinSlopePointsPerBar = 0.6;
                 AsiaMaxEntryDistanceFromEmaPoints = 9.0;
@@ -628,6 +661,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2TradeDirection = SessionTradeDirection.Both;
+                Asia2EntrySystemMode = EntrySystemMode.Primary;
+                Asia2SecondaryContracts = 1;
+                Asia2SecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                Asia2SecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                Asia2SecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                Asia2SecondaryTakeProfitVariancePoints = 0.0;
                 Asia2FlipAdxThreshold = 23.2;
                 Asia2EmaMinSlopePointsPerBar = 0.0;
                 Asia2MaxEntryDistanceFromEmaPoints = 0.0;
@@ -662,6 +701,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
                 Asia3TradeDirection = SessionTradeDirection.Both;
+                Asia3EntrySystemMode = EntrySystemMode.Primary;
+                Asia3SecondaryContracts = 1;
+                Asia3SecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                Asia3SecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                Asia3SecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                Asia3SecondaryTakeProfitVariancePoints = 0.0;
                 Asia3FlipAdxThreshold = 29.2;
                 Asia3EmaMinSlopePointsPerBar = 0.66;
                 Asia3MaxEntryDistanceFromEmaPoints = 18.0;
@@ -686,7 +731,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3TakeProfitPercentStopMovePercent = 71.0;
                 Asia3RequireMinAdxForFlips = false;
                 Asia3EnableAdxDdRiskMode = true;
-                Asia3AdxDdRiskModeStopLossPoints = 5.75;
+                Asia3AdxDdRiskModeStopLossPoints = 5.0;
                 Asia3AdxDdRiskModeTakeProfitPoints = 67.0;
                 Asia3HorizontalExitBars = 63;
 
@@ -696,6 +741,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonTradeDirection = SessionTradeDirection.Both;
+                LondonEntrySystemMode = EntrySystemMode.Primary;
+                LondonSecondaryContracts = 1;
+                LondonSecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                LondonSecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                LondonSecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                LondonSecondaryTakeProfitVariancePoints = 0.0;
                 LondonFlipAdxThreshold = 25.4;
                 LondonEmaMinSlopePointsPerBar = 0.82;
                 LondonMaxEntryDistanceFromEmaPoints = 0.0;
@@ -730,6 +781,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EmaPeriod = 21;
                 London2Contracts = 1;
                 London2TradeDirection = SessionTradeDirection.Both;
+                London2EntrySystemMode = EntrySystemMode.Primary;
+                London2SecondaryContracts = 1;
+                London2SecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                London2SecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                London2SecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                London2SecondaryTakeProfitVariancePoints = 0.0;
                 London2FlipAdxThreshold = 35.0;
                 London2EmaMinSlopePointsPerBar = 0.0;
                 London2MaxEntryDistanceFromEmaPoints = 9.0;
@@ -765,6 +822,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EmaPeriod = 21;
                 London3Contracts = 1;
                 London3TradeDirection = SessionTradeDirection.Both;
+                London3EntrySystemMode = EntrySystemMode.Primary;
+                London3SecondaryContracts = 1;
+                London3SecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                London3SecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                London3SecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                London3SecondaryTakeProfitVariancePoints = 0.0;
                 London3FlipAdxThreshold = 0.0;
                 London3EmaMinSlopePointsPerBar = 0.0;
                 London3MaxEntryDistanceFromEmaPoints = 9.5;
@@ -800,6 +863,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
                 NewYorkTradeDirection = SessionTradeDirection.Both;
+                NewYorkEntrySystemMode = EntrySystemMode.Primary;
+                NewYorkSecondaryContracts = 1;
+                NewYorkSecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                NewYorkSecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                NewYorkSecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                NewYorkSecondaryTakeProfitVariancePoints = 0.0;
                 NewYorkFlipAdxThreshold = 19.0;
                 NewYorkEmaMinSlopePointsPerBar = 0.8;
                 NewYorkMaxEntryDistanceFromEmaPoints = 39.0;
@@ -838,6 +907,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EmaPeriod = 16;
                 NewYork2Contracts = 1;
                 NewYork2TradeDirection = SessionTradeDirection.Both;
+                NewYork2EntrySystemMode = EntrySystemMode.Primary;
+                NewYork2SecondaryContracts = 1;
+                NewYork2SecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                NewYork2SecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                NewYork2SecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                NewYork2SecondaryTakeProfitVariancePoints = 0.0;
                 NewYork2FlipAdxThreshold = 30.0;
                 NewYork2EmaMinSlopePointsPerBar = 1.4;
                 NewYork2MaxEntryDistanceFromEmaPoints = 40.5;
@@ -876,6 +951,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3EmaPeriod = 21;
                 NewYork3Contracts = 1;
                 NewYork3TradeDirection = SessionTradeDirection.Both;
+                NewYork3EntrySystemMode = EntrySystemMode.Primary;
+                NewYork3SecondaryContracts = 1;
+                NewYork3SecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                NewYork3SecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                NewYork3SecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                NewYork3SecondaryTakeProfitVariancePoints = 0.0;
                 NewYork3FlipAdxThreshold = 0.0;
                 NewYork3EmaMinSlopePointsPerBar = 1.2;
                 NewYork3MaxEntryDistanceFromEmaPoints = 0.0;
@@ -912,6 +993,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaSessionBrush = Brushes.DarkCyan;
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
+                SecondaryBiasEmaPeriod = 50;
                 ShowEmaOnChart = false;
                 ShowAdxOnChart = false;
                 ShowAdxThresholdLines = false;
@@ -948,6 +1030,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 emaNewYork = EMA(NewYorkEmaPeriod);
                 emaNewYork2 = EMA(NewYork2EmaPeriod);
                 emaNewYork3 = EMA(NewYork3EmaPeriod);
+                secondaryBiasEma = SecondaryBiasEmaPeriod > 0 ? EMA(SecondaryBiasEmaPeriod) : null;
                 takeProfitAtr = ATR(TakeProfitAtrPeriod);
                 adxAsia = DM(AsiaAdxPeriod);
                 adxAsia2 = DM(Asia2AdxPeriod);
@@ -979,6 +1062,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     AddChartIndicator(emaNewYork);
                     AddChartIndicator(emaNewYork2);
                     AddChartIndicator(emaNewYork3);
+                    if (secondaryBiasEma != null)
+                        AddChartIndicator(secondaryBiasEma);
                 }
 
                 if (ShowAdxOnChart)
@@ -1013,7 +1098,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tradeLineTpTriggerPrice = 0.0;
                 tradeLineSlPrice = 0.0;
                 entryVarianceRandom = new Random(unchecked(Environment.TickCount ^ GetHashCode()));
+                secondaryTakeProfitVarianceRandom = new Random(unchecked(Environment.TickCount ^ GetHashCode() ^ 0x5A17));
                 ResetPendingEntryVariance();
+                ResetSecondaryEntryState();
                 historicalTradeLines.Clear();
                 ApplyInputsForSession(activeSession);
                 UpdateEmaPlotVisibility();
@@ -1183,8 +1270,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && atrMinPass;
             bool flipAdxMinPass = !activeRequireMinAdxForFlips || !inActiveSessionNow || activeFlipAdxThreshold <= 0.0 || adxValue >= activeFlipAdxThreshold;
             bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass && atrMinPass;
-            bool allowLong = activeTradeDirection != SessionTradeDirection.ShortOnly;
-            bool allowShort = activeTradeDirection != SessionTradeDirection.LongOnly;
+            bool directionAllowLong = activeTradeDirection != SessionTradeDirection.ShortOnly;
+            bool directionAllowShort = activeTradeDirection != SessionTradeDirection.LongOnly;
+            double secondaryBiasReferencePrice = Close[0];
+            double secondaryBiasEmaValue = GetSecondaryBiasEmaValue();
+            bool biasAllowLong = IsSecondaryBiasDirectionAllowed(true, secondaryBiasReferencePrice);
+            bool biasAllowShort = IsSecondaryBiasDirectionAllowed(false, secondaryBiasReferencePrice);
+            bool allowLong = directionAllowLong && biasAllowLong;
+            bool allowShort = directionAllowShort && biasAllowShort;
 
             if (!inActiveSessionNow)
                 CancelWorkingEntryOrders();
@@ -1278,6 +1371,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (Close[0] <= emaValue - activeExitCrossPoints)
                 {
+                    CancelSecondaryEntryDoors("ema-cross-long");
                     double effectiveFlipEmaCrossPoints = GetEffectiveFlipEmaCrossPoints();
                     if (DebugLogging && canTradeNow && !distancePasses && emaSlopeShortPass && bodyBelowPercent >= FlipBodyThresholdPercent)
                     {
@@ -1299,7 +1393,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double flipStopLossPoints = GetPlannedStopLossPoints(flipEntryPrice, flipStopPrice);
                     bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
                     bool flipCrossPass = Close[0] <= emaValue - effectiveFlipEmaCrossPoints;
-                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
+                    bool flipEntrySystemPass = AllowsPrimaryEntries();
+                    bool shouldFlip = flipCanTradePass && flipEntrySystemPass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
@@ -1370,6 +1465,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                 }
 
+                if (Close[0] > emaValue - activeExitCrossPoints)
+                    TryProcessSecondaryEntryDoor(true, canTradeNow, allowLong, bodyAbovePercent);
+
                 return;
             }
 
@@ -1423,6 +1521,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (Close[0] >= emaValue + activeExitCrossPoints)
                 {
+                    CancelSecondaryEntryDoors("ema-cross-short");
                     double effectiveFlipEmaCrossPoints = GetEffectiveFlipEmaCrossPoints();
                     if (DebugLogging && canTradeNow && !distancePasses && emaSlopeLongPass && bodyAbovePercent >= FlipBodyThresholdPercent)
                     {
@@ -1444,7 +1543,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     double flipStopLossPoints = GetPlannedStopLossPoints(flipEntryPrice, flipStopPrice);
                     bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
                     bool flipCrossPass = Close[0] >= emaValue + effectiveFlipEmaCrossPoints;
-                    bool shouldFlip = flipCanTradePass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
+                    bool flipEntrySystemPass = AllowsPrimaryEntries();
+                    bool shouldFlip = flipCanTradePass && flipEntrySystemPass && flipDirectionPass && flipDistancePass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
@@ -1515,6 +1615,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                 }
 
+                if (Close[0] < emaValue + activeExitCrossPoints)
+                    TryProcessSecondaryEntryDoor(false, canTradeNow, allowShort, bodyBelowPercent);
+
                 return;
             }
 
@@ -1523,23 +1626,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (longSignalRaw && !allowLong)
                 {
                     LogDebug(string.Format(
-                        "Setup blocked | side=Long close={0:0.00} ema={1:0.00} reasons=DirectionBlocked mode={2}",
+                        "Setup blocked | side=Long close={0:0.00} ema={1:0.00} reasons={2}",
                         Close[0],
                         emaValue,
-                        activeTradeDirection));
+                        GetDirectionalBlockReason(true, directionAllowLong, biasAllowLong, secondaryBiasReferencePrice, secondaryBiasEmaValue)));
                 }
                 else if (shortSignalRaw && !allowShort)
                 {
                     LogDebug(string.Format(
-                        "Setup blocked | side=Short close={0:0.00} ema={1:0.00} reasons=DirectionBlocked mode={2}",
+                        "Setup blocked | side=Short close={0:0.00} ema={1:0.00} reasons={2}",
                         Close[0],
                         emaValue,
-                        activeTradeDirection));
+                        GetDirectionalBlockReason(false, directionAllowShort, biasAllowShort, secondaryBiasReferencePrice, secondaryBiasEmaValue)));
                 }
             }
 
             if (!canTradeNow)
             {
+                CancelSecondaryEntryDoors("gate-blocked");
+
                 if (DebugLogging && Position.MarketPosition == MarketPosition.Flat && (longSignal || shortSignal))
                 {
                     string setupSide = longSignal ? "Long" : "Short";
@@ -1583,12 +1688,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
+            TryProcessSecondaryEntryDoor(true, canTradeNow, allowLong, bodyAbovePercent);
+            TryProcessSecondaryEntryDoor(false, canTradeNow, allowShort, bodyBelowPercent);
+
             if (longSignal)
             {
-                BeginTradeAttempt("Long");
+                bool secondaryEntriesEnabled = AllowsSecondaryEntries();
+                bool primaryEntriesEnabled = AllowsPrimaryEntries();
+
+                if (secondaryEntriesEnabled)
+                    ArmSecondaryEntryDoor(true);
+
                 LogDebug(string.Format("Setup ready | side=Long session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
 
                 CancelOrderIfActive(shortEntryOrder, "OppositeLongSignal");
+                if (!primaryEntriesEnabled)
+                {
+                    LogDebug("Primary LONG skipped | reason=EntrySystemMode");
+                    TryProcessSecondaryEntryDoor(true, canTradeNow, allowLong, bodyAbovePercent);
+                    return;
+                }
+
+                BeginTradeAttempt("Long");
                 bool longOrderActive = IsOrderActive(longEntryOrder) || IsPendingEntryVarianceFor(true);
 
                 if (!longOrderActive)
@@ -1607,6 +1728,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             stopLossPoints,
                             activeMaxStopLossPoints));
                         EndTradeAttempt("max-stop");
+                        TryProcessSecondaryEntryDoor(true, canTradeNow, allowLong, bodyAbovePercent);
                         return;
                     }
                     int qty = GetEntryQuantity();
@@ -1626,13 +1748,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     LogDebug(string.Format("LONG signal skipped | reason=longOrderActive tracked={0}", FormatOrderRef(longEntryOrder)));
                     EndTradeAttempt("entry-order-active");
                 }
+
+                TryProcessSecondaryEntryDoor(true, canTradeNow, allowLong, bodyAbovePercent);
             }
             else if (shortSignal)
             {
-                BeginTradeAttempt("Short");
+                bool secondaryEntriesEnabled = AllowsSecondaryEntries();
+                bool primaryEntriesEnabled = AllowsPrimaryEntries();
+
+                if (secondaryEntriesEnabled)
+                    ArmSecondaryEntryDoor(false);
+
                 LogDebug(string.Format("Setup ready | side=Short session={0} close={1:0.00} ema={2:0.00}", FormatSessionLabel(activeSession), Close[0], emaValue));
 
                 CancelOrderIfActive(longEntryOrder, "OppositeShortSignal");
+                if (!primaryEntriesEnabled)
+                {
+                    LogDebug("Primary SHORT skipped | reason=EntrySystemMode");
+                    TryProcessSecondaryEntryDoor(false, canTradeNow, allowShort, bodyBelowPercent);
+                    return;
+                }
+
+                BeginTradeAttempt("Short");
                 bool shortOrderActive = IsOrderActive(shortEntryOrder) || IsPendingEntryVarianceFor(false);
 
                 if (!shortOrderActive)
@@ -1651,6 +1788,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             stopLossPoints,
                             activeMaxStopLossPoints));
                         EndTradeAttempt("max-stop");
+                        TryProcessSecondaryEntryDoor(false, canTradeNow, allowShort, bodyBelowPercent);
                         return;
                     }
                     int qty = GetEntryQuantity();
@@ -1670,6 +1808,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     LogDebug(string.Format("SHORT signal skipped | reason=shortOrderActive tracked={0}", FormatOrderRef(shortEntryOrder)));
                     EndTradeAttempt("entry-order-active");
                 }
+
+                TryProcessSecondaryEntryDoor(false, canTradeNow, allowShort, bodyBelowPercent);
             }
         }
 
@@ -1759,6 +1899,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         pendingShortEntryIsFlip = false;
                     shortEntryOrder = null;
                 }
+
+                if (orderState != OrderState.Filled && IsSecondaryEntrySignalName(order.Name))
+                    MarkSecondaryEntryExited(order.Name);
             }
 
             TrackProtectiveAndExitOrders(order, orderState);
@@ -1796,12 +1939,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool isEntryOrder = IsEntryOrderName(order.Name);
             if (isEntryOrder && orderState != OrderState.Filled &&
-                (orderState == OrderState.Cancelled || orderState == OrderState.Rejected) &&
-                Position.MarketPosition == MarketPosition.Flat)
+                (orderState == OrderState.Cancelled || orderState == OrderState.Rejected))
             {
-                if (tradeLinesActive)
-                    FinalizeTradeLines();
-                EndTradeAttempt("entry-" + orderState);
+                if (Position.MarketPosition == MarketPosition.Flat)
+                {
+                    if (tradeLinesActive)
+                        FinalizeTradeLines();
+                    EndTradeAttempt("entry-" + orderState);
+                }
+                else if (IsSecondaryEntrySignalName(order.Name))
+                {
+                    EndTradeAttempt("entry-" + orderState);
+                }
             }
 
             if (orderState == OrderState.Cancelled && IsProtectiveOrderName(order.Name))
@@ -1852,28 +2001,54 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (IsEntryOrderName(orderName))
             {
-                currentPositionEntrySignal = orderName;
-                currentPositionIsFlipEntry = IsLongEntryOrderName(orderName) ? pendingLongEntryIsFlip : pendingShortEntryIsFlip;
+                bool entryIsSecondary = IsSecondaryEntrySignalName(orderName);
+                bool secondaryAddOnEntry = entryIsSecondary && Position.Quantity > quantity && !string.IsNullOrEmpty(currentPositionEntrySignal);
+                if (entryIsSecondary)
+                    MarkSecondaryEntryActive(orderName);
+
+                if (!secondaryAddOnEntry)
+                {
+                    currentPositionEntrySignal = orderName;
+                    currentPositionIsFlipEntry = IsLongEntryOrderName(orderName) ? pendingLongEntryIsFlip : pendingShortEntryIsFlip;
+                }
+
                 pendingLongEntryIsFlip = false;
                 pendingShortEntryIsFlip = false;
-                activeStopLossOrder = null;
-                activeProfitTargetOrder = null;
-                activeExitOrder = null;
-                flipBreakEvenActivated = false;
-                takeProfitStopTriggered = false;
-                initialStopPrice = marketPosition == MarketPosition.Long
+
+                double filledStopPrice = marketPosition == MarketPosition.Long
                     ? pendingLongStopForWebhook
                     : marketPosition == MarketPosition.Short
                         ? pendingShortStopForWebhook
                         : 0.0;
-                initialStopPrice = Instrument.MasterInstrument.RoundToTickSize(initialStopPrice);
-                if (initialStopPrice <= 0.0 && tradeLineSlPrice > 0.0)
-                    initialStopPrice = Instrument.MasterInstrument.RoundToTickSize(tradeLineSlPrice);
-                initialStopPrice = BuildFilledStopPrice(marketPosition, fillPrice, initialStopPrice);
-                currentStopPrice = initialStopPrice;
-                ReanchorTradeLinesToEntryFill(marketPosition, fillPrice, currentPositionIsFlipEntry, initialStopPrice);
-                adxDdRiskModeApplied = false;
-                currentPositionEntryBar = CurrentBar;
+                filledStopPrice = Instrument.MasterInstrument.RoundToTickSize(filledStopPrice);
+                if (filledStopPrice <= 0.0 && tradeLineSlPrice > 0.0)
+                    filledStopPrice = Instrument.MasterInstrument.RoundToTickSize(tradeLineSlPrice);
+                filledStopPrice = BuildFilledStopPrice(marketPosition, fillPrice, filledStopPrice);
+
+                if (secondaryAddOnEntry)
+                {
+                    ReanchorTradeLinesToEntryFill(marketPosition, fillPrice, false, filledStopPrice);
+                    LogDebug(string.Format(
+                        "Secondary add-on filled | signal={0} qty={1} positionQty={2} stop={3:0.00}",
+                        orderName,
+                        quantity,
+                        Position.Quantity,
+                        filledStopPrice));
+                }
+                else
+                {
+                    activeStopLossOrder = null;
+                    activeProfitTargetOrder = null;
+                    activeExitOrder = null;
+                    flipBreakEvenActivated = false;
+                    takeProfitStopTriggered = false;
+                    initialStopPrice = filledStopPrice;
+                    currentStopPrice = initialStopPrice;
+                    ReanchorTradeLinesToEntryFill(marketPosition, fillPrice, currentPositionIsFlipEntry, initialStopPrice);
+                    adxDdRiskModeApplied = false;
+                    currentPositionEntryBar = CurrentBar;
+                }
+
                 SessionSlot entrySession = activeSession != SessionSlot.None
                     ? activeSession
                     : DetermineSessionForTime(time);
@@ -1893,13 +2068,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (terminalExitExecution)
             {
+                bool protectiveExecution = IsProtectiveOrderName(orderName);
+                string fromEntrySignal = execution.Order.FromEntrySignal ?? string.Empty;
+                if (protectiveExecution)
+                {
+                    MarkSecondaryEntryExited(fromEntrySignal);
+                    if (marketPosition != MarketPosition.Flat
+                        && string.Equals(currentPositionEntrySignal, fromEntrySignal, StringComparison.Ordinal))
+                    {
+                        if (marketPosition == MarketPosition.Long && secondaryLongPositionActive)
+                            currentPositionEntrySignal = LongSecondaryEntrySignal;
+                        else if (marketPosition == MarketPosition.Short && secondaryShortPositionActive)
+                            currentPositionEntrySignal = ShortSecondaryEntrySignal;
+                    }
+                }
+
                 if (Position.MarketPosition == MarketPosition.Flat && !IsOrderActive(activeExitOrder))
                 {
                     ReleasePositionTrackingAfterTerminalExit(time, orderName);
                 }
                 else
                 {
-                    if (!CheckTerminalExitOverfill("execution-" + orderName))
+                    if (protectiveExecution)
+                        ClearTerminalExitLock();
+                    else if (!CheckTerminalExitOverfill("execution-" + orderName))
                         ArmProtectionAuditGracePeriod("terminal-exit-execution", 2000);
                 }
             }
@@ -2053,6 +2245,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             currentPositionIsFlipEntry = false;
             flipBreakEvenActivated = false;
             takeProfitStopTriggered = false;
+            secondaryLongPositionActive = false;
+            secondaryShortPositionActive = false;
             initialStopPrice = 0.0;
             currentStopPrice = 0.0;
             adxDdRiskModeApplied = false;
@@ -2120,16 +2314,428 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 || stopLossPoints <= activeMaxStopLossPoints + TickSize * 0.5;
         }
 
+        private bool AllowsPrimaryEntries()
+        {
+            return activeEntrySystemMode == EntrySystemMode.Primary
+                || activeEntrySystemMode == EntrySystemMode.Both;
+        }
+
+        private bool AllowsSecondaryEntries()
+        {
+            return activeEntrySystemMode == EntrySystemMode.Secondary
+                || activeEntrySystemMode == EntrySystemMode.Both;
+        }
+
+        private bool IsSecondaryBiasEnabled()
+        {
+            return SecondaryBiasEmaPeriod > 0 && secondaryBiasEma != null;
+        }
+
+        private double GetSecondaryBiasEmaValue()
+        {
+            return IsSecondaryBiasEnabled() ? secondaryBiasEma[0] : 0.0;
+        }
+
+        private bool IsSecondaryBiasDirectionAllowed(bool isLong, double referencePrice)
+        {
+            if (!IsSecondaryBiasEnabled())
+                return true;
+
+            double biasValue = secondaryBiasEma[0];
+            if (biasValue <= 0.0)
+                return true;
+
+            return isLong
+                ? referencePrice >= biasValue
+                : referencePrice <= biasValue;
+        }
+
+        private string GetDirectionalBlockReason(bool isLong, bool directionPass, bool biasPass, double referencePrice, double biasValue)
+        {
+            var reasons = new List<string>();
+
+            if (!directionPass)
+                reasons.Add(string.Format("DirectionBlocked mode={0}", activeTradeDirection));
+
+            if (!biasPass && IsSecondaryBiasEnabled())
+            {
+                reasons.Add(string.Format(
+                    "SecondaryBias side={0} price={1:0.00} ema={2:0.00}",
+                    isLong ? "Long" : "Short",
+                    referencePrice,
+                    biasValue));
+            }
+
+            return reasons.Count > 0 ? string.Join(" | ", reasons) : "UnknownDirectionGate";
+        }
+
+        private bool IsSecondaryEntrySignalName(string orderName)
+        {
+            return string.Equals(orderName, LongSecondaryEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, ShortSecondaryEntrySignal, StringComparison.Ordinal);
+        }
+
+        private bool HasSecondaryEntryExposure()
+        {
+            return secondaryLongPositionActive || secondaryShortPositionActive;
+        }
+
+        private void ResetSecondaryEntryState()
+        {
+            secondaryLongDoorOpen = false;
+            secondaryShortDoorOpen = false;
+            secondaryLongDoorSession = SessionSlot.None;
+            secondaryShortDoorSession = SessionSlot.None;
+            secondaryLongDoorSignalBar = -1;
+            secondaryShortDoorSignalBar = -1;
+            secondaryLongDoorTakeProfitVariancePoints = 0.0;
+            secondaryShortDoorTakeProfitVariancePoints = 0.0;
+            secondaryLongPositionActive = false;
+            secondaryShortPositionActive = false;
+        }
+
+        private void CancelSecondaryEntryDoors(string reason)
+        {
+            if (DebugLogging && (secondaryLongDoorOpen || secondaryShortDoorOpen))
+            {
+                LogDebug(string.Format(
+                    "Secondary door cancelled | reason={0} longDoor={1} shortDoor={2}",
+                    reason,
+                    secondaryLongDoorOpen,
+                    secondaryShortDoorOpen));
+            }
+
+            secondaryLongDoorOpen = false;
+            secondaryShortDoorOpen = false;
+            secondaryLongDoorSession = SessionSlot.None;
+            secondaryShortDoorSession = SessionSlot.None;
+            secondaryLongDoorSignalBar = -1;
+            secondaryShortDoorSignalBar = -1;
+            secondaryLongDoorTakeProfitVariancePoints = 0.0;
+            secondaryShortDoorTakeProfitVariancePoints = 0.0;
+            CancelSecondaryEntryOrderIfActive(true, reason);
+            CancelSecondaryEntryOrderIfActive(false, reason);
+        }
+
+        private void ArmSecondaryEntryDoor(bool isLong)
+        {
+            if (!AllowsSecondaryEntries() || activeSession == SessionSlot.None || GetSecondaryEntryQuantity() <= 0)
+                return;
+
+            if (isLong)
+            {
+                bool newDoor = !secondaryLongDoorOpen || secondaryLongDoorSession != activeSession;
+                secondaryLongDoorOpen = true;
+                secondaryLongDoorSession = activeSession;
+                secondaryLongDoorSignalBar = CurrentBar;
+                if (newDoor)
+                    secondaryLongDoorTakeProfitVariancePoints = GetSecondaryTakeProfitVariancePoints();
+                secondaryShortDoorOpen = false;
+                secondaryShortDoorSession = SessionSlot.None;
+                secondaryShortDoorSignalBar = -1;
+                secondaryShortDoorTakeProfitVariancePoints = 0.0;
+                CancelSecondaryEntryOrderIfActive(false, "opposite-secondary-door");
+            }
+            else
+            {
+                bool newDoor = !secondaryShortDoorOpen || secondaryShortDoorSession != activeSession;
+                secondaryShortDoorOpen = true;
+                secondaryShortDoorSession = activeSession;
+                secondaryShortDoorSignalBar = CurrentBar;
+                if (newDoor)
+                    secondaryShortDoorTakeProfitVariancePoints = GetSecondaryTakeProfitVariancePoints();
+                secondaryLongDoorOpen = false;
+                secondaryLongDoorSession = SessionSlot.None;
+                secondaryLongDoorSignalBar = -1;
+                secondaryLongDoorTakeProfitVariancePoints = 0.0;
+                CancelSecondaryEntryOrderIfActive(true, "opposite-secondary-door");
+            }
+
+            LogDebug(string.Format(
+                "Secondary door armed | side={0} session={1} bar={2} tpVariance={3:0.00}",
+                isLong ? "Long" : "Short",
+                FormatSessionLabel(activeSession),
+                CurrentBar,
+                isLong ? secondaryLongDoorTakeProfitVariancePoints : secondaryShortDoorTakeProfitVariancePoints));
+        }
+
+        private bool TryProcessSecondaryEntryDoor(
+            bool isLong,
+            bool canTradeNow,
+            bool directionPass,
+            double bodySidePercent)
+        {
+            bool doorOpen = isLong ? secondaryLongDoorOpen : secondaryShortDoorOpen;
+            if (!doorOpen)
+                return false;
+
+            SessionSlot doorSession = isLong ? secondaryLongDoorSession : secondaryShortDoorSession;
+            if (!IsSecondaryDoorStillValid(isLong, doorSession, canTradeNow, directionPass, bodySidePercent))
+            {
+                CancelSecondaryEntryDoors("door-invalid");
+                return false;
+            }
+
+            if (!CanSubmitSecondaryEntry(isLong))
+                return false;
+
+            SubmitOrUpdateSecondaryEntry(isLong);
+            return true;
+        }
+
+        private bool IsSecondaryDoorStillValid(
+            bool isLong,
+            SessionSlot doorSession,
+            bool canTradeNow,
+            bool directionPass,
+            double bodySidePercent)
+        {
+            if (!AllowsSecondaryEntries())
+                return false;
+
+            if (GetSecondaryEntryQuantity() <= 0)
+                return false;
+
+            if (!canTradeNow || !directionPass || bodySidePercent <= 0.0)
+                return false;
+
+            if (activeSession == SessionSlot.None || doorSession == SessionSlot.None || activeSession != doorSession)
+                return false;
+
+            if (isLong && Position.MarketPosition == MarketPosition.Short)
+                return false;
+
+            if (!isLong && Position.MarketPosition == MarketPosition.Long)
+                return false;
+
+            return true;
+        }
+
+        private bool HasActiveSecondaryEntryOrder(bool isLong)
+        {
+            Order order = isLong ? longEntryOrder : shortEntryOrder;
+            return IsOrderActive(order) && IsSecondaryEntrySignalName(order.Name);
+        }
+
+        private bool CanSubmitSecondaryEntry(bool isLong)
+        {
+            int secondaryQuantity = GetSecondaryEntryQuantity();
+            if (secondaryQuantity <= 0 || activeEma == null || IsTerminalExitInFlight() || IsOrderActive(activeExitOrder))
+                return false;
+
+            if (activeSecondaryEntryTakeProfitDistanceFromEmaPoints <= 0.0)
+                return false;
+
+            if (activeEntrySystemMode == EntrySystemMode.Secondary && Position.MarketPosition != MarketPosition.Flat)
+                return false;
+
+            if (activeEntrySystemMode == EntrySystemMode.Both
+                && Position.MarketPosition == (isLong ? MarketPosition.Long : MarketPosition.Short)
+                && Position.Quantity >= GetEntryQuantity() + secondaryQuantity)
+                return false;
+
+            if (isLong)
+            {
+                if (secondaryLongPositionActive || Position.MarketPosition == MarketPosition.Short)
+                    return false;
+
+                return !IsOrderActive(longEntryOrder) || HasActiveSecondaryEntryOrder(true);
+            }
+
+            if (secondaryShortPositionActive || Position.MarketPosition == MarketPosition.Long)
+                return false;
+
+            return !IsOrderActive(shortEntryOrder) || HasActiveSecondaryEntryOrder(false);
+        }
+
+        private void SubmitOrUpdateSecondaryEntry(bool isLong)
+        {
+            double emaValue = activeEma[0];
+            double entryPrice = BuildSecondaryEntryLimitPrice(isLong, emaValue);
+            double stopPrice = BuildSecondaryEntryStopPrice(isLong, emaValue, entryPrice);
+            double takeProfitPrice = BuildSecondaryEntryTakeProfitPrice(isLong, emaValue, entryPrice);
+            int qty = GetSecondaryEntryQuantity();
+            string signalName = isLong ? LongSecondaryEntrySignal : ShortSecondaryEntrySignal;
+            bool updating = HasActiveSecondaryEntryOrder(isLong);
+
+            if (!SecondaryEntryPricesAreValid(isLong, entryPrice, stopPrice, takeProfitPrice))
+            {
+                LogDebug(string.Format(
+                    "Secondary skipped | reason=InvalidPrices side={0} ema={1:0.00} entry={2:0.00} stop={3:0.00} target={4:0.00}",
+                    isLong ? "Long" : "Short",
+                    emaValue,
+                    entryPrice,
+                    stopPrice,
+                    takeProfitPrice));
+                return;
+            }
+
+            if (!updating && RequireEntryConfirmation && !ShowEntryConfirmation(isLong ? "Long Secondary" : "Short Secondary", entryPrice, qty))
+            {
+                LogDebug(string.Format("Entry confirmation declined | {0} secondary.", isLong ? "LONG" : "SHORT"));
+                return;
+            }
+
+            if (!updating)
+                BeginTradeAttempt(isLong ? "LongSecondary" : "ShortSecondary");
+
+            if (isLong)
+            {
+                pendingLongStopForWebhook = stopPrice;
+                pendingLongEntryIsFlip = false;
+                SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
+                SetProfitTarget(signalName, CalculationMode.Price, takeProfitPrice);
+                if (!updating)
+                {
+                    SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, false, qty);
+                    StartTradeLines(entryPrice, stopPrice, takeProfitPrice, true);
+                    SubmitLongEntryOrder(qty, entryPrice, false, signalName);
+                }
+                else
+                {
+                    ChangeOrder(longEntryOrder, qty, entryPrice, 0.0);
+                }
+            }
+            else
+            {
+                pendingShortStopForWebhook = stopPrice;
+                pendingShortEntryIsFlip = false;
+                SetStopLoss(signalName, CalculationMode.Price, stopPrice, false);
+                SetProfitTarget(signalName, CalculationMode.Price, takeProfitPrice);
+                if (!updating)
+                {
+                    SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, false, qty);
+                    StartTradeLines(entryPrice, stopPrice, takeProfitPrice, true);
+                    SubmitShortEntryOrder(qty, entryPrice, false, signalName);
+                }
+                else
+                {
+                    ChangeOrder(shortEntryOrder, qty, entryPrice, 0.0);
+                }
+            }
+
+            LogDebug(string.Format(
+                "{0} {1} secondary limit | session={2} ema={3:0.00} entry={4:0.00} stop={5:0.00} target={6:0.00} qty={7} tpVariance={8:0.00}",
+                updating ? "Move" : "Place",
+                isLong ? "LONG" : "SHORT",
+                FormatSessionLabel(activeSession),
+                emaValue,
+                entryPrice,
+                stopPrice,
+                takeProfitPrice,
+                qty,
+                isLong ? secondaryLongDoorTakeProfitVariancePoints : secondaryShortDoorTakeProfitVariancePoints));
+        }
+
+        private double BuildSecondaryEntryLimitPrice(bool isLong, double emaValue)
+        {
+            double distance = Math.Max(0.0, activeSecondaryEntryLimitDistanceFromEmaPoints);
+            double raw = isLong
+                ? emaValue + distance
+                : emaValue - distance;
+
+            return Instrument.MasterInstrument.RoundToTickSize(raw);
+        }
+
+        private double BuildSecondaryEntryStopPrice(bool isLong, double emaValue, double entryPrice)
+        {
+            double distance = Math.Max(0.0, activeSecondaryEntryStopDistanceFromEmaPoints);
+            double raw = isLong
+                ? emaValue - distance
+                : emaValue + distance;
+
+            double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
+            if (isLong && rounded >= entryPrice)
+                rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
+            else if (!isLong && rounded <= entryPrice)
+                rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
+
+            return rounded;
+        }
+
+        private double BuildSecondaryEntryTakeProfitPrice(bool isLong, double emaValue, double entryPrice)
+        {
+            double baseDistance = Math.Max(0.0, activeSecondaryEntryTakeProfitDistanceFromEmaPoints);
+            double variance = Math.Max(0.0, isLong ? secondaryLongDoorTakeProfitVariancePoints : secondaryShortDoorTakeProfitVariancePoints);
+            double raw = isLong
+                ? emaValue + baseDistance + variance
+                : emaValue - baseDistance - variance;
+
+            double rounded = Instrument.MasterInstrument.RoundToTickSize(raw);
+            if (isLong && rounded <= entryPrice)
+                rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TickSize);
+            else if (!isLong && rounded >= entryPrice)
+                rounded = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TickSize);
+
+            return rounded;
+        }
+
+        private bool SecondaryEntryPricesAreValid(bool isLong, double entryPrice, double stopPrice, double takeProfitPrice)
+        {
+            if (entryPrice <= 0.0 || stopPrice <= 0.0 || takeProfitPrice <= 0.0)
+                return false;
+
+            if (isLong)
+                return stopPrice < entryPrice && takeProfitPrice > entryPrice;
+
+            return stopPrice > entryPrice && takeProfitPrice < entryPrice;
+        }
+
+        private double GetSecondaryTakeProfitVariancePoints()
+        {
+            double maxVariance = Math.Max(0.0, activeSecondaryTakeProfitVariancePoints);
+            if (maxVariance <= 0.0)
+                return 0.0;
+
+            if (secondaryTakeProfitVarianceRandom == null)
+                secondaryTakeProfitVarianceRandom = new Random(unchecked(Environment.TickCount ^ GetHashCode() ^ 0x5A17));
+
+            return Instrument.MasterInstrument.RoundToTickSize(secondaryTakeProfitVarianceRandom.NextDouble() * maxVariance);
+        }
+
+        private void CancelSecondaryEntryOrderIfActive(bool isLong, string reason)
+        {
+            Order order = isLong ? longEntryOrder : shortEntryOrder;
+            if (IsOrderActive(order) && IsSecondaryEntrySignalName(order.Name))
+                CancelOrderIfActive(order, reason);
+        }
+
+        private void MarkSecondaryEntryActive(string orderName)
+        {
+            if (string.Equals(orderName, LongSecondaryEntrySignal, StringComparison.Ordinal))
+                secondaryLongPositionActive = true;
+            else if (string.Equals(orderName, ShortSecondaryEntrySignal, StringComparison.Ordinal))
+                secondaryShortPositionActive = true;
+        }
+
+        private void MarkSecondaryEntryExited(string fromEntrySignal)
+        {
+            if (string.Equals(fromEntrySignal, LongSecondaryEntrySignal, StringComparison.Ordinal))
+            {
+                secondaryLongPositionActive = false;
+                if (secondaryLongDoorOpen)
+                    secondaryLongDoorTakeProfitVariancePoints = GetSecondaryTakeProfitVariancePoints();
+            }
+            else if (string.Equals(fromEntrySignal, ShortSecondaryEntrySignal, StringComparison.Ordinal))
+            {
+                secondaryShortPositionActive = false;
+                if (secondaryShortDoorOpen)
+                    secondaryShortDoorTakeProfitVariancePoints = GetSecondaryTakeProfitVariancePoints();
+            }
+        }
+
         private bool IsLongEntryOrderName(string orderName)
         {
             return string.Equals(orderName, LongEntrySignal, StringComparison.Ordinal)
-                || string.Equals(orderName, LongFlipEntrySignal, StringComparison.Ordinal);
+                || string.Equals(orderName, LongFlipEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, LongSecondaryEntrySignal, StringComparison.Ordinal);
         }
 
         private bool IsShortEntryOrderName(string orderName)
         {
             return string.Equals(orderName, ShortEntrySignal, StringComparison.Ordinal)
-                || string.Equals(orderName, ShortFlipEntrySignal, StringComparison.Ordinal);
+                || string.Equals(orderName, ShortFlipEntrySignal, StringComparison.Ordinal)
+                || string.Equals(orderName, ShortSecondaryEntrySignal, StringComparison.Ordinal);
         }
 
         private string GetOpenLongEntrySignal()
@@ -2190,12 +2796,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             MarketPosition exitSide = Position.MarketPosition;
             string exitSignal = BuildExitSignalName(reason);
+            bool exitAllEntries = HasSecondaryEntryExposure();
             MarkTerminalExitPending(reason, exitSide);
             ArmProtectionAuditGracePeriod("terminal-exit-" + reason, 10000);
 
             if (exitSide == MarketPosition.Long)
             {
-                if (useEntrySignal)
+                if (useEntrySignal && !exitAllEntries)
                     ExitLong(exitSignal, GetOpenLongEntrySignal());
                 else
                     ExitLong(exitSignal);
@@ -2204,7 +2811,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (exitSide == MarketPosition.Short)
             {
-                if (useEntrySignal)
+                if (useEntrySignal && !exitAllEntries)
                     ExitShort(exitSignal, GetOpenShortEntrySignal());
                 else
                     ExitShort(exitSignal);
@@ -3170,7 +3777,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private SessionSlot DetermineSessionForTime(DateTime time)
         {
-            TimeSpan now = time.TimeOfDay;
+            DateTime gateTime = GetHistoricalTimeGateTime(time);
+            TimeSpan now = gateTime.TimeOfDay;
             SessionSlot nextSlot = SessionSlot.None;
             DateTime nextStart = DateTime.MaxValue;
             bool hasConfiguredSession = false;
@@ -3179,15 +3787,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 TimeSpan start;
                 TimeSpan end;
-                if (!IsSessionConfigured(slot) || !TryGetSessionWindow(slot, time, out start, out end))
+                if (!IsSessionConfigured(slot) || !TryGetSessionWindow(slot, gateTime, out start, out end))
                     continue;
 
                 hasConfiguredSession = true;
                 if (IsTimeInRange(now, start, end))
                     return slot;
 
-                DateTime candidateStart = time.Date + start;
-                if (candidateStart <= time)
+                DateTime candidateStart = gateTime.Date + start;
+                if (candidateStart <= gateTime)
                     candidateStart = candidateStart.AddDays(1);
 
                 if (candidateStart < nextStart)
@@ -3267,6 +3875,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = AsiaContracts;
                     activeTradeDirection = AsiaTradeDirection;
+                    activeEntrySystemMode = AsiaEntrySystemMode;
+                    activeSecondaryContracts = AsiaSecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = AsiaMaxEntryDistanceFromEmaPoints;
@@ -3291,6 +3901,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = AsiaAdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = AsiaAdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = AsiaHorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = AsiaSecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = AsiaSecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = AsiaSecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = AsiaSecondaryTakeProfitVariancePoints;
                     break;
 
                 case SessionSlot.Asia2:
@@ -3307,6 +3921,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = Asia2Contracts;
                     activeTradeDirection = Asia2TradeDirection;
+                    activeEntrySystemMode = Asia2EntrySystemMode;
+                    activeSecondaryContracts = Asia2SecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = Asia2EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = Asia2MaxEntryDistanceFromEmaPoints;
@@ -3331,6 +3947,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = Asia2AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = Asia2AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = Asia2HorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = Asia2SecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = Asia2SecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = Asia2SecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = Asia2SecondaryTakeProfitVariancePoints;
                     break;
 
                 case SessionSlot.Asia3:
@@ -3347,6 +3967,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = Asia3Contracts;
                     activeTradeDirection = Asia3TradeDirection;
+                    activeEntrySystemMode = Asia3EntrySystemMode;
+                    activeSecondaryContracts = Asia3SecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = Asia3EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = Asia3MaxEntryDistanceFromEmaPoints;
@@ -3371,6 +3993,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = Asia3AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = Asia3AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = Asia3HorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = Asia3SecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = Asia3SecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = Asia3SecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = Asia3SecondaryTakeProfitVariancePoints;
                     break;
 
                 case SessionSlot.London:
@@ -3387,6 +4013,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = LondonContracts;
                     activeTradeDirection = LondonTradeDirection;
+                    activeEntrySystemMode = LondonEntrySystemMode;
+                    activeSecondaryContracts = LondonSecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = LondonEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = LondonMaxEntryDistanceFromEmaPoints;
@@ -3411,6 +4039,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = LondonAdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = LondonAdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = LondonHorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = LondonSecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = LondonSecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = LondonSecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = LondonSecondaryTakeProfitVariancePoints;
                     break;
 
                 case SessionSlot.London2:
@@ -3427,6 +4059,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = London2Contracts;
                     activeTradeDirection = London2TradeDirection;
+                    activeEntrySystemMode = London2EntrySystemMode;
+                    activeSecondaryContracts = London2SecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = London2EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = London2MaxEntryDistanceFromEmaPoints;
@@ -3451,6 +4085,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = London2AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = London2AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = London2HorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = London2SecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = London2SecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = London2SecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = London2SecondaryTakeProfitVariancePoints;
                     break;
 
                 case SessionSlot.London3:
@@ -3467,6 +4105,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = London3Contracts;
                     activeTradeDirection = London3TradeDirection;
+                    activeEntrySystemMode = London3EntrySystemMode;
+                    activeSecondaryContracts = London3SecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = London3EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = London3MaxEntryDistanceFromEmaPoints;
@@ -3491,6 +4131,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = London3AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = London3AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = London3HorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = London3SecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = London3SecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = London3SecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = London3SecondaryTakeProfitVariancePoints;
                     break;
 
                 case SessionSlot.NewYork:
@@ -3507,6 +4151,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYorkContracts;
                     activeTradeDirection = NewYorkTradeDirection;
+                    activeEntrySystemMode = NewYorkEntrySystemMode;
+                    activeSecondaryContracts = NewYorkSecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = NewYorkMaxEntryDistanceFromEmaPoints;
@@ -3531,6 +4177,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = NewYorkAdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = NewYorkAdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = NewYorkHorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = NewYorkSecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = NewYorkSecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = NewYorkSecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = NewYorkSecondaryTakeProfitVariancePoints;
                     break;
 
                 case SessionSlot.NewYork2:
@@ -3547,6 +4197,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork2Contracts;
                     activeTradeDirection = NewYork2TradeDirection;
+                    activeEntrySystemMode = NewYork2EntrySystemMode;
+                    activeSecondaryContracts = NewYork2SecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = NewYork2EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = NewYork2MaxEntryDistanceFromEmaPoints;
@@ -3571,6 +4223,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = NewYork2AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = NewYork2AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = NewYork2HorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = NewYork2SecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = NewYork2SecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = NewYork2SecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = NewYork2SecondaryTakeProfitVariancePoints;
                     break;
 
                 case SessionSlot.NewYork3:
@@ -3587,6 +4243,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork3Contracts;
                     activeTradeDirection = NewYork3TradeDirection;
+                    activeEntrySystemMode = NewYork3EntrySystemMode;
+                    activeSecondaryContracts = NewYork3SecondaryContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = NewYork3EmaMinSlopePointsPerBar;
                     activeMaxEntryDistanceFromEmaPoints = NewYork3MaxEntryDistanceFromEmaPoints;
@@ -3611,6 +4269,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = NewYork3AdxDdRiskModeStopLossPoints;
                     activeAdxDdRiskModeTakeProfitPoints = NewYork3AdxDdRiskModeTakeProfitPoints;
                     activeHorizontalExitBars = NewYork3HorizontalExitBars;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = NewYork3SecondaryEntryLimitDistanceFromEmaPoints;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = NewYork3SecondaryEntryStopDistanceFromEmaPoints;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = NewYork3SecondaryEntryTakeProfitDistanceFromEmaPoints;
+                    activeSecondaryTakeProfitVariancePoints = NewYork3SecondaryTakeProfitVariancePoints;
                     break;
 
                 default:
@@ -3626,6 +4288,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxAbsoluteExitLevel = 0.0;
                     activeContracts = 0;
                     activeTradeDirection = SessionTradeDirection.Both;
+                    activeEntrySystemMode = EntrySystemMode.Primary;
+                    activeSecondaryContracts = 0;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
                     activeEmaMinSlopePointsPerBar = 0.0;
                     activeMaxEntryDistanceFromEmaPoints = 0.0;
@@ -3650,6 +4314,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxDdRiskModeStopLossPoints = 0.0;
                     activeAdxDdRiskModeTakeProfitPoints = 0.0;
                     activeHorizontalExitBars = 0;
+                    activeSecondaryEntryLimitDistanceFromEmaPoints = 0.0;
+                    activeSecondaryEntryStopDistanceFromEmaPoints = 0.0;
+                    activeSecondaryEntryTakeProfitDistanceFromEmaPoints = 0.0;
+                    activeSecondaryTakeProfitVariancePoints = 0.0;
                     break;
             }
         }
@@ -3795,7 +4463,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EmaPeriod,
                 NewYorkEmaPeriod,
                 NewYork2EmaPeriod,
-                NewYork3EmaPeriod
+                NewYork3EmaPeriod,
+                Math.Max(1, SecondaryBiasEmaPeriod)
             }.Max();
         }
 
@@ -3870,11 +4539,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsForceCloseTimeReached(DateTime barTime)
         {
+            DateTime gateTime = GetHistoricalTimeGateTime(barTime);
             DateTime forceCloseDateTime;
-            if (!TryGetForceCloseDateTime(barTime, out forceCloseDateTime))
+            if (!TryGetForceCloseDateTime(gateTime, out forceCloseDateTime))
                 return false;
 
-            return barTime >= forceCloseDateTime;
+            return gateTime >= forceCloseDateTime;
         }
 
         private bool IsTemporaryBlockedTradingDate(DateTime barTime)
@@ -3912,7 +4582,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!TryParseLondon3FlatByTime(out flatByTime))
                 return false;
 
-            return barTime.TimeOfDay >= flatByTime;
+            return GetHistoricalTimeGateTime(barTime).TimeOfDay >= flatByTime;
         }
 
         private bool TryParseConfiguredForceCloseTime(out TimeSpan forceCloseTime)
@@ -4022,6 +4692,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void QueueOrSubmitInitialEntryWithVariance(bool isLong, int quantity, double entryPrice, double stopPrice, double takeProfitPoints, bool isMarketEntry, string signalName)
         {
+            if (!AllowsPrimaryEntries())
+            {
+                LogDebug(string.Format(
+                    "Primary {0} skipped | reason=EntrySystemMode signal={1}",
+                    isLong ? "LONG" : "SHORT",
+                    string.IsNullOrWhiteSpace(signalName) ? (isLong ? LongEntrySignal : ShortEntrySignal) : signalName));
+                return;
+            }
+
             if (!ShouldUseEntryVariance(isMarketEntry))
             {
                 SubmitInitialEntryNow(isLong, quantity, entryPrice, stopPrice, takeProfitPoints, isMarketEntry, signalName);
@@ -4094,6 +4773,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (DateTime.UtcNow < pendingEntryVarianceDueUtc)
                 return;
+
+            if (!AllowsPrimaryEntries())
+            {
+                CancelPendingEntryVariance("entry-system-mode");
+                return;
+            }
 
             if (Position.MarketPosition != MarketPosition.Flat)
             {
@@ -4171,6 +4856,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             double entryPrice = GetEntryVarianceMarketEntryPrice(lastPrice);
+            if (!IsSecondaryBiasDirectionAllowed(pendingEntryVarianceIsLong, entryPrice))
+            {
+                LogDebug(string.Format(
+                    "Entry variance cancelled | reason=SecondaryBias side={0} entry={1:0.00} biasEma={2:0.00}",
+                    pendingEntryVarianceIsLong ? "Long" : "Short",
+                    entryPrice,
+                    GetSecondaryBiasEmaValue()));
+                CancelPendingEntryVariance("secondary-bias");
+                return;
+            }
+
             double stopPrice = pendingEntryVarianceIsLong
                 ? BuildLongEntryStopPrice(entryPrice, activeEma[0], Time[0])
                 : BuildShortEntryStopPrice(entryPrice, activeEma[0], Time[0]);
@@ -4218,6 +4914,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string resolvedSignalName = string.IsNullOrWhiteSpace(signalName)
                 ? (isLong ? LongEntrySignal : ShortEntrySignal)
                 : signalName;
+
+            if (!AllowsPrimaryEntries())
+            {
+                LogDebug(string.Format(
+                    "Primary {0} submit blocked | reason=EntrySystemMode signal={1}",
+                    isLong ? "LONG" : "SHORT",
+                    resolvedSignalName));
+                return;
+            }
+
             double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, isLong);
 
             if (isLong)
@@ -4275,6 +4981,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void CancelWorkingEntryOrders()
         {
             CancelPendingEntryVariance("cancel-working-entries");
+            CancelSecondaryEntryDoors("cancel-working-entries");
             CancelOrderIfActive(longEntryOrder, "CancelWorkingEntries");
             CancelOrderIfActive(shortEntryOrder, "CancelWorkingEntries");
         }
@@ -4324,7 +5031,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (orderState == OrderState.Filled)
                 {
-                    MarkTerminalExitPending("protective-" + orderName, Position.MarketPosition);
+                    if (!HasSecondaryEntryExposure())
+                        MarkTerminalExitPending("protective-" + orderName, Position.MarketPosition);
                     ArmProtectionAuditGracePeriod("protective-filled", 2000);
                 }
             }
@@ -4707,6 +5415,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void SubmitLongEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
         {
+            if (!AllowsPrimaryEntries() && !string.Equals(signalName, LongSecondaryEntrySignal, StringComparison.Ordinal))
+            {
+                LogDebug(string.Format(
+                    "Long entry submit blocked | reason=EntrySystemMode signal={0}",
+                    signalName ?? string.Empty));
+                return;
+            }
+
             if (isMarketEntry)
                 EnterLong(quantity, signalName);
             else
@@ -4715,6 +5431,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void SubmitShortEntryOrder(int quantity, double entryPrice, bool isMarketEntry, string signalName)
         {
+            if (!AllowsPrimaryEntries() && !string.Equals(signalName, ShortSecondaryEntrySignal, StringComparison.Ordinal))
+            {
+                LogDebug(string.Format(
+                    "Short entry submit blocked | reason=EntrySystemMode signal={0}",
+                    signalName ?? string.Empty));
+                return;
+            }
+
             if (isMarketEntry)
                 EnterShort(quantity, signalName);
             else
@@ -4739,7 +5463,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (activeHvSlStartTime == activeHvSlEndTime)
                 return false;
 
-            return IsTimeInRange(time.TimeOfDay, activeHvSlStartTime, activeHvSlEndTime);
+            return IsTimeInRange(GetHistoricalTimeGateTime(time).TimeOfDay, activeHvSlStartTime, activeHvSlEndTime);
         }
 
         private double GetAdxSlopePoints()
@@ -4952,12 +5676,35 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool TimeInSession(SessionSlot slot, DateTime time)
         {
+            DateTime gateTime = GetHistoricalTimeGateTime(time);
             TimeSpan start;
             TimeSpan end;
-            if (!TryGetSessionWindow(slot, time, out start, out end))
+            if (!TryGetSessionWindow(slot, gateTime, out start, out end))
                 return false;
 
-            return IsTimeInRange(time.TimeOfDay, start, end);
+            return IsTimeInRange(gateTime.TimeOfDay, start, end);
+        }
+
+        private DateTime GetHistoricalTimeGateTime(DateTime time)
+        {
+            return ShouldShiftHistoricalTimeGates()
+                ? time.AddMinutes(GetHistoricalTimeGateShiftMinutes())
+                : time;
+        }
+
+        private bool ShouldShiftHistoricalTimeGates()
+        {
+            return State == State.Historical
+                && BarsPeriod != null
+                && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute
+                && BarsPeriod.Value > 0;
+        }
+
+        private int GetHistoricalTimeGateShiftMinutes()
+        {
+            return BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute && BarsPeriod.Value > 0
+                ? BarsPeriod.Value
+                : 5;
         }
 
         private bool TryGetSessionWindow(SessionSlot slot, out TimeSpan start, out TimeSpan end)
@@ -5259,7 +6006,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsAsiaSundayBlocked(SessionSlot slot, DateTime time)
         {
-            if (!IsAsiaFamily(slot) || time.DayOfWeek != DayOfWeek.Sunday)
+            DateTime gateTime = GetHistoricalTimeGateTime(time);
+            if (!IsAsiaFamily(slot) || gateTime.DayOfWeek != DayOfWeek.Sunday)
                 return false;
 
             switch (slot)
@@ -5318,7 +6066,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!TryGetNewYorkSkipWindow(slot, out skipStart, out skipEnd))
                 return false;
 
-            TimeSpan now = time.TimeOfDay;
+            TimeSpan now = GetHistoricalTimeGateTime(time).TimeOfDay;
             if (skipStart < skipEnd)
                 return now >= skipStart && now <= skipEnd;
 
@@ -5970,19 +6718,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!UseNewsSkip)
                 return false;
 
-            EnsureNewsDatesInitialized(time);
+            DateTime gateTime = GetHistoricalTimeGateTime(time);
+            EnsureNewsDatesInitialized(gateTime);
             if (!newsDatesAvailable)
                 return false;
 
             for (int i = 0; i < NewsDates.Count; i++)
             {
                 DateTime newsTime = NewsDates[i];
-                if (newsTime.Date != time.Date)
+                if (newsTime.Date != gateTime.Date)
                     continue;
 
                 DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
                 DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
-                if (time >= windowStart && time <= windowEnd)
+                if (gateTime >= windowStart && gateTime <= windowEnd)
                     return true;
             }
 
@@ -5991,7 +6740,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsSameNewsWeek(DateTime first, DateTime second)
         {
-            return GetWeekStart(GetEtDateForNewsReference(first)) == GetWeekStart(GetEtDateForNewsReference(second));
+            return GetWeekStart(GetEtDateForNewsReference(GetHistoricalTimeGateTime(first))) == GetWeekStart(GetEtDateForNewsReference(GetHistoricalTimeGateTime(second)));
         }
 
         private bool GetSessionClosed(SessionSlot slot)
@@ -6593,8 +7342,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double emaValue = activeEma[0];
             bool bullish = closePrice > openPrice;
             bool bearish = closePrice < openPrice;
-            bool allowLong = activeTradeDirection != SessionTradeDirection.ShortOnly;
-            bool allowShort = activeTradeDirection != SessionTradeDirection.LongOnly;
+            bool allowLong = activeTradeDirection != SessionTradeDirection.ShortOnly
+                && IsSecondaryBiasDirectionAllowed(true, closePrice);
+            bool allowShort = activeTradeDirection != SessionTradeDirection.LongOnly
+                && IsSecondaryBiasDirectionAllowed(false, closePrice);
 
             if (allowLong && bullish && GetBodyPercentAboveEma(openPrice, closePrice, emaValue) > 0.0 && !IsOrderActive(longEntryOrder))
             {
@@ -6902,6 +7653,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             int baseQty = Math.Max(0, activeContracts);
             return baseQty;
+        }
+
+        private int GetSecondaryEntryQuantity()
+        {
+            return Math.Max(0, activeSecondaryContracts);
         }
 
         private double GetWebhookTakeProfitPrice(double entryPrice, double takeProfitPoints, bool isLong)
@@ -8809,6 +9565,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 1 entries and flips while ATR(14) is below this value.", GroupName = "Asia 1", Order = 37)]
         public double AsiaAtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "Asia 1", Order = 38)]
+        public EntrySystemMode AsiaEntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in Asia 1. 0 disables secondary entries for this session.", GroupName = "Asia 1", Order = 39)]
+        public int AsiaSecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "Asia 1", Order = 40)]
+        public double AsiaSecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "Asia 1", Order = 41)]
+        public double AsiaSecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "Asia 1", Order = 42)]
+        public double AsiaSecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "Asia 1", Order = 43)]
+        public double AsiaSecondaryTakeProfitVariancePoints { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "Asia 2 session start time in chart time zone.", GroupName = "Asia 2", Order = 1)]
@@ -9002,6 +9794,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 2 entries and flips while ATR(14) is below this value.", GroupName = "Asia 2", Order = 37)]
         public double Asia2AtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "Asia 2", Order = 38)]
+        public EntrySystemMode Asia2EntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in Asia 2. 0 disables secondary entries for this session.", GroupName = "Asia 2", Order = 39)]
+        public int Asia2SecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "Asia 2", Order = 40)]
+        public double Asia2SecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "Asia 2", Order = 41)]
+        public double Asia2SecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "Asia 2", Order = 42)]
+        public double Asia2SecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "Asia 2", Order = 43)]
+        public double Asia2SecondaryTakeProfitVariancePoints { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "Asia 3 session start time in chart time zone.", GroupName = "Asia 3", Order = 1)]
@@ -9195,6 +10023,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 3 entries and flips while ATR(14) is below this value.", GroupName = "Asia 3", Order = 37)]
         public double Asia3AtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "Asia 3", Order = 38)]
+        public EntrySystemMode Asia3EntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in Asia 3. 0 disables secondary entries for this session.", GroupName = "Asia 3", Order = 39)]
+        public int Asia3SecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "Asia 3", Order = 40)]
+        public double Asia3SecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "Asia 3", Order = 41)]
+        public double Asia3SecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "Asia 3", Order = 42)]
+        public double Asia3SecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "Asia 3", Order = 43)]
+        public double Asia3SecondaryTakeProfitVariancePoints { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "Europe 1 session start time in chart time zone.", GroupName = "Europe 1", Order = 1)]
@@ -9387,6 +10251,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Europe 1 entries and flips while ATR(14) is below this value.", GroupName = "Europe 1", Order = 37)]
         public double LondonAtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "Europe 1", Order = 38)]
+        public EntrySystemMode LondonEntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in Europe 1. 0 disables secondary entries for this session.", GroupName = "Europe 1", Order = 39)]
+        public int LondonSecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "Europe 1", Order = 40)]
+        public double LondonSecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "Europe 1", Order = 41)]
+        public double LondonSecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "Europe 1", Order = 42)]
+        public double LondonSecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "Europe 1", Order = 43)]
+        public double LondonSecondaryTakeProfitVariancePoints { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "Europe 2 session start time in chart time zone.", GroupName = "Europe 2", Order = 1)]
@@ -9579,6 +10479,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Europe 2 entries and flips while ATR(14) is below this value.", GroupName = "Europe 2", Order = 37)]
         public double London2AtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "Europe 2", Order = 38)]
+        public EntrySystemMode London2EntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in Europe 2. 0 disables secondary entries for this session.", GroupName = "Europe 2", Order = 39)]
+        public int London2SecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "Europe 2", Order = 40)]
+        public double London2SecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "Europe 2", Order = 41)]
+        public double London2SecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "Europe 2", Order = 42)]
+        public double London2SecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "Europe 2", Order = 43)]
+        public double London2SecondaryTakeProfitVariancePoints { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "Europe 3 session start time in chart time zone.", GroupName = "Europe 3", Order = 1)]
@@ -9776,6 +10712,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Europe 3 entries and flips while ATR(14) is below this value.", GroupName = "Europe 3", Order = 37)]
         public double London3AtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "Europe 3", Order = 38)]
+        public EntrySystemMode London3EntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in Europe 3. 0 disables secondary entries for this session.", GroupName = "Europe 3", Order = 39)]
+        public int London3SecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "Europe 3", Order = 40)]
+        public double London3SecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "Europe 3", Order = 41)]
+        public double London3SecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "Europe 3", Order = 42)]
+        public double London3SecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "Europe 3", Order = 43)]
+        public double London3SecondaryTakeProfitVariancePoints { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "America 1 session start time in chart time zone.", GroupName = "America 1", Order = 1)]
@@ -9990,6 +10962,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new America 1 entries and flips while ATR(14) is below this value.", GroupName = "America 1", Order = 38)]
         public double NewYorkAtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "America 1", Order = 39)]
+        public EntrySystemMode NewYorkEntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in America 1. 0 disables secondary entries for this session.", GroupName = "America 1", Order = 40)]
+        public int NewYorkSecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "America 1", Order = 41)]
+        public double NewYorkSecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "America 1", Order = 42)]
+        public double NewYorkSecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "America 1", Order = 43)]
+        public double NewYorkSecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "America 1", Order = 44)]
+        public double NewYorkSecondaryTakeProfitVariancePoints { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "America 2 session start time in chart time zone.", GroupName = "America 2", Order = 1)]
@@ -10204,6 +11212,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new America 2 entries and flips while ATR(14) is below this value.", GroupName = "America 2", Order = 38)]
         public double NewYork2AtrMinimum { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "America 2", Order = 39)]
+        public EntrySystemMode NewYork2EntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in America 2. 0 disables secondary entries for this session.", GroupName = "America 2", Order = 40)]
+        public int NewYork2SecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "America 2", Order = 41)]
+        public double NewYork2SecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "America 2", Order = 42)]
+        public double NewYork2SecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "America 2", Order = 43)]
+        public double NewYork2SecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "America 2", Order = 44)]
+        public double NewYork2SecondaryTakeProfitVariancePoints { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Session Start", Description = "America 3 session start time in chart time zone.", GroupName = "America 3", Order = 1)]
@@ -10421,6 +11465,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
+        [Display(Name = "Entry System", Description = "Primary uses the normal DUO entry. Secondary opens an EMA-based working limit order after the normal signal. Both enables both systems.", GroupName = "America 3", Order = 39)]
+        public EntrySystemMode NewYork3EntrySystemMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Contracts", Description = "Contracts used for secondary entries in America 3. 0 disables secondary entries for this session.", GroupName = "America 3", Order = 40)]
+        public int NewYork3SecondaryContracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary Entry From EMA", Description = "Distance in points from EMA for the secondary limit entry. Long entries use EMA plus this value; short entries use EMA minus this value.", GroupName = "America 3", Order = 41)]
+        public double NewYork3SecondaryEntryLimitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary SL From EMA", Description = "Distance in points from EMA for the secondary stop loss. Long stops use EMA minus this value; short stops use EMA plus this value.", GroupName = "America 3", Order = 42)]
+        public double NewYork3SecondaryEntryStopDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP From EMA", Description = "Distance in points from EMA for the secondary profit target. Long targets use EMA plus this value; short targets use EMA minus this value.", GroupName = "America 3", Order = 43)]
+        public double NewYork3SecondaryEntryTakeProfitDistanceFromEmaPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Secondary TP Variance", Description = "Maximum random extra profit-target distance in points. Variance applies only to TP, not the secondary entry or stop.", GroupName = "America 3", Order = 44)]
+        public double NewYork3SecondaryTakeProfitVariancePoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Close At Session End", Description = "If true, flatten positions and cancel entries at each configured session end.", GroupName = "10. Sessions", Order = 0)]
         public bool CloseAtSessionEnd { get; set; }
 
@@ -10542,6 +11621,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Entry Variance", Description = "If enabled, delay qualifying new realtime market entries by a random 0-15 seconds after the 5-minute close.", GroupName = "13. Risk", Order = 3)]
         public bool EntryVariance { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Secondary Bias EMA Period", Description = "0 disables. When enabled, price above this EMA allows only longs; price below this EMA allows only shorts.", GroupName = "13. Risk", Order = 4)]
+        public int SecondaryBiasEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
