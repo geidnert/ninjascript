@@ -508,71 +508,71 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IsInstantiatedOnEachOptimizationIteration = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
 
-                AsiaSessionStart = new TimeSpan(18, 30, 0);
-                AsiaSessionEnd = new TimeSpan(19, 55, 0);
+                AsiaSessionStart = new TimeSpan(18, 40, 0);
+                AsiaSessionEnd = new TimeSpan(20, 5, 0);
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
-                AsiaEntryMinBodyPoints = 2.25;
-                AsiaEntryCloseBeyondEmaPoints = 0;
+                AsiaEntryMinBodyPoints = 1;
+                AsiaEntryCloseBeyondEmaPoints = 0.25;
                 AsiaEntryType = InitialEntryType.Market;
                 AsiaColorBlindEntry = false;
                 AsiaEnableStopOutFlip = false;
                 AsiaAdxPeriod = 14;
-                AsiaAdxThreshold = 23.4;
-                AsiaAdxMaxThreshold = 47.55;
-                AsiaAdxPeakDrawdownExitUnits = 0;
-                AsiaAdxAbsoluteExitLevel = 59;
-                AsiaStopPaddingPoints = 50;
+                AsiaAdxThreshold = 19.9;
+                AsiaAdxMaxThreshold = 52.3;
+                AsiaAdxPeakDrawdownExitUnits = 2;
+                AsiaAdxAbsoluteExitLevel = 67.6;
+                AsiaStopPaddingPoints = 63.75;
                 AsiaTrailHardStop = true;
-                AsiaTakeProfitPoints = 141.5;
-                AsiaAtrMinimum = 11.74;
-                AsiaCandleReversalExitBars = 11;
-                AsiaCandleReversalCloseBeyondPoints = 11;
-                AsiaCandleReversalMinBodyPoints = 0;
+                AsiaTakeProfitPoints = 109.7;
+                AsiaAtrMinimum = 13.5;
+                AsiaCandleReversalExitBars = 15;
+                AsiaCandleReversalCloseBeyondPoints = 5.1;
+                AsiaCandleReversalMinBodyPoints = 0.6;
 
                 Asia2SessionStart = new TimeSpan(20, 5, 0);
-                Asia2SessionEnd = new TimeSpan(23, 20, 0);
+                Asia2SessionEnd = new TimeSpan(23, 30, 0);
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2EntryMinBodyPoints = 0;
-                Asia2EntryCloseBeyondEmaPoints = 1.625;
+                Asia2EntryCloseBeyondEmaPoints = 0.25;
                 Asia2EntryType = InitialEntryType.Market;
                 Asia2ColorBlindEntry = false;
                 Asia2EnableStopOutFlip = false;
                 Asia2AdxPeriod = 14;
-                Asia2AdxThreshold = 15.49;
-                Asia2AdxMaxThreshold = 32.97;
-                Asia2AdxPeakDrawdownExitUnits = 8;
-                Asia2AdxAbsoluteExitLevel = 63.2;
-                Asia2StopPaddingPoints = 25.65;
+                Asia2AdxThreshold = 15.5;
+                Asia2AdxMaxThreshold = 29.68;
+                Asia2AdxPeakDrawdownExitUnits = 9.65;
+                Asia2AdxAbsoluteExitLevel = 56.9;
+                Asia2StopPaddingPoints = 28.5;
                 Asia2TrailHardStop = false;
-                Asia2TakeProfitPoints = 66.5;
-                Asia2AtrMinimum = 10.13;
-                Asia2CandleReversalExitBars = 10;
-                Asia2CandleReversalCloseBeyondPoints = 15.7;
-                Asia2CandleReversalMinBodyPoints = 6;
+                Asia2TakeProfitPoints = 83.1;
+                Asia2AtrMinimum = 13.17;
+                Asia2CandleReversalExitBars = 12;
+                Asia2CandleReversalCloseBeyondPoints = 17.1;
+                Asia2CandleReversalMinBodyPoints = 8;
 
                 Asia3SessionStart = TimeSpan.Zero;
                 Asia3SessionEnd = new TimeSpan(3, 5, 0);
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
-                Asia3EntryMinBodyPoints = 1.5;
-                Asia3EntryCloseBeyondEmaPoints = 0;
+                Asia3EntryMinBodyPoints = 0.5;
+                Asia3EntryCloseBeyondEmaPoints = 0.25;
                 Asia3EntryType = InitialEntryType.Market;
                 Asia3ColorBlindEntry = false;
                 Asia3EnableStopOutFlip = false;
                 Asia3AdxPeriod = 14;
-                Asia3AdxThreshold = 21;
-                Asia3AdxMaxThreshold = 45.2;
-                Asia3AdxPeakDrawdownExitUnits = 6;
-                Asia3AdxAbsoluteExitLevel = 41.5;
+                Asia3AdxThreshold = 24.1;
+                Asia3AdxMaxThreshold = 40.68;
+                Asia3AdxPeakDrawdownExitUnits = 5.8;
+                Asia3AdxAbsoluteExitLevel = 39.5;
                 Asia3StopPaddingPoints = 103.5;
                 Asia3TrailHardStop = true;
-                Asia3TakeProfitPoints = 191.5;
-                Asia3AtrMinimum = 9.74;
-                Asia3CandleReversalExitBars = 4;
-                Asia3CandleReversalCloseBeyondPoints = 13.7;
-                Asia3CandleReversalMinBodyPoints = 16.25;
+                Asia3TakeProfitPoints = 167.6;
+                Asia3AtrMinimum = 12.66;
+                Asia3CandleReversalExitBars = 7;
+                Asia3CandleReversalCloseBeyondPoints = 1.95;
+                Asia3CandleReversalMinBodyPoints = 14.25;
 
                 LondonSessionStart = new TimeSpan(3, 20, 0);
                 LondonSessionEnd = new TimeSpan(5, 0, 0);
@@ -580,26 +580,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonEntryMinBodyPoints = 1.5;
-                LondonEntryCloseBeyondEmaPoints = 0;
+                LondonEntryCloseBeyondEmaPoints = 0.25;
                 LondonEntryType = InitialEntryType.Market;
                 LondonColorBlindEntry = false;
                 LondonEnableStopOutFlip = false;
                 LondonAdxPeriod = 14;
-                LondonAdxThreshold = 13;
-                LondonAdxMaxThreshold = 31.35;
-                LondonAdxPeakDrawdownExitUnits = 12;
-                LondonAdxAbsoluteExitLevel = 47.5;
-                LondonStopPaddingPoints = 53.75;
+                LondonAdxThreshold = 11.2;
+                LondonAdxMaxThreshold = 34.48;
+                LondonAdxPeakDrawdownExitUnits = 13.7;
+                LondonAdxAbsoluteExitLevel = 50.5;
+                LondonStopPaddingPoints = 58.66;
                 LondonTrailHardStop = true;
-                LondonTakeProfitPoints = 198.55;
-                LondonAtrMinimum = 11.6;
+                LondonTakeProfitPoints = 180.5;
+                LondonAtrMinimum = 13.34;
                 LondonCandleReversalExitBars = 7;
-                LondonCandleReversalCloseBeyondPoints = 9;
-                LondonCandleReversalMinBodyPoints = 2;
+                LondonCandleReversalCloseBeyondPoints = 7;
+                LondonCandleReversalMinBodyPoints = 2.4;
 
                 London2SessionStart = new TimeSpan(5, 50, 0);
                 London2SessionEnd = new TimeSpan(7, 0, 0);
-                AutoShiftLondon2 = true;
+                AutoShiftLondon2 = false;
                 London2EmaPeriod = 21;
                 London2Contracts = 0;
                 London2EntryMinBodyPoints = 1.5;
@@ -649,110 +649,110 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaPeriod = 21;
                 NewYorkContracts = 1;
                 NewYorkEntryMinBodyPoints = 3.75;
-                NewYorkEntryCloseBeyondEmaPoints = 0;
+                NewYorkEntryCloseBeyondEmaPoints = 0.25;
                 NewYorkEntryType = InitialEntryType.Market;
                 NewYorkColorBlindEntry = false;
                 NewYorkEnableStopOutFlip = false;
                 NewYorkAdxPeriod = 14;
-                NewYorkAdxThreshold = 33.11;
-                NewYorkAdxMaxThreshold = 48.57;
-                NewYorkAdxPeakDrawdownExitUnits = 7.5;
-                NewYorkAdxAbsoluteExitLevel = 46.8;
+                NewYorkAdxThreshold = 33.1;
+                NewYorkAdxMaxThreshold = 38.86;
+                NewYorkAdxPeakDrawdownExitUnits = 10.64;
+                NewYorkAdxAbsoluteExitLevel = 42.1;
                 NewYorkStopPaddingPoints = 166;
                 NewYorkTrailHardStop = true;
-                NewYorkTakeProfitPoints = 158.13;
-                NewYorkAtrMinimum = 16.04;
+                NewYorkTakeProfitPoints = 161.7;
+                NewYorkAtrMinimum = 11.23;
                 NewYorkCandleReversalExitBars = 4;
-                NewYorkCandleReversalCloseBeyondPoints = 15.7;
-                NewYorkCandleReversalMinBodyPoints = 0;
+                NewYorkCandleReversalCloseBeyondPoints = 0.6;
+                NewYorkCandleReversalMinBodyPoints = 0.6;
 
                 NewYork2SessionStart = new TimeSpan(10, 5, 0);
                 NewYork2SessionEnd = new TimeSpan(11, 0, 0);
                 NewYork2EmaPeriod = 21;
                 NewYork2Contracts = 1;
                 NewYork2EntryMinBodyPoints = 0.5;
-                NewYork2EntryCloseBeyondEmaPoints = 2;
+                NewYork2EntryCloseBeyondEmaPoints = 3;
                 NewYork2EntryType = InitialEntryType.Market;
                 NewYork2ColorBlindEntry = false;
                 NewYork2EnableStopOutFlip = false;
                 NewYork2AdxPeriod = 14;
-                NewYork2AdxThreshold = 14;
-                NewYork2AdxMaxThreshold = 25.35;
-                NewYork2AdxPeakDrawdownExitUnits = 5.5;
-                NewYork2AdxAbsoluteExitLevel = 26.4;
-                NewYork2StopPaddingPoints = 68.75;
+                NewYork2AdxThreshold = 14.1;
+                NewYork2AdxMaxThreshold = 20.28;
+                NewYork2AdxPeakDrawdownExitUnits = 5.25;
+                NewYork2AdxAbsoluteExitLevel = 29.1;
+                NewYork2StopPaddingPoints = 44.69;
                 NewYork2TrailHardStop = true;
-                NewYork2TakeProfitPoints = 162.45;
-                NewYork2AtrMinimum = 15;
-                NewYork2CandleReversalExitBars = 7;
+                NewYork2TakeProfitPoints = 203.1;
+                NewYork2AtrMinimum = 14.63;
+                NewYork2CandleReversalExitBars = 8;
                 NewYork2CandleReversalCloseBeyondPoints = 4;
-                NewYork2CandleReversalMinBodyPoints = 15.7;
+                NewYork2CandleReversalMinBodyPoints = 1.65;
 
                 NewYork3SessionStart = new TimeSpan(11, 0, 0);
-                NewYork3SessionEnd = new TimeSpan(11, 50, 0);
+                NewYork3SessionEnd = new TimeSpan(12, 0, 0);
                 NewYork3EmaPeriod = 21;
                 NewYork3Contracts = 1;
                 NewYork3EntryMinBodyPoints = 0;
-                NewYork3EntryCloseBeyondEmaPoints = 0;
+                NewYork3EntryCloseBeyondEmaPoints = 0.25;
                 NewYork3EntryType = InitialEntryType.Market;
                 NewYork3ColorBlindEntry = false;
                 NewYork3EnableStopOutFlip = false;
                 NewYork3AdxPeriod = 14;
-                NewYork3AdxThreshold = 17.5;
-                NewYork3AdxMaxThreshold = 24.3;
-                NewYork3AdxPeakDrawdownExitUnits = 3.2;
-                NewYork3AdxAbsoluteExitLevel = 24;
-                NewYork3StopPaddingPoints = 83.5;
+                NewYork3AdxThreshold = 22.8;
+                NewYork3AdxMaxThreshold = 19.44;
+                NewYork3AdxPeakDrawdownExitUnits = 2.08;
+                NewYork3AdxAbsoluteExitLevel = 20;
+                NewYork3StopPaddingPoints = 41.11;
                 NewYork3TrailHardStop = true;
-                NewYork3TakeProfitPoints = 146.5;
-                NewYork3AtrMinimum = 15;
-                NewYork3CandleReversalExitBars = 18;
-                NewYork3CandleReversalCloseBeyondPoints = 0;
-                NewYork3CandleReversalMinBodyPoints = 0;
+                NewYork3TakeProfitPoints = 109.9;
+                NewYork3AtrMinimum = 16.45;
+                NewYork3CandleReversalExitBars = 9;
+                NewYork3CandleReversalCloseBeyondPoints = 0.6;
+                NewYork3CandleReversalMinBodyPoints = 0.6;
 
                 NewYork4SessionStart = new TimeSpan(12, 10, 0);
-                NewYork4SessionEnd = new TimeSpan(12, 50, 0);
+                NewYork4SessionEnd = new TimeSpan(13, 0, 0);
                 NewYork4EmaPeriod = 21;
                 NewYork4Contracts = 1;
                 NewYork4EntryMinBodyPoints = 5.5;
-                NewYork4EntryCloseBeyondEmaPoints = 0;
+                NewYork4EntryCloseBeyondEmaPoints = 0.25;
                 NewYork4EntryType = InitialEntryType.Market;
                 NewYork4ColorBlindEntry = false;
                 NewYork4EnableStopOutFlip = false;
                 NewYork4AdxPeriod = 14;
                 NewYork4AdxThreshold = 12.9;
-                NewYork4AdxMaxThreshold = 32.97;
-                NewYork4AdxPeakDrawdownExitUnits = 1.4;
-                NewYork4AdxAbsoluteExitLevel = 30.5;
-                NewYork4StopPaddingPoints = 90.25;
-                NewYork4TrailHardStop = true;
+                NewYork4AdxMaxThreshold = 24.32;
+                NewYork4AdxPeakDrawdownExitUnits = 2;
+                NewYork4AdxAbsoluteExitLevel = 42.6;
+                NewYork4StopPaddingPoints = 77.25;
+                NewYork4TrailHardStop = false;
                 NewYork4TakeProfitPoints = 333;
-                NewYork4AtrMinimum = 25.75;
-                NewYork4CandleReversalExitBars = 7;
-                NewYork4CandleReversalCloseBeyondPoints = 0;
-                NewYork4CandleReversalMinBodyPoints = 0;
+                NewYork4AtrMinimum = 31.33;
+                NewYork4CandleReversalExitBars = 8;
+                NewYork4CandleReversalCloseBeyondPoints = 1.2;
+                NewYork4CandleReversalMinBodyPoints = 0.8;
 
-                NewYork5SessionStart = new TimeSpan(13, 25, 0);
-                NewYork5SessionEnd = new TimeSpan(15, 15, 0);
+                NewYork5SessionStart = new TimeSpan(13, 35, 0);
+                NewYork5SessionEnd = new TimeSpan(15, 5, 0);
                 NewYork5EmaPeriod = 21;
                 NewYork5Contracts = 1;
                 NewYork5EntryMinBodyPoints = 2.75;
-                NewYork5EntryCloseBeyondEmaPoints = 0;
+                NewYork5EntryCloseBeyondEmaPoints = 0.62;
                 NewYork5EntryType = InitialEntryType.Market;
                 NewYork5ColorBlindEntry = false;
                 NewYork5EnableStopOutFlip = false;
                 NewYork5AdxPeriod = 21;
                 NewYork5AdxThreshold = 18.3;
                 NewYork5AdxMaxThreshold = 22.6;
-                NewYork5AdxPeakDrawdownExitUnits = 9.0;
-                NewYork5AdxAbsoluteExitLevel = 22.4;
-                NewYork5StopPaddingPoints = 83.5;
+                NewYork5AdxPeakDrawdownExitUnits = 9.59;
+                NewYork5AdxAbsoluteExitLevel = 21.7;
+                NewYork5StopPaddingPoints = 98.12;
                 NewYork5TrailHardStop = true;
-                NewYork5TakeProfitPoints = 162;
-                NewYork5AtrMinimum = 15.9;
+                NewYork5TakeProfitPoints = 135;
+                NewYork5AtrMinimum = 18.29;
                 NewYork5CandleReversalExitBars = 18;
-                NewYork5CandleReversalCloseBeyondPoints = 0;
-                NewYork5CandleReversalMinBodyPoints = 15.7;
+                NewYork5CandleReversalCloseBeyondPoints = 0.6;
+                NewYork5CandleReversalMinBodyPoints = 1.4;
 
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
@@ -8120,239 +8120,239 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session Start", Description = "Asia 1 session start time in chart time zone.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 1)]
+        [Display(Name = "Session Start", Description = "Asia 1 session start time in chart time zone.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 1)]
         public TimeSpan AsiaSessionStart { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session End", Description = "Asia 1 session end time in chart time zone.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 2)]
+        [Display(Name = "Session End", Description = "Asia 1 session end time in chart time zone.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 2)]
         public TimeSpan AsiaSessionEnd { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by Asia 1 entry and exit logic.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 4)]
+        [Display(Name = "EMA Period", Description = "EMA period used by Asia 1 entry and exit logic.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 4)]
         public int AsiaEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia 1 entries.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 3)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 1 entries.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 3)]
         public int AsiaContracts { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia 1 trend filter.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 10)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia 1 trend filter.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 10)]
         public int AsiaAdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia 1 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 11)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia 1 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 11)]
         public double AsiaAdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia 1 entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 12)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia 1 entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 12)]
         public double AsiaAdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 14)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 14)]
         public double AsiaAdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 15)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 15)]
         public double AsiaAdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 16)]
         public double AsiaStopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 16)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 16)]
         public bool AsiaTrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 18)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 18)]
         public double AsiaTakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 22)]
+        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 22)]
         public double AsiaEntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 21)]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 21)]
         public InitialEntryType AsiaEntryType { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 23)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 23)]
         public double AsiaEntryCloseBeyondEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 24)]
+        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 24)]
         public bool AsiaColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 25)]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 25)]
         public bool AsiaEnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 36)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 36)]
         public int AsiaCandleReversalExitBars { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 37)]
+        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 37)]
         public double AsiaCandleReversalCloseBeyondPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 38)]
+        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 38)]
         public double AsiaCandleReversalMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 1 entries while ATR(14) is below this value.", GroupName = "Asia 1 Session (18:30-19:55)", Order = 40)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 1 entries while ATR(14) is below this value.", GroupName = "Asia 1 Session (18:40-20:05)", Order = 40)]
         public double AsiaAtrMinimum { get; set; }
 
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session Start", Description = "Asia 2 session start time in chart time zone.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 1)]
+        [Display(Name = "Session Start", Description = "Asia 2 session start time in chart time zone.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 1)]
         public TimeSpan Asia2SessionStart { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session End", Description = "Asia 2 session end time in chart time zone.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 2)]
+        [Display(Name = "Session End", Description = "Asia 2 session end time in chart time zone.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 2)]
         public TimeSpan Asia2SessionEnd { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by Asia 2 entry and exit logic.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 4)]
+        [Display(Name = "EMA Period", Description = "EMA period used by Asia 2 entry and exit logic.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 4)]
         public int Asia2EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for Asia 2 entries.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 3)]
+        [Display(Name = "Contracts", Description = "Base contracts for Asia 2 entries.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 3)]
         public int Asia2Contracts { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia 2 trend filter.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 10)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the Asia 2 trend filter.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 10)]
         public int Asia2AdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia 2 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 11)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. Asia 2 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 11)]
         public double Asia2AdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia 2 entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 12)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. Asia 2 entries are allowed only when ADX is less than or equal to this value.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 12)]
         public double Asia2AdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 14)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 14)]
         public double Asia2AdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 15)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 15)]
         public double Asia2AdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 16)]
+        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 16)]
         public double Asia2StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 16)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 16)]
         public bool Asia2TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 18)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 18)]
         public double Asia2TakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 22)]
+        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 22)]
         public double Asia2EntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 21)]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 21)]
         public InitialEntryType Asia2EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 23)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 23)]
         public double Asia2EntryCloseBeyondEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 24)]
+        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 24)]
         public bool Asia2ColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 25)]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 25)]
         public bool Asia2EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 36)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 36)]
         public int Asia2CandleReversalExitBars { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 37)]
+        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 37)]
         public double Asia2CandleReversalCloseBeyondPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 38)]
+        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 38)]
         public double Asia2CandleReversalMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 2 entries while ATR(14) is below this value.", GroupName = "Asia 2 Session (20:05-23:20)", Order = 40)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new Asia 2 entries while ATR(14) is below this value.", GroupName = "Asia 2 Session (20:05-23:30)", Order = 40)]
         public double Asia2AtrMinimum { get; set; }
 
 
@@ -9097,359 +9097,359 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session Start", Description = "America 3 session start time in chart time zone.", GroupName = "America 3 Session (11:00-11:50)", Order = 1)]
+        [Display(Name = "Session Start", Description = "America 3 session start time in chart time zone.", GroupName = "America 3 Session (11:00-12:00)", Order = 1)]
         public TimeSpan NewYork3SessionStart { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session End", Description = "America 3 session end time in chart time zone.", GroupName = "America 3 Session (11:00-11:50)", Order = 2)]
+        [Display(Name = "Session End", Description = "America 3 session end time in chart time zone.", GroupName = "America 3 Session (11:00-12:00)", Order = 2)]
         public TimeSpan NewYork3SessionEnd { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by America 3 entry and exit logic.", GroupName = "America 3 Session (11:00-11:50)", Order = 5)]
+        [Display(Name = "EMA Period", Description = "EMA period used by America 3 entry and exit logic.", GroupName = "America 3 Session (11:00-12:00)", Order = 5)]
         public int NewYork3EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for America 3 entries.", GroupName = "America 3 Session (11:00-11:50)", Order = 3)]
+        [Display(Name = "Contracts", Description = "Base contracts for America 3 entries.", GroupName = "America 3 Session (11:00-12:00)", Order = 3)]
         public int NewYork3Contracts { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the America 3 trend filter.", GroupName = "America 3 Session (11:00-11:50)", Order = 11)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the America 3 trend filter.", GroupName = "America 3 Session (11:00-12:00)", Order = 11)]
         public int NewYork3AdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. America 3 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "America 3 Session (11:00-11:50)", Order = 12)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. America 3 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "America 3 Session (11:00-12:00)", Order = 12)]
         public double NewYork3AdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. America 3 entries are allowed only when ADX is less than or equal to this value.", GroupName = "America 3 Session (11:00-11:50)", Order = 13)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. America 3 entries are allowed only when ADX is less than or equal to this value.", GroupName = "America 3 Session (11:00-12:00)", Order = 13)]
         public double NewYork3AdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "America 3 Session (11:00-11:50)", Order = 15)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "America 3 Session (11:00-12:00)", Order = 15)]
         public double NewYork3AdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "America 3 Session (11:00-11:50)", Order = 16)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "America 3 Session (11:00-12:00)", Order = 16)]
         public double NewYork3AdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "America 3 Session (11:00-11:50)", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "America 3 Session (11:00-12:00)", Order = 17)]
         public double NewYork3StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "America 3 Session (11:00-11:50)", Order = 17)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "America 3 Session (11:00-12:00)", Order = 17)]
         public bool NewYork3TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "America 3 Session (11:00-11:50)", Order = 19)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "America 3 Session (11:00-12:00)", Order = 19)]
         public double NewYork3TakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 3 Session (11:00-11:50)", Order = 22)]
+        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 3 Session (11:00-12:00)", Order = 22)]
         public double NewYork3EntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 3 Session (11:00-11:50)", Order = 21)]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 3 Session (11:00-12:00)", Order = 21)]
         public InitialEntryType NewYork3EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 3 Session (11:00-11:50)", Order = 23)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 3 Session (11:00-12:00)", Order = 23)]
         public double NewYork3EntryCloseBeyondEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 3 Session (11:00-11:50)", Order = 24)]
+        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 3 Session (11:00-12:00)", Order = 24)]
         public bool NewYork3ColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 3 Session (11:00-11:50)", Order = 25)]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 3 Session (11:00-12:00)", Order = 25)]
         public bool NewYork3EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 3 Session (11:00-11:50)", Order = 37)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 3 Session (11:00-12:00)", Order = 37)]
         public int NewYork3CandleReversalExitBars { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "America 3 Session (11:00-11:50)", Order = 38)]
+        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "America 3 Session (11:00-12:00)", Order = 38)]
         public double NewYork3CandleReversalCloseBeyondPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "America 3 Session (11:00-11:50)", Order = 39)]
+        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "America 3 Session (11:00-12:00)", Order = 39)]
         public double NewYork3CandleReversalMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new America 3 entries while ATR(14) is below this value.", GroupName = "America 3 Session (11:00-11:50)", Order = 41)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new America 3 entries while ATR(14) is below this value.", GroupName = "America 3 Session (11:00-12:00)", Order = 41)]
         public double NewYork3AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session Start", Description = "America 4 session start time in chart time zone.", GroupName = "America 4 Session (12:10-12:50)", Order = 1)]
+        [Display(Name = "Session Start", Description = "America 4 session start time in chart time zone.", GroupName = "America 4 Session (12:10-13:00)", Order = 1)]
         public TimeSpan NewYork4SessionStart { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session End", Description = "America 4 session end time in chart time zone.", GroupName = "America 4 Session (12:10-12:50)", Order = 2)]
+        [Display(Name = "Session End", Description = "America 4 session end time in chart time zone.", GroupName = "America 4 Session (12:10-13:00)", Order = 2)]
         public TimeSpan NewYork4SessionEnd { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by America 4 entry and exit logic.", GroupName = "America 4 Session (12:10-12:50)", Order = 5)]
+        [Display(Name = "EMA Period", Description = "EMA period used by America 4 entry and exit logic.", GroupName = "America 4 Session (12:10-13:00)", Order = 5)]
         public int NewYork4EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for America 4 entries.", GroupName = "America 4 Session (12:10-12:50)", Order = 3)]
+        [Display(Name = "Contracts", Description = "Base contracts for America 4 entries.", GroupName = "America 4 Session (12:10-13:00)", Order = 3)]
         public int NewYork4Contracts { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the America 4 trend filter.", GroupName = "America 4 Session (12:10-12:50)", Order = 11)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the America 4 trend filter.", GroupName = "America 4 Session (12:10-13:00)", Order = 11)]
         public int NewYork4AdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. America 4 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "America 4 Session (12:10-12:50)", Order = 12)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. America 4 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "America 4 Session (12:10-13:00)", Order = 12)]
         public double NewYork4AdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. America 4 entries are allowed only when ADX is less than or equal to this value.", GroupName = "America 4 Session (12:10-12:50)", Order = 13)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. America 4 entries are allowed only when ADX is less than or equal to this value.", GroupName = "America 4 Session (12:10-13:00)", Order = 13)]
         public double NewYork4AdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "America 4 Session (12:10-12:50)", Order = 15)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "America 4 Session (12:10-13:00)", Order = 15)]
         public double NewYork4AdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "America 4 Session (12:10-12:50)", Order = 16)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "America 4 Session (12:10-13:00)", Order = 16)]
         public double NewYork4AdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "America 4 Session (12:10-12:50)", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "America 4 Session (12:10-13:00)", Order = 17)]
         public double NewYork4StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "America 4 Session (12:10-12:50)", Order = 17)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "America 4 Session (12:10-13:00)", Order = 17)]
         public bool NewYork4TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "America 4 Session (12:10-12:50)", Order = 19)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "America 4 Session (12:10-13:00)", Order = 19)]
         public double NewYork4TakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 4 Session (12:10-12:50)", Order = 22)]
+        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 4 Session (12:10-13:00)", Order = 22)]
         public double NewYork4EntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 4 Session (12:10-12:50)", Order = 21)]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 4 Session (12:10-13:00)", Order = 21)]
         public InitialEntryType NewYork4EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 4 Session (12:10-12:50)", Order = 23)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 4 Session (12:10-13:00)", Order = 23)]
         public double NewYork4EntryCloseBeyondEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 4 Session (12:10-12:50)", Order = 24)]
+        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 4 Session (12:10-13:00)", Order = 24)]
         public bool NewYork4ColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 4 Session (12:10-12:50)", Order = 25)]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 4 Session (12:10-13:00)", Order = 25)]
         public bool NewYork4EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 4 Session (12:10-12:50)", Order = 37)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 4 Session (12:10-13:00)", Order = 37)]
         public int NewYork4CandleReversalExitBars { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "America 4 Session (12:10-12:50)", Order = 38)]
+        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "America 4 Session (12:10-13:00)", Order = 38)]
         public double NewYork4CandleReversalCloseBeyondPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "America 4 Session (12:10-12:50)", Order = 39)]
+        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "America 4 Session (12:10-13:00)", Order = 39)]
         public double NewYork4CandleReversalMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new America 4 entries while ATR(14) is below this value.", GroupName = "America 4 Session (12:10-12:50)", Order = 41)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new America 4 entries while ATR(14) is below this value.", GroupName = "America 4 Session (12:10-13:00)", Order = 41)]
         public double NewYork4AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session Start", Description = "America 5 session start time in chart time zone.", GroupName = "America 5 Session (13:25-15:15)", Order = 1)]
+        [Display(Name = "Session Start", Description = "America 5 session start time in chart time zone.", GroupName = "America 5 Session (13:35-15:05)", Order = 1)]
         public TimeSpan NewYork5SessionStart { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Session End", Description = "America 5 session end time in chart time zone.", GroupName = "America 5 Session (13:25-15:15)", Order = 2)]
+        [Display(Name = "Session End", Description = "America 5 session end time in chart time zone.", GroupName = "America 5 Session (13:35-15:05)", Order = 2)]
         public TimeSpan NewYork5SessionEnd { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, int.MaxValue)]
-        [Display(Name = "EMA Period", Description = "EMA period used by America 5 entry and exit logic.", GroupName = "America 5 Session (13:25-15:15)", Order = 5)]
+        [Display(Name = "EMA Period", Description = "EMA period used by America 5 entry and exit logic.", GroupName = "America 5 Session (13:35-15:05)", Order = 5)]
         public int NewYork5EmaPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Contracts", Description = "Base contracts for America 5 entries.", GroupName = "America 5 Session (13:25-15:15)", Order = 3)]
+        [Display(Name = "Contracts", Description = "Base contracts for America 5 entries.", GroupName = "America 5 Session (13:35-15:05)", Order = 3)]
         public int NewYork5Contracts { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, 200)]
-        [Display(Name = "ADX Period", Description = "ADX lookback period for the America 5 trend filter.", GroupName = "America 5 Session (13:25-15:15)", Order = 11)]
+        [Display(Name = "ADX Period", Description = "ADX lookback period for the America 5 trend filter.", GroupName = "America 5 Session (13:35-15:05)", Order = 11)]
         public int NewYork5AdxPeriod { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Min Threshold", Description = "0 disables. America 5 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "America 5 Session (13:25-15:15)", Order = 12)]
+        [Display(Name = "ADX Min Threshold", Description = "0 disables. America 5 entries are allowed only when ADX is greater than or equal to this value.", GroupName = "America 5 Session (13:35-15:05)", Order = 12)]
         public double NewYork5AdxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Max Threshold", Description = "0 disables. America 5 entries are allowed only when ADX is less than or equal to this value.", GroupName = "America 5 Session (13:25-15:15)", Order = 13)]
+        [Display(Name = "ADX Max Threshold", Description = "0 disables. America 5 entries are allowed only when ADX is less than or equal to this value.", GroupName = "America 5 Session (13:35-15:05)", Order = 13)]
         public double NewYork5AdxMaxThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "America 5 Session (13:25-15:15)", Order = 15)]
+        [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "America 5 Session (13:35-15:05)", Order = 15)]
         public double NewYork5AdxPeakDrawdownExitUnits { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "America 5 Session (13:25-15:15)", Order = 16)]
+        [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "America 5 Session (13:35-15:05)", Order = 16)]
         public double NewYork5AdxAbsoluteExitLevel { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "America 5 Session (13:25-15:15)", Order = 17)]
+        [Display(Name = "SL Padding Points", Description = "Stop distance in points from EMA on the opposite side.", GroupName = "America 5 Session (13:35-15:05)", Order = 17)]
         public double NewYork5StopPaddingPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "America 5 Session (13:25-15:15)", Order = 17)]
+        [Display(Name = "Trail Hard SL", Description = "If enabled, move the hard stop each bar close using EMA plus SL Padding Points. The stop only tightens.", GroupName = "America 5 Session (13:35-15:05)", Order = 17)]
         public bool NewYork5TrailHardStop { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "America 5 Session (13:25-15:15)", Order = 19)]
+        [Display(Name = "Take Profit (Points)", Description = "0 disables. Exit when unrealized profit reaches this many points from average entry price.", GroupName = "America 5 Session (13:35-15:05)", Order = 19)]
         public double NewYork5TakeProfitPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 5 Session (13:25-15:15)", Order = 22)]
+        [Display(Name = "Entry Min Body Points", Description = "0 disables. Initial entry signal candle must have at least this body size in points.", GroupName = "America 5 Session (13:35-15:05)", Order = 22)]
         public double NewYork5EntryMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 5 Session (13:25-15:15)", Order = 21)]
+        [Display(Name = "Entry Type", Description = "Market enters immediately on a valid signal. EmaLimit places and updates a limit order at EMA21 while normal entry conditions remain valid.", GroupName = "America 5 Session (13:35-15:05)", Order = 21)]
         public InitialEntryType NewYork5EntryType { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 5 Session (13:25-15:15)", Order = 23)]
+        [Display(Name = "Entry Close Beyond EMA Points", Description = "0 disables. Long entries require the close at least this many points above EMA; short entries require the close at least this many points below EMA.", GroupName = "America 5 Session (13:35-15:05)", Order = 23)]
         public double NewYork5EntryCloseBeyondEmaPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 5 Session (13:25-15:15)", Order = 24)]
+        [Display(Name = "Color Blind Entry", Description = "If enabled, long entries only require close above EMA and short entries only require close below EMA. If disabled, entries also require candle color and body crossing EMA.", GroupName = "America 5 Session (13:35-15:05)", Order = 24)]
         public bool NewYork5ColorBlindEntry { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 5 Session (13:25-15:15)", Order = 25)]
+        [Display(Name = "Stop-Out Flip", Description = "When enabled, a stop-loss fill can reverse into the opposite direction when the opposite setup still passes normal entry gates.", GroupName = "America 5 Session (13:35-15:05)", Order = 25)]
         public bool NewYork5EnableStopOutFlip { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 5 Session (13:25-15:15)", Order = 37)]
+        [Display(Name = "Candle Reversal Exit Bars", Description = "0 disables. After this many bars held, short exits on bullish close above the most recent bearish candle high; long exits on bearish close below the most recent bullish candle low.", GroupName = "America 5 Session (13:35-15:05)", Order = 37)]
         public int NewYork5CandleReversalExitBars { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "America 5 Session (13:25-15:15)", Order = 38)]
+        [Display(Name = "Candle Reversal Close Beyond Points", Description = "0 uses the candle high/low exactly. Long exits require a close this many points below the reference bullish candle low; short exits require this many points above the reference bearish candle high.", GroupName = "America 5 Session (13:35-15:05)", Order = 38)]
         public double NewYork5CandleReversalCloseBeyondPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "America 5 Session (13:25-15:15)", Order = 39)]
+        [Display(Name = "Candle Reversal Min Body Points", Description = "0 disables. Reference bullish/bearish candles must have at least this body size in points to count for the candle reversal exit.", GroupName = "America 5 Session (13:35-15:05)", Order = 39)]
         public double NewYork5CandleReversalMinBodyPoints { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, double.MaxValue)]
-        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new America 5 entries while ATR(14) is below this value.", GroupName = "America 5 Session (13:25-15:15)", Order = 41)]
+        [Display(Name = "ATR Min Threshold", Description = "0 disables. Block new America 5 entries while ATR(14) is below this value.", GroupName = "America 5 Session (13:35-15:05)", Order = 41)]
         public double NewYork5AtrMinimum { get; set; }
 
         [NinjaScriptProperty]
