@@ -613,6 +613,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EntryHandling = EntryHandling.UniqueEntries;
                 IsExitOnSessionCloseStrategy = true;
                 IsInstantiatedOnEachOptimizationIteration = false;
+                StartBehavior = StartBehavior.ImmediatelySubmitSynchronizeAccount;
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
 
                 AsiaSessionStart = new TimeSpan(18, 30, 0);

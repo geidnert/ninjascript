@@ -1532,7 +1532,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 DefaultQuantity = 1;
                 IsUnmanaged = false;
                 IsOverlay = true;
-                StartBehavior = StartBehavior.WaitUntilFlat;
+                StartBehavior = StartBehavior.ImmediatelySubmitSynchronizeAccount;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;

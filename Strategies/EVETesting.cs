@@ -312,6 +312,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 IsExitOnSessionCloseStrategy = true;
                 ExitOnSessionCloseSeconds    = 30;
+                StartBehavior                = StartBehavior.ImmediatelySubmitSynchronizeAccount;
 
                 // ── Shared: Time Filters ───────────────────────────────────────
                 NoNewTradesHour = 14;

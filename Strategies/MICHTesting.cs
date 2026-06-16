@@ -390,7 +390,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaximumBarsLookBack          = MaximumBarsLookBack.TwoHundredFiftySix;
                 OrderFillResolution          = OrderFillResolution.Standard;
                 Slippage                     = 0;
-                StartBehavior                = StartBehavior.WaitUntilFlat;
+                StartBehavior                = StartBehavior.ImmediatelySubmitSynchronizeAccount;
                 TimeInForce                  = TimeInForce.Gtc;
                 TraceOrders                  = true;
                 RealtimeErrorHandling        = RealtimeErrorHandling.StopCancelClose;
