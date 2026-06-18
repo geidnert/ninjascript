@@ -446,20 +446,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyALongCandleMultiplier=4.23; NyALongMaxTakeProfitTicks=1120;
                 NyALongSlExtraTicks=41; NyALongMaxSlTicks=330; NyALongMaxSlToTpRatio=0.58;
                 NyALongUsePriorCandleSl=true; NyALongSlAtMa=false; NyALongMoveSlToEntryBar=false;
-                NyALongTrailOffsetTicks=0; NyALongTrailDelayBars=3; NyALongTrailCandleOffset=23;
+                NyALongTrailOffsetTicks=20; NyALongTrailDelayBars=3; NyALongTrailCandleOffset=23;
                 NyALongEnableBreakeven=true; NyALongBreakevenTriggerTicks=318; NyALongBreakevenOffsetTicks=10;
                 NyALongMaxBarsInTrade=56;
-                NyALongEnablePriceOffsetTrail=true; NyALongPriceOffsetReductionTicks=17;
+                NyALongEnablePriceOffsetTrail=true; NyALongPriceOffsetReductionTicks=57;
                 NyARequireDirectionFlip=true; NyAAllowSameDirectionAfterLoss=true;
                 NyALongEnableWmaFilter=true; NyALongWmaPeriod=143;
                 NyALongMinBodyPct=60.0;
-                NyALongTrendConfirmBars=13; NyALongEnableAdxFilter=true; NyALongAdxPeriod=7; NyALongAdxMinLevel=12;
+                NyALongTrendConfirmBars=16; NyALongEnableAdxFilter=true; NyALongAdxPeriod=7; NyALongAdxMinLevel=12;
                 // Short
-                NyAShortCandleMultiplier=4.24; NyAShortMaxTakeProfitTicks=1179;
-                NyAShortSlExtraTicks=38; NyAShortMaxSlTicks=323; NyAShortMaxSlToTpRatio=0.5;
+                NyAShortCandleMultiplier=4.24; NyAShortMaxTakeProfitTicks=1229;
+                NyAShortSlExtraTicks=38; NyAShortMaxSlTicks=323; NyAShortMaxSlToTpRatio=0.8;
                 NyAShortUsePriorCandleSl=true; NyAShortSlAtMa=false; NyAShortMoveSlToEntryBar=false;
-                NyAShortTrailOffsetTicks=36; NyAShortTrailDelayBars=17; NyAShortTrailCandleOffset=15;
-                NyAShortEnableBreakeven=true; NyAShortBreakevenTriggerTicks=334; NyAShortBreakevenOffsetTicks=230;
+                NyAShortTrailOffsetTicks=36; NyAShortTrailDelayBars=19; NyAShortTrailCandleOffset=10;
+                NyAShortEnableBreakeven=true; NyAShortBreakevenTriggerTicks=374; NyAShortBreakevenOffsetTicks=230;
                 NyAShortMaxBarsInTrade=35;
                 NyAShortEnablePriceOffsetTrail=false; NyAShortPriceOffsetReductionTicks=42;
                 NyAShortEnableWmaFilter=true; NyAShortWmaPeriod=47;
@@ -476,26 +476,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyBMaxSessionProfitTicks=1075; NyBMaxSessionLossTicks=160;
                 NyBMaxTradesPerSession=3; NyBMaxLossesPerSession=2;
                 // Long
-                NyBLongCandleMultiplier=5.19; NyBLongMaxTakeProfitTicks=543;
+                NyBLongCandleMultiplier=5.19; NyBLongMaxTakeProfitTicks=443;
                 NyBLongSlExtraTicks=35; NyBLongMaxSlTicks=186; NyBLongMaxSlToTpRatio=0.46;
                 NyBLongUsePriorCandleSl=true; NyBLongSlAtMa=false; NyBLongMoveSlToEntryBar=false;
-                NyBLongTrailOffsetTicks=0; NyBLongTrailDelayBars=1; NyBLongTrailCandleOffset=0;
-                NyBLongEnableBreakeven=true; NyBLongBreakevenTriggerTicks=142; NyBLongBreakevenOffsetTicks=40;
-                NyBLongMaxBarsInTrade=12;
-                NyBLongEnablePriceOffsetTrail=true; NyBLongPriceOffsetReductionTicks=18;
+                NyBLongTrailOffsetTicks=0; NyBLongTrailDelayBars=1; NyBLongTrailCandleOffset=5;
+                NyBLongEnableBreakeven=true; NyBLongBreakevenTriggerTicks=122; NyBLongBreakevenOffsetTicks=60;
+                NyBLongMaxBarsInTrade=7;
+                NyBLongEnablePriceOffsetTrail=true; NyBLongPriceOffsetReductionTicks=78;
                 NyBRequireDirectionFlip=true; NyBAllowSameDirectionAfterLoss=true;
-                NyBLongEnableWmaFilter=true; NyBLongWmaPeriod=195;
+                NyBLongEnableWmaFilter=true; NyBLongWmaPeriod=175;
                 NyBLongMinBodyPct=43.0;
-                NyBLongTrendConfirmBars=18; NyBLongEnableAdxFilter=true; NyBLongAdxPeriod=25; NyBLongAdxMinLevel=13;
+                NyBLongTrendConfirmBars=18; NyBLongEnableAdxFilter=true; NyBLongAdxPeriod=26; NyBLongAdxMinLevel=13;
                 // Short
-                NyBShortCandleMultiplier=4.8; NyBShortMaxTakeProfitTicks=590;
-                NyBShortSlExtraTicks=16; NyBShortMaxSlTicks=245; NyBShortMaxSlToTpRatio=0.45;
+                NyBShortCandleMultiplier=4.3; NyBShortMaxTakeProfitTicks=690;
+                NyBShortSlExtraTicks=16; NyBShortMaxSlTicks=245; NyBShortMaxSlToTpRatio=0.55;
                 NyBShortUsePriorCandleSl=true; NyBShortSlAtMa=false; NyBShortMoveSlToEntryBar=false;
-                NyBShortTrailOffsetTicks=69; NyBShortTrailDelayBars=2; NyBShortTrailCandleOffset=11;
+                NyBShortTrailOffsetTicks=69; NyBShortTrailDelayBars=4; NyBShortTrailCandleOffset=11;
                 NyBShortEnableBreakeven=true; NyBShortBreakevenTriggerTicks=353; NyBShortBreakevenOffsetTicks=86;
                 NyBShortMaxBarsInTrade=27;
                 NyBShortEnablePriceOffsetTrail=false; NyBShortPriceOffsetReductionTicks=103;
-                NyBShortEnableWmaFilter=true; NyBShortWmaPeriod=100;
+                NyBShortEnableWmaFilter=true; NyBShortWmaPeriod=110;
                 NyBShortMinBodyPct=26.0;
                 NyBShortTrendConfirmBars=13; NyBShortEnableAdxFilter=true; NyBShortAdxPeriod=18; NyBShortAdxMinLevel=15;
 
@@ -509,27 +509,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NyCMaxSessionProfitTicks=1075; NyCMaxSessionLossTicks=160;
                 NyCMaxTradesPerSession=3; NyCMaxLossesPerSession=2;
                 // Long
-                NyCLongCandleMultiplier=4.24; NyCLongMaxTakeProfitTicks=625;
-                NyCLongSlExtraTicks=31; NyCLongMaxSlTicks=245; NyCLongMaxSlToTpRatio=0.42;
+                NyCLongCandleMultiplier=4.24; NyCLongMaxTakeProfitTicks=775;
+                NyCLongSlExtraTicks=31; NyCLongMaxSlTicks=320; NyCLongMaxSlToTpRatio=0.42;
                 NyCLongUsePriorCandleSl=false; NyCLongSlAtMa=false; NyCLongMoveSlToEntryBar=true;
                 NyCLongTrailOffsetTicks=1; NyCLongTrailDelayBars=1; NyCLongTrailCandleOffset=0;
                 NyCLongEnableBreakeven=true; NyCLongBreakevenTriggerTicks=270; NyCLongBreakevenOffsetTicks=31;
-                NyCLongMaxBarsInTrade=18;
+                NyCLongMaxBarsInTrade=13;
                 NyCLongEnablePriceOffsetTrail=true; NyCLongPriceOffsetReductionTicks=69;
                 NyCRequireDirectionFlip=true; NyCAllowSameDirectionAfterLoss=true;
                 NyCLongEnableWmaFilter=true; NyCLongWmaPeriod=117;
                 NyCLongMinBodyPct=61.0;
                 NyCLongTrendConfirmBars=13; NyCLongEnableAdxFilter=true; NyCLongAdxPeriod=19; NyCLongAdxMinLevel=15;
                 // Short
-                NyCShortCandleMultiplier=4.18; NyCShortMaxTakeProfitTicks=519;
+                NyCShortCandleMultiplier=4.18; NyCShortMaxTakeProfitTicks=569;
                 NyCShortSlExtraTicks=9; NyCShortMaxSlTicks=123; NyCShortMaxSlToTpRatio=0.42;
                 NyCShortUsePriorCandleSl=true; NyCShortSlAtMa=true; NyCShortMoveSlToEntryBar=true;
                 NyCShortTrailOffsetTicks=86; NyCShortTrailDelayBars=3; NyCShortTrailCandleOffset=0;
-                NyCShortEnableBreakeven=true; NyCShortBreakevenTriggerTicks=207; NyCShortBreakevenOffsetTicks=100;
-                NyCShortMaxBarsInTrade=22;
+                NyCShortEnableBreakeven=true; NyCShortBreakevenTriggerTicks=207; NyCShortBreakevenOffsetTicks=110;
+                NyCShortMaxBarsInTrade=17;
                 NyCShortEnablePriceOffsetTrail=true; NyCShortPriceOffsetReductionTicks=7;
-                NyCShortEnableWmaFilter=true; NyCShortWmaPeriod=20;
-                NyCShortMinBodyPct=5.0;
+                NyCShortEnableWmaFilter=true; NyCShortWmaPeriod=30;
+                NyCShortMinBodyPct=0.0;
                 NyCShortTrendConfirmBars=9; NyCShortEnableAdxFilter=true; NyCShortAdxPeriod=11; NyCShortAdxMinLevel=20;
 
                 // ── EU-A ─────────────────────────────────────────────────────
@@ -542,25 +542,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuAMaxSessionProfitTicks=1075; EuAMaxSessionLossTicks=160;
                 EuAMaxTradesPerSession=2; EuAMaxLossesPerSession=2;
                 // Long
-                EuALongCandleMultiplier=3.31; EuALongMaxTakeProfitTicks=426;
+                EuALongCandleMultiplier=3.31; EuALongMaxTakeProfitTicks=626;
                 EuALongSlExtraTicks=23; EuALongMaxSlTicks=220; EuALongMaxSlToTpRatio=0.49;
                 EuALongUsePriorCandleSl=false; EuALongSlAtMa=false; EuALongMoveSlToEntryBar=true;
-                EuALongTrailOffsetTicks=1; EuALongTrailDelayBars=3; EuALongTrailCandleOffset=1;
-                EuALongEnableBreakeven=true; EuALongBreakevenTriggerTicks=135; EuALongBreakevenOffsetTicks=87;
-                EuALongMaxBarsInTrade=19;
-                EuALongEnablePriceOffsetTrail=true; EuALongPriceOffsetReductionTicks=100;
+                EuALongTrailOffsetTicks=1; EuALongTrailDelayBars=3; EuALongTrailCandleOffset=6;
+                EuALongEnableBreakeven=true; EuALongBreakevenTriggerTicks=135; EuALongBreakevenOffsetTicks=137;
+                EuALongMaxBarsInTrade=9;
+                EuALongEnablePriceOffsetTrail=true; EuALongPriceOffsetReductionTicks=80;
                 EuARequireDirectionFlip=true; EuAAllowSameDirectionAfterLoss=true;
-                EuALongEnableWmaFilter=true; EuALongWmaPeriod=100;
+                EuALongEnableWmaFilter=true; EuALongWmaPeriod=90;
                 EuALongMinBodyPct=54.0;
                 EuALongTrendConfirmBars=10; EuALongEnableAdxFilter=true; EuALongAdxPeriod=16; EuALongAdxMinLevel=14;
                 // Short
-                EuAShortCandleMultiplier=4.39; EuAShortMaxTakeProfitTicks=1000;
+                EuAShortCandleMultiplier=4.39; EuAShortMaxTakeProfitTicks=950;
                 EuAShortSlExtraTicks=43; EuAShortMaxSlTicks=326; EuAShortMaxSlToTpRatio=0.45;
                 EuAShortUsePriorCandleSl=true; EuAShortSlAtMa=false; EuAShortMoveSlToEntryBar=false;
                 EuAShortTrailOffsetTicks=0; EuAShortTrailDelayBars=3; EuAShortTrailCandleOffset=0;
-                EuAShortEnableBreakeven=true; EuAShortBreakevenTriggerTicks=150; EuAShortBreakevenOffsetTicks=36;
-                EuAShortMaxBarsInTrade=22;
-                EuAShortEnablePriceOffsetTrail=true; EuAShortPriceOffsetReductionTicks=30;
+                EuAShortEnableBreakeven=true; EuAShortBreakevenTriggerTicks=130; EuAShortBreakevenOffsetTicks=16;
+                EuAShortMaxBarsInTrade=17;
+                EuAShortEnablePriceOffsetTrail=true; EuAShortPriceOffsetReductionTicks=20;
                 EuAShortEnableWmaFilter=true; EuAShortWmaPeriod=122;
                 EuAShortMinBodyPct=33.0;
                 EuAShortTrendConfirmBars=12; EuAShortEnableAdxFilter=true; EuAShortAdxPeriod=5; EuAShortAdxMinLevel=11;
@@ -579,20 +579,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuBLongSlExtraTicks=42; EuBLongMaxSlTicks=265; EuBLongMaxSlToTpRatio=0.47;
                 EuBLongUsePriorCandleSl=true; EuBLongSlAtMa=true; EuBLongMoveSlToEntryBar=true;
                 EuBLongTrailOffsetTicks=0; EuBLongTrailDelayBars=1; EuBLongTrailCandleOffset=6;
-                EuBLongEnableBreakeven=true; EuBLongBreakevenTriggerTicks=134; EuBLongBreakevenOffsetTicks=12;
+                EuBLongEnableBreakeven=true; EuBLongBreakevenTriggerTicks=194; EuBLongBreakevenOffsetTicks=32;
                 EuBLongMaxBarsInTrade=19;
-                EuBLongEnablePriceOffsetTrail=true; EuBLongPriceOffsetReductionTicks=112;
+                EuBLongEnablePriceOffsetTrail=true; EuBLongPriceOffsetReductionTicks=92;
                 EuBRequireDirectionFlip=true; EuBAllowSameDirectionAfterLoss=true;
                 EuBLongEnableWmaFilter=true; EuBLongWmaPeriod=30;
                 EuBLongMinBodyPct=59.0;
-                EuBLongTrendConfirmBars=20; EuBLongEnableAdxFilter=true; EuBLongAdxPeriod=12; EuBLongAdxMinLevel=11;
+                EuBLongTrendConfirmBars=20; EuBLongEnableAdxFilter=true; EuBLongAdxPeriod=12; EuBLongAdxMinLevel=6;
                 // Short
-                EuBShortCandleMultiplier=4.11; EuBShortMaxTakeProfitTicks=395;
-                EuBShortSlExtraTicks=42; EuBShortMaxSlTicks=190; EuBShortMaxSlToTpRatio=0.48;
+                EuBShortCandleMultiplier=4.11; EuBShortMaxTakeProfitTicks=545;
+                EuBShortSlExtraTicks=42; EuBShortMaxSlTicks=190; EuBShortMaxSlToTpRatio=0.68;
                 EuBShortUsePriorCandleSl=true; EuBShortSlAtMa=true; EuBShortMoveSlToEntryBar=false;
-                EuBShortTrailOffsetTicks=38; EuBShortTrailDelayBars=6; EuBShortTrailCandleOffset=0;
+                EuBShortTrailOffsetTicks=28; EuBShortTrailDelayBars=8; EuBShortTrailCandleOffset=5;
                 EuBShortEnableBreakeven=true; EuBShortBreakevenTriggerTicks=200; EuBShortBreakevenOffsetTicks=72;
-                EuBShortMaxBarsInTrade=20;
+                EuBShortMaxBarsInTrade=15;
                 EuBShortEnablePriceOffsetTrail=false; EuBShortPriceOffsetReductionTicks=8;
                 EuBShortEnableWmaFilter=true; EuBShortWmaPeriod=137;
                 EuBShortMinBodyPct=47.0;
@@ -612,23 +612,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuCLongSlExtraTicks=43; EuCLongMaxSlTicks=166; EuCLongMaxSlToTpRatio=0.47;
                 EuCLongUsePriorCandleSl=true; EuCLongSlAtMa=false; EuCLongMoveSlToEntryBar=true;
                 EuCLongTrailOffsetTicks=0; EuCLongTrailDelayBars=2; EuCLongTrailCandleOffset=9;
-                EuCLongEnableBreakeven=true; EuCLongBreakevenTriggerTicks=115; EuCLongBreakevenOffsetTicks=42;
-                EuCLongMaxBarsInTrade=27;
+                EuCLongEnableBreakeven=true; EuCLongBreakevenTriggerTicks=115; EuCLongBreakevenOffsetTicks=52;
+                EuCLongMaxBarsInTrade=32;
                 EuCLongEnablePriceOffsetTrail=false; EuCLongPriceOffsetReductionTicks=7;
                 EuCRequireDirectionFlip=true; EuCAllowSameDirectionAfterLoss=false;
-                EuCLongEnableWmaFilter=true; EuCLongWmaPeriod=20;
+                EuCLongEnableWmaFilter=true; EuCLongWmaPeriod=30;
                 EuCLongMinBodyPct=57.0;
                 EuCLongTrendConfirmBars=16; EuCLongEnableAdxFilter=true; EuCLongAdxPeriod=20; EuCLongAdxMinLevel=11;
                 // Short
                 EuCShortCandleMultiplier=3.72; EuCShortMaxTakeProfitTicks=670;
-                EuCShortSlExtraTicks=69; EuCShortMaxSlTicks=251; EuCShortMaxSlToTpRatio=0.48;
+                EuCShortSlExtraTicks=69; EuCShortMaxSlTicks=301; EuCShortMaxSlToTpRatio=0.48;
                 EuCShortUsePriorCandleSl=true; EuCShortSlAtMa=false; EuCShortMoveSlToEntryBar=false;
-                EuCShortTrailOffsetTicks=80; EuCShortTrailDelayBars=1; EuCShortTrailCandleOffset=8;
-                EuCShortEnableBreakeven=true; EuCShortBreakevenTriggerTicks=243; EuCShortBreakevenOffsetTicks=47;
+                EuCShortTrailOffsetTicks=80; EuCShortTrailDelayBars=5; EuCShortTrailCandleOffset=8;
+                EuCShortEnableBreakeven=true; EuCShortBreakevenTriggerTicks=203; EuCShortBreakevenOffsetTicks=37;
                 EuCShortMaxBarsInTrade=34;
                 EuCShortEnablePriceOffsetTrail=false; EuCShortPriceOffsetReductionTicks=2;
-                EuCShortEnableWmaFilter=true; EuCShortWmaPeriod=109;
-                EuCShortMinBodyPct=36.0;
+                EuCShortEnableWmaFilter=true; EuCShortWmaPeriod=119;
+                EuCShortMinBodyPct=26.0;
                 EuCShortTrendConfirmBars=10; EuCShortEnableAdxFilter=true; EuCShortAdxPeriod=5; EuCShortAdxMinLevel=22;
 
                 // ── AS-A ─────────────────────────────────────────────────────
@@ -644,8 +644,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsALongCandleMultiplier=3.6; AsALongMaxTakeProfitTicks=760;
                 AsALongSlExtraTicks=41; AsALongMaxSlTicks=285; AsALongMaxSlToTpRatio=0.49;
                 AsALongUsePriorCandleSl=true; AsALongSlAtMa=true; AsALongMoveSlToEntryBar=false;
-                AsALongTrailOffsetTicks=53; AsALongTrailDelayBars=12; AsALongTrailCandleOffset=16;
-                AsALongEnableBreakeven=true; AsALongBreakevenTriggerTicks=113; AsALongBreakevenOffsetTicks=64;
+                AsALongTrailOffsetTicks=3; AsALongTrailDelayBars=12; AsALongTrailCandleOffset=11;
+                AsALongEnableBreakeven=true; AsALongBreakevenTriggerTicks=153; AsALongBreakevenOffsetTicks=64;
                 AsALongMaxBarsInTrade=31;
                 AsALongEnablePriceOffsetTrail=true; AsALongPriceOffsetReductionTicks=112;
                 AsARequireDirectionFlip=false; AsAAllowSameDirectionAfterLoss=true;
@@ -656,13 +656,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsAShortCandleMultiplier=3.94; AsAShortMaxTakeProfitTicks=830;
                 AsAShortSlExtraTicks=25; AsAShortMaxSlTicks=173; AsAShortMaxSlToTpRatio=0.42;
                 AsAShortUsePriorCandleSl=true; AsAShortSlAtMa=true; AsAShortMoveSlToEntryBar=true;
-                AsAShortTrailOffsetTicks=3; AsAShortTrailDelayBars=40; AsAShortTrailCandleOffset=6;
-                AsAShortEnableBreakeven=true; AsAShortBreakevenTriggerTicks=141; AsAShortBreakevenOffsetTicks=23;
-                AsAShortMaxBarsInTrade=42;
-                AsAShortEnablePriceOffsetTrail=true; AsAShortPriceOffsetReductionTicks=30;
+                AsAShortTrailOffsetTicks=33; AsAShortTrailDelayBars=38; AsAShortTrailCandleOffset=6;
+                AsAShortEnableBreakeven=true; AsAShortBreakevenTriggerTicks=101; AsAShortBreakevenOffsetTicks=23;
+                AsAShortMaxBarsInTrade=57;
+                AsAShortEnablePriceOffsetTrail=true; AsAShortPriceOffsetReductionTicks=20;
                 AsAShortEnableWmaFilter=true; AsAShortWmaPeriod=20;
                 AsAShortMinBodyPct=40.0;
-                AsAShortTrendConfirmBars=20; AsAShortEnableAdxFilter=true; AsAShortAdxPeriod=14; AsAShortAdxMinLevel=18;
+                AsAShortTrendConfirmBars=20; AsAShortEnableAdxFilter=true; AsAShortAdxPeriod=15; AsAShortAdxMinLevel=13;
 
                 // ── AS-B ─────────────────────────────────────────────────────
                 AsBEnable = true;
@@ -674,25 +674,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsBMaxSessionProfitTicks=500; AsBMaxSessionLossTicks=200;
                 AsBMaxTradesPerSession=2; AsBMaxLossesPerSession=1;
                 // Long
-                AsBLongCandleMultiplier=2.91; AsBLongMaxTakeProfitTicks=430;
-                AsBLongSlExtraTicks=41; AsBLongMaxSlTicks=217; AsBLongMaxSlToTpRatio=0.5;
+                AsBLongCandleMultiplier=2.91; AsBLongMaxTakeProfitTicks=480;
+                AsBLongSlExtraTicks=41; AsBLongMaxSlTicks=242; AsBLongMaxSlToTpRatio=0.5;
                 AsBLongUsePriorCandleSl=true; AsBLongSlAtMa=true; AsBLongMoveSlToEntryBar=false;
-                AsBLongTrailOffsetTicks=21; AsBLongTrailDelayBars=7; AsBLongTrailCandleOffset=14;
-                AsBLongEnableBreakeven=true; AsBLongBreakevenTriggerTicks=115; AsBLongBreakevenOffsetTicks=50;
-                AsBLongMaxBarsInTrade=26;
-                AsBLongEnablePriceOffsetTrail=true; AsBLongPriceOffsetReductionTicks=65;
+                AsBLongTrailOffsetTicks=1; AsBLongTrailDelayBars=7; AsBLongTrailCandleOffset=14;
+                AsBLongEnableBreakeven=true; AsBLongBreakevenTriggerTicks=35; AsBLongBreakevenOffsetTicks=70;
+                AsBLongMaxBarsInTrade=21;
+                AsBLongEnablePriceOffsetTrail=true; AsBLongPriceOffsetReductionTicks=95;
                 AsBRequireDirectionFlip=true; AsBAllowSameDirectionAfterLoss=true;
-                AsBLongEnableWmaFilter=true; AsBLongWmaPeriod=41;
+                AsBLongEnableWmaFilter=true; AsBLongWmaPeriod=51;
                 AsBLongMinBodyPct=27.0;
                 AsBLongTrendConfirmBars=4; AsBLongEnableAdxFilter=true; AsBLongAdxPeriod=12; AsBLongAdxMinLevel=20;
                 // Short
                 AsBShortCandleMultiplier=4.9; AsBShortMaxTakeProfitTicks=511;
                 AsBShortSlExtraTicks=44; AsBShortMaxSlTicks=163; AsBShortMaxSlToTpRatio=0.39;
                 AsBShortUsePriorCandleSl=true; AsBShortSlAtMa=true; AsBShortMoveSlToEntryBar=true;
-                AsBShortTrailOffsetTicks=1; AsBShortTrailDelayBars=14; AsBShortTrailCandleOffset=1;
-                AsBShortEnableBreakeven=true; AsBShortBreakevenTriggerTicks=140; AsBShortBreakevenOffsetTicks=20;
+                AsBShortTrailOffsetTicks=1; AsBShortTrailDelayBars=16; AsBShortTrailCandleOffset=1;
+                AsBShortEnableBreakeven=true; AsBShortBreakevenTriggerTicks=120; AsBShortBreakevenOffsetTicks=50;
                 AsBShortMaxBarsInTrade=28;
-                AsBShortEnablePriceOffsetTrail=true; AsBShortPriceOffsetReductionTicks=40;
+                AsBShortEnablePriceOffsetTrail=true; AsBShortPriceOffsetReductionTicks=30;
                 AsBShortEnableWmaFilter=true; AsBShortWmaPeriod=27;
                 AsBShortMinBodyPct=31.0;
                 AsBShortTrendConfirmBars=18; AsBShortEnableAdxFilter=true; AsBShortAdxPeriod=5; AsBShortAdxMinLevel=23;
@@ -707,22 +707,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsCMaxSessionProfitTicks=500; AsCMaxSessionLossTicks=200;
                 AsCMaxTradesPerSession=1; AsCMaxLossesPerSession=1;
                 // Long
-                AsCLongCandleMultiplier=2.36; AsCLongMaxTakeProfitTicks=300;
+                AsCLongCandleMultiplier=2.36; AsCLongMaxTakeProfitTicks=250;
                 AsCLongSlExtraTicks=5; AsCLongMaxSlTicks=155; AsCLongMaxSlToTpRatio=0.36;
                 AsCLongUsePriorCandleSl=true; AsCLongSlAtMa=true; AsCLongMoveSlToEntryBar=true;
-                AsCLongTrailOffsetTicks=4; AsCLongTrailDelayBars=5; AsCLongTrailCandleOffset=1;
+                AsCLongTrailOffsetTicks=4; AsCLongTrailDelayBars=11; AsCLongTrailCandleOffset=6;
                 AsCLongEnableBreakeven=true; AsCLongBreakevenTriggerTicks=180; AsCLongBreakevenOffsetTicks=12;
                 AsCLongMaxBarsInTrade=41;
-                AsCLongEnablePriceOffsetTrail=true; AsCLongPriceOffsetReductionTicks=37;
+                AsCLongEnablePriceOffsetTrail=true; AsCLongPriceOffsetReductionTicks=47;
                 AsCRequireDirectionFlip=true; AsCAllowSameDirectionAfterLoss=true;
                 AsCLongEnableWmaFilter=true; AsCLongWmaPeriod=20;
                 AsCLongMinBodyPct=24.0;
                 AsCLongTrendConfirmBars=7; AsCLongEnableAdxFilter=true; AsCLongAdxPeriod=14; AsCLongAdxMinLevel=12;
                 // Short
-                AsCShortCandleMultiplier=4.74; AsCShortMaxTakeProfitTicks=425;
+                AsCShortCandleMultiplier=4.74; AsCShortMaxTakeProfitTicks=375;
                 AsCShortSlExtraTicks=49; AsCShortMaxSlTicks=160; AsCShortMaxSlToTpRatio=0.48;
                 AsCShortUsePriorCandleSl=true; AsCShortSlAtMa=true; AsCShortMoveSlToEntryBar=true;
-                AsCShortTrailOffsetTicks=21; AsCShortTrailDelayBars=15; AsCShortTrailCandleOffset=2;
+                AsCShortTrailOffsetTicks=1; AsCShortTrailDelayBars=15; AsCShortTrailCandleOffset=2;
                 AsCShortEnableBreakeven=true; AsCShortBreakevenTriggerTicks=255; AsCShortBreakevenOffsetTicks=75;
                 AsCShortMaxBarsInTrade=20;
                 AsCShortEnablePriceOffsetTrail=false; AsCShortPriceOffsetReductionTicks=93;
