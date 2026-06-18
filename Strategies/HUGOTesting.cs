@@ -4790,7 +4790,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ── Sess1 L1 ──
                 Sess1_L1_Enable = true;
                 Sess1_L1_MinCandleRange = 0;
-                Sess1_L1_MaxCandleRange = 30;
+                Sess1_L1_MaxCandleRange = 20;
                 Sess1_L1_EmaLength = 34;
                 Sess1_L1_EnableEmaSlope = true;
                 Sess1_L1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
@@ -4818,7 +4818,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess1_L1_TrailActivationValue = 80;
                 Sess1_L1_TrailStepTicks = 0;
                 Sess1_L1_EnableBodyPctFilter = true;
-                Sess1_L1_MinBodyPct = 23;
+                Sess1_L1_MinBodyPct = 28;
                 Sess1_L1_EnableDirectionFlip = false;
                 Sess1_L1_EnableMaxDailyLoss = true;
                 Sess1_L1_MaxDailyLoss = 70;
@@ -4829,22 +4829,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── Sess1 L2 ──
                 Sess1_L2_Enable = true;
-                Sess1_L2_MinCandleRange = 30.25;
-                Sess1_L2_MaxCandleRange = 59;
+                Sess1_L2_MinCandleRange = 40.25;
+                Sess1_L2_MaxCandleRange = 49;
                 Sess1_L2_EmaLength = 50;
                 Sess1_L2_EnableEmaSlope = true;
                 Sess1_L2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
                 Sess1_L2_EmaSlopeBars = 21;
-                Sess1_L2_EmaSlopeMinPct = 0.08;
+                Sess1_L2_EmaSlopeMinPct = 0.1;
                 Sess1_L2_EnableWMAFilter = true;
                 Sess1_L2_WMALength = 100;
                 Sess1_L2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess1_L2_FixedStopLoss = 56.75;
+                Sess1_L2_FixedStopLoss = 36.75;
                 Sess1_L2_SLCandleMultiplier = 1.0;
                 Sess1_L2_StopLossOffset = 46;
                 Sess1_L2_MaxStopLoss = 50;
                 Sess1_L2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess1_L2_RiskRewardRatio = 5.0;
+                Sess1_L2_RiskRewardRatio = 4.4;
                 Sess1_L2_FixedTakeProfit = 100;
                 Sess1_L2_TPCandleMultiplier = 1.0;
                 Sess1_L2_EnableBreakEven = true;
@@ -4870,7 +4870,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ── Sess1 S1 ──
                 Sess1_S1_Enable = true;
                 Sess1_S1_MinCandleRange = 0;
-                Sess1_S1_MaxCandleRange = 30;
+                Sess1_S1_MaxCandleRange = 20;
                 Sess1_S1_EmaLength = 21;
                 Sess1_S1_EnableEmaSlope = true;
                 Sess1_S1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
@@ -4879,12 +4879,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess1_S1_EnableWMAFilter = true;
                 Sess1_S1_WMALength = 30;
                 Sess1_S1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess1_S1_FixedStopLoss = 70;
+                Sess1_S1_FixedStopLoss = 50;
                 Sess1_S1_SLCandleMultiplier = 1.0;
                 Sess1_S1_StopLossOffset = 40;
                 Sess1_S1_MaxStopLoss = 50;
                 Sess1_S1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess1_S1_RiskRewardRatio = 4.0;
+                Sess1_S1_RiskRewardRatio = 4.3;
                 Sess1_S1_FixedTakeProfit = 100;
                 Sess1_S1_TPCandleMultiplier = 1.0;
                 Sess1_S1_EnableBreakEven = true;
@@ -4929,7 +4929,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess1_S2_TPCandleMultiplier = 1.0;
                 Sess1_S2_EnableBreakEven = true;
                 Sess1_S2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess1_S2_BreakEvenTriggerValue = 2.9;
+                Sess1_S2_BreakEvenTriggerValue = 2.7;
                 Sess1_S2_BreakEvenOffset = 5;
                 Sess1_S2_EnablePriceTrail = false;
                 Sess1_S2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
@@ -4938,7 +4938,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess1_S2_TrailActivationValue = 196;
                 Sess1_S2_TrailStepTicks = 0;
                 Sess1_S2_EnableBodyPctFilter = true;
-                Sess1_S2_MinBodyPct = 36;
+                Sess1_S2_MinBodyPct = 46;
                 Sess1_S2_EnableDirectionFlip = false;
                 Sess1_S2_EnableMaxDailyLoss = true;
                 Sess1_S2_MaxDailyLoss = 105;
@@ -4950,7 +4950,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ── Sess2 L1 ──
                 Sess2_L1_Enable = true;
                 Sess2_L1_MinCandleRange = 14;
-                Sess2_L1_MaxCandleRange = 30;
+                Sess2_L1_MaxCandleRange = 40;
                 Sess2_L1_EmaLength = 67;
                 Sess2_L1_EnableEmaSlope = true;
                 Sess2_L1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
@@ -4962,9 +4962,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess2_L1_FixedStopLoss = 43;
                 Sess2_L1_SLCandleMultiplier = 1.0;
                 Sess2_L1_StopLossOffset = 22;
-                Sess2_L1_MaxStopLoss = 33;
+                Sess2_L1_MaxStopLoss = 43;
                 Sess2_L1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess2_L1_RiskRewardRatio = 3.74;
+                Sess2_L1_RiskRewardRatio = 4.04;
                 Sess2_L1_FixedTakeProfit = 203;
                 Sess2_L1_TPCandleMultiplier = 1.0;
                 Sess2_L1_EnableBreakEven = false;
@@ -4990,12 +4990,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ── Sess2 L2 ──
                 Sess2_L2_Enable = true;
                 Sess2_L2_MinCandleRange = 30.25;
-                Sess2_L2_MaxCandleRange = 50;
+                Sess2_L2_MaxCandleRange = 45;
                 Sess2_L2_EmaLength = 50;
                 Sess2_L2_EnableEmaSlope = true;
                 Sess2_L2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
                 Sess2_L2_EmaSlopeBars = 27;
-                Sess2_L2_EmaSlopeMinPct = 0.07;
+                Sess2_L2_EmaSlopeMinPct = 0.09;
                 Sess2_L2_EnableWMAFilter = true;
                 Sess2_L2_WMALength = 100;
                 Sess2_L2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
@@ -5010,7 +5010,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess2_L2_EnableBreakEven = true;
                 Sess2_L2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
                 Sess2_L2_BreakEvenTriggerValue = 0.93;
-                Sess2_L2_BreakEvenOffset = 10;
+                Sess2_L2_BreakEvenOffset = 15;
                 Sess2_L2_EnablePriceTrail = false;
                 Sess2_L2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
                 Sess2_L2_TrailDistanceValue = 25;
@@ -5018,7 +5018,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess2_L2_TrailActivationValue = 192;
                 Sess2_L2_TrailStepTicks = 0;
                 Sess2_L2_EnableBodyPctFilter = true;
-                Sess2_L2_MinBodyPct = 20;
+                Sess2_L2_MinBodyPct = 10;
                 Sess2_L2_EnableDirectionFlip = true;
                 Sess2_L2_EnableMaxDailyLoss = true;
                 Sess2_L2_MaxDailyLoss = 207;
@@ -5044,7 +5044,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess2_S1_StopLossOffset = 56;
                 Sess2_S1_MaxStopLoss = 22;
                 Sess2_S1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess2_S1_RiskRewardRatio = 3.12;
+                Sess2_S1_RiskRewardRatio = 2.52;
                 Sess2_S1_FixedTakeProfit = 100;
                 Sess2_S1_TPCandleMultiplier = 1.0;
                 Sess2_S1_EnableBreakEven = true;
@@ -5058,7 +5058,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess2_S1_TrailActivationValue = 147;
                 Sess2_S1_TrailStepTicks = 0;
                 Sess2_S1_EnableBodyPctFilter = true;
-                Sess2_S1_MinBodyPct = 28;
+                Sess2_S1_MinBodyPct = 23;
                 Sess2_S1_EnableDirectionFlip = true;
                 Sess2_S1_EnableMaxDailyLoss = true;
                 Sess2_S1_MaxDailyLoss = 155;
@@ -5119,12 +5119,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess3_L1_EnableWMAFilter = true;
                 Sess3_L1_WMALength = 20;
                 Sess3_L1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess3_L1_FixedStopLoss = 52.25;
+                Sess3_L1_FixedStopLoss = 72.25;
                 Sess3_L1_SLCandleMultiplier = 1.0;
                 Sess3_L1_StopLossOffset = 22;
                 Sess3_L1_MaxStopLoss = 45;
                 Sess3_L1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess3_L1_RiskRewardRatio = 6;
+                Sess3_L1_RiskRewardRatio = 6.6;
                 Sess3_L1_FixedTakeProfit = 203;
                 Sess3_L1_TPCandleMultiplier = 1.0;
                 Sess3_L1_EnableBreakEven = true;
@@ -5138,7 +5138,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess3_L1_TrailActivationValue = 150;
                 Sess3_L1_TrailStepTicks = 0;
                 Sess3_L1_EnableBodyPctFilter = true;
-                Sess3_L1_MinBodyPct = 31;
+                Sess3_L1_MinBodyPct = 41;
                 Sess3_L1_EnableDirectionFlip = false;
                 Sess3_L1_EnableMaxDailyLoss = false;
                 Sess3_L1_MaxDailyLoss = 203;
@@ -5159,7 +5159,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess3_L2_EnableWMAFilter = true;
                 Sess3_L2_WMALength = 50;
                 Sess3_L2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess3_L2_FixedStopLoss = 48;
+                Sess3_L2_FixedStopLoss = 58;
                 Sess3_L2_SLCandleMultiplier = 1.0;
                 Sess3_L2_StopLossOffset = 56;
                 Sess3_L2_MaxStopLoss = 47.5;
@@ -5169,8 +5169,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess3_L2_TPCandleMultiplier = 1.0;
                 Sess3_L2_EnableBreakEven = true;
                 Sess3_L2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess3_L2_BreakEvenTriggerValue = 1.45;
-                Sess3_L2_BreakEvenOffset = 23;
+                Sess3_L2_BreakEvenTriggerValue = 1.25;
+                Sess3_L2_BreakEvenOffset = 33;
                 Sess3_L2_EnablePriceTrail = false;
                 Sess3_L2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
                 Sess3_L2_TrailDistanceValue = 25;
@@ -5195,11 +5195,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess3_S1_EnableEmaSlope = true;
                 Sess3_S1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
                 Sess3_S1_EmaSlopeBars = 45;
-                Sess3_S1_EmaSlopeMinPct = 0.062;
+                Sess3_S1_EmaSlopeMinPct = 0.102;
                 Sess3_S1_EnableWMAFilter = true;
                 Sess3_S1_WMALength = 56;
                 Sess3_S1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess3_S1_FixedStopLoss = 61.5;
+                Sess3_S1_FixedStopLoss = 51.5;
                 Sess3_S1_SLCandleMultiplier = 1.0;
                 Sess3_S1_StopLossOffset = 56;
                 Sess3_S1_MaxStopLoss = 53;
@@ -5209,8 +5209,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess3_S1_TPCandleMultiplier = 1.0;
                 Sess3_S1_EnableBreakEven = true;
                 Sess3_S1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess3_S1_BreakEvenTriggerValue = 1.05;
-                Sess3_S1_BreakEvenOffset = 3;
+                Sess3_S1_BreakEvenTriggerValue = 1.15;
+                Sess3_S1_BreakEvenOffset = 13;
                 Sess3_S1_EnablePriceTrail = false;
                 Sess3_S1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
                 Sess3_S1_TrailDistanceValue = 20;
@@ -5218,7 +5218,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess3_S1_TrailActivationValue = 147;
                 Sess3_S1_TrailStepTicks = 0;
                 Sess3_S1_EnableBodyPctFilter = true;
-                Sess3_S1_MinBodyPct = 28;
+                Sess3_S1_MinBodyPct = 18;
                 Sess3_S1_EnableDirectionFlip = true;
                 Sess3_S1_EnableMaxDailyLoss = false;
                 Sess3_S1_MaxDailyLoss = 155;
@@ -5235,22 +5235,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess3_S2_EnableEmaSlope = true;
                 Sess3_S2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
                 Sess3_S2_EmaSlopeBars = 46;
-                Sess3_S2_EmaSlopeMinPct = 0.079;
+                Sess3_S2_EmaSlopeMinPct = 0.039;
                 Sess3_S2_EnableWMAFilter = false;
                 Sess3_S2_WMALength = 25;
                 Sess3_S2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess3_S2_FixedStopLoss = 47;
+                Sess3_S2_FixedStopLoss = 67;
                 Sess3_S2_SLCandleMultiplier = 1.0;
                 Sess3_S2_StopLossOffset = 56;
-                Sess3_S2_MaxStopLoss = 47;
+                Sess3_S2_MaxStopLoss = 57;
                 Sess3_S2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess3_S2_RiskRewardRatio = 4.24;
+                Sess3_S2_RiskRewardRatio = 4.54;
                 Sess3_S2_FixedTakeProfit = 100;
                 Sess3_S2_TPCandleMultiplier = 1.0;
                 Sess3_S2_EnableBreakEven = true;
                 Sess3_S2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
                 Sess3_S2_BreakEvenTriggerValue = 2.92;
-                Sess3_S2_BreakEvenOffset = 5;
+                Sess3_S2_BreakEvenOffset = 15;
                 Sess3_S2_EnablePriceTrail = false;
                 Sess3_S2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
                 Sess3_S2_TrailDistanceValue = 60;
@@ -5270,7 +5270,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ── Sess4 L1 ──
                 Sess4_L1_Enable = true;
                 Sess4_L1_MinCandleRange = 0;
-                Sess4_L1_MaxCandleRange = 50;
+                Sess4_L1_MaxCandleRange = 40;
                 Sess4_L1_EmaLength = 50;
                 Sess4_L1_EnableEmaSlope = true;
                 Sess4_L1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
@@ -5279,12 +5279,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess4_L1_EnableWMAFilter = true;
                 Sess4_L1_WMALength = 65;
                 Sess4_L1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess4_L1_FixedStopLoss = 49;
+                Sess4_L1_FixedStopLoss = 69;
                 Sess4_L1_SLCandleMultiplier = 1.0;
                 Sess4_L1_StopLossOffset = 22;
-                Sess4_L1_MaxStopLoss = 52;
+                Sess4_L1_MaxStopLoss = 32;
                 Sess4_L1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess4_L1_RiskRewardRatio = 3.42;
+                Sess4_L1_RiskRewardRatio = 4.02;
                 Sess4_L1_FixedTakeProfit = 203;
                 Sess4_L1_TPCandleMultiplier = 1.0;
                 Sess4_L1_EnableBreakEven = true;
@@ -5319,7 +5319,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess4_L2_EnableWMAFilter = true;
                 Sess4_L2_WMALength = 100;
                 Sess4_L2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess4_L2_FixedStopLoss = 49.5;
+                Sess4_L2_FixedStopLoss = 69.5;
                 Sess4_L2_SLCandleMultiplier = 1.0;
                 Sess4_L2_StopLossOffset = 56;
                 Sess4_L2_MaxStopLoss = 49;
@@ -5329,8 +5329,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess4_L2_TPCandleMultiplier = 1.0;
                 Sess4_L2_EnableBreakEven = true;
                 Sess4_L2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess4_L2_BreakEvenTriggerValue = 1.41;
-                Sess4_L2_BreakEvenOffset = 23;
+                Sess4_L2_BreakEvenTriggerValue = 1.51;
+                Sess4_L2_BreakEvenOffset = 33;
                 Sess4_L2_EnablePriceTrail = false;
                 Sess4_L2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
                 Sess4_L2_TrailDistanceValue = 25;
@@ -5350,7 +5350,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ── Sess4 S1 ──
                 Sess4_S1_Enable = true;
                 Sess4_S1_MinCandleRange = 0;
-                Sess4_S1_MaxCandleRange = 50;
+                Sess4_S1_MaxCandleRange = 45;
                 Sess4_S1_EmaLength = 50;
                 Sess4_S1_EnableEmaSlope = true;
                 Sess4_S1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
@@ -5359,12 +5359,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess4_S1_EnableWMAFilter = true;
                 Sess4_S1_WMALength = 67;
                 Sess4_S1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess4_S1_FixedStopLoss = 61.25;
+                Sess4_S1_FixedStopLoss = 81.25;
                 Sess4_S1_SLCandleMultiplier = 1.0;
                 Sess4_S1_StopLossOffset = 56;
-                Sess4_S1_MaxStopLoss = 53;
+                Sess4_S1_MaxStopLoss = 63;
                 Sess4_S1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess4_S1_RiskRewardRatio = 4.39;
+                Sess4_S1_RiskRewardRatio = 4.99;
                 Sess4_S1_FixedTakeProfit = 100;
                 Sess4_S1_TPCandleMultiplier = 1.0;
                 Sess4_S1_EnableBreakEven = true;
@@ -5378,7 +5378,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess4_S1_TrailActivationValue = 147;
                 Sess4_S1_TrailStepTicks = 0;
                 Sess4_S1_EnableBodyPctFilter = true;
-                Sess4_S1_MinBodyPct = 26;
+                Sess4_S1_MinBodyPct = 16;
                 Sess4_S1_EnableDirectionFlip = true;
                 Sess4_S1_EnableMaxDailyLoss = true;
                 Sess4_S1_MaxDailyLoss = 155;
@@ -5389,13 +5389,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── Sess4 S2 ──
                 Sess4_S2_Enable = true;
-                Sess4_S2_MinCandleRange = 50.25;
-                Sess4_S2_MaxCandleRange = 193;
+                Sess4_S2_MinCandleRange = 55.25;
+                Sess4_S2_MaxCandleRange = 183;
                 Sess4_S2_EmaLength = 46;
                 Sess4_S2_EnableEmaSlope = true;
                 Sess4_S2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
                 Sess4_S2_EmaSlopeBars = 46;
-                Sess4_S2_EmaSlopeMinPct = 0.115;
+                Sess4_S2_EmaSlopeMinPct = 0.075;
                 Sess4_S2_EnableWMAFilter = true;
                 Sess4_S2_WMALength = 35;
                 Sess4_S2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
@@ -5418,14 +5418,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Sess4_S2_TrailActivationValue = 196;
                 Sess4_S2_TrailStepTicks = 0;
                 Sess4_S2_EnableBodyPctFilter = true;
-                Sess4_S2_MinBodyPct = 24;
+                Sess4_S2_MinBodyPct = 14;
                 Sess4_S2_EnableDirectionFlip = false;
                 Sess4_S2_EnableMaxDailyLoss = false;
                 Sess4_S2_MaxDailyLoss = 105;
                 Sess4_S2_EnableMaxDailyProfit = true;
-                Sess4_S2_MaxDailyProfit = 47;
+                Sess4_S2_MaxDailyProfit = 27;
                 Sess4_S2_EnableMaxTradesPerDay = true;
-                Sess4_S2_MaxTradesPerDay = 2;
+                Sess4_S2_MaxTradesPerDay = 3;
 
             }
             else if (State == State.Configure)
