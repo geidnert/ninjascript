@@ -30,6 +30,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class MICH : Strategy
     {
+        #region Enums
+        public enum MAMode           { SMA, EMA, Both }
+        public enum MichalEntryMode  { Market, LimitOffset, LimitRetracement }
+        public enum MichalTPMode     { FixedTicks, SwingPoint, CandleMultiple }
+        public enum BEMode2          { FixedTicks, CandlePercent }
+        public enum WebhookProvider  { TradersPost, ProjectX }
+        #endregion
+
         private const string StrategySignalPrefix = "MICH";
         private const string LongEntrySignal = StrategySignalPrefix + "Long";
         private const string ShortEntrySignal = StrategySignalPrefix + "Short";
@@ -4632,11 +4640,4 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         #endregion
     }
 
-    #region Enums
-    public enum MAMode           { SMA, EMA, Both }
-    public enum MichalEntryMode  { Market, LimitOffset, LimitRetracement }
-    public enum MichalTPMode     { FixedTicks, SwingPoint, CandleMultiple }
-    public enum BEMode2          { FixedTicks, CandlePercent }
-    public enum WebhookProvider  { TradersPost, ProjectX }
-    #endregion
 }
