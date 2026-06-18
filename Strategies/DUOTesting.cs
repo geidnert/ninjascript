@@ -53,11 +53,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Both
         }
 
-        public enum TakeProfitStopMode
-        {
-            PercentMove
-        }
-
         private sealed class TradeLineSnapshot
         {
             public int StartBar;
@@ -270,7 +265,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeFlipBreakEvenTriggerPoints;
         private double activeFlipTakeProfitPoints;
         private double activeTakeProfitPercentTriggerPercent;
-        private TakeProfitStopMode activeTakeProfitStopMode = TakeProfitStopMode.PercentMove;
         private double activeTakeProfitPercentStopMovePercent;
         private bool activeRequireMinAdxForFlips;
         private bool activeEnableAdxDdRiskMode;
@@ -648,7 +642,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaFlipBreakEvenTriggerPoints = 4.7;
                 AsiaFlipTakeProfitPoints = 34.5;
                 AsiaTakeProfitPercentTriggerPercent = 39.45;
-                AsiaTakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 AsiaTakeProfitPercentStopMovePercent = 11.31;
                 AsiaRequireMinAdxForFlips = true;
                 AsiaEnableAdxDdRiskMode = true;
@@ -688,7 +681,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2FlipBreakEvenTriggerPoints = 13;
                 Asia2FlipTakeProfitPoints = 61.6;
                 Asia2TakeProfitPercentTriggerPercent = 69.68;
-                Asia2TakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 Asia2TakeProfitPercentStopMovePercent = 82.97;
                 Asia2RequireMinAdxForFlips = true;
                 Asia2EnableAdxDdRiskMode = false;
@@ -728,7 +720,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3FlipBreakEvenTriggerPoints = 5.2;
                 Asia3FlipTakeProfitPoints = 87.2;
                 Asia3TakeProfitPercentTriggerPercent = 72.43;
-                Asia3TakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 Asia3TakeProfitPercentStopMovePercent = 69;
                 Asia3RequireMinAdxForFlips = true;
                 Asia3EnableAdxDdRiskMode = false;
@@ -768,7 +759,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonFlipBreakEvenTriggerPoints = 16.1;
                 LondonFlipTakeProfitPoints = 158.1;
                 LondonTakeProfitPercentTriggerPercent = 50.37;
-                LondonTakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 LondonTakeProfitPercentStopMovePercent = 30.24;
                 LondonRequireMinAdxForFlips = true;
                 LondonEnableAdxDdRiskMode = true;
@@ -808,7 +798,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2FlipBreakEvenTriggerPoints = 4.9;
                 London2FlipTakeProfitPoints = 42.9;
                 London2TakeProfitPercentTriggerPercent = 51.27;
-                London2TakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 London2TakeProfitPercentStopMovePercent = 34.91;
                 London2RequireMinAdxForFlips = true;
                 London2EnableAdxDdRiskMode = true;
@@ -849,7 +838,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3FlipBreakEvenTriggerPoints = 6.9;
                 London3FlipTakeProfitPoints = 63.2;
                 London3TakeProfitPercentTriggerPercent = 53.06;
-                London3TakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 London3TakeProfitPercentStopMovePercent = 14.12;
                 London3RequireMinAdxForFlips = true;
                 London3EnableAdxDdRiskMode = true;
@@ -893,7 +881,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkFlipBreakEvenTriggerPoints = 24.9;
                 NewYorkFlipTakeProfitPoints = 189.1;
                 NewYorkTakeProfitPercentTriggerPercent = 75.68;
-                NewYorkTakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 NewYorkTakeProfitPercentStopMovePercent = 56.34;
                 NewYorkRequireMinAdxForFlips = true;
                 NewYorkEnableAdxDdRiskMode = true;
@@ -937,7 +924,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2FlipBreakEvenTriggerPoints = 10.9;
                 NewYork2FlipTakeProfitPoints = 34.6;
                 NewYork2TakeProfitPercentTriggerPercent = 53.2;
-                NewYork2TakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 NewYork2TakeProfitPercentStopMovePercent = 28.3;
                 NewYork2RequireMinAdxForFlips = true;
                 NewYork2EnableAdxDdRiskMode = true;
@@ -981,7 +967,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3FlipBreakEvenTriggerPoints = 5.2;
                 NewYork3FlipTakeProfitPoints = 55.4;
                 NewYork3TakeProfitPercentTriggerPercent = 21.09;
-                NewYork3TakeProfitStopMode = TakeProfitStopMode.PercentMove;
                 NewYork3TakeProfitPercentStopMovePercent = 43.01;
                 NewYork3RequireMinAdxForFlips = true;
                 NewYork3EnableAdxDdRiskMode = false;
@@ -3008,9 +2993,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 takeProfitStopTriggered = true;
                 LogDebug(string.Format(
-                    "TP stop trigger armed | signal={0} mode={1} triggerPct={2:0.##} triggerPts={3:0.00} avg={4:0.00} close={5:0.00} tpPts={6:0.00}",
+                    "TP stop trigger armed | signal={0} triggerPct={1:0.##} triggerPts={2:0.00} avg={3:0.00} close={4:0.00} tpPts={5:0.00}",
                     entrySignal,
-                    activeTakeProfitStopMode,
                     activeTakeProfitPercentTriggerPercent,
                     triggerPoints,
                     averagePrice,
@@ -3895,7 +3879,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = AsiaFlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = AsiaFlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = AsiaTakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = AsiaTakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = AsiaTakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = AsiaRequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = AsiaEnableAdxDdRiskMode;
@@ -3941,7 +3924,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = Asia2FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = Asia2FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = Asia2TakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = Asia2TakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = Asia2TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = Asia2RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = Asia2EnableAdxDdRiskMode;
@@ -3987,7 +3969,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = Asia3FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = Asia3FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = Asia3TakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = Asia3TakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = Asia3TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = Asia3RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = Asia3EnableAdxDdRiskMode;
@@ -4033,7 +4014,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = LondonFlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = LondonFlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = LondonTakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = LondonTakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = LondonTakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = LondonRequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = LondonEnableAdxDdRiskMode;
@@ -4079,7 +4059,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = London2FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = London2FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = London2TakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = London2TakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = London2TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = London2RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = London2EnableAdxDdRiskMode;
@@ -4125,7 +4104,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = London3FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = London3FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = London3TakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = London3TakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = London3TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = London3RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = London3EnableAdxDdRiskMode;
@@ -4171,7 +4149,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = NewYorkFlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = NewYorkFlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = NewYorkTakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = NewYorkTakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = NewYorkTakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = NewYorkRequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = NewYorkEnableAdxDdRiskMode;
@@ -4217,7 +4194,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = NewYork2FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = NewYork2FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = NewYork2TakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = NewYork2TakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = NewYork2TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = NewYork2RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = NewYork2EnableAdxDdRiskMode;
@@ -4263,7 +4239,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = NewYork3FlipBreakEvenTriggerPoints;
                     activeFlipTakeProfitPoints = NewYork3FlipTakeProfitPoints;
                     activeTakeProfitPercentTriggerPercent = NewYork3TakeProfitPercentTriggerPercent;
-                    activeTakeProfitStopMode = NewYork3TakeProfitStopMode;
                     activeTakeProfitPercentStopMovePercent = NewYork3TakeProfitPercentStopMovePercent;
                     activeRequireMinAdxForFlips = NewYork3RequireMinAdxForFlips;
                     activeEnableAdxDdRiskMode = NewYork3EnableAdxDdRiskMode;
@@ -4308,7 +4283,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeFlipBreakEvenTriggerPoints = 0.0;
                     activeFlipTakeProfitPoints = 0.0;
                     activeTakeProfitPercentTriggerPercent = 0.0;
-                    activeTakeProfitStopMode = TakeProfitStopMode.PercentMove;
                     activeTakeProfitPercentStopMovePercent = 0.0;
                     activeRequireMinAdxForFlips = false;
                     activeEnableAdxDdRiskMode = false;
@@ -6842,7 +6816,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool inNow = TimeInSession(activeSession, Time[0]);
 
             LogDebug(string.Format(
-                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} entryStop={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} mode={27} stopPct={28:0.##} adxFlipMin={29} adxDdRiskMode={30} adxDdRiskSlPts={31:0.##} adxDdRiskTpPts={32:0.##} horizontal={33} atrMin={34:0.##}",
+                "SessionConfig ({0}) | session={1} inSessionNow={2} closeAtSessionEnd={3} forceClose={4} start={5:hh\\:mm} end={6:hh\\:mm} ema={7} adxMin={8:0.##} adxMax={9:0.##} adxSlopeMin={10:0.##} adxPeakDd={11:0.##} adxAbsExit={12:0.##} tpPts={13:0.##} contracts={14} exitCross={15:0.##} flipCross={16:0.##} entryStop={17} slPad={18:0.##} hvSlPad={19:0.##} hvWindow={20:hh\\:mm}-{21:hh\\:mm} entryOffset={22:0.##} flipBe={23}/{24:0.##} flipTp={25:0.##} tpPct={26:0.##} stopPct={27:0.##} adxFlipMin={28} adxDdRiskMode={29} adxDdRiskSlPts={30:0.##} adxDdRiskTpPts={31:0.##} horizontal={32} atrMin={33:0.##}",
                 reason,
                 FormatSessionLabel(activeSession),
                 inNow,
@@ -6870,7 +6844,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeFlipBreakEvenTriggerPoints,
                 activeFlipTakeProfitPoints,
                 activeTakeProfitPercentTriggerPercent,
-                activeTakeProfitStopMode,
                 activeTakeProfitPercentStopMovePercent,
                 activeRequireMinAdxForFlips,
                 activeEnableAdxDdRiskMode,
@@ -9494,10 +9467,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double AsiaTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Asia 1", Order = 28)]
-        public TakeProfitStopMode AsiaTakeProfitStopMode { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Asia 1", Order = 30)]
         public double AsiaTakeProfitPercentStopMovePercent { get; set; }
@@ -9682,10 +9651,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Asia 2", Order = 27)]
         public double Asia2TakeProfitPercentTriggerPercent { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Asia 2", Order = 28)]
-        public TakeProfitStopMode Asia2TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
@@ -9874,10 +9839,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Asia3TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Asia 3", Order = 28)]
-        public TakeProfitStopMode Asia3TakeProfitStopMode { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Asia 3", Order = 30)]
         public double Asia3TakeProfitPercentStopMovePercent { get; set; }
@@ -10063,10 +10024,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double LondonTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Europe 1", Order = 28)]
-        public TakeProfitStopMode LondonTakeProfitStopMode { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "Europe 1", Order = 30)]
         public double LondonTakeProfitPercentStopMovePercent { get; set; }
@@ -10250,10 +10207,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Europe 2", Order = 27)]
         public double London2TakeProfitPercentTriggerPercent { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Europe 2", Order = 28)]
-        public TakeProfitStopMode London2TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
@@ -10443,10 +10396,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "Europe 3", Order = 27)]
         public double London3TakeProfitPercentTriggerPercent { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "Europe 3", Order = 28)]
-        public TakeProfitStopMode London3TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
@@ -10652,10 +10601,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NewYorkTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "America 1", Order = 29)]
-        public TakeProfitStopMode NewYorkTakeProfitStopMode { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "America 1", Order = 31)]
         public double NewYorkTakeProfitPercentStopMovePercent { get; set; }
@@ -10859,10 +10804,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double NewYork2TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "America 2", Order = 29)]
-        public TakeProfitStopMode NewYork2TakeProfitStopMode { get; set; }
-
-        [NinjaScriptProperty]
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "America 2", Order = 31)]
         public double NewYork2TakeProfitPercentStopMovePercent { get; set; }
@@ -11064,10 +11005,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, 100.0)]
         [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "America 3", Order = 28)]
         public double NewYork3TakeProfitPercentTriggerPercent { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "TP % Stop Mode", Description = "After TP % Trigger is reached, move the stop to TP % Stop Move once.", GroupName = "America 3", Order = 29)]
-        public TakeProfitStopMode NewYork3TakeProfitStopMode { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
