@@ -318,7 +318,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const double FlipBodyThresholdPercent = 0.0;
         private const double VerticalFillLowerPriceBound = -100000000.0;
         private const double VerticalFillUpperPriceBound = 100000000.0;
-        private const int EntryVarianceMaxDelaySeconds = 15;
+        private const int EntryVarianceMinDelaySeconds = 1;
+        private const int EntryVarianceMaxDelaySeconds = 10;
         private const int TakeProfitAtrPeriod = 14;
         private const string LongEntrySignal = "DUOLong";
         private const string ShortEntrySignal = "DUOShort";
@@ -4593,7 +4594,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (entryVarianceRandom == null)
                 entryVarianceRandom = new Random(unchecked(Environment.TickCount ^ GetHashCode()));
 
-            return entryVarianceRandom.Next(0, EntryVarianceMaxDelaySeconds + 1);
+            return entryVarianceRandom.Next(EntryVarianceMinDelaySeconds, EntryVarianceMaxDelaySeconds + 1);
         }
 
         private void ProcessPendingEntryVariance(double lastPrice)
@@ -11152,7 +11153,7 @@ private void SubmitLongEntryOrder(int quantity, double entryPrice, bool isMarket
         public bool RequireEntryConfirmation { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Entry Variance", Description = "If enabled, delay qualifying new realtime market entries by a random 0-15 seconds after the 5-minute close.", GroupName = "13. Risk", Order = 3)]
+        [Display(Name = "Entry Variance", Description = "If enabled, delay qualifying new realtime market entries by a random 1-10 seconds after the 5-minute close.", GroupName = "13. Risk", Order = 3)]
         public bool EntryVariance { get; set; }
 
         [NinjaScriptProperty]
