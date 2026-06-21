@@ -234,6 +234,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double secondaryShortDoorTakeProfitVariancePoints;
         private bool secondaryLongPositionActive;
         private bool secondaryShortPositionActive;
+        private double secondaryLongTrailStopPrice;
+        private double secondaryShortTrailStopPrice;
+        private double secondaryLongTrailDistanceFromEmaPoints;
+        private double secondaryShortTrailDistanceFromEmaPoints;
         private Random secondaryTakeProfitVarianceRandom;
         private double initialStopPrice;
         private double currentStopPrice;
@@ -854,6 +858,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
                 SecondaryBiasEmaPeriod = 0;
+                SecondaryTrailStop = false;
                 ShowEmaOnChart = false;
                 ShowAdxOnChart = false;
                 ShowAdxThresholdLines = false;
@@ -1182,8 +1187,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool longSignal = longSignalRaw && allowLong;
             bool shortSignal = shortSignalRaw && allowShort;
 
+            TryTrailSecondaryStop(emaValue);
+
             if (Position.MarketPosition == MarketPosition.Long)
             {
+                if (IsSecondaryTrailOnlyPosition())
+                    return;
+
                 if (TrySubmitStopOutFlip(false, canTradeNow, shortSignal, emaValue))
                     return;
 
@@ -1231,6 +1241,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition == MarketPosition.Short)
             {
+                if (IsSecondaryTrailOnlyPosition())
+                    return;
+
                 if (TrySubmitStopOutFlip(true, canTradeNow, longSignal, emaValue))
                     return;
 
@@ -1678,7 +1691,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double fillPrice = Instrument.MasterInstrument.RoundToTickSize(effectiveFillPrice);
             bool terminalExitExecution = IsTerminalExitExecution(orderName);
             MarketPosition stopOutOriginalSide = GetStopOutOriginalSide(execution);
+            bool stopOutFromSecondaryEntry = IsSecondaryEntrySignalName(execution.Order.FromEntrySignal ?? string.Empty);
             bool shouldAttemptStopOutFlip = activeEnableStopOutFlip
+                && !(SecondaryTrailStop && stopOutFromSecondaryEntry)
                 && IsStopLossOrderName(orderName)
                 && Position.MarketPosition == MarketPosition.Flat
                 && stopOutOriginalSide != MarketPosition.Flat;
@@ -1687,8 +1702,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 bool entryIsSecondary = IsSecondaryEntrySignalName(orderName);
                 bool secondaryAddOnEntry = entryIsSecondary && Position.Quantity > quantity && !string.IsNullOrEmpty(currentPositionEntrySignal);
-                if (entryIsSecondary)
-                    MarkSecondaryEntryActive(orderName);
 
                 if (!secondaryAddOnEntry)
                     currentPositionEntrySignal = orderName;
@@ -1702,6 +1715,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (filledStopPrice <= 0.0 && tradeLineSlPrice > 0.0)
                     filledStopPrice = Instrument.MasterInstrument.RoundToTickSize(tradeLineSlPrice);
                 filledStopPrice = BuildFilledStopPrice(marketPosition, fillPrice, filledStopPrice);
+                if (entryIsSecondary)
+                    MarkSecondaryEntryActive(orderName, filledStopPrice);
 
                 if (secondaryAddOnEntry)
                 {
@@ -1745,7 +1760,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 bool protectiveExecution = IsProtectiveOrderName(orderName);
                 string fromEntrySignal = execution.Order.FromEntrySignal ?? string.Empty;
-                if (protectiveExecution)
+                if (!string.IsNullOrEmpty(fromEntrySignal))
                 {
                     MarkSecondaryEntryExited(fromEntrySignal);
                     if (marketPosition != MarketPosition.Flat
@@ -1764,7 +1779,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
                 else
                 {
-                    if (protectiveExecution)
+                    if (protectiveExecution || IsSecondaryTrailOnlyPosition())
                         ClearTerminalExitLock();
                     else if (!CheckTerminalExitOverfill("execution-" + orderName))
                         ArmProtectionAuditGracePeriod("terminal-exit-execution", 2000);
@@ -1887,6 +1902,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             currentPositionEntrySignal = string.Empty;
             secondaryLongPositionActive = false;
             secondaryShortPositionActive = false;
+            secondaryLongTrailStopPrice = 0.0;
+            secondaryShortTrailStopPrice = 0.0;
+            secondaryLongTrailDistanceFromEmaPoints = 0.0;
+            secondaryShortTrailDistanceFromEmaPoints = 0.0;
             initialStopPrice = 0.0;
             currentStopPrice = 0.0;
             currentPositionEntryBar = -1;
@@ -2005,6 +2024,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             secondaryShortDoorTakeProfitVariancePoints = 0.0;
             secondaryLongPositionActive = false;
             secondaryShortPositionActive = false;
+            secondaryLongTrailStopPrice = 0.0;
+            secondaryShortTrailStopPrice = 0.0;
+            secondaryLongTrailDistanceFromEmaPoints = 0.0;
+            secondaryShortTrailDistanceFromEmaPoints = 0.0;
         }
 
         private void CancelSecondaryEntryDoors(string reason)
@@ -2311,12 +2334,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CancelOrderIfActive(order, reason);
         }
 
-        private void MarkSecondaryEntryActive(string orderName)
+        private void MarkSecondaryEntryActive(string orderName, double stopPrice)
         {
             if (string.Equals(orderName, LongSecondaryEntrySignal, StringComparison.Ordinal))
+            {
                 secondaryLongPositionActive = true;
+                secondaryLongTrailStopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+                secondaryLongTrailDistanceFromEmaPoints = Math.Max(0.0, activeSecondaryEntryStopDistanceFromEmaPoints);
+            }
             else if (string.Equals(orderName, ShortSecondaryEntrySignal, StringComparison.Ordinal))
+            {
                 secondaryShortPositionActive = true;
+                secondaryShortTrailStopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+                secondaryShortTrailDistanceFromEmaPoints = Math.Max(0.0, activeSecondaryEntryStopDistanceFromEmaPoints);
+            }
         }
 
         private void MarkSecondaryEntryExited(string fromEntrySignal)
@@ -2324,15 +2355,104 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (string.Equals(fromEntrySignal, LongSecondaryEntrySignal, StringComparison.Ordinal))
             {
                 secondaryLongPositionActive = false;
+                secondaryLongTrailStopPrice = 0.0;
+                secondaryLongTrailDistanceFromEmaPoints = 0.0;
                 if (secondaryLongDoorOpen)
                     secondaryLongDoorTakeProfitVariancePoints = GetSecondaryTakeProfitVariancePoints();
             }
             else if (string.Equals(fromEntrySignal, ShortSecondaryEntrySignal, StringComparison.Ordinal))
             {
                 secondaryShortPositionActive = false;
+                secondaryShortTrailStopPrice = 0.0;
+                secondaryShortTrailDistanceFromEmaPoints = 0.0;
                 if (secondaryShortDoorOpen)
                     secondaryShortDoorTakeProfitVariancePoints = GetSecondaryTakeProfitVariancePoints();
             }
+        }
+
+        private bool IsSecondaryTrailOnlyPosition()
+        {
+            return SecondaryTrailStop
+                && HasSecondaryEntryExposure()
+                && IsSecondaryEntrySignalName(currentPositionEntrySignal);
+        }
+
+        private bool ShouldPreserveSecondaryTrailForTerminalExit(string reason)
+        {
+            return SecondaryTrailStop
+                && HasSecondaryEntryExposure()
+                && !IsMandatoryTerminalExitReason(reason);
+        }
+
+        private bool IsMandatoryTerminalExitReason(string reason)
+        {
+            return string.Equals(reason, "InvalidConfiguration", StringComparison.Ordinal)
+                || string.Equals(reason, "ForceClose", StringComparison.Ordinal)
+                || string.Equals(reason, "TemporaryDateBlock", StringComparison.Ordinal)
+                || string.Equals(reason, "NewsSkip", StringComparison.Ordinal)
+                || string.Equals(reason, "London3FlatByTime", StringComparison.Ordinal)
+                || string.Equals(reason, "SessionEnd", StringComparison.Ordinal)
+                || string.Equals(reason, "MaxAccountBalance", StringComparison.Ordinal)
+                || string.Equals(reason, "ProtectiveReject", StringComparison.Ordinal)
+                || string.Equals(reason, "EmergencyOverfill", StringComparison.Ordinal);
+        }
+
+        private void TryTrailSecondaryStop(double emaValue)
+        {
+            if (!SecondaryTrailStop || Position.MarketPosition == MarketPosition.Flat || emaValue <= 0.0 || IsTerminalExitInFlight())
+                return;
+
+            if (Position.MarketPosition == MarketPosition.Long && secondaryLongPositionActive)
+                TryTrailSecondaryStop(true, emaValue);
+            else if (Position.MarketPosition == MarketPosition.Short && secondaryShortPositionActive)
+                TryTrailSecondaryStop(false, emaValue);
+        }
+
+        private void TryTrailSecondaryStop(bool isLong, double emaValue)
+        {
+            double trailDistance = isLong ? secondaryLongTrailDistanceFromEmaPoints : secondaryShortTrailDistanceFromEmaPoints;
+            if (trailDistance <= 0.0)
+                trailDistance = Math.Max(0.0, activeSecondaryEntryStopDistanceFromEmaPoints);
+            if (trailDistance <= 0.0)
+                return;
+
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
+            double proposedStop = Instrument.MasterInstrument.RoundToTickSize(isLong
+                ? emaValue - trailDistance
+                : emaValue + trailDistance);
+
+            if (isLong && proposedStop >= closePrice)
+                proposedStop = Instrument.MasterInstrument.RoundToTickSize(closePrice - TickSize);
+            else if (!isLong && proposedStop <= closePrice)
+                proposedStop = Instrument.MasterInstrument.RoundToTickSize(closePrice + TickSize);
+
+            if (proposedStop <= 0.0)
+                return;
+
+            double currentTrailStop = isLong ? secondaryLongTrailStopPrice : secondaryShortTrailStopPrice;
+            if (currentTrailStop <= 0.0)
+                currentTrailStop = proposedStop;
+
+            bool tightens = isLong
+                ? proposedStop > currentTrailStop + TickSize * 0.5
+                : proposedStop < currentTrailStop - TickSize * 0.5;
+            if (!tightens)
+                return;
+
+            string signalName = isLong ? LongSecondaryEntrySignal : ShortSecondaryEntrySignal;
+            SetStopLoss(signalName, CalculationMode.Price, proposedStop, false);
+
+            if (isLong)
+                secondaryLongTrailStopPrice = proposedStop;
+            else
+                secondaryShortTrailStopPrice = proposedStop;
+
+            LogDebug(string.Format(
+                "Secondary trail SL | side={0} ema={1:0.00} distance={2:0.00} stop={3:0.00}",
+                isLong ? "Long" : "Short",
+                emaValue,
+                trailDistance,
+                proposedStop));
         }
 
         private bool IsLongEntryOrderName(string orderName)
@@ -2407,14 +2527,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             MarketPosition exitSide = Position.MarketPosition;
             string exitSignal = BuildExitSignalName(reason);
-            bool exitAllEntries = HasSecondaryEntryExposure();
+            bool preserveSecondaryTrail = ShouldPreserveSecondaryTrailForTerminalExit(reason);
+            string scopedEntrySignal = exitSide == MarketPosition.Long ? GetOpenLongEntrySignal() : GetOpenShortEntrySignal();
+            if (preserveSecondaryTrail && IsSecondaryEntrySignalName(scopedEntrySignal))
+            {
+                LogDebug(string.Format(
+                    "Terminal exit skipped | reason={0} secondary trail position remains managed by SL/TP",
+                    reason));
+                return false;
+            }
+
+            bool exitAllEntries = HasSecondaryEntryExposure() && !preserveSecondaryTrail;
+            if (preserveSecondaryTrail)
+                useEntrySignal = true;
             MarkTerminalExitPending(reason, exitSide);
             ArmProtectionAuditGracePeriod("terminal-exit-" + reason, 10000);
 
             if (exitSide == MarketPosition.Long)
             {
                 if (useEntrySignal && !exitAllEntries)
-                    ExitLong(exitSignal, GetOpenLongEntrySignal());
+                    ExitLong(exitSignal, scopedEntrySignal);
                 else
                     ExitLong(exitSignal);
                 return true;
@@ -2423,7 +2555,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (exitSide == MarketPosition.Short)
             {
                 if (useEntrySignal && !exitAllEntries)
-                    ExitShort(exitSignal, GetOpenShortEntrySignal());
+                    ExitShort(exitSignal, scopedEntrySignal);
                 else
                     ExitShort(exitSignal);
                 return true;
@@ -10400,6 +10532,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, int.MaxValue)]
         [Display(Name = "Secondary Bias EMA Period", Description = "0 disables. When enabled, price above this EMA allows only longs; price below this EMA allows only shorts.", GroupName = "13. Risk", Order = 4)]
         public int SecondaryBiasEmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Secondary Trail Stop", Description = "If enabled, secondary entries ignore normal primary exits and trail their stop every 5-minute close at the original EMA stop distance. Mandatory risk/session exits still flatten.", GroupName = "13. Risk", Order = 5)]
+        public bool SecondaryTrailStop { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Entry Variance", Description = "If enabled, delay qualifying new realtime market entries by a random 1-10 seconds after the 5-minute close.", GroupName = "13. Risk", Order = 3)]
