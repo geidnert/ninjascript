@@ -10832,8 +10832,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
+        [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "99. Debug", Order = 999)]
         public bool DebugLogging { get; set; }
     }
 }

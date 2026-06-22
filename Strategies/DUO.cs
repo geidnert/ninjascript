@@ -11298,8 +11298,7 @@ private void SubmitLongEntryOrder(int quantity, double entryPrice, bool isMarket
         public int SecondaryBiasEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "14. Debug", Order = 0)]
+        [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "99. Debug", Order = int.MaxValue)]
         public bool DebugLogging { get; set; }
     }
 }
