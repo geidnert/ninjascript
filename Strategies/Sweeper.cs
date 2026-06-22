@@ -18,6 +18,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class Sweeper : Strategy
     {
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
+
         public Sweeper()
         {
             VendorLicense(1005);
@@ -2915,9 +2918,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     rectTag,
                     false,
                     sessionStartTime,
-                    0,
+                    VerticalFillLowerPriceBound,
                     sessionEndTime,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     Brushes.Transparent,
                     SessionBrush ?? Brushes.DarkSlateGray,
                     10
@@ -2974,9 +2977,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     rectTag,
                     false,
                     windowStart,
-                    0,
+                    VerticalFillLowerPriceBound,
                     windowEnd,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     lineBrush,
                     areaBrush,
                     2
@@ -3018,9 +3021,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 rectTag,
                 false,
                 windowStart,
-                0,
+                VerticalFillLowerPriceBound,
                 windowEnd,
-                30000,
+                VerticalFillUpperPriceBound,
                 lineBrush,
                 areaBrush,
                 2

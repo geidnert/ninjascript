@@ -42,6 +42,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string LongEntrySignal = StrategySignalPrefix + "Long";
         private const string ShortEntrySignal = StrategySignalPrefix + "Short";
         private const string HeartbeatStrategyName = "MICH";
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
         private static readonly string NewsDatesRaw =
 @"2025-01-02,08:30
 2025-01-08,08:30
@@ -3653,7 +3655,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Brush fillBrush = parentGroup == 1 ? Brushes.Gold : parentGroup == 2 ? Brushes.CornflowerBlue : Brushes.MediumSeaGreen;
             string rectTag = string.Format("MICH_{0}Fill_{1:yyyyMMdd_HHmm}_{2:yyyyMMdd_HHmm}", S_Label(sid), sessionStart, sessionEnd);
             if (DrawObjects[rectTag] != null) return;
-            Draw.Rectangle(this, rectTag, false, sessionStart, 0, sessionEnd, 30000, Brushes.Transparent, fillBrush, 10).ZOrder = -1;
+            Draw.Rectangle(this, rectTag, false, sessionStart, VerticalFillLowerPriceBound, sessionEnd, VerticalFillUpperPriceBound, Brushes.Transparent, fillBrush, 10).ZOrder = -1;
         }
 
         private void DrawNewsWindows(DateTime barTime)
@@ -3671,7 +3673,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 try { if (areaBrush.CanFreeze) areaBrush.Freeze(); if (lineBrush.CanFreeze) lineBrush.Freeze(); } catch { }
                 string tagBase = string.Format("MICH_News_{0:yyyyMMdd_HHmm}", newsTime);
                 if (DrawObjects[tagBase + "_Rect"] != null) continue;
-                Draw.Rectangle(this, tagBase + "_Rect", false, windowStart, 0, windowEnd, 30000, lineBrush, areaBrush, 2).ZOrder = -1;
+                Draw.Rectangle(this, tagBase + "_Rect", false, windowStart, VerticalFillLowerPriceBound, windowEnd, VerticalFillUpperPriceBound, lineBrush, areaBrush, 2).ZOrder = -1;
             }
         }
 

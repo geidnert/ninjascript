@@ -27,6 +27,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private const string LongTargetSignal = "LongTarget8020";
 		private const string ShortStopSignal = "ShortStop8020";
 		private const string ShortTargetSignal = "ShortTarget8020";
+		private const double VerticalFillLowerPriceBound = -100000000.0;
+		private const double VerticalFillUpperPriceBound = 100000000.0;
 
 		private Order longEntryOrder;
 		private Order shortEntryOrder;
@@ -579,8 +581,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (DrawObjects[sessionTag] == null)
 				{
 					Draw.Rectangle(this, sessionTag, false,
-						sessionStartTime, 0,
-						sessionEndTime, 30000,
+						sessionStartTime, VerticalFillLowerPriceBound,
+						sessionEndTime, VerticalFillUpperPriceBound,
 						Brushes.Transparent, SessionBrush ?? Brushes.Gold, 20).ZOrder = -1;
 				}
 
@@ -613,8 +615,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (DrawObjects[tag] == null)
 			{
 				Draw.Rectangle(this, tag, false,
-					windowStart, 0,
-					windowEnd, 30000,
+					windowStart, VerticalFillLowerPriceBound,
+					windowEnd, VerticalFillUpperPriceBound,
 					Brushes.Transparent, SkipBrush ?? Brushes.DarkSlateGray, 25).ZOrder = -1;
 			}
 		}
@@ -645,9 +647,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				rectTag,
 				false,
 				windowStart,
-				0,
+				VerticalFillLowerPriceBound,
 				windowEnd,
-				30000,
+				VerticalFillUpperPriceBound,
 				Brushes.Transparent,
 				SkipBrush ?? Brushes.DarkSlateGray,
 				25

@@ -39,6 +39,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortEntrySignalName     = StrategySignalPrefix + "Short";
         private const string HeartbeatStrategyName    = "HUGOTesting";
         private const int    RequiredPrimaryTimeframeMinutes = 15;
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
 
         public enum WebhookProvider
         {
@@ -6541,7 +6543,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 DateTime ws = barTime.Date + tsS;
                 DateTime we = barTime.Date + tsE;
                 if (we <= ws) we = we.AddDays(1);
-                Draw.Rectangle(this, tag, false, ws, 0, we, 30000, Brushes.Transparent, Brushes.Gold, 10).ZOrder = -1;
+                Draw.Rectangle(this, tag, false, ws, VerticalFillLowerPriceBound, we, VerticalFillUpperPriceBound, Brushes.Transparent, Brushes.Gold, 10).ZOrder = -1;
             }
         }
 
@@ -6561,7 +6563,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             var areaBrush = new SolidColorBrush(Color.FromArgb(60, 255, 0, 0));
             var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
             try { if (areaBrush.CanFreeze) areaBrush.Freeze(); if (lineBrush.CanFreeze) lineBrush.Freeze(); } catch { }
-            Draw.Rectangle(this, tag + "_Rect", false, ws, 0, we, 30000, lineBrush, areaBrush, 2).ZOrder = -1;
+            Draw.Rectangle(this, tag + "_Rect", false, ws, VerticalFillLowerPriceBound, we, VerticalFillUpperPriceBound, lineBrush, areaBrush, 2).ZOrder = -1;
             Draw.VerticalLine(this, tag + "_Start", ws, Brushes.Red, DashStyleHelper.DashDot, 2);
             Draw.VerticalLine(this, tag + "_End",   we, Brushes.Red, DashStyleHelper.DashDot, 2);
         }
@@ -6580,7 +6582,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 var areaBrush = new SolidColorBrush(Color.FromArgb(60, 255, 165, 0));
                 var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
                 try { if (areaBrush.CanFreeze) areaBrush.Freeze(); if (lineBrush.CanFreeze) lineBrush.Freeze(); } catch { }
-                Draw.Rectangle(this, tag + "_Rect", false, ws, 0, we, 30000, lineBrush, areaBrush, 2).ZOrder = -1;
+                Draw.Rectangle(this, tag + "_Rect", false, ws, VerticalFillLowerPriceBound, we, VerticalFillUpperPriceBound, lineBrush, areaBrush, 2).ZOrder = -1;
                 Draw.VerticalLine(this, tag + "_Start", ws, lineBrush, DashStyleHelper.DashDot, 2);
                 Draw.VerticalLine(this, tag + "_End",   we, lineBrush, DashStyleHelper.DashDot, 2);
             }

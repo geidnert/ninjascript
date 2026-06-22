@@ -21,6 +21,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     public class DuoEMA : Strategy
     {
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
+
         public DuoEMA()
         {
             VendorLicense(337);
@@ -1714,9 +1717,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     rectTag,
                     false,
                     sessionStart,
-                    0,
+                    VerticalFillLowerPriceBound,
                     sessionEnd,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     Brushes.Transparent,
                     fillBrush,
                     10).ZOrder = -1;
@@ -1775,9 +1778,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 tagBase + "_Rect",
                 false,
                 windowStart,
-                0,
+                VerticalFillLowerPriceBound,
                 windowEnd,
-                30000,
+                VerticalFillUpperPriceBound,
                 lineBrush,
                 areaBrush,
                 2).ZOrder = -1;
@@ -1818,9 +1821,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     tagBase + "_Rect",
                     false,
                     windowStart,
-                    0,
+                    VerticalFillLowerPriceBound,
                     windowEnd,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     lineBrush,
                     areaBrush,
                     2).ZOrder = -1;

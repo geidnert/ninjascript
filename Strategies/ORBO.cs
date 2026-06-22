@@ -45,6 +45,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string LongSignalPrefix = StrategySignalPrefix + "LongOR_";
         private const string ShortSignalPrefix = StrategySignalPrefix + "ShortOR_";
         private const string ExitSignalPrefix = StrategySignalPrefix;
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
 
         public ORBO()
         {
@@ -2297,9 +2299,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     rectTag,
                     false,
                     sessionStart,
-                    0,
+                    VerticalFillLowerPriceBound,
                     sessionEnd,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     Brushes.Transparent,
                     Brushes.Gold,
                     10).ZOrder = -1;
@@ -2350,9 +2352,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tagBase + "_Rect",
                 false,
                 windowStart,
-                0,
+                VerticalFillLowerPriceBound,
                 windowEnd,
-                30000,
+                VerticalFillUpperPriceBound,
                 lineBrush,
                 areaBrush,
                 2).ZOrder = -1;
@@ -2394,9 +2396,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     tagBase + "_Rect",
                     false,
                     windowStart,
-                    0,
+                    VerticalFillLowerPriceBound,
                     windowEnd,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     lineBrush,
                     areaBrush,
                     2).ZOrder = -1;

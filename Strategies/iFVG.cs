@@ -23,6 +23,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public class iFVG : Strategy
 	{
+		private const double VerticalFillLowerPriceBound = -100000000.0;
+		private const double VerticalFillUpperPriceBound = 100000000.0;
+
 		private static readonly object hedgeLockSync = new object();
 		private static readonly string hedgeLockFile = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "AntiHedgeLock.csv");
 
@@ -2650,9 +2653,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 					tag,
 					false,
 					sessionStartTime,
-					0,
+					VerticalFillLowerPriceBound,
 					sessionEndTime,
-					30000,
+					VerticalFillUpperPriceBound,
 					Brushes.Transparent,
 					SessionBrush ?? Brushes.DarkSlateGray,
 					10
@@ -2709,9 +2712,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				rectTag,
 				false,
 				windowStart,
-				0,
+				VerticalFillLowerPriceBound,
 				windowEnd,
-				30000,
+				VerticalFillUpperPriceBound,
 				outlineBrush,
 				areaBrush,
 				2

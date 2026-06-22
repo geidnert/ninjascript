@@ -27,6 +27,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     public class ADAM : Strategy
     {
         private const string HeartbeatStrategyName = "ADAM";
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
 
         public ADAM()
         {
@@ -3718,9 +3720,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 rectTag,
                 false,
                 sessionStart,
-                0,
+                VerticalFillLowerPriceBound,
                 sessionEnd,
-                30000,
+                VerticalFillUpperPriceBound,
                 Brushes.Transparent,
                 Brushes.Gold,
                 10).ZOrder = -1;
@@ -3753,9 +3755,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tagBase + "_Rect",
                 false,
                 windowStart,
-                0,
+                VerticalFillLowerPriceBound,
                 windowEnd,
-                30000,
+                VerticalFillUpperPriceBound,
                 lineBrush,
                 areaBrush,
                 2).ZOrder = -1;

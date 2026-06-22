@@ -21,6 +21,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     public class Heiken : Strategy
     {
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
+
         private EMA ema;
         private Swing swing;
         private double lastSwingHigh;
@@ -524,9 +527,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     tag,
                     false,
                     sessionStartTime,
-                    0,
+                    VerticalFillLowerPriceBound,
                     sessionEndTime,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     Brushes.Transparent,
                     SessionBrush ?? Brushes.DarkSlateGray,
                     10
@@ -575,9 +578,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 rectTag,
                 false,
                 windowStart,
-                0,
+                VerticalFillLowerPriceBound,
                 windowEnd,
-                30000,
+                VerticalFillUpperPriceBound,
                 lineBrush,
                 areaBrush,
                 2

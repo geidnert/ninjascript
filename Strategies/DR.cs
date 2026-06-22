@@ -22,6 +22,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
     public class DR : Strategy
     {
+        private const double VerticalFillLowerPriceBound = -100000000.0;
+        private const double VerticalFillUpperPriceBound = 100000000.0;
+
         #region User Inputs
         [NinjaScriptProperty]
         [Display(Name = "Entry Method", GroupName = "01. DR Parameters", Order = 0)]
@@ -1337,9 +1340,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     rectTag,
                     false,
                     sessionStartTime,
-                    0,
+                    VerticalFillLowerPriceBound,
                     sessionEndTime,
-                    30000,
+                    VerticalFillUpperPriceBound,
                     Brushes.Transparent,
                     SessionBrush ?? Brushes.DarkSlateGray,
                     10
@@ -1444,9 +1447,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 rectTag,
                 false,
                 windowStart,
-                0,
+                VerticalFillLowerPriceBound,
                 windowEnd,
-                30000,
+                VerticalFillUpperPriceBound,
                 lineBrush,
                 areaBrush,
                 2
