@@ -10799,6 +10799,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int SecondaryBiasEmaPeriod { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Secondary Trail Stop", Description = "If enabled, secondary entries trail their stop every 5-minute close using the original EMA stop distance. The stop only tightens.", GroupName = "01. Risk", Order = 4)]
         public bool SecondaryTrailStop { get; set; }
 
