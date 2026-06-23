@@ -607,7 +607,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaEntrySystemMode = EntrySystemMode.Primary;
-                AsiaSecondaryContracts = 0;
+                AsiaSecondaryContracts = 1;
                 AsiaSecondaryEntryLimitDistanceFromEmaPoints = 0;
                 AsiaSecondaryEntryStopDistanceFromEmaPoints = 2;
                 AsiaSecondaryEntryTakeProfitDistanceFromEmaPoints = 20;
@@ -635,7 +635,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEnableAdxDdRiskMode = true;
                 AsiaAdxDdRiskModeStopLossPoints = 7.67;
                 AsiaAdxDdRiskModeTakeProfitPoints = 75.45;
-                AsiaHorizontalExitBars = 70;
+                AsiaHorizontalExitBars = 44;
 
                 Asia2SessionStart = new TimeSpan(20, 0, 0);
                 Asia2SessionEnd = new TimeSpan(23, 59, 0);
@@ -643,7 +643,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2EntrySystemMode = EntrySystemMode.Primary;
-                Asia2SecondaryContracts = 0;
+                Asia2SecondaryContracts = 1;
                 Asia2SecondaryEntryLimitDistanceFromEmaPoints = 15;
                 Asia2SecondaryEntryStopDistanceFromEmaPoints = 2;
                 Asia2SecondaryEntryTakeProfitDistanceFromEmaPoints = 20;
@@ -671,7 +671,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2EnableAdxDdRiskMode = true;
                 Asia2AdxDdRiskModeStopLossPoints = 11.64;
                 Asia2AdxDdRiskModeTakeProfitPoints = 44.52;
-                Asia2HorizontalExitBars = 63;
+                Asia2HorizontalExitBars = 54;
 
                 Asia3SessionStart = new TimeSpan(0, 30, 0);
                 Asia3SessionEnd = new TimeSpan(2, 0, 0);
@@ -679,7 +679,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
                 Asia3EntrySystemMode = EntrySystemMode.Primary;
-                Asia3SecondaryContracts = 0;
+                Asia3SecondaryContracts = 1;
                 Asia3SecondaryEntryLimitDistanceFromEmaPoints = 14;
                 Asia3SecondaryEntryStopDistanceFromEmaPoints = 2;
                 Asia3SecondaryEntryTakeProfitDistanceFromEmaPoints = 160;
@@ -707,7 +707,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3EnableAdxDdRiskMode = false;
                 Asia3AdxDdRiskModeStopLossPoints = 2.49;
                 Asia3AdxDdRiskModeTakeProfitPoints = 38.91;
-                Asia3HorizontalExitBars = 63;
+                Asia3HorizontalExitBars = 37;
 
                 LondonSessionStart = new TimeSpan(1, 45, 0);
                 LondonSessionEnd = new TimeSpan(3, 0, 0);
@@ -715,7 +715,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonEntrySystemMode = EntrySystemMode.Primary;
-                LondonSecondaryContracts = 0;
+                LondonSecondaryContracts = 1;
                 LondonSecondaryEntryLimitDistanceFromEmaPoints = 0;
                 LondonSecondaryEntryStopDistanceFromEmaPoints = 3.8;
                 LondonSecondaryEntryTakeProfitDistanceFromEmaPoints = 45.1;
@@ -743,7 +743,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonEnableAdxDdRiskMode = true;
                 LondonAdxDdRiskModeStopLossPoints = 6.7;
                 LondonAdxDdRiskModeTakeProfitPoints = 38.71;
-                LondonHorizontalExitBars = 54;
+                LondonHorizontalExitBars = 53;
 
                 London2SessionStart = new TimeSpan(3, 0, 0);
                 London2SessionEnd = new TimeSpan(5, 0, 0);
@@ -751,7 +751,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EmaPeriod = 21;
                 London2Contracts = 1;
                 London2EntrySystemMode = EntrySystemMode.Primary;
-                London2SecondaryContracts = 0;
+                London2SecondaryContracts = 1;
                 London2SecondaryEntryLimitDistanceFromEmaPoints = 0;
                 London2SecondaryEntryStopDistanceFromEmaPoints = 2.3;
                 London2SecondaryEntryTakeProfitDistanceFromEmaPoints = 61.5;
@@ -779,7 +779,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EnableAdxDdRiskMode = false;
                 London2AdxDdRiskModeStopLossPoints = 0.13;
                 London2AdxDdRiskModeTakeProfitPoints = 50.8;
-                London2HorizontalExitBars = 52;
+                London2HorizontalExitBars = 43;
 
                 London3SessionStart = new TimeSpan(5, 45, 0);
                 London3SessionEnd = new TimeSpan(8, 0, 0);
@@ -788,7 +788,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EmaPeriod = 21;
                 London3Contracts = 1;
                 London3EntrySystemMode = EntrySystemMode.Primary;
-                London3SecondaryContracts = 0;
+                London3SecondaryContracts = 1;
                 London3SecondaryEntryLimitDistanceFromEmaPoints = 0;
                 London3SecondaryEntryStopDistanceFromEmaPoints = 2;
                 London3SecondaryEntryTakeProfitDistanceFromEmaPoints = 20;
@@ -816,7 +816,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EnableAdxDdRiskMode = true;
                 London3AdxDdRiskModeStopLossPoints = 5.03;
                 London3AdxDdRiskModeTakeProfitPoints = 51.56;
-                London3HorizontalExitBars = 50;
+                London3HorizontalExitBars = 29;
 
                 NewYorkSessionStart = new TimeSpan(9, 40, 0);
                 NewYorkSessionEnd = new TimeSpan(10, 30, 0);
@@ -825,7 +825,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
                 NewYorkEntrySystemMode = EntrySystemMode.Primary;
-                NewYorkSecondaryContracts = 0;
+                NewYorkSecondaryContracts = 1;
                 NewYorkSecondaryEntryLimitDistanceFromEmaPoints = 0;
                 NewYorkSecondaryEntryStopDistanceFromEmaPoints = 2;
                 NewYorkSecondaryEntryTakeProfitDistanceFromEmaPoints = 20;
@@ -853,7 +853,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEnableAdxDdRiskMode = true;
                 NewYorkAdxDdRiskModeStopLossPoints = 17.41;
                 NewYorkAdxDdRiskModeTakeProfitPoints = 138.94;
-                NewYorkHorizontalExitBars = 29;
+                NewYorkHorizontalExitBars = 38;
 
                 NewYork2SessionStart = new TimeSpan(10, 30, 0);
                 NewYork2SessionEnd = new TimeSpan(14, 0, 0);
@@ -862,7 +862,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EmaPeriod = 16;
                 NewYork2Contracts = 1;
                 NewYork2EntrySystemMode = EntrySystemMode.Primary;
-                NewYork2SecondaryContracts = 0;
+                NewYork2SecondaryContracts = 1;
                 NewYork2SecondaryEntryLimitDistanceFromEmaPoints = 8;
                 NewYork2SecondaryEntryStopDistanceFromEmaPoints = 3;
                 NewYork2SecondaryEntryTakeProfitDistanceFromEmaPoints = 121.2;
@@ -890,7 +890,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EnableAdxDdRiskMode = true;
                 NewYork2AdxDdRiskModeStopLossPoints = 48.53;
                 NewYork2AdxDdRiskModeTakeProfitPoints = 70.22;
-                NewYork2HorizontalExitBars = 37;
+                NewYork2HorizontalExitBars = 42;
 
                 NewYork3SessionStart = new TimeSpan(14, 15, 0);
                 NewYork3SessionEnd = new TimeSpan(15, 30, 0);
@@ -899,7 +899,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3EmaPeriod = 21;
                 NewYork3Contracts = 1;
                 NewYork3EntrySystemMode = EntrySystemMode.Primary;
-                NewYork3SecondaryContracts = 0;
+                NewYork3SecondaryContracts = 1;
                 NewYork3SecondaryEntryLimitDistanceFromEmaPoints = 4;
                 NewYork3SecondaryEntryStopDistanceFromEmaPoints = 2;
                 NewYork3SecondaryEntryTakeProfitDistanceFromEmaPoints = 88.9;
@@ -927,7 +927,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3EnableAdxDdRiskMode = true;
                 NewYork3AdxDdRiskModeStopLossPoints = 8.85;
                 NewYork3AdxDdRiskModeTakeProfitPoints = 36;
-                NewYork3HorizontalExitBars = 26;
+                NewYork3HorizontalExitBars = 22;
 
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
