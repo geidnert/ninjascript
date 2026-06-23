@@ -607,7 +607,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaEntrySystemMode = EntrySystemMode.Primary;
-                AsiaSecondaryContracts = 1;
+                AsiaSecondaryContracts = 0;
                 AsiaSecondaryEntryLimitDistanceFromEmaPoints = 0;
                 AsiaSecondaryEntryStopDistanceFromEmaPoints = 2;
                 AsiaSecondaryEntryTakeProfitDistanceFromEmaPoints = 20;
@@ -643,7 +643,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2EntrySystemMode = EntrySystemMode.Primary;
-                Asia2SecondaryContracts = 1;
+                Asia2SecondaryContracts = 0;
                 Asia2SecondaryEntryLimitDistanceFromEmaPoints = 15;
                 Asia2SecondaryEntryStopDistanceFromEmaPoints = 2;
                 Asia2SecondaryEntryTakeProfitDistanceFromEmaPoints = 20;
@@ -679,7 +679,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
                 Asia3EntrySystemMode = EntrySystemMode.Primary;
-                Asia3SecondaryContracts = 1;
+                Asia3SecondaryContracts = 0;
                 Asia3SecondaryEntryLimitDistanceFromEmaPoints = 14;
                 Asia3SecondaryEntryStopDistanceFromEmaPoints = 2;
                 Asia3SecondaryEntryTakeProfitDistanceFromEmaPoints = 160;
@@ -715,7 +715,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonEntrySystemMode = EntrySystemMode.Primary;
-                LondonSecondaryContracts = 1;
+                LondonSecondaryContracts = 0;
                 LondonSecondaryEntryLimitDistanceFromEmaPoints = 0;
                 LondonSecondaryEntryStopDistanceFromEmaPoints = 3.8;
                 LondonSecondaryEntryTakeProfitDistanceFromEmaPoints = 45.1;
@@ -751,7 +751,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EmaPeriod = 21;
                 London2Contracts = 1;
                 London2EntrySystemMode = EntrySystemMode.Primary;
-                London2SecondaryContracts = 1;
+                London2SecondaryContracts = 0;
                 London2SecondaryEntryLimitDistanceFromEmaPoints = 0;
                 London2SecondaryEntryStopDistanceFromEmaPoints = 2.3;
                 London2SecondaryEntryTakeProfitDistanceFromEmaPoints = 61.5;
@@ -788,7 +788,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EmaPeriod = 21;
                 London3Contracts = 1;
                 London3EntrySystemMode = EntrySystemMode.Primary;
-                London3SecondaryContracts = 1;
+                London3SecondaryContracts = 0;
                 London3SecondaryEntryLimitDistanceFromEmaPoints = 0;
                 London3SecondaryEntryStopDistanceFromEmaPoints = 2;
                 London3SecondaryEntryTakeProfitDistanceFromEmaPoints = 20;
@@ -825,7 +825,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
                 NewYorkEntrySystemMode = EntrySystemMode.Primary;
-                NewYorkSecondaryContracts = 1;
+                NewYorkSecondaryContracts = 0;
                 NewYorkSecondaryEntryLimitDistanceFromEmaPoints = 0;
                 NewYorkSecondaryEntryStopDistanceFromEmaPoints = 2;
                 NewYorkSecondaryEntryTakeProfitDistanceFromEmaPoints = 20;
@@ -862,7 +862,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EmaPeriod = 16;
                 NewYork2Contracts = 1;
                 NewYork2EntrySystemMode = EntrySystemMode.Primary;
-                NewYork2SecondaryContracts = 1;
+                NewYork2SecondaryContracts = 0;
                 NewYork2SecondaryEntryLimitDistanceFromEmaPoints = 8;
                 NewYork2SecondaryEntryStopDistanceFromEmaPoints = 3;
                 NewYork2SecondaryEntryTakeProfitDistanceFromEmaPoints = 121.2;
@@ -899,7 +899,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3EmaPeriod = 21;
                 NewYork3Contracts = 1;
                 NewYork3EntrySystemMode = EntrySystemMode.Primary;
-                NewYork3SecondaryContracts = 1;
+                NewYork3SecondaryContracts = 0;
                 NewYork3SecondaryEntryLimitDistanceFromEmaPoints = 4;
                 NewYork3SecondaryEntryStopDistanceFromEmaPoints = 2;
                 NewYork3SecondaryEntryTakeProfitDistanceFromEmaPoints = 88.9;
