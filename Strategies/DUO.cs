@@ -1177,7 +1177,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
 
                 TryApplyFlipBreakEvenStop();
-                TryManageTakeProfitTriggeredStop();
+                TryManageTakeProfitTouchedStop();
 
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
@@ -1313,7 +1313,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
 
                 TryApplyFlipBreakEvenStop();
-                TryManageTakeProfitTriggeredStop();
+                TryManageTakeProfitTouchedStop();
 
                 if (activeAdxAbsoluteExitLevel > 0.0 && adxValue >= activeAdxAbsoluteExitLevel)
                 {
@@ -2379,9 +2379,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 stopApplied));
         }
 
-        private void TryManageTakeProfitTriggeredStop()
+        private void TryManageTakeProfitTouchedStop()
         {
-            if (Position.MarketPosition == MarketPosition.Flat)
+            if (Position.MarketPosition == MarketPosition.Flat || IsTerminalExitInFlight())
                 return;
 
             double activePositionTakeProfitPoints = GetActivePositionTakeProfitPoints();
@@ -2390,6 +2390,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
             double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
+            double touchPrice = Position.MarketPosition == MarketPosition.Long
+                ? Instrument.MasterInstrument.RoundToTickSize(High[0])
+                : Instrument.MasterInstrument.RoundToTickSize(Low[0]);
             string entrySignal = Position.MarketPosition == MarketPosition.Long
                 ? GetOpenLongEntrySignal()
                 : GetOpenShortEntrySignal();
@@ -2398,18 +2401,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!takeProfitStopTriggered)
             {
                 bool triggerReached = Position.MarketPosition == MarketPosition.Long
-                    ? closePrice >= averagePrice + triggerPoints
-                    : closePrice <= averagePrice - triggerPoints;
+                    ? touchPrice >= averagePrice + triggerPoints
+                    : touchPrice <= averagePrice - triggerPoints;
                 if (!triggerReached)
                     return;
 
                 takeProfitStopTriggered = true;
                 LogDebug(string.Format(
-                    "TP stop trigger armed | signal={0} triggerPct={1:0.##} triggerPts={2:0.00} avg={3:0.00} close={4:0.00} tpPts={5:0.00}",
+                    "TP touch stop trigger armed | signal={0} triggerPct={1:0.##} triggerPts={2:0.00} avg={3:0.00} touch={4:0.00} close={5:0.00} tpPts={6:0.00}",
                     entrySignal,
                     activeTakeProfitPercentTriggerPercent,
                     triggerPoints,
                     averagePrice,
+                    touchPrice,
                     closePrice,
                     activePositionTakeProfitPoints));
             }
@@ -2423,16 +2427,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsManagedStopPriceValid(stopPrice, closePrice))
                 return;
 
-            bool stopApplied = ApplyManagedStop(entrySignal, stopPrice, "tp-percent-stop");
+            bool stopApplied = ApplyManagedStop(entrySignal, stopPrice, "tp-touch-stop");
             if (stopApplied)
             {
                 LogDebug(string.Format(
-                    "TP percent stop moved | signal={0} triggerPct={1:0.##} stopPct={2:0.##} stop={3:0.00} avg={4:0.00} close={5:0.00}",
+                    "TP touch stop moved | signal={0} triggerPct={1:0.##} stopPct={2:0.##} stop={3:0.00} avg={4:0.00} touch={5:0.00} close={6:0.00}",
                     entrySignal,
                     activeTakeProfitPercentTriggerPercent,
                     activeTakeProfitPercentStopMovePercent,
                     stopPrice,
                     averagePrice,
+                    touchPrice,
                     closePrice));
             }
         }
@@ -8682,7 +8687,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "04. Asia 1", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "04. Asia 1", Order = 27)]
         public double AsiaTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
@@ -8857,7 +8862,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "05. Asia 2", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "05. Asia 2", Order = 27)]
         public double Asia2TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9032,7 +9037,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "06. Asia 3", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "06. Asia 3", Order = 27)]
         public double Asia3TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9206,7 +9211,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "07. Europe 1", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "07. Europe 1", Order = 27)]
         public double LondonTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9380,7 +9385,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "08. Europe 2", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "08. Europe 2", Order = 27)]
         public double London2TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9559,7 +9564,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "09. Europe 3", Order = 27)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "09. Europe 3", Order = 27)]
         public double London3TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9739,7 +9744,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "10. America 1", Order = 28)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "10. America 1", Order = 28)]
         public double NewYorkTakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9919,7 +9924,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "11. America 2", Order = 28)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "11. America 2", Order = 28)]
         public double NewYork2TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
@@ -10099,7 +10104,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
-        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Example: 75 = trigger after price reaches 75% of TP distance.", GroupName = "12. America 3", Order = 28)]
+        [Display(Name = "TP % Trigger", Description = "Percent of the active take-profit distance required before the stop move arms. Uses price touch: High for longs, Low for shorts. 0 disables.", GroupName = "12. America 3", Order = 28)]
         public double NewYork3TakeProfitPercentTriggerPercent { get; set; }
 
         [NinjaScriptProperty]
