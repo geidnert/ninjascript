@@ -1431,6 +1431,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (AuditPositionProtection("tick-watchdog"))
                 return;
+
+            TryManageTakeProfitTouchedStop(marketDataUpdate.Price);
         }
 
         private void TrackRealtimeInfoPreview(double price)
@@ -2133,7 +2135,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void TryManageTakeProfitTouchedStop()
         {
-            if (Position.MarketPosition == MarketPosition.Flat || IsTerminalExitInFlight())
+            double touchPrice = Position.MarketPosition == MarketPosition.Long ? High[0] : Low[0];
+            TryManageTakeProfitTouchedStop(touchPrice, Close[0]);
+        }
+
+        private void TryManageTakeProfitTouchedStop(double touchPrice)
+        {
+            TryManageTakeProfitTouchedStop(touchPrice, touchPrice);
+        }
+
+        private void TryManageTakeProfitTouchedStop(double touchPrice, double validationPrice)
+        {
+            if (CurrentBar < 0 || Position.MarketPosition == MarketPosition.Flat || IsTerminalExitInFlight())
                 return;
 
             double activePositionTakeProfitPoints = GetActivePositionTakeProfitPoints();
@@ -2141,10 +2154,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
-            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
-            double touchPrice = Position.MarketPosition == MarketPosition.Long
-                ? Instrument.MasterInstrument.RoundToTickSize(High[0])
-                : Instrument.MasterInstrument.RoundToTickSize(Low[0]);
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(validationPrice);
+            touchPrice = Instrument.MasterInstrument.RoundToTickSize(touchPrice);
             string entrySignal = Position.MarketPosition == MarketPosition.Long
                 ? GetOpenLongEntrySignal()
                 : GetOpenShortEntrySignal();

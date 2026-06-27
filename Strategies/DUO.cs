@@ -839,7 +839,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3FlipBreakEvenTriggerPoints = 8.5;
                 NewYork3FlipTakeProfitPoints = 78.1;
                 NewYork3TakeProfitPercentTriggerPercent = 45.38;
-                NewYork3TakeProfitPercentStopMovePercent = 33.31;
+                NewYork3TakeProfitPercentStopMovePercent = 0;
                 NewYork3RequireMinAdxForFlips = true;
                 NewYork3EnableAdxDdRiskMode = true;
                 NewYork3AdxDdRiskModeStopLossPoints = 7.53;
@@ -1620,7 +1620,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             CancelWrongSideProtectiveOrders("tick-watchdog");
 
-            AuditPositionProtection("tick-watchdog");
+            if (AuditPositionProtection("tick-watchdog"))
+                return;
+
+            TryManageTakeProfitTouchedStop(marketDataUpdate.Price);
         }
 
         private void TrackRealtimeInfoPreview(double price)
@@ -2381,7 +2384,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void TryManageTakeProfitTouchedStop()
         {
-            if (Position.MarketPosition == MarketPosition.Flat || IsTerminalExitInFlight())
+            double touchPrice = Position.MarketPosition == MarketPosition.Long ? High[0] : Low[0];
+            TryManageTakeProfitTouchedStop(touchPrice, Close[0]);
+        }
+
+        private void TryManageTakeProfitTouchedStop(double touchPrice)
+        {
+            TryManageTakeProfitTouchedStop(touchPrice, touchPrice);
+        }
+
+        private void TryManageTakeProfitTouchedStop(double touchPrice, double validationPrice)
+        {
+            if (CurrentBar < 0 || Position.MarketPosition == MarketPosition.Flat || IsTerminalExitInFlight())
                 return;
 
             double activePositionTakeProfitPoints = GetActivePositionTakeProfitPoints();
@@ -2389,10 +2403,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
-            double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
-            double touchPrice = Position.MarketPosition == MarketPosition.Long
-                ? Instrument.MasterInstrument.RoundToTickSize(High[0])
-                : Instrument.MasterInstrument.RoundToTickSize(Low[0]);
+            double closePrice = Instrument.MasterInstrument.RoundToTickSize(validationPrice);
+            touchPrice = Instrument.MasterInstrument.RoundToTickSize(touchPrice);
             string entrySignal = Position.MarketPosition == MarketPosition.Long
                 ? GetOpenLongEntrySignal()
                 : GetOpenShortEntrySignal();
