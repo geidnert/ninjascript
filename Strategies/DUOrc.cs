@@ -5170,10 +5170,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             foreach (SessionSlot slot in ConfigurableSessionSlots)
-                DrawSessionBackground(slot, "DUOrc_" + FormatSessionLabel(slot), GetSessionFillBrush(slot));
+                DrawSessionBackground(slot, "DUOrc_" + FormatSessionLabel(slot));
         }
 
-        private void DrawSessionBackground(SessionSlot slot, string tagPrefix, Brush fillBrush)
+        private void DrawSessionBackground(SessionSlot slot, string tagPrefix)
         {
             TimeSpan start;
             TimeSpan end;
@@ -5191,6 +5191,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string rectTag = string.Format("{0}_SessionFill_{1:yyyyMMdd_HHmm}", tagPrefix, sessionStart);
             if (DrawObjects[rectTag] == null)
             {
+                Brush fillBrush = GetSessionFillBrush(slot);
                 Draw.Rectangle(
                     this,
                     rectTag,
@@ -5207,17 +5208,62 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private Brush GetSessionFillBrush(SessionSlot slot)
         {
+            Brush baseBrush;
             switch (GetSessionFamily(slot))
             {
                 case SessionFamily.Asia:
-                    return AsiaSessionBrush ?? Brushes.LightSkyBlue;
+                    baseBrush = AsiaSessionBrush ?? Brushes.LightSkyBlue;
+                    break;
                 case SessionFamily.London:
-                    return LondonSessionBrush ?? Brushes.LightSkyBlue;
+                    baseBrush = LondonSessionBrush ?? Brushes.LightSkyBlue;
+                    break;
                 case SessionFamily.NewYork:
-                    return NewYorkSessionBrush ?? Brushes.LightSkyBlue;
+                    baseBrush = NewYorkSessionBrush ?? Brushes.LightSkyBlue;
+                    break;
                 default:
                     return Brushes.LightSkyBlue;
             }
+
+            return CreateSessionShadeBrush(baseBrush, GetSessionShadeIndex(slot));
+        }
+
+        private int GetSessionShadeIndex(SessionSlot slot)
+        {
+            switch (slot)
+            {
+                case SessionSlot.Asia2:
+                case SessionSlot.London2:
+                case SessionSlot.NewYork2:
+                    return 1;
+                case SessionSlot.Asia3:
+                case SessionSlot.London3:
+                case SessionSlot.NewYork3:
+                    return 2;
+                default:
+                    return 0;
+            }
+        }
+
+        private static Brush CreateSessionShadeBrush(Brush baseBrush, int shadeIndex)
+        {
+            SolidColorBrush solid = baseBrush as SolidColorBrush;
+            if (solid == null || shadeIndex <= 0)
+                return baseBrush ?? Brushes.LightSkyBlue;
+
+            Color source = solid.Color;
+            double shadeAmount = Math.Min(0.60, shadeIndex * 0.22);
+            Color color = Color.FromArgb(
+                source.A,
+                BlendColorChannel(source.R, 255, shadeAmount),
+                BlendColorChannel(source.G, 255, shadeAmount),
+                BlendColorChannel(source.B, 255, shadeAmount));
+
+            return CreateFrozenBrush(color.A, color.R, color.G, color.B);
+        }
+
+        private static byte BlendColorChannel(byte value, byte target, double amount)
+        {
+            return (byte)Math.Max(0, Math.Min(255, Math.Round(value + (target - value) * amount)));
         }
 
         private void DrawNewsWindows(DateTime barTime)
