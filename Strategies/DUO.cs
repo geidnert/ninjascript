@@ -8750,8 +8750,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "04. Asia 1", Order = 30)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "04. Asia 1", Order = 30)]
         public double AsiaTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
@@ -8925,8 +8925,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "05. Asia 2", Order = 30)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "05. Asia 2", Order = 30)]
         public double Asia2TakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9100,8 +9100,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "06. Asia 3", Order = 30)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "06. Asia 3", Order = 30)]
         public double Asia3TakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9274,8 +9274,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "07. Europe 1", Order = 30)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "07. Europe 1", Order = 30)]
         public double LondonTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9448,8 +9448,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "08. Europe 2", Order = 30)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "08. Europe 2", Order = 30)]
         public double London2TakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9627,8 +9627,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "09. Europe 3", Order = 30)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "09. Europe 3", Order = 30)]
         public double London3TakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9807,8 +9807,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "10. America 1", Order = 31)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "10. America 1", Order = 31)]
         public double NewYorkTakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
@@ -9987,8 +9987,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "11. America 2", Order = 31)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "11. America 2", Order = 31)]
         public double NewYork2TakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
@@ -10167,8 +10167,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, 100.0)]
-        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Example: 50 = halfway from entry to TP, 0 = break-even.", GroupName = "12. America 3", Order = 31)]
+        [Range(-100.0, 100.0)]
+        [Display(Name = "TP % Stop Move", Description = "Move stop to this percent of the active take-profit distance from entry. Negative values move the stop below break-even for longs or above break-even for shorts. Example: -50 = halfway toward the loss side, 0 = break-even, 50 = halfway to TP.", GroupName = "12. America 3", Order = 31)]
         public double NewYork3TakeProfitPercentStopMovePercent { get; set; }
 
         [NinjaScriptProperty]
