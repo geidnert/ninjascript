@@ -559,8 +559,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2StopPaddingPoints = 20.72;
                 Asia2TrailHardStop = false;
                 Asia2TakeProfitPoints = 85.4;
-                Asia2TakeProfitPercentTriggerPercent = 60;
-                Asia2TakeProfitPercentStopMovePercent = 0;
+                Asia2TakeProfitPercentTriggerPercent = 75;
+                Asia2TakeProfitPercentStopMovePercent = 25;
                 Asia2AtrMinimum = 21.04;
                 Asia2CandleReversalExitBars = 4;
                 Asia2CandleReversalCloseBeyondPoints = 6.26;
@@ -584,7 +584,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3TrailHardStop = true;
                 Asia3TakeProfitPoints = 255.1;
                 Asia3TakeProfitPercentTriggerPercent = 60;
-                Asia3TakeProfitPercentStopMovePercent = 40;
+                Asia3TakeProfitPercentStopMovePercent = 45;
                 Asia3AtrMinimum = 22.36;
                 Asia3CandleReversalExitBars = 5;
                 Asia3CandleReversalCloseBeyondPoints = 0.2;
@@ -608,8 +608,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonStopPaddingPoints = 48.74;
                 LondonTrailHardStop = false;
                 LondonTakeProfitPoints = 241.6;
-                LondonTakeProfitPercentTriggerPercent = 80;
-                LondonTakeProfitPercentStopMovePercent = 80;
+                LondonTakeProfitPercentTriggerPercent = 85;
+                LondonTakeProfitPercentStopMovePercent = 65;
                 LondonAtrMinimum = 13.62;
                 LondonCandleReversalExitBars = 15;
                 LondonCandleReversalCloseBeyondPoints = 5.75;
@@ -659,8 +659,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3StopPaddingPoints = 65.96;
                 London3TrailHardStop = true;
                 London3TakeProfitPoints = 154.2;
-                London3TakeProfitPercentTriggerPercent = 40;
-                London3TakeProfitPercentStopMovePercent = 20;
+                London3TakeProfitPercentTriggerPercent = 25;
+                London3TakeProfitPercentStopMovePercent = 10;
                 London3AtrMinimum = 17.19;
                 London3CandleReversalExitBars = 9;
                 London3CandleReversalCloseBeyondPoints = 0.15;
@@ -683,7 +683,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkStopPaddingPoints = 14.05;
                 NewYorkTrailHardStop = true;
                 NewYorkTakeProfitPoints = 218.7;
-                NewYorkTakeProfitPercentTriggerPercent = 60;
+                NewYorkTakeProfitPercentTriggerPercent = 50;
                 NewYorkTakeProfitPercentStopMovePercent = 0;
                 NewYorkAtrMinimum = 1.09;
                 NewYorkCandleReversalExitBars = 4;
@@ -708,7 +708,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2TrailHardStop = true;
                 NewYork2TakeProfitPoints = 211.7;
                 NewYork2TakeProfitPercentTriggerPercent = 80;
-                NewYork2TakeProfitPercentStopMovePercent = 60;
+                NewYork2TakeProfitPercentStopMovePercent = 55;
                 NewYork2AtrMinimum = 1.94;
                 NewYork2CandleReversalExitBars = 19;
                 NewYork2CandleReversalCloseBeyondPoints = 1.75;
@@ -731,7 +731,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3StopPaddingPoints = 15.88;
                 NewYork3TrailHardStop = true;
                 NewYork3TakeProfitPoints = 63.2;
-                NewYork3TakeProfitPercentTriggerPercent = 80;
+                NewYork3TakeProfitPercentTriggerPercent = 65;
                 NewYork3TakeProfitPercentStopMovePercent = 0;
                 NewYork3AtrMinimum = 1.6;
                 NewYork3CandleReversalExitBars = 4;
@@ -755,7 +755,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4StopPaddingPoints = 83.55;
                 NewYork4TrailHardStop = true;
                 NewYork4TakeProfitPoints = 337.1;
-                NewYork4TakeProfitPercentTriggerPercent = 0;
+                NewYork4TakeProfitPercentTriggerPercent = 25;
                 NewYork4TakeProfitPercentStopMovePercent = 0;
                 NewYork4AtrMinimum = 49.59;
                 NewYork4CandleReversalExitBars = 10;
@@ -779,7 +779,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5StopPaddingPoints = 95.42;
                 NewYork5TrailHardStop = true;
                 NewYork5TakeProfitPoints = 184.4;
-                NewYork5TakeProfitPercentTriggerPercent = 60;
+                NewYork5TakeProfitPercentTriggerPercent = 55;
                 NewYork5TakeProfitPercentStopMovePercent = 20;
                 NewYork5AtrMinimum = 27.06;
                 NewYork5CandleReversalExitBars = 18;
