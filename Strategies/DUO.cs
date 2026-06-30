@@ -226,7 +226,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int activeEmaPeriod;
         private int activeContracts;
         private InitialStopMode activeEntryStopMode;
-        private double activeEmaMinSlopePointsPerBar;
         private double activeExitCrossPoints;
         private double activeFlipEmaCrossPoints;
         private double activeTakeProfitPoints;
@@ -574,11 +573,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 AsiaSessionStart = new TimeSpan(18, 30, 0);
                 AsiaSessionEnd = new TimeSpan(20, 0, 0);
-                AsiaBlockSundayTrades = false;
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
                 AsiaFlipAdxThreshold = 13.1;
-                AsiaEmaMinSlopePointsPerBar = 0;
                 AsiaAdxPeriod = 14;
                 AsiaAdxThreshold = 29.6;
                 AsiaAdxMaxThreshold = 49.86;
@@ -604,11 +601,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 Asia2SessionStart = new TimeSpan(20, 0, 0);
                 Asia2SessionEnd = new TimeSpan(23, 59, 0);
-                Asia2BlockSundayTrades = false;
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
                 Asia2FlipAdxThreshold = 10.1;
-                Asia2EmaMinSlopePointsPerBar = 0;
                 Asia2AdxPeriod = 14;
                 Asia2AdxThreshold = 28.3;
                 Asia2AdxMaxThreshold = 39.47;
@@ -634,11 +629,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 Asia3SessionStart = new TimeSpan(0, 30, 0);
                 Asia3SessionEnd = new TimeSpan(2, 0, 0);
-                Asia3BlockSundayTrades = false;
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
                 Asia3FlipAdxThreshold = 13.1;
-                Asia3EmaMinSlopePointsPerBar = 0;
                 Asia3AdxPeriod = 14;
                 Asia3AdxThreshold = 40.2;
                 Asia3AdxMaxThreshold = 55.39;
@@ -668,7 +661,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonFlipAdxThreshold = 23.4;
-                LondonEmaMinSlopePointsPerBar = 0;
                 LondonAdxPeriod = 14;
                 LondonAdxThreshold = 17.8;
                 LondonAdxMaxThreshold = 37.87;
@@ -698,7 +690,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2EmaPeriod = 21;
                 London2Contracts = 1;
                 London2FlipAdxThreshold = 14.5;
-                London2EmaMinSlopePointsPerBar = 0;
                 London2AdxPeriod = 14;
                 London2AdxThreshold = 13.4;
                 London2AdxMaxThreshold = 28.93;
@@ -707,7 +698,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London2AdxAbsoluteExitLevel = 52.2;
                 London2StopPaddingPoints = 10.3;
                 London2ExitCrossPoints = 2.6;
-                London2FlipEmaCrossPoints = 5.6;
+                London2FlipEmaCrossPoints = 5.5;
                 London2MaxStopLossPoints = 115;
                 London2TakeProfitPoints = 135;
                 London2AtrMinimum = 7.8;
@@ -729,7 +720,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3EmaPeriod = 21;
                 London3Contracts = 1;
                 London3FlipAdxThreshold = 6;
-                London3EmaMinSlopePointsPerBar = 0;
                 London3AdxPeriod = 14;
                 London3AdxThreshold = 34;
                 London3AdxMaxThreshold = 42.9;
@@ -738,7 +728,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 London3AdxAbsoluteExitLevel = 49.7;
                 London3StopPaddingPoints = 13.7;
                 London3ExitCrossPoints = 6.7;
-                London3FlipEmaCrossPoints = 1.2;
+                London3FlipEmaCrossPoints = 1.25;
                 London3MaxStopLossPoints = 125;
                 London3TakeProfitPoints = 112;
                 London3AtrMinimum = 8;
@@ -760,7 +750,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYorkEmaPeriod = 16;
                 NewYorkContracts = 1;
                 NewYorkFlipAdxThreshold = 8;
-                NewYorkEmaMinSlopePointsPerBar = 0;
                 NewYorkAdxPeriod = 14;
                 NewYorkAdxThreshold = 32.4;
                 NewYorkAdxMaxThreshold = 51.42;
@@ -791,7 +780,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2EmaPeriod = 16;
                 NewYork2Contracts = 1;
                 NewYork2FlipAdxThreshold = 13.4;
-                NewYork2EmaMinSlopePointsPerBar = 0;
                 NewYork2AdxPeriod = 14;
                 NewYork2AdxThreshold = 22.7;
                 NewYork2AdxMaxThreshold = 39.78;
@@ -822,7 +810,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork3EmaPeriod = 21;
                 NewYork3Contracts = 1;
                 NewYork3FlipAdxThreshold = 6;
-                NewYork3EmaMinSlopePointsPerBar = 0;
                 NewYork3AdxPeriod = 14;
                 NewYork3AdxThreshold = 18.9;
                 NewYork3AdxMaxThreshold = 32.69;
@@ -1111,7 +1098,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
             bool inNySkipNow = IsNewYorkFamily(activeSession) && IsNewYorkSkipTime(activeSession, Time[0]);
-            bool isAsiaSundayBlockedNow = IsAsiaSundayBlocked(activeSession, Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double atrValue = GetCurrentAtrValue();
@@ -1123,9 +1109,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool adxSlopePass = !inActiveSessionNow || activeAdxMinSlopePoints <= 0.0 || adxSlope >= activeAdxMinSlopePoints;
             bool atrMinPass = !inActiveSessionNow || activeMinimumAtrForEntry <= 0.0 || atrValue >= activeMinimumAtrForEntry;
             bool adxPass = adxThresholdPass && adxSlopePass;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && adxPass && atrMinPass;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !accountBlocked && adxPass && atrMinPass;
             bool flipAdxMinPass = !activeRequireMinAdxForFlips || !inActiveSessionNow || activeFlipAdxThreshold <= 0.0 || adxValue >= activeFlipAdxThreshold;
-            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !isAsiaSundayBlockedNow && !accountBlocked && flipAdxMinPass && atrMinPass;
+            bool canFlipNow = inActiveSessionNow && !inNewsSkipNow && !inNySkipNow && !accountBlocked && flipAdxMinPass && atrMinPass;
             double secondaryBiasReferencePrice = Close[0];
             double secondaryBiasEmaValue = GetSecondaryBiasEmaValue();
             bool biasAllowLong = IsSecondaryBiasDirectionAllowed(true, secondaryBiasReferencePrice);
@@ -1137,9 +1123,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CancelWorkingEntryOrders();
 
             if (inNySkipNow)
-                CancelWorkingEntryOrders();
-
-            if (isAsiaSundayBlockedNow)
                 CancelWorkingEntryOrders();
 
             if (activeEma == null || CurrentBar < activeEmaPeriod)
@@ -1166,8 +1149,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool bearish = Close[0] < Open[0];
             double bodyAbovePercent = GetBodyPercentAboveEma(Open[0], Close[0], emaValue);
             double bodyBelowPercent = GetBodyPercentBelowEma(Open[0], Close[0], emaValue);
-            bool emaSlopeLongPass = EmaSlopePassesLong();
-            bool emaSlopeShortPass = EmaSlopePassesShort();
             bool longSignalRaw = bullish && bodyAbovePercent > 0.0;
             bool shortSignalRaw = bearish && bodyBelowPercent > 0.0;
             bool longSignal = longSignalRaw && allowLong;
@@ -1228,7 +1209,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipCanTradePass = canFlipNow;
                     bool flipAtrPass = atrMinPass;
                     bool flipDirectionPass = allowShort;
-                    bool flipSlopePass = emaSlopeShortPass;
                     bool flipBodyPass = bodyBelowPercent >= FlipBodyThresholdPercent;
                     double flipEntryPrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
                     double flipStopPrice = BuildFlipShortStopPrice(flipEntryPrice, emaValue, Time[0]);
@@ -1236,7 +1216,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
                     bool flipCrossPass = Close[0] <= emaValue - effectiveFlipEmaCrossPoints;
                     bool flipEntrySystemPass = true;
-                    bool shouldFlip = flipCanTradePass && flipEntrySystemPass && flipDirectionPass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
+                    bool shouldFlip = flipCanTradePass && flipEntrySystemPass && flipDirectionPass && flipBodyPass && flipCrossPass && flipMaxStopPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToShort");
@@ -1286,12 +1266,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} atrMinPass={2} directionPass={3} emaSlopePass={4} bodyPass={5} crossPass={6} maxStopPass={7} below%={8:0.0} minBody%={9:0.0} flipCrossPts={10:0.##} flipSlPts={11:0.00} maxSlPts={12:0.00}",
+                                "Flip skipped | side=Short canTrade={0} adxMinForFlipPass={1} atrMinPass={2} directionPass={3} bodyPass={4} crossPass={5} maxStopPass={6} below%={7:0.0} minBody%={8:0.0} flipCrossPts={9:0.##} flipSlPts={10:0.00} maxSlPts={11:0.00}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
                                 flipAtrPass,
                                 flipDirectionPass,
-                                flipSlopePass,
                                 flipBodyPass,
                                 flipCrossPass,
                                 flipMaxStopPass,
@@ -1364,7 +1343,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipCanTradePass = canFlipNow;
                     bool flipAtrPass = atrMinPass;
                     bool flipDirectionPass = allowLong;
-                    bool flipSlopePass = emaSlopeLongPass;
                     bool flipBodyPass = bodyAbovePercent >= FlipBodyThresholdPercent;
                     double flipEntryPrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
                     double flipStopPrice = BuildFlipLongStopPrice(flipEntryPrice, emaValue, Time[0]);
@@ -1372,7 +1350,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     bool flipMaxStopPass = IsWithinMaxStopLossPoints(flipStopLossPoints);
                     bool flipCrossPass = Close[0] >= emaValue + effectiveFlipEmaCrossPoints;
                     bool flipEntrySystemPass = true;
-                    bool shouldFlip = flipCanTradePass && flipEntrySystemPass && flipDirectionPass && flipSlopePass && flipBodyPass && flipCrossPass && flipMaxStopPass;
+                    bool shouldFlip = flipCanTradePass && flipEntrySystemPass && flipDirectionPass && flipBodyPass && flipCrossPass && flipMaxStopPass;
                     if (shouldFlip)
                     {
                         CancelOrderIfActive(longEntryOrder, "FlipToLong");
@@ -1422,12 +1400,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         if (DebugLogging)
                         {
                             LogDebug(string.Format(
-                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} atrMinPass={2} directionPass={3} emaSlopePass={4} bodyPass={5} crossPass={6} maxStopPass={7} above%={8:0.0} minBody%={9:0.0} flipCrossPts={10:0.##} flipSlPts={11:0.00} maxSlPts={12:0.00}",
+                                "Flip skipped | side=Long canTrade={0} adxMinForFlipPass={1} atrMinPass={2} directionPass={3} bodyPass={4} crossPass={5} maxStopPass={6} above%={7:0.0} minBody%={8:0.0} flipCrossPts={9:0.##} flipSlPts={10:0.00} maxSlPts={11:0.00}",
                                 flipCanTradePass,
                                 flipAdxMinPass,
                                 flipAtrPass,
                                 flipDirectionPass,
-                                flipSlopePass,
                                 flipBodyPass,
                                 flipCrossPass,
                                 flipMaxStopPass,
@@ -1486,8 +1463,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         else
                             reasons.Add("NewYorkSkip");
                     }
-                    if (isAsiaSundayBlockedNow)
-                        reasons.Add("AsiaSundayBlock");
                     if (accountBlocked)
                         reasons.Add(string.Format("AccountBlocked maxBalance={0:0.##}", MaxAccountBalance));
                     if (!adxMinPass)
@@ -3289,7 +3264,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = AsiaContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = AsiaEmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = AsiaStopPaddingPoints;
                     activeExitCrossPoints = AsiaExitCrossPoints;
                     activeFlipEmaCrossPoints = AsiaFlipEmaCrossPoints;
@@ -3322,7 +3296,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = Asia2Contracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = Asia2EmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = Asia2StopPaddingPoints;
                     activeExitCrossPoints = Asia2ExitCrossPoints;
                     activeFlipEmaCrossPoints = Asia2FlipEmaCrossPoints;
@@ -3355,7 +3328,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = Asia3Contracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = Asia3EmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = Asia3StopPaddingPoints;
                     activeExitCrossPoints = Asia3ExitCrossPoints;
                     activeFlipEmaCrossPoints = Asia3FlipEmaCrossPoints;
@@ -3388,7 +3360,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = LondonContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = LondonEmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = LondonStopPaddingPoints;
                     activeExitCrossPoints = LondonExitCrossPoints;
                     activeFlipEmaCrossPoints = LondonFlipEmaCrossPoints;
@@ -3421,7 +3392,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = London2Contracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = London2EmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = London2StopPaddingPoints;
                     activeExitCrossPoints = London2ExitCrossPoints;
                     activeFlipEmaCrossPoints = London2FlipEmaCrossPoints;
@@ -3454,7 +3424,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = London3Contracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = London3EmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = London3StopPaddingPoints;
                     activeExitCrossPoints = London3ExitCrossPoints;
                     activeFlipEmaCrossPoints = London3FlipEmaCrossPoints;
@@ -3487,7 +3456,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYorkContracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = NewYorkEmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = NewYorkStopPaddingPoints;
                     activeExitCrossPoints = NewYorkExitCrossPoints;
                     activeFlipEmaCrossPoints = NewYorkFlipEmaCrossPoints;
@@ -3520,7 +3488,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork2Contracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = NewYork2EmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = NewYork2StopPaddingPoints;
                     activeExitCrossPoints = NewYork2ExitCrossPoints;
                     activeFlipEmaCrossPoints = NewYork2FlipEmaCrossPoints;
@@ -3553,7 +3520,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     UpdateAdxReferenceLines(activeAdx, activeAdxThreshold, activeAdxMaxThreshold);
                     activeContracts = NewYork3Contracts;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = NewYork3EmaMinSlopePointsPerBar;
                     activeStopPaddingPoints = NewYork3StopPaddingPoints;
                     activeExitCrossPoints = NewYork3ExitCrossPoints;
                     activeFlipEmaCrossPoints = NewYork3FlipEmaCrossPoints;
@@ -3585,7 +3551,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeAdxAbsoluteExitLevel = 0.0;
                     activeContracts = 0;
                     activeEntryStopMode = InitialStopMode.WickExtreme;
-                    activeEmaMinSlopePointsPerBar = 0.0;
                     activeStopPaddingPoints = 0.0;
                     activeExitCrossPoints = 0.0;
                     activeFlipEmaCrossPoints = 0.0;
@@ -4088,12 +4053,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (IsNewYorkFamily(activeSession) && IsNewYorkSkipTime(activeSession, Time[0]))
             {
                 CancelPendingEntryVariance("new-york-skip");
-                return;
-            }
-
-            if (IsAsiaSundayBlocked(activeSession, Time[0]))
-            {
-                CancelPendingEntryVariance("asia-sunday-block");
                 return;
             }
 
@@ -4787,35 +4746,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 && !double.IsNaN(adxSlope) && !double.IsInfinity(adxSlope);
         }
 
-        private double GetEmaSlopePoints()
-        {
-            if (activeEma == null || CurrentBar < 1)
-                return 0.0;
-
-            return activeEma[0] - activeEma[1];
-        }
-
-        private double GetEmaSlopePointsPerBar()
-        {
-            return GetEmaSlopePoints();
-        }
-
-        private bool EmaSlopePassesLong()
-        {
-            if (activeEmaMinSlopePointsPerBar <= 0.0)
-                return true;
-
-            return GetEmaSlopePointsPerBar() >= activeEmaMinSlopePointsPerBar;
-        }
-
-        private bool EmaSlopePassesShort()
-        {
-            if (activeEmaMinSlopePointsPerBar <= 0.0)
-                return true;
-
-            return GetEmaSlopePointsPerBar() <= -activeEmaMinSlopePointsPerBar;
-        }
-
         private void UpdateAdxPeakTracker(double adxValue)
         {
             MarketPosition currentPos = Position.MarketPosition;
@@ -5266,25 +5196,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static byte BlendColorChannel(byte value, byte target, double amount)
         {
             return (byte)Math.Max(0, Math.Min(255, Math.Round(value + (target - value) * amount)));
-        }
-
-        private bool IsAsiaSundayBlocked(SessionSlot slot, DateTime time)
-        {
-            DateTime gateTime = GetHistoricalTimeGateTime(time);
-            if (!IsAsiaFamily(slot) || gateTime.DayOfWeek != DayOfWeek.Sunday)
-                return false;
-
-            switch (slot)
-            {
-                case SessionSlot.Asia:
-                    return AsiaBlockSundayTrades;
-                case SessionSlot.Asia2:
-                    return Asia2BlockSundayTrades;
-                case SessionSlot.Asia3:
-                    return Asia3BlockSundayTrades;
-                default:
-                    return false;
-            }
         }
 
         private bool TryGetNewYorkSkipWindow(SessionSlot slot, out TimeSpan start, out TimeSpan end)
@@ -6638,9 +6549,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
 
             if (IsNewYorkFamily(infoSession) && IsNewYorkSkipTime(infoSession, Time[0]))
-                return false;
-
-            if (IsAsiaSundayBlocked(infoSession, Time[0]))
                 return false;
 
             if (IsAccountBalanceInfoBlocked() || Position.MarketPosition != MarketPosition.Flat)
@@ -8637,11 +8545,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 1 entries/flips on Sundays.", GroupName = "04. Asia 1", Order = 3)]
-        public bool AsiaBlockSundayTrades { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "EMA Period", Description = "EMA period used by Asia 1 entry and exit logic.", GroupName = "04. Asia 1", Order = 4)]
         public int AsiaEmaPeriod { get; set; }
@@ -8691,11 +8594,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "04. Asia 1", Order = 14)]
         public double AsiaAdxPeakDrawdownExitUnits { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "04. Asia 1", Order = 8)]
-        public double AsiaEmaMinSlopePointsPerBar { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
@@ -8812,11 +8710,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 2 entries/flips on Sundays.", GroupName = "05. Asia 2", Order = 3)]
-        public bool Asia2BlockSundayTrades { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "EMA Period", Description = "EMA period used by Asia 2 entry and exit logic.", GroupName = "05. Asia 2", Order = 4)]
         public int Asia2EmaPeriod { get; set; }
@@ -8866,11 +8759,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "05. Asia 2", Order = 14)]
         public double Asia2AdxPeakDrawdownExitUnits { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "05. Asia 2", Order = 8)]
-        public double Asia2EmaMinSlopePointsPerBar { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
@@ -8987,11 +8875,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Block Sunday Trades", Description = "If enabled, block new Asia 3 entries/flips on Sundays.", GroupName = "06. Asia 3", Order = 3)]
-        public bool Asia3BlockSundayTrades { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(1, int.MaxValue)]
         [Display(Name = "EMA Period", Description = "EMA period used by Asia 3 entry and exit logic.", GroupName = "06. Asia 3", Order = 4)]
         public int Asia3EmaPeriod { get; set; }
@@ -9041,11 +8924,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "06. Asia 3", Order = 14)]
         public double Asia3AdxPeakDrawdownExitUnits { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "06. Asia 3", Order = 8)]
-        public double Asia3EmaMinSlopePointsPerBar { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
@@ -9181,11 +9059,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Europe 1 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "07. Europe 1", Order = 7)]
         public double LondonFlipAdxThreshold { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "07. Europe 1", Order = 8)]
-        public double LondonEmaMinSlopePointsPerBar { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, 200)]
@@ -9355,11 +9228,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Europe 2 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "08. Europe 2", Order = 7)]
         public double London2FlipAdxThreshold { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "08. Europe 2", Order = 8)]
-        public double London2EmaMinSlopePointsPerBar { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, 200)]
@@ -9534,11 +9402,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "FLIP ADX Min Threshold", Description = "0 disables. When Require Min ADX For Flips is enabled, Europe 3 flips are allowed only when ADX is greater than or equal to this value.", GroupName = "09. Europe 3", Order = 7)]
         public double London3FlipAdxThreshold { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "09. Europe 3", Order = 8)]
-        public double London3EmaMinSlopePointsPerBar { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(1, 200)]
@@ -9750,11 +9613,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "10. America 1", Order = 9)]
-        public double NewYorkEmaMinSlopePointsPerBar { get; set; }
-        [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.0, 100.0)]
         [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "10. America 1", Order = 16)]
         public double NewYorkAdxAbsoluteExitLevel { get; set; }
@@ -9930,11 +9788,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "11. America 2", Order = 9)]
-        public double NewYork2EmaMinSlopePointsPerBar { get; set; }
-        [NinjaScriptProperty]
-        [Browsable(false)]
         [Range(0.0, 100.0)]
         [Display(Name = "ADX Absolute Exit Level", Description = "0 disables. While in a trade, exit immediately when ADX reaches or exceeds this value.", GroupName = "11. America 2", Order = 16)]
         public double NewYork2AdxAbsoluteExitLevel { get; set; }
@@ -10108,11 +9961,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "ADX Peak Drawdown Exit", Description = "0 disables. While in a trade, track the highest ADX value and flatten when ADX drops by this many units from that peak.", GroupName = "12. America 3", Order = 15)]
         public double NewYork3AdxPeakDrawdownExitUnits { get; set; }
 
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "FLIP EMA Min Slope (Points/Bar)", Description = "Minimum EMA slope required for flip signals. 0 disables.", GroupName = "12. America 3", Order = 9)]
-        public double NewYork3EmaMinSlopePointsPerBar { get; set; }
         [NinjaScriptProperty]
         [Browsable(false)]
         [Range(0.0, 100.0)]
