@@ -6420,31 +6420,35 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool overMax = adxMaxEnabled && adxValue > activeAdxMaxThreshold;
             bool slopeValid = !slopeEnabled || adxSlope >= activeAdxMinSlopePoints;
 
-            string paState;
-            Brush paBrush;
+            string adxState;
+            Brush adxBrush;
             if (overMax)
             {
-                paState = FormatInfoThresholdMetric("Peaking", activeAdxMaxThreshold, adxValue);
-                paBrush = Brushes.OrangeRed;
+                adxState = FormatInfoThresholdMetric("Peaking", activeAdxMaxThreshold, adxValue, false);
+                adxBrush = Brushes.OrangeRed;
             }
             else if (belowMin)
             {
-                paState = FormatInfoThresholdMetric("Weak", activeAdxThreshold, adxValue);
-                paBrush = Brushes.IndianRed;
+                adxState = FormatInfoThresholdMetric("Weak", activeAdxThreshold, adxValue, true);
+                adxBrush = Brushes.IndianRed;
             }
             else
             {
-                double normalThreshold = adxMinEnabled ? activeAdxThreshold : (adxMaxEnabled ? activeAdxMaxThreshold : 0.0);
-                paState = FormatInfoThresholdMetric("Normal", normalThreshold, adxValue);
-                paBrush = Brushes.LimeGreen;
+                if (adxMinEnabled)
+                    adxState = FormatInfoThresholdMetric("Normal", activeAdxThreshold, adxValue, true);
+                else if (adxMaxEnabled)
+                    adxState = FormatInfoThresholdMetric("Normal", activeAdxMaxThreshold, adxValue, false);
+                else
+                    adxState = "Normal";
+                adxBrush = Brushes.LimeGreen;
             }
 
             string momentumState = slopeEnabled
                 ? (slopeValid ? "Trending" : "Ranging")
                 : "Off";
             string momentumText = slopeEnabled
-                ? FormatInfoThresholdMetric(momentumState, activeAdxMinSlopePoints, adxSlope)
-                : string.Format(CultureInfo.InvariantCulture, "Off/{0}", FormatInfoMetric(adxSlope));
+                ? FormatInfoThresholdMetric(momentumState, activeAdxMinSlopePoints, adxSlope, true)
+                : "Off";
             Brush momentumBrush = !slopeEnabled
                 ? Brushes.LightGray
                 : slopeValid ? Brushes.LimeGreen : Brushes.IndianRed;
@@ -6454,7 +6458,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             lines.Add((string.Format("DUO v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", contractsText, Brushes.LightGray, Brushes.LightGray));
-            lines.Add(("PA:", paState, Brushes.LightGray, paBrush));
+            lines.Add(("ADX:", adxState, Brushes.LightGray, adxBrush));
             lines.Add(("Mom:", momentumText, Brushes.LightGray, momentumBrush));
             lines.Add(("5m Close:", closeSignal.value, Brushes.LightGray, closeSignal.brush));
             if (!UseNewsSkip)
@@ -6601,14 +6605,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Instrument.MasterInstrument.RoundToTickSize(closePrice);
         }
 
-        private string FormatInfoThresholdMetric(string state, double thresholdValue, double currentValue)
+        private string FormatInfoThresholdMetric(string state, double thresholdValue, double currentValue, bool higherIsBetter)
         {
+            if (thresholdValue <= 0.0)
+                return state;
+
+            double difference = higherIsBetter
+                ? currentValue - thresholdValue
+                : thresholdValue - currentValue;
+
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "{0} {1}/{2}",
+                "{0} {1}",
                 state,
-                thresholdValue > 0.0 ? FormatInfoMetric(thresholdValue) : "Off",
-                FormatInfoMetric(currentValue));
+                FormatInfoMetric(difference));
         }
 
         private string FormatInfoMetric(double value)

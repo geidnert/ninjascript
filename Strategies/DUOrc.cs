@@ -6407,24 +6407,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Brush adxBrush;
             if (overMax)
             {
-                adxState = FormatInfoThresholdMetric("Max", activeAdxMaxThreshold, adxValue);
+                adxState = FormatInfoThresholdMetric("Peaking", activeAdxMaxThreshold, adxValue, false);
                 adxBrush = Brushes.OrangeRed;
             }
             else if (belowMin)
             {
-                adxState = FormatInfoThresholdMetric("Weak", activeAdxThreshold, adxValue);
+                adxState = FormatInfoThresholdMetric("Weak", activeAdxThreshold, adxValue, true);
                 adxBrush = Brushes.IndianRed;
             }
             else
             {
-                double normalThreshold = adxMinEnabled ? activeAdxThreshold : (adxMaxEnabled ? activeAdxMaxThreshold : 0.0);
-                adxState = FormatInfoThresholdMetric("Normal", normalThreshold, adxValue);
+                if (adxMinEnabled)
+                    adxState = FormatInfoThresholdMetric("Normal", activeAdxThreshold, adxValue, true);
+                else if (adxMaxEnabled)
+                    adxState = FormatInfoThresholdMetric("Normal", activeAdxMaxThreshold, adxValue, false);
+                else
+                    adxState = "Normal";
                 adxBrush = Brushes.LimeGreen;
             }
 
             string atrState = atrBelowMin
-                ? FormatInfoThresholdMetric("Weak", activeMinimumAtrForEntry, atrValue)
-                : FormatInfoThresholdMetric("Normal", activeMinimumAtrForEntry, atrValue);
+                ? FormatInfoThresholdMetric("Weak", activeMinimumAtrForEntry, atrValue, true)
+                : FormatInfoThresholdMetric("Normal", activeMinimumAtrForEntry, atrValue, true);
             Brush atrBrush = atrBelowMin ? Brushes.IndianRed : Brushes.LimeGreen;
 
             lines.Add((string.Format("DUOrc v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
@@ -6561,14 +6565,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Instrument.MasterInstrument.RoundToTickSize(closePrice);
         }
 
-        private string FormatInfoThresholdMetric(string state, double thresholdValue, double currentValue)
+        private string FormatInfoThresholdMetric(string state, double thresholdValue, double currentValue, bool higherIsBetter)
         {
+            if (thresholdValue <= 0.0)
+                return state;
+
+            double difference = higherIsBetter
+                ? currentValue - thresholdValue
+                : thresholdValue - currentValue;
+
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "{0} {1}/{2}",
+                "{0} {1}",
                 state,
-                thresholdValue > 0.0 ? FormatInfoMetric(thresholdValue) : "Off",
-                FormatInfoMetric(currentValue));
+                FormatInfoMetric(difference));
         }
 
         private string FormatInfoMetric(double value)
