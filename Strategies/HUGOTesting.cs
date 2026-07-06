@@ -5,14 +5,16 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Text.RegularExpressions;
+using System.Web.Script.Serialization;
 using System.Xml.Serialization;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui;
@@ -21,7 +23,6 @@ using NinjaTrader.Gui.SuperDom;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
-using NinjaTrader.Core.FloatingPoint;
 using NinjaTrader.NinjaScript.Indicators;
 using NinjaTrader.NinjaScript.DrawingTools;
 #endregion
@@ -30,166 +31,109 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
     public class HUGOTesting : Strategy
     {
+        // ── Commercial licensing (AutoEdge vendor). External dependency: the
+        //    VendorLicense id must be registered for this machine/vendor. ───────
         public HUGOTesting()
         {
             VendorLicense(1346);
         }
-        private const string StrategySignalPrefix    = "HUGOMulti";
-        private const string LongEntrySignalName      = StrategySignalPrefix + "Long";
-        private const string ShortEntrySignalName     = StrategySignalPrefix + "Short";
-        private const string HeartbeatStrategyName    = "HUGOTesting";
+
+        // ── Commercial signal / heartbeat identity ───────────────────────────
+        private const string StrategySignalPrefix           = "HUGOTesting";
+        private const string LongEntrySignalName            = "LongEntry";   // matches base entry order name
+        private const string ShortEntrySignalName           = "ShortEntry";  // matches base entry order name
+        private const string HeartbeatStrategyName          = "HUGOTesting";
         private const int    RequiredPrimaryTimeframeMinutes = 15;
-        private const double VerticalFillLowerPriceBound = -100000000.0;
-        private const double VerticalFillUpperPriceBound = 100000000.0;
 
-        public enum WebhookProvider
-        {
-            TradersPost,
-            ProjectX
-        }
+        public enum WebhookProvider { TradersPost, ProjectX }
 
-        #region Private Variables
+        //  Session IDs:  1=NY-A  2=NY-B  3=NY-C
+        //                4=EU-A  5=EU-B  6=EU-C
+        //                7=AS-A  8=AS-B  9=AS-C
+        private const int SubSessionCount = 9;
 
-        private double dailyPnL_Sess1_L1;
-        private int    dailyTradeCount_Sess1_L1;
-        private bool   dailyLossHit_Sess1_L1;
-        private bool   dailyProfitHit_Sess1_L1;
-        private double dailyPnL_Sess1_L2;
-        private int    dailyTradeCount_Sess1_L2;
-        private bool   dailyLossHit_Sess1_L2;
-        private bool   dailyProfitHit_Sess1_L2;
-        private double dailyPnL_Sess1_S1;
-        private int    dailyTradeCount_Sess1_S1;
-        private bool   dailyLossHit_Sess1_S1;
-        private bool   dailyProfitHit_Sess1_S1;
-        private double dailyPnL_Sess1_S2;
-        private int    dailyTradeCount_Sess1_S2;
-        private bool   dailyLossHit_Sess1_S2;
-        private bool   dailyProfitHit_Sess1_S2;
-        private double dailyPnL_Sess2_L1;
-        private int    dailyTradeCount_Sess2_L1;
-        private bool   dailyLossHit_Sess2_L1;
-        private bool   dailyProfitHit_Sess2_L1;
-        private double dailyPnL_Sess2_L2;
-        private int    dailyTradeCount_Sess2_L2;
-        private bool   dailyLossHit_Sess2_L2;
-        private bool   dailyProfitHit_Sess2_L2;
-        private double dailyPnL_Sess2_S1;
-        private int    dailyTradeCount_Sess2_S1;
-        private bool   dailyLossHit_Sess2_S1;
-        private bool   dailyProfitHit_Sess2_S1;
-        private double dailyPnL_Sess2_S2;
-        private int    dailyTradeCount_Sess2_S2;
-        private bool   dailyLossHit_Sess2_S2;
-        private bool   dailyProfitHit_Sess2_S2;
-        private double dailyPnL_Sess3_L1;
-        private int    dailyTradeCount_Sess3_L1;
-        private bool   dailyLossHit_Sess3_L1;
-        private bool   dailyProfitHit_Sess3_L1;
-        private double dailyPnL_Sess3_L2;
-        private int    dailyTradeCount_Sess3_L2;
-        private bool   dailyLossHit_Sess3_L2;
-        private bool   dailyProfitHit_Sess3_L2;
-        private double dailyPnL_Sess3_S1;
-        private int    dailyTradeCount_Sess3_S1;
-        private bool   dailyLossHit_Sess3_S1;
-        private bool   dailyProfitHit_Sess3_S1;
-        private double dailyPnL_Sess3_S2;
-        private int    dailyTradeCount_Sess3_S2;
-        private bool   dailyLossHit_Sess3_S2;
-        private bool   dailyProfitHit_Sess3_S2;
-        private double dailyPnL_Sess4_L1;
-        private int    dailyTradeCount_Sess4_L1;
-        private bool   dailyLossHit_Sess4_L1;
-        private bool   dailyProfitHit_Sess4_L1;
-        private double dailyPnL_Sess4_L2;
-        private int    dailyTradeCount_Sess4_L2;
-        private bool   dailyLossHit_Sess4_L2;
-        private bool   dailyProfitHit_Sess4_L2;
-        private double dailyPnL_Sess4_S1;
-        private int    dailyTradeCount_Sess4_S1;
-        private bool   dailyLossHit_Sess4_S1;
-        private bool   dailyProfitHit_Sess4_S1;
-        private double dailyPnL_Sess4_S2;
-        private int    dailyTradeCount_Sess4_S2;
-        private bool   dailyLossHit_Sess4_S2;
-        private bool   dailyProfitHit_Sess4_S2;
+        // ── Per-session state arrays (index 1..9) ─────────────────────────────
+        private readonly int[]    subTradeCount               = new int[SubSessionCount + 1];
+        private readonly int[]    subWinCount                 = new int[SubSessionCount + 1];
+        private readonly int[]    subLossCount                = new int[SubSessionCount + 1];
+        private readonly double[] subPnLTicks                 = new double[SubSessionCount + 1];
+        private readonly bool[]   subLimitsReached            = new bool[SubSessionCount + 1];
+        private readonly int[]    subLastTradeDirection       = new int[SubSessionCount + 1];
+        private readonly bool[]   subLastTradeWasLoss         = new bool[SubSessionCount + 1];
+        private readonly bool[]   subWasInNoTradesAfterWindow = new bool[SubSessionCount + 1];
 
-        private EMA emaSess1_L1;
-        private EMA emaSess1_L2;
-        private EMA emaSess1_S1;
-        private EMA emaSess1_S2;
-        private EMA emaSess2_L1;
-        private EMA emaSess2_L2;
-        private EMA emaSess2_S1;
-        private EMA emaSess2_S2;
-        private EMA emaSess3_L1;
-        private EMA emaSess3_L2;
-        private EMA emaSess3_S1;
-        private EMA emaSess3_S2;
-        private EMA emaSess4_L1;
-        private EMA emaSess4_L2;
-        private EMA emaSess4_S1;
-        private EMA emaSess4_S2;
-        private WMA wmaSess1_L1;
-        private WMA wmaSess1_L2;
-        private WMA wmaSess1_S1;
-        private WMA wmaSess1_S2;
-        private WMA wmaSess2_L1;
-        private WMA wmaSess2_L2;
-        private WMA wmaSess2_S1;
-        private WMA wmaSess2_S2;
-        private WMA wmaSess3_L1;
-        private WMA wmaSess3_L2;
-        private WMA wmaSess3_S1;
-        private WMA wmaSess3_S2;
-        private WMA wmaSess4_L1;
-        private WMA wmaSess4_L2;
-        private WMA wmaSess4_S1;
-        private WMA wmaSess4_S2;
+        // ── Per-session indicator arrays (index 1..9) ─────────────────────────
+        // EMA37/90 variant: smaHigh*/smaLow* arrays are repurposed to hold the
+        // FAST EMA (period = GlobalMaPeriod, now 37) instead of an SMA. The
+        // emaHigh*/emaLow* arrays hold the SLOW EMA (GlobalEmaPeriod, now 90).
+        // Names kept as-is (smaHighL etc.) to minimize the diff against the
+        // original SMA(50)/EMA(50) "Both" scaffold -- GetUpperMA/GetLowerMA
+        // below are otherwise untouched (still Math.Max/Min of the two arrays).
+        private readonly EMA[]   smaHighL = new EMA[SubSessionCount + 1];
+        private readonly EMA[]   smaLowL  = new EMA[SubSessionCount + 1];
+        private readonly EMA[]   smaHighS = new EMA[SubSessionCount + 1];
+        private readonly EMA[]   smaLowS  = new EMA[SubSessionCount + 1];
+        private readonly EMA[]   emaHighL = new EMA[SubSessionCount + 1];
+        private readonly EMA[]   emaLowL  = new EMA[SubSessionCount + 1];
+        private readonly EMA[]   emaHighS = new EMA[SubSessionCount + 1];
+        private readonly EMA[]   emaLowS  = new EMA[SubSessionCount + 1];
+        private readonly WMA[]   wmaLong  = new WMA[SubSessionCount + 1];
+        private readonly WMA[]   wmaShort = new WMA[SubSessionCount + 1];
+        private readonly ADX[]   adxLong  = new ADX[SubSessionCount + 1];
+        private readonly ADX[]   adxShort = new ADX[SubSessionCount + 1];
+        private readonly Swing[] swingInd = new Swing[SubSessionCount + 1];
 
-        private bool   longSignalActive;
-        private bool   shortSignalActive;
-        private int    signalBar;
-        private double crossoverCandleHigh;
-        private double crossoverCandleLow;
-        private Order  entryOrder;
 
+        // ── Session / trade state ─────────────────────────────────────────────
+        private int            activeSessionId;
+        private DateTime       currentSessionDate;
+        private int            tradeDirection;
+        private double         signalCandleRange;
+        private double         priorCandleHigh;
+        private double         priorCandleLow;
+        private double         originalStopPrice;
+        private double         tradeEntryPrice;
+        private bool           hasActivePosition;
+        private int            barsSinceEntry;
+        private bool           breakEvenApplied;
+        private bool           entryBarSlApplied;
+        private bool           priceOffsetTrailActive;
+        private double         priceOffsetTrailDistance;
+        private bool           opposingBarBenchmarkSet;
+        private double         opposingBarBenchmark;
+        private MarketPosition prevMarketPosition;
+        private Order          entryOrder;
+        private double         adxPeakSinceEntry;
+
+        // =====================================================================
+        // ── Commercial / AutoEdge additions (do NOT affect base trade logic) ──
+        // =====================================================================
+        // Global daily risk (points-based, layered on top of per-session limits)
         private double   globalDailyPnL;
-        private DateTime currentSessionDate;
+        private int      globalDailyTradeCount;
         private bool     globalDailyLossLimitHit;
         private bool     globalDailyProfitLimitHit;
-        private int      globalDailyTradeCount;
+        // NOTE: currentSessionDate is already declared above and reused for the
+        // global daily reset anchor.
 
-        private double entryPrice;
-        private double currentStopPrice;
-        private double currentTargetPrice;
-        private bool   breakEvenMoved;
-        private int    currentTradeDirection;
-        private string activeBucket;
-        private int    activeSession;
-        private int    pendingDirection;
-
-        private int[]    lastTradeDirection = new int[5];
-        private double[] lastTradePnL       = new double[5];
-
-        private double bestPriceSinceEntry;
-        private bool   trailActivated;
-        private bool   trailLocked;
-        private double initialStopDistance;
-        private double initialTPDistance;
-
-        private bool inSkipWindow;
-        private bool inNewsSkipWindow;
-
-        // ── Commercial / AutoEdge additions ──────────────────────────────────
+        // Max account balance
         private bool     maxAccountLimitHit;
+
+        // Order-handling protection (timeframe / instrument validation)
         private bool     isConfiguredTimeframeValid  = true;
         private bool     isConfiguredInstrumentValid = true;
         private bool     timeframePopupShown;
         private bool     instrumentPopupShown;
 
-        // Info box overlay
+        // Skip / news windows
+        private bool     inSkipWindow;
+        private bool     inNewsSkipWindow;
+
+        // Webhook protective-order mirror prices
+        private double   currentTargetPrice;
+        private double   currentStopPrice;
+
+        // Info box overlay (HUGO)
         private Border      infoBoxContainer;
         private StackPanel  infoBoxRowsPanel;
         private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
@@ -203,11 +147,38 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static readonly Brush InfoValueBrush       = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
         private static readonly Brush PassedNewsRowBrush   = CreateFrozenBrush(30, 211, 211, 211);
 
-        // Heartbeat reporter (TopstepX API)
+        // External AddOn dependencies (must exist in the user's NinjaTrader install,
+        // same as HUGOTesting-2): heartbeat reporter (TopstepX) + ProjectX router.
         private StrategyHeartbeatReporter heartbeatReporter;
         private HUGOTestingProjectXOrderRouter projectXRouter;
+        // ── Inlined ProjectX (TopstepX) client state (self-contained) ────────
+        private string projectXSessionToken;
+        private DateTime projectXTokenAcquiredUtc;
+        private List<ProjectXAccountInfo> projectXAccounts;
+        private string projectXResolvedContractId;
+        private string projectXResolvedInstrumentKey;
+        private double projectXLastSyncedStopPrice;
+        private double projectXLastSyncedTargetPrice;
+        private readonly Dictionary<string, long> projectXLastOrderIds = new Dictionary<string, long>();
 
-        // News dates
+        private sealed class ProjectXAccountInfo
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public bool CanTrade { get; set; }
+            public bool IsVisible { get; set; }
+        }
+
+        private sealed class ProjectXContractInfo
+        {
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public string Description { get; set; }
+            public string SymbolId { get; set; }
+            public bool ActiveContract { get; set; }
+        }
+
+        // Hard-coded news dates (yyyy-MM-dd,HH:mm per line)
         private static readonly string NewsDatesRaw =
 @"2025-01-02,08:30
 2025-01-08,08:30
@@ -428,5144 +399,416 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private readonly List<DateTime> NewsDates = new List<DateTime>();
         private bool newsDatesInitialized;
 
-        #endregion
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  COMMON PARAMETERS
-        // ════════════════════════════════════════════════════════════════════════
-
-        #region Common Parameters
-
-        [NinjaScriptProperty]
-        [Display(Name = "Session Start Time (Daily Reset Anchor)", Description = "CME daily reset anchor - typically 18:00 for NQ.", Order = 1, GroupName = "0. Common - Time Settings")]
-        public string SessionStartTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Contract Quantity", Order = 2, GroupName = "0. Common - Time Settings")]
-        public int ContractQuantity { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Skip Time Window", Order = 3, GroupName = "0. Common - Time Settings")]
-        public bool EnableSkipTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip Time Start", Order = 4, GroupName = "0. Common - Time Settings")]
-        public string SkipTimeStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Skip Time End", Order = 5, GroupName = "0. Common - Time Settings")]
-        public string SkipTimeEnd { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Flatten Position at Skip Start", Order = 6, GroupName = "0. Common - Time Settings")]
-        public bool FlattenAtSkipStart { get; set; }
-
-        // ── News Skip ────────────────────────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "Use News Skip", Order = 7, GroupName = "0. Common - Time Settings")]
-        public bool UseNewsSkip { get; set; }
-
-        [Display(Name = "News Time", Order = 8, GroupName = "0. Common - Time Settings")]
-        [Browsable(false)]
-        public string NewsTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 240)]
-        [Display(Name = "News Block Minutes", Order = 9, GroupName = "0. Common - Time Settings")]
-        public int NewsBlockMinutes { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Flatten Position at News Start", Order = 10, GroupName = "0. Common - Time Settings")]
-        public bool FlattenAtNewsStart { get; set; }
-
-        // ── Execution ────────────────────────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "Entry Confirmation", Order = 1, GroupName = "0. Common - Execution")]
-        public bool RequireEntryConfirmation { get; set; }
-
-        // ── Webhooks ─────────────────────────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "TradersPost Webhook URL", Order = 1, GroupName = "0. Common - Webhooks")]
-        public string WebhookUrl { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Webhook Ticker Override", Order = 2, GroupName = "0. Common - Webhooks")]
-        public string WebhookTickerOverride { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Webhook Provider", Description = "Select webhook target: TradersPost or ProjectX.", Order = 3, GroupName = "0. Common - Webhooks")]
-        public WebhookProvider WebhookProviderType { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "ProjectX API Base URL", Description = "ProjectX gateway base URL.", Order = 4, GroupName = "0. Common - Webhooks")]
-        public string ProjectXApiBaseUrl { get; set; }
-
-        [Browsable(false)]
-        public bool ProjectXTradeAllAccounts { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ProjectX Username", Description = "ProjectX login username.", Order = 5, GroupName = "0. Common - Webhooks")]
-        public string ProjectXUsername { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ProjectX API Key", Description = "ProjectX API key.", Order = 6, GroupName = "0. Common - Webhooks")]
-        public string ProjectXApiKey { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ProjectX Accounts", Description = "Comma-separated ProjectX account ids or exact account names.", Order = 7, GroupName = "0. Common - Webhooks")]
-        public string ProjectXAccountId { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "ProjectX Contract ID", Description = "Hidden optional override for support/debug use only.", Order = 8, GroupName = "0. Common - Webhooks")]
-        public string ProjectXContractId { get; set; }
-
-        // ── Contract Size ────────────────────────────────────────────────────
-        public bool EnableGlobalMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "Global Max Daily Loss (Points)", Order = 2, GroupName = "0. Common - Global Risk")]
-        public double GlobalMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Global Max Daily Profit", Order = 3, GroupName = "0. Common - Global Risk")]
-        public bool EnableGlobalMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "Global Max Daily Profit (Points)", Order = 4, GroupName = "0. Common - Global Risk")]
-        public double GlobalMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Global Max Trades Per Day", Order = 5, GroupName = "0. Common - Global Risk")]
-        public bool EnableGlobalMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Global Max Trades Per Day", Order = 6, GroupName = "0. Common - Global Risk")]
-        public int GlobalMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Max Account Balance", Description = "Net liquidation ceiling. When reached, entries are blocked and open positions are flattened. 0 = disabled.", Order = 7, GroupName = "0. Common - Global Risk")]
-        public double MaxAccountBalance { get; set; }
-
-        #endregion
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  PER-SESSION TIME SETTINGS + BUCKET PARAMETERS
-        // ════════════════════════════════════════════════════════════════════════
-
-        #region Per-Session Time Settings
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 Enable Session", Description = "Enable or disable this entire session.", Order = 1, GroupName = "1. Session 1 - Times")]
-        public bool Sess1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 Trade Window Start", Order = 2, GroupName = "1. Session 1 - Times")]
-        public string Sess1_TradeWindowStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 Last Entry Time", Order = 3, GroupName = "1. Session 1 - Times")]
-        public string Sess1_LastEntryTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 Enable Force Close", Order = 4, GroupName = "1. Session 1 - Times")]
-        public bool Sess1_EnableForceClose { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 Force Close Time", Order = 5, GroupName = "1. Session 1 - Times")]
-        public string Sess1_ForceCloseTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 Session End Time", Order = 6, GroupName = "1. Session 1 - Times")]
-        public string Sess1_SessionEndTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 Enable Session", Description = "Enable or disable this entire session.", Order = 1, GroupName = "1. Session 2 - Times")]
-        public bool Sess2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 Trade Window Start", Order = 2, GroupName = "1. Session 2 - Times")]
-        public string Sess2_TradeWindowStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 Last Entry Time", Order = 3, GroupName = "1. Session 2 - Times")]
-        public string Sess2_LastEntryTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 Enable Force Close", Order = 4, GroupName = "1. Session 2 - Times")]
-        public bool Sess2_EnableForceClose { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 Force Close Time", Order = 5, GroupName = "1. Session 2 - Times")]
-        public string Sess2_ForceCloseTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 Session End Time", Order = 6, GroupName = "1. Session 2 - Times")]
-        public string Sess2_SessionEndTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 Enable Session", Description = "Enable or disable this entire session.", Order = 1, GroupName = "1. Session 3 - Times")]
-        public bool Sess3_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 Trade Window Start", Order = 2, GroupName = "1. Session 3 - Times")]
-        public string Sess3_TradeWindowStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 Last Entry Time", Order = 3, GroupName = "1. Session 3 - Times")]
-        public string Sess3_LastEntryTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 Enable Force Close", Order = 4, GroupName = "1. Session 3 - Times")]
-        public bool Sess3_EnableForceClose { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 Force Close Time", Order = 5, GroupName = "1. Session 3 - Times")]
-        public string Sess3_ForceCloseTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 Session End Time", Order = 6, GroupName = "1. Session 3 - Times")]
-        public string Sess3_SessionEndTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 Enable Session", Description = "Enable or disable this entire session.", Order = 1, GroupName = "1. Session 4 - Times")]
-        public bool Sess4_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 Trade Window Start", Order = 2, GroupName = "1. Session 4 - Times")]
-        public string Sess4_TradeWindowStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 Last Entry Time", Order = 3, GroupName = "1. Session 4 - Times")]
-        public string Sess4_LastEntryTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 Enable Force Close", Order = 4, GroupName = "1. Session 4 - Times")]
-        public bool Sess4_EnableForceClose { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 Force Close Time", Order = 5, GroupName = "1. Session 4 - Times")]
-        public string Sess4_ForceCloseTime { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 Session End Time", Order = 6, GroupName = "1. Session 4 - Times")]
-        public string Sess4_SessionEndTime { get; set; }
-
-        #endregion
-
-        // ════════════ SESSION 1 ════════════
-        #region Session 1 Bucket Parameters
-
-        // ── Sess1 L1 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess1.L1.0 Bucket Settings")]
-        public bool Sess1_L1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess1.L1.0 Bucket Settings")]
-        public double Sess1_L1_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess1.L1.0 Bucket Settings")]
-        public double Sess1_L1_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 L1 EMA Length", Order = 1, GroupName = "Sess1.L1.1 EMA Settings")]
-        public int Sess1_L1_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess1.L1.1 EMA Settings")]
-        public bool Sess1_L1_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 EMA Slope Mode", Order = 3, GroupName = "Sess1.L1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess1_L1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 L1 EMA Slope Bars", Order = 4, GroupName = "Sess1.L1.1 EMA Settings")]
-        public int Sess1_L1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 EMA Min Slope %", Order = 5, GroupName = "Sess1.L1.1 EMA Settings")]
-        public double Sess1_L1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable WMA Filter", Order = 1, GroupName = "Sess1.L1.1b WMA Filter")]
-        public bool Sess1_L1_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 L1 WMA Length", Order = 2, GroupName = "Sess1.L1.1b WMA Filter")]
-        public int Sess1_L1_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Stop Loss Type", Order = 1, GroupName = "Sess1.L1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess1_L1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess1.L1.3 Stop Loss")]
-        public double Sess1_L1_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 L1 SL Candle Multiplier", Order = 3, GroupName = "Sess1.L1.3 Stop Loss")]
-        public double Sess1_L1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess1.L1.3 Stop Loss")]
-        public double Sess1_L1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess1.L1.3 Stop Loss")]
-        public double Sess1_L1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Take Profit Type", Order = 1, GroupName = "Sess1.L1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess1_L1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S1 L1 Risk Reward Ratio", Order = 2, GroupName = "Sess1.L1.4 Take Profit")]
-        public double Sess1_L1_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess1.L1.4 Take Profit")]
-        public double Sess1_L1_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 L1 TP Candle Multiplier", Order = 4, GroupName = "Sess1.L1.4 Take Profit")]
-        public double Sess1_L1_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable Break Even", Order = 1, GroupName = "Sess1.L1.5 Break Even")]
-        public bool Sess1_L1_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Break Even Trigger Type", Order = 2, GroupName = "Sess1.L1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess1_L1_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Break Even Trigger Value", Order = 3, GroupName = "Sess1.L1.5 Break Even")]
-        public double Sess1_L1_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Break Even Offset (Points)", Order = 4, GroupName = "Sess1.L1.5 Break Even")]
-        public double Sess1_L1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable Price Trail Stop", Order = 1, GroupName = "Sess1.L1.6 Trailing Stop")]
-        public bool Sess1_L1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Trail Distance Mode", Order = 2, GroupName = "Sess1.L1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess1_L1_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 L1 Trail Distance Value", Order = 3, GroupName = "Sess1.L1.6 Trailing Stop")]
-        public double Sess1_L1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Trail Activation Mode", Order = 4, GroupName = "Sess1.L1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess1_L1_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Trail Activation Value", Order = 5, GroupName = "Sess1.L1.6 Trailing Stop")]
-        public double Sess1_L1_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S1 L1 Trail Step (Ticks)", Order = 6, GroupName = "Sess1.L1.6 Trailing Stop")]
-        public int Sess1_L1_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable Body % Filter", Order = 1, GroupName = "Sess1.L1.7 Signal Filters")]
-        public bool Sess1_L1_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S1 L1 Min Body % of Range", Order = 2, GroupName = "Sess1.L1.7 Signal Filters")]
-        public double Sess1_L1_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable Direction Flip", Order = 1, GroupName = "Sess1.L1.8 Direction Flip")]
-        public bool Sess1_L1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable Max Daily Loss", Order = 1, GroupName = "Sess1.L1.9 Risk Management")]
-        public bool Sess1_L1_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess1.L1.9 Risk Management")]
-        public double Sess1_L1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable Max Daily Profit", Order = 3, GroupName = "Sess1.L1.9 Risk Management")]
-        public bool Sess1_L1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess1.L1.9 Risk Management")]
-        public double Sess1_L1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess1.L1.9 Risk Management")]
-        public bool Sess1_L1_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 L1 Max Trades Per Day", Order = 6, GroupName = "Sess1.L1.9 Risk Management")]
-        public int Sess1_L1_MaxTradesPerDay { get; set; }
-
-        // ── Sess1 L2 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess1.L2.0 Bucket Settings")]
-        public bool Sess1_L2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess1.L2.0 Bucket Settings")]
-        public double Sess1_L2_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess1.L2.0 Bucket Settings")]
-        public double Sess1_L2_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 L2 EMA Length", Order = 1, GroupName = "Sess1.L2.1 EMA Settings")]
-        public int Sess1_L2_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess1.L2.1 EMA Settings")]
-        public bool Sess1_L2_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 EMA Slope Mode", Order = 3, GroupName = "Sess1.L2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess1_L2_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 L2 EMA Slope Bars", Order = 4, GroupName = "Sess1.L2.1 EMA Settings")]
-        public int Sess1_L2_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 EMA Min Slope %", Order = 5, GroupName = "Sess1.L2.1 EMA Settings")]
-        public double Sess1_L2_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable WMA Filter", Order = 1, GroupName = "Sess1.L2.1b WMA Filter")]
-        public bool Sess1_L2_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 L2 WMA Length", Order = 2, GroupName = "Sess1.L2.1b WMA Filter")]
-        public int Sess1_L2_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Stop Loss Type", Order = 1, GroupName = "Sess1.L2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess1_L2_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess1.L2.3 Stop Loss")]
-        public double Sess1_L2_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 L2 SL Candle Multiplier", Order = 3, GroupName = "Sess1.L2.3 Stop Loss")]
-        public double Sess1_L2_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess1.L2.3 Stop Loss")]
-        public double Sess1_L2_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess1.L2.3 Stop Loss")]
-        public double Sess1_L2_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Take Profit Type", Order = 1, GroupName = "Sess1.L2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess1_L2_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S1 L2 Risk Reward Ratio", Order = 2, GroupName = "Sess1.L2.4 Take Profit")]
-        public double Sess1_L2_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess1.L2.4 Take Profit")]
-        public double Sess1_L2_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 L2 TP Candle Multiplier", Order = 4, GroupName = "Sess1.L2.4 Take Profit")]
-        public double Sess1_L2_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable Break Even", Order = 1, GroupName = "Sess1.L2.5 Break Even")]
-        public bool Sess1_L2_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Break Even Trigger Type", Order = 2, GroupName = "Sess1.L2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess1_L2_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Break Even Trigger Value", Order = 3, GroupName = "Sess1.L2.5 Break Even")]
-        public double Sess1_L2_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Break Even Offset (Points)", Order = 4, GroupName = "Sess1.L2.5 Break Even")]
-        public double Sess1_L2_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable Price Trail Stop", Order = 1, GroupName = "Sess1.L2.6 Trailing Stop")]
-        public bool Sess1_L2_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Trail Distance Mode", Order = 2, GroupName = "Sess1.L2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess1_L2_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 L2 Trail Distance Value", Order = 3, GroupName = "Sess1.L2.6 Trailing Stop")]
-        public double Sess1_L2_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Trail Activation Mode", Order = 4, GroupName = "Sess1.L2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess1_L2_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Trail Activation Value", Order = 5, GroupName = "Sess1.L2.6 Trailing Stop")]
-        public double Sess1_L2_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S1 L2 Trail Step (Ticks)", Order = 6, GroupName = "Sess1.L2.6 Trailing Stop")]
-        public int Sess1_L2_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable Body % Filter", Order = 1, GroupName = "Sess1.L2.7 Signal Filters")]
-        public bool Sess1_L2_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S1 L2 Min Body % of Range", Order = 2, GroupName = "Sess1.L2.7 Signal Filters")]
-        public double Sess1_L2_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable Direction Flip", Order = 1, GroupName = "Sess1.L2.8 Direction Flip")]
-        public bool Sess1_L2_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable Max Daily Loss", Order = 1, GroupName = "Sess1.L2.9 Risk Management")]
-        public bool Sess1_L2_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess1.L2.9 Risk Management")]
-        public double Sess1_L2_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable Max Daily Profit", Order = 3, GroupName = "Sess1.L2.9 Risk Management")]
-        public bool Sess1_L2_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 L2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess1.L2.9 Risk Management")]
-        public double Sess1_L2_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 L2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess1.L2.9 Risk Management")]
-        public bool Sess1_L2_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 L2 Max Trades Per Day", Order = 6, GroupName = "Sess1.L2.9 Risk Management")]
-        public int Sess1_L2_MaxTradesPerDay { get; set; }
-
-        // ── Sess1 S1 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess1.S1.0 Bucket Settings")]
-        public bool Sess1_S1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess1.S1.0 Bucket Settings")]
-        public double Sess1_S1_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess1.S1.0 Bucket Settings")]
-        public double Sess1_S1_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 S1 EMA Length", Order = 1, GroupName = "Sess1.S1.1 EMA Settings")]
-        public int Sess1_S1_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess1.S1.1 EMA Settings")]
-        public bool Sess1_S1_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 EMA Slope Mode", Order = 3, GroupName = "Sess1.S1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess1_S1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 S1 EMA Slope Bars", Order = 4, GroupName = "Sess1.S1.1 EMA Settings")]
-        public int Sess1_S1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 EMA Min Slope %", Order = 5, GroupName = "Sess1.S1.1 EMA Settings")]
-        public double Sess1_S1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable WMA Filter", Order = 1, GroupName = "Sess1.S1.1b WMA Filter")]
-        public bool Sess1_S1_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 S1 WMA Length", Order = 2, GroupName = "Sess1.S1.1b WMA Filter")]
-        public int Sess1_S1_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Stop Loss Type", Order = 1, GroupName = "Sess1.S1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess1_S1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess1.S1.3 Stop Loss")]
-        public double Sess1_S1_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 S1 SL Candle Multiplier", Order = 3, GroupName = "Sess1.S1.3 Stop Loss")]
-        public double Sess1_S1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess1.S1.3 Stop Loss")]
-        public double Sess1_S1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess1.S1.3 Stop Loss")]
-        public double Sess1_S1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Take Profit Type", Order = 1, GroupName = "Sess1.S1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess1_S1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S1 S1 Risk Reward Ratio", Order = 2, GroupName = "Sess1.S1.4 Take Profit")]
-        public double Sess1_S1_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess1.S1.4 Take Profit")]
-        public double Sess1_S1_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 S1 TP Candle Multiplier", Order = 4, GroupName = "Sess1.S1.4 Take Profit")]
-        public double Sess1_S1_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable Break Even", Order = 1, GroupName = "Sess1.S1.5 Break Even")]
-        public bool Sess1_S1_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Break Even Trigger Type", Order = 2, GroupName = "Sess1.S1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess1_S1_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Break Even Trigger Value", Order = 3, GroupName = "Sess1.S1.5 Break Even")]
-        public double Sess1_S1_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Break Even Offset (Points)", Order = 4, GroupName = "Sess1.S1.5 Break Even")]
-        public double Sess1_S1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable Price Trail Stop", Order = 1, GroupName = "Sess1.S1.6 Trailing Stop")]
-        public bool Sess1_S1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Trail Distance Mode", Order = 2, GroupName = "Sess1.S1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess1_S1_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 S1 Trail Distance Value", Order = 3, GroupName = "Sess1.S1.6 Trailing Stop")]
-        public double Sess1_S1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Trail Activation Mode", Order = 4, GroupName = "Sess1.S1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess1_S1_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Trail Activation Value", Order = 5, GroupName = "Sess1.S1.6 Trailing Stop")]
-        public double Sess1_S1_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S1 S1 Trail Step (Ticks)", Order = 6, GroupName = "Sess1.S1.6 Trailing Stop")]
-        public int Sess1_S1_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable Body % Filter", Order = 1, GroupName = "Sess1.S1.7 Signal Filters")]
-        public bool Sess1_S1_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S1 S1 Min Body % of Range", Order = 2, GroupName = "Sess1.S1.7 Signal Filters")]
-        public double Sess1_S1_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable Direction Flip", Order = 1, GroupName = "Sess1.S1.8 Direction Flip")]
-        public bool Sess1_S1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable Max Daily Loss", Order = 1, GroupName = "Sess1.S1.9 Risk Management")]
-        public bool Sess1_S1_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess1.S1.9 Risk Management")]
-        public double Sess1_S1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable Max Daily Profit", Order = 3, GroupName = "Sess1.S1.9 Risk Management")]
-        public bool Sess1_S1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess1.S1.9 Risk Management")]
-        public double Sess1_S1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess1.S1.9 Risk Management")]
-        public bool Sess1_S1_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 S1 Max Trades Per Day", Order = 6, GroupName = "Sess1.S1.9 Risk Management")]
-        public int Sess1_S1_MaxTradesPerDay { get; set; }
-
-        // ── Sess1 S2 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess1.S2.0 Bucket Settings")]
-        public bool Sess1_S2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess1.S2.0 Bucket Settings")]
-        public double Sess1_S2_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess1.S2.0 Bucket Settings")]
-        public double Sess1_S2_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 S2 EMA Length", Order = 1, GroupName = "Sess1.S2.1 EMA Settings")]
-        public int Sess1_S2_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess1.S2.1 EMA Settings")]
-        public bool Sess1_S2_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 EMA Slope Mode", Order = 3, GroupName = "Sess1.S2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess1_S2_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 S2 EMA Slope Bars", Order = 4, GroupName = "Sess1.S2.1 EMA Settings")]
-        public int Sess1_S2_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 EMA Min Slope %", Order = 5, GroupName = "Sess1.S2.1 EMA Settings")]
-        public double Sess1_S2_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable WMA Filter", Order = 1, GroupName = "Sess1.S2.1b WMA Filter")]
-        public bool Sess1_S2_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 S2 WMA Length", Order = 2, GroupName = "Sess1.S2.1b WMA Filter")]
-        public int Sess1_S2_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Stop Loss Type", Order = 1, GroupName = "Sess1.S2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess1_S2_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess1.S2.3 Stop Loss")]
-        public double Sess1_S2_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 S2 SL Candle Multiplier", Order = 3, GroupName = "Sess1.S2.3 Stop Loss")]
-        public double Sess1_S2_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess1.S2.3 Stop Loss")]
-        public double Sess1_S2_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess1.S2.3 Stop Loss")]
-        public double Sess1_S2_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Take Profit Type", Order = 1, GroupName = "Sess1.S2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess1_S2_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S1 S2 Risk Reward Ratio", Order = 2, GroupName = "Sess1.S2.4 Take Profit")]
-        public double Sess1_S2_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess1.S2.4 Take Profit")]
-        public double Sess1_S2_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 S2 TP Candle Multiplier", Order = 4, GroupName = "Sess1.S2.4 Take Profit")]
-        public double Sess1_S2_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable Break Even", Order = 1, GroupName = "Sess1.S2.5 Break Even")]
-        public bool Sess1_S2_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Break Even Trigger Type", Order = 2, GroupName = "Sess1.S2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess1_S2_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Break Even Trigger Value", Order = 3, GroupName = "Sess1.S2.5 Break Even")]
-        public double Sess1_S2_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Break Even Offset (Points)", Order = 4, GroupName = "Sess1.S2.5 Break Even")]
-        public double Sess1_S2_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable Price Trail Stop", Order = 1, GroupName = "Sess1.S2.6 Trailing Stop")]
-        public bool Sess1_S2_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Trail Distance Mode", Order = 2, GroupName = "Sess1.S2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess1_S2_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S1 S2 Trail Distance Value", Order = 3, GroupName = "Sess1.S2.6 Trailing Stop")]
-        public double Sess1_S2_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Trail Activation Mode", Order = 4, GroupName = "Sess1.S2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess1_S2_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Trail Activation Value", Order = 5, GroupName = "Sess1.S2.6 Trailing Stop")]
-        public double Sess1_S2_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S1 S2 Trail Step (Ticks)", Order = 6, GroupName = "Sess1.S2.6 Trailing Stop")]
-        public int Sess1_S2_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable Body % Filter", Order = 1, GroupName = "Sess1.S2.7 Signal Filters")]
-        public bool Sess1_S2_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S1 S2 Min Body % of Range", Order = 2, GroupName = "Sess1.S2.7 Signal Filters")]
-        public double Sess1_S2_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable Direction Flip", Order = 1, GroupName = "Sess1.S2.8 Direction Flip")]
-        public bool Sess1_S2_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable Max Daily Loss", Order = 1, GroupName = "Sess1.S2.9 Risk Management")]
-        public bool Sess1_S2_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess1.S2.9 Risk Management")]
-        public double Sess1_S2_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable Max Daily Profit", Order = 3, GroupName = "Sess1.S2.9 Risk Management")]
-        public bool Sess1_S2_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S1 S2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess1.S2.9 Risk Management")]
-        public double Sess1_S2_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S1 S2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess1.S2.9 Risk Management")]
-        public bool Sess1_S2_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S1 S2 Max Trades Per Day", Order = 6, GroupName = "Sess1.S2.9 Risk Management")]
-        public int Sess1_S2_MaxTradesPerDay { get; set; }
-
-        #endregion
-
-        // ════════════ SESSION 2 ════════════
-        #region Session 2 Bucket Parameters
-
-        // ── Sess2 L1 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess2.L1.0 Bucket Settings")]
-        public bool Sess2_L1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess2.L1.0 Bucket Settings")]
-        public double Sess2_L1_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess2.L1.0 Bucket Settings")]
-        public double Sess2_L1_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 L1 EMA Length", Order = 1, GroupName = "Sess2.L1.1 EMA Settings")]
-        public int Sess2_L1_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess2.L1.1 EMA Settings")]
-        public bool Sess2_L1_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 EMA Slope Mode", Order = 3, GroupName = "Sess2.L1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess2_L1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 L1 EMA Slope Bars", Order = 4, GroupName = "Sess2.L1.1 EMA Settings")]
-        public int Sess2_L1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 EMA Min Slope %", Order = 5, GroupName = "Sess2.L1.1 EMA Settings")]
-        public double Sess2_L1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable WMA Filter", Order = 1, GroupName = "Sess2.L1.1b WMA Filter")]
-        public bool Sess2_L1_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 L1 WMA Length", Order = 2, GroupName = "Sess2.L1.1b WMA Filter")]
-        public int Sess2_L1_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Stop Loss Type", Order = 1, GroupName = "Sess2.L1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess2_L1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess2.L1.3 Stop Loss")]
-        public double Sess2_L1_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 L1 SL Candle Multiplier", Order = 3, GroupName = "Sess2.L1.3 Stop Loss")]
-        public double Sess2_L1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess2.L1.3 Stop Loss")]
-        public double Sess2_L1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess2.L1.3 Stop Loss")]
-        public double Sess2_L1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Take Profit Type", Order = 1, GroupName = "Sess2.L1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess2_L1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S2 L1 Risk Reward Ratio", Order = 2, GroupName = "Sess2.L1.4 Take Profit")]
-        public double Sess2_L1_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess2.L1.4 Take Profit")]
-        public double Sess2_L1_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 L1 TP Candle Multiplier", Order = 4, GroupName = "Sess2.L1.4 Take Profit")]
-        public double Sess2_L1_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable Break Even", Order = 1, GroupName = "Sess2.L1.5 Break Even")]
-        public bool Sess2_L1_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Break Even Trigger Type", Order = 2, GroupName = "Sess2.L1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess2_L1_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Break Even Trigger Value", Order = 3, GroupName = "Sess2.L1.5 Break Even")]
-        public double Sess2_L1_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Break Even Offset (Points)", Order = 4, GroupName = "Sess2.L1.5 Break Even")]
-        public double Sess2_L1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable Price Trail Stop", Order = 1, GroupName = "Sess2.L1.6 Trailing Stop")]
-        public bool Sess2_L1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Trail Distance Mode", Order = 2, GroupName = "Sess2.L1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess2_L1_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 L1 Trail Distance Value", Order = 3, GroupName = "Sess2.L1.6 Trailing Stop")]
-        public double Sess2_L1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Trail Activation Mode", Order = 4, GroupName = "Sess2.L1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess2_L1_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Trail Activation Value", Order = 5, GroupName = "Sess2.L1.6 Trailing Stop")]
-        public double Sess2_L1_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S2 L1 Trail Step (Ticks)", Order = 6, GroupName = "Sess2.L1.6 Trailing Stop")]
-        public int Sess2_L1_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable Body % Filter", Order = 1, GroupName = "Sess2.L1.7 Signal Filters")]
-        public bool Sess2_L1_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S2 L1 Min Body % of Range", Order = 2, GroupName = "Sess2.L1.7 Signal Filters")]
-        public double Sess2_L1_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable Direction Flip", Order = 1, GroupName = "Sess2.L1.8 Direction Flip")]
-        public bool Sess2_L1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable Max Daily Loss", Order = 1, GroupName = "Sess2.L1.9 Risk Management")]
-        public bool Sess2_L1_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess2.L1.9 Risk Management")]
-        public double Sess2_L1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable Max Daily Profit", Order = 3, GroupName = "Sess2.L1.9 Risk Management")]
-        public bool Sess2_L1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess2.L1.9 Risk Management")]
-        public double Sess2_L1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess2.L1.9 Risk Management")]
-        public bool Sess2_L1_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 L1 Max Trades Per Day", Order = 6, GroupName = "Sess2.L1.9 Risk Management")]
-        public int Sess2_L1_MaxTradesPerDay { get; set; }
-
-        // ── Sess2 L2 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess2.L2.0 Bucket Settings")]
-        public bool Sess2_L2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess2.L2.0 Bucket Settings")]
-        public double Sess2_L2_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess2.L2.0 Bucket Settings")]
-        public double Sess2_L2_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 L2 EMA Length", Order = 1, GroupName = "Sess2.L2.1 EMA Settings")]
-        public int Sess2_L2_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess2.L2.1 EMA Settings")]
-        public bool Sess2_L2_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 EMA Slope Mode", Order = 3, GroupName = "Sess2.L2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess2_L2_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 L2 EMA Slope Bars", Order = 4, GroupName = "Sess2.L2.1 EMA Settings")]
-        public int Sess2_L2_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 EMA Min Slope %", Order = 5, GroupName = "Sess2.L2.1 EMA Settings")]
-        public double Sess2_L2_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable WMA Filter", Order = 1, GroupName = "Sess2.L2.1b WMA Filter")]
-        public bool Sess2_L2_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 L2 WMA Length", Order = 2, GroupName = "Sess2.L2.1b WMA Filter")]
-        public int Sess2_L2_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Stop Loss Type", Order = 1, GroupName = "Sess2.L2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess2_L2_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess2.L2.3 Stop Loss")]
-        public double Sess2_L2_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 L2 SL Candle Multiplier", Order = 3, GroupName = "Sess2.L2.3 Stop Loss")]
-        public double Sess2_L2_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess2.L2.3 Stop Loss")]
-        public double Sess2_L2_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess2.L2.3 Stop Loss")]
-        public double Sess2_L2_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Take Profit Type", Order = 1, GroupName = "Sess2.L2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess2_L2_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S2 L2 Risk Reward Ratio", Order = 2, GroupName = "Sess2.L2.4 Take Profit")]
-        public double Sess2_L2_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess2.L2.4 Take Profit")]
-        public double Sess2_L2_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 L2 TP Candle Multiplier", Order = 4, GroupName = "Sess2.L2.4 Take Profit")]
-        public double Sess2_L2_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable Break Even", Order = 1, GroupName = "Sess2.L2.5 Break Even")]
-        public bool Sess2_L2_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Break Even Trigger Type", Order = 2, GroupName = "Sess2.L2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess2_L2_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Break Even Trigger Value", Order = 3, GroupName = "Sess2.L2.5 Break Even")]
-        public double Sess2_L2_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Break Even Offset (Points)", Order = 4, GroupName = "Sess2.L2.5 Break Even")]
-        public double Sess2_L2_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable Price Trail Stop", Order = 1, GroupName = "Sess2.L2.6 Trailing Stop")]
-        public bool Sess2_L2_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Trail Distance Mode", Order = 2, GroupName = "Sess2.L2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess2_L2_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 L2 Trail Distance Value", Order = 3, GroupName = "Sess2.L2.6 Trailing Stop")]
-        public double Sess2_L2_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Trail Activation Mode", Order = 4, GroupName = "Sess2.L2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess2_L2_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Trail Activation Value", Order = 5, GroupName = "Sess2.L2.6 Trailing Stop")]
-        public double Sess2_L2_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S2 L2 Trail Step (Ticks)", Order = 6, GroupName = "Sess2.L2.6 Trailing Stop")]
-        public int Sess2_L2_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable Body % Filter", Order = 1, GroupName = "Sess2.L2.7 Signal Filters")]
-        public bool Sess2_L2_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S2 L2 Min Body % of Range", Order = 2, GroupName = "Sess2.L2.7 Signal Filters")]
-        public double Sess2_L2_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable Direction Flip", Order = 1, GroupName = "Sess2.L2.8 Direction Flip")]
-        public bool Sess2_L2_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable Max Daily Loss", Order = 1, GroupName = "Sess2.L2.9 Risk Management")]
-        public bool Sess2_L2_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess2.L2.9 Risk Management")]
-        public double Sess2_L2_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable Max Daily Profit", Order = 3, GroupName = "Sess2.L2.9 Risk Management")]
-        public bool Sess2_L2_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 L2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess2.L2.9 Risk Management")]
-        public double Sess2_L2_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 L2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess2.L2.9 Risk Management")]
-        public bool Sess2_L2_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 L2 Max Trades Per Day", Order = 6, GroupName = "Sess2.L2.9 Risk Management")]
-        public int Sess2_L2_MaxTradesPerDay { get; set; }
-
-        // ── Sess2 S1 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess2.S1.0 Bucket Settings")]
-        public bool Sess2_S1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess2.S1.0 Bucket Settings")]
-        public double Sess2_S1_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess2.S1.0 Bucket Settings")]
-        public double Sess2_S1_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 S1 EMA Length", Order = 1, GroupName = "Sess2.S1.1 EMA Settings")]
-        public int Sess2_S1_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess2.S1.1 EMA Settings")]
-        public bool Sess2_S1_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 EMA Slope Mode", Order = 3, GroupName = "Sess2.S1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess2_S1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 S1 EMA Slope Bars", Order = 4, GroupName = "Sess2.S1.1 EMA Settings")]
-        public int Sess2_S1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 EMA Min Slope %", Order = 5, GroupName = "Sess2.S1.1 EMA Settings")]
-        public double Sess2_S1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable WMA Filter", Order = 1, GroupName = "Sess2.S1.1b WMA Filter")]
-        public bool Sess2_S1_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 S1 WMA Length", Order = 2, GroupName = "Sess2.S1.1b WMA Filter")]
-        public int Sess2_S1_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Stop Loss Type", Order = 1, GroupName = "Sess2.S1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess2_S1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess2.S1.3 Stop Loss")]
-        public double Sess2_S1_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 S1 SL Candle Multiplier", Order = 3, GroupName = "Sess2.S1.3 Stop Loss")]
-        public double Sess2_S1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess2.S1.3 Stop Loss")]
-        public double Sess2_S1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess2.S1.3 Stop Loss")]
-        public double Sess2_S1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Take Profit Type", Order = 1, GroupName = "Sess2.S1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess2_S1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S2 S1 Risk Reward Ratio", Order = 2, GroupName = "Sess2.S1.4 Take Profit")]
-        public double Sess2_S1_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess2.S1.4 Take Profit")]
-        public double Sess2_S1_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 S1 TP Candle Multiplier", Order = 4, GroupName = "Sess2.S1.4 Take Profit")]
-        public double Sess2_S1_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable Break Even", Order = 1, GroupName = "Sess2.S1.5 Break Even")]
-        public bool Sess2_S1_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Break Even Trigger Type", Order = 2, GroupName = "Sess2.S1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess2_S1_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Break Even Trigger Value", Order = 3, GroupName = "Sess2.S1.5 Break Even")]
-        public double Sess2_S1_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Break Even Offset (Points)", Order = 4, GroupName = "Sess2.S1.5 Break Even")]
-        public double Sess2_S1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable Price Trail Stop", Order = 1, GroupName = "Sess2.S1.6 Trailing Stop")]
-        public bool Sess2_S1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Trail Distance Mode", Order = 2, GroupName = "Sess2.S1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess2_S1_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 S1 Trail Distance Value", Order = 3, GroupName = "Sess2.S1.6 Trailing Stop")]
-        public double Sess2_S1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Trail Activation Mode", Order = 4, GroupName = "Sess2.S1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess2_S1_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Trail Activation Value", Order = 5, GroupName = "Sess2.S1.6 Trailing Stop")]
-        public double Sess2_S1_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S2 S1 Trail Step (Ticks)", Order = 6, GroupName = "Sess2.S1.6 Trailing Stop")]
-        public int Sess2_S1_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable Body % Filter", Order = 1, GroupName = "Sess2.S1.7 Signal Filters")]
-        public bool Sess2_S1_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S2 S1 Min Body % of Range", Order = 2, GroupName = "Sess2.S1.7 Signal Filters")]
-        public double Sess2_S1_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable Direction Flip", Order = 1, GroupName = "Sess2.S1.8 Direction Flip")]
-        public bool Sess2_S1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable Max Daily Loss", Order = 1, GroupName = "Sess2.S1.9 Risk Management")]
-        public bool Sess2_S1_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess2.S1.9 Risk Management")]
-        public double Sess2_S1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable Max Daily Profit", Order = 3, GroupName = "Sess2.S1.9 Risk Management")]
-        public bool Sess2_S1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess2.S1.9 Risk Management")]
-        public double Sess2_S1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess2.S1.9 Risk Management")]
-        public bool Sess2_S1_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 S1 Max Trades Per Day", Order = 6, GroupName = "Sess2.S1.9 Risk Management")]
-        public int Sess2_S1_MaxTradesPerDay { get; set; }
-
-        // ── Sess2 S2 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess2.S2.0 Bucket Settings")]
-        public bool Sess2_S2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess2.S2.0 Bucket Settings")]
-        public double Sess2_S2_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess2.S2.0 Bucket Settings")]
-        public double Sess2_S2_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 S2 EMA Length", Order = 1, GroupName = "Sess2.S2.1 EMA Settings")]
-        public int Sess2_S2_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess2.S2.1 EMA Settings")]
-        public bool Sess2_S2_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 EMA Slope Mode", Order = 3, GroupName = "Sess2.S2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess2_S2_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 S2 EMA Slope Bars", Order = 4, GroupName = "Sess2.S2.1 EMA Settings")]
-        public int Sess2_S2_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 EMA Min Slope %", Order = 5, GroupName = "Sess2.S2.1 EMA Settings")]
-        public double Sess2_S2_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable WMA Filter", Order = 1, GroupName = "Sess2.S2.1b WMA Filter")]
-        public bool Sess2_S2_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 S2 WMA Length", Order = 2, GroupName = "Sess2.S2.1b WMA Filter")]
-        public int Sess2_S2_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Stop Loss Type", Order = 1, GroupName = "Sess2.S2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess2_S2_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess2.S2.3 Stop Loss")]
-        public double Sess2_S2_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 S2 SL Candle Multiplier", Order = 3, GroupName = "Sess2.S2.3 Stop Loss")]
-        public double Sess2_S2_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess2.S2.3 Stop Loss")]
-        public double Sess2_S2_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess2.S2.3 Stop Loss")]
-        public double Sess2_S2_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Take Profit Type", Order = 1, GroupName = "Sess2.S2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess2_S2_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S2 S2 Risk Reward Ratio", Order = 2, GroupName = "Sess2.S2.4 Take Profit")]
-        public double Sess2_S2_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess2.S2.4 Take Profit")]
-        public double Sess2_S2_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 S2 TP Candle Multiplier", Order = 4, GroupName = "Sess2.S2.4 Take Profit")]
-        public double Sess2_S2_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable Break Even", Order = 1, GroupName = "Sess2.S2.5 Break Even")]
-        public bool Sess2_S2_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Break Even Trigger Type", Order = 2, GroupName = "Sess2.S2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess2_S2_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Break Even Trigger Value", Order = 3, GroupName = "Sess2.S2.5 Break Even")]
-        public double Sess2_S2_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Break Even Offset (Points)", Order = 4, GroupName = "Sess2.S2.5 Break Even")]
-        public double Sess2_S2_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable Price Trail Stop", Order = 1, GroupName = "Sess2.S2.6 Trailing Stop")]
-        public bool Sess2_S2_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Trail Distance Mode", Order = 2, GroupName = "Sess2.S2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess2_S2_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S2 S2 Trail Distance Value", Order = 3, GroupName = "Sess2.S2.6 Trailing Stop")]
-        public double Sess2_S2_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Trail Activation Mode", Order = 4, GroupName = "Sess2.S2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess2_S2_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Trail Activation Value", Order = 5, GroupName = "Sess2.S2.6 Trailing Stop")]
-        public double Sess2_S2_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S2 S2 Trail Step (Ticks)", Order = 6, GroupName = "Sess2.S2.6 Trailing Stop")]
-        public int Sess2_S2_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable Body % Filter", Order = 1, GroupName = "Sess2.S2.7 Signal Filters")]
-        public bool Sess2_S2_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S2 S2 Min Body % of Range", Order = 2, GroupName = "Sess2.S2.7 Signal Filters")]
-        public double Sess2_S2_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable Direction Flip", Order = 1, GroupName = "Sess2.S2.8 Direction Flip")]
-        public bool Sess2_S2_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable Max Daily Loss", Order = 1, GroupName = "Sess2.S2.9 Risk Management")]
-        public bool Sess2_S2_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess2.S2.9 Risk Management")]
-        public double Sess2_S2_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable Max Daily Profit", Order = 3, GroupName = "Sess2.S2.9 Risk Management")]
-        public bool Sess2_S2_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S2 S2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess2.S2.9 Risk Management")]
-        public double Sess2_S2_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S2 S2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess2.S2.9 Risk Management")]
-        public bool Sess2_S2_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S2 S2 Max Trades Per Day", Order = 6, GroupName = "Sess2.S2.9 Risk Management")]
-        public int Sess2_S2_MaxTradesPerDay { get; set; }
-
-        #endregion
-
-        // ════════════ SESSION 3 ════════════
-        #region Session 3 Bucket Parameters
-
-        // ── Sess3 L1 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess3.L1.0 Bucket Settings")]
-        public bool Sess3_L1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess3.L1.0 Bucket Settings")]
-        public double Sess3_L1_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess3.L1.0 Bucket Settings")]
-        public double Sess3_L1_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 L1 EMA Length", Order = 1, GroupName = "Sess3.L1.1 EMA Settings")]
-        public int Sess3_L1_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess3.L1.1 EMA Settings")]
-        public bool Sess3_L1_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 EMA Slope Mode", Order = 3, GroupName = "Sess3.L1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess3_L1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 L1 EMA Slope Bars", Order = 4, GroupName = "Sess3.L1.1 EMA Settings")]
-        public int Sess3_L1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 EMA Min Slope %", Order = 5, GroupName = "Sess3.L1.1 EMA Settings")]
-        public double Sess3_L1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable WMA Filter", Order = 1, GroupName = "Sess3.L1.1b WMA Filter")]
-        public bool Sess3_L1_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 L1 WMA Length", Order = 2, GroupName = "Sess3.L1.1b WMA Filter")]
-        public int Sess3_L1_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Stop Loss Type", Order = 1, GroupName = "Sess3.L1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess3_L1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess3.L1.3 Stop Loss")]
-        public double Sess3_L1_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 L1 SL Candle Multiplier", Order = 3, GroupName = "Sess3.L1.3 Stop Loss")]
-        public double Sess3_L1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess3.L1.3 Stop Loss")]
-        public double Sess3_L1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess3.L1.3 Stop Loss")]
-        public double Sess3_L1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Take Profit Type", Order = 1, GroupName = "Sess3.L1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess3_L1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S3 L1 Risk Reward Ratio", Order = 2, GroupName = "Sess3.L1.4 Take Profit")]
-        public double Sess3_L1_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess3.L1.4 Take Profit")]
-        public double Sess3_L1_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 L1 TP Candle Multiplier", Order = 4, GroupName = "Sess3.L1.4 Take Profit")]
-        public double Sess3_L1_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable Break Even", Order = 1, GroupName = "Sess3.L1.5 Break Even")]
-        public bool Sess3_L1_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Break Even Trigger Type", Order = 2, GroupName = "Sess3.L1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess3_L1_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Break Even Trigger Value", Order = 3, GroupName = "Sess3.L1.5 Break Even")]
-        public double Sess3_L1_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Break Even Offset (Points)", Order = 4, GroupName = "Sess3.L1.5 Break Even")]
-        public double Sess3_L1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable Price Trail Stop", Order = 1, GroupName = "Sess3.L1.6 Trailing Stop")]
-        public bool Sess3_L1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Trail Distance Mode", Order = 2, GroupName = "Sess3.L1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess3_L1_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 L1 Trail Distance Value", Order = 3, GroupName = "Sess3.L1.6 Trailing Stop")]
-        public double Sess3_L1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Trail Activation Mode", Order = 4, GroupName = "Sess3.L1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess3_L1_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Trail Activation Value", Order = 5, GroupName = "Sess3.L1.6 Trailing Stop")]
-        public double Sess3_L1_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S3 L1 Trail Step (Ticks)", Order = 6, GroupName = "Sess3.L1.6 Trailing Stop")]
-        public int Sess3_L1_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable Body % Filter", Order = 1, GroupName = "Sess3.L1.7 Signal Filters")]
-        public bool Sess3_L1_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S3 L1 Min Body % of Range", Order = 2, GroupName = "Sess3.L1.7 Signal Filters")]
-        public double Sess3_L1_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable Direction Flip", Order = 1, GroupName = "Sess3.L1.8 Direction Flip")]
-        public bool Sess3_L1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable Max Daily Loss", Order = 1, GroupName = "Sess3.L1.9 Risk Management")]
-        public bool Sess3_L1_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess3.L1.9 Risk Management")]
-        public double Sess3_L1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable Max Daily Profit", Order = 3, GroupName = "Sess3.L1.9 Risk Management")]
-        public bool Sess3_L1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess3.L1.9 Risk Management")]
-        public double Sess3_L1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess3.L1.9 Risk Management")]
-        public bool Sess3_L1_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 L1 Max Trades Per Day", Order = 6, GroupName = "Sess3.L1.9 Risk Management")]
-        public int Sess3_L1_MaxTradesPerDay { get; set; }
-
-        // ── Sess3 L2 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess3.L2.0 Bucket Settings")]
-        public bool Sess3_L2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess3.L2.0 Bucket Settings")]
-        public double Sess3_L2_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess3.L2.0 Bucket Settings")]
-        public double Sess3_L2_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 L2 EMA Length", Order = 1, GroupName = "Sess3.L2.1 EMA Settings")]
-        public int Sess3_L2_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess3.L2.1 EMA Settings")]
-        public bool Sess3_L2_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 EMA Slope Mode", Order = 3, GroupName = "Sess3.L2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess3_L2_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 L2 EMA Slope Bars", Order = 4, GroupName = "Sess3.L2.1 EMA Settings")]
-        public int Sess3_L2_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 EMA Min Slope %", Order = 5, GroupName = "Sess3.L2.1 EMA Settings")]
-        public double Sess3_L2_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable WMA Filter", Order = 1, GroupName = "Sess3.L2.1b WMA Filter")]
-        public bool Sess3_L2_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 L2 WMA Length", Order = 2, GroupName = "Sess3.L2.1b WMA Filter")]
-        public int Sess3_L2_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Stop Loss Type", Order = 1, GroupName = "Sess3.L2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess3_L2_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess3.L2.3 Stop Loss")]
-        public double Sess3_L2_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 L2 SL Candle Multiplier", Order = 3, GroupName = "Sess3.L2.3 Stop Loss")]
-        public double Sess3_L2_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess3.L2.3 Stop Loss")]
-        public double Sess3_L2_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess3.L2.3 Stop Loss")]
-        public double Sess3_L2_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Take Profit Type", Order = 1, GroupName = "Sess3.L2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess3_L2_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S3 L2 Risk Reward Ratio", Order = 2, GroupName = "Sess3.L2.4 Take Profit")]
-        public double Sess3_L2_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess3.L2.4 Take Profit")]
-        public double Sess3_L2_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 L2 TP Candle Multiplier", Order = 4, GroupName = "Sess3.L2.4 Take Profit")]
-        public double Sess3_L2_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable Break Even", Order = 1, GroupName = "Sess3.L2.5 Break Even")]
-        public bool Sess3_L2_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Break Even Trigger Type", Order = 2, GroupName = "Sess3.L2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess3_L2_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Break Even Trigger Value", Order = 3, GroupName = "Sess3.L2.5 Break Even")]
-        public double Sess3_L2_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Break Even Offset (Points)", Order = 4, GroupName = "Sess3.L2.5 Break Even")]
-        public double Sess3_L2_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable Price Trail Stop", Order = 1, GroupName = "Sess3.L2.6 Trailing Stop")]
-        public bool Sess3_L2_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Trail Distance Mode", Order = 2, GroupName = "Sess3.L2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess3_L2_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 L2 Trail Distance Value", Order = 3, GroupName = "Sess3.L2.6 Trailing Stop")]
-        public double Sess3_L2_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Trail Activation Mode", Order = 4, GroupName = "Sess3.L2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess3_L2_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Trail Activation Value", Order = 5, GroupName = "Sess3.L2.6 Trailing Stop")]
-        public double Sess3_L2_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S3 L2 Trail Step (Ticks)", Order = 6, GroupName = "Sess3.L2.6 Trailing Stop")]
-        public int Sess3_L2_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable Body % Filter", Order = 1, GroupName = "Sess3.L2.7 Signal Filters")]
-        public bool Sess3_L2_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S3 L2 Min Body % of Range", Order = 2, GroupName = "Sess3.L2.7 Signal Filters")]
-        public double Sess3_L2_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable Direction Flip", Order = 1, GroupName = "Sess3.L2.8 Direction Flip")]
-        public bool Sess3_L2_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable Max Daily Loss", Order = 1, GroupName = "Sess3.L2.9 Risk Management")]
-        public bool Sess3_L2_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess3.L2.9 Risk Management")]
-        public double Sess3_L2_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable Max Daily Profit", Order = 3, GroupName = "Sess3.L2.9 Risk Management")]
-        public bool Sess3_L2_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 L2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess3.L2.9 Risk Management")]
-        public double Sess3_L2_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 L2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess3.L2.9 Risk Management")]
-        public bool Sess3_L2_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 L2 Max Trades Per Day", Order = 6, GroupName = "Sess3.L2.9 Risk Management")]
-        public int Sess3_L2_MaxTradesPerDay { get; set; }
-
-        // ── Sess3 S1 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess3.S1.0 Bucket Settings")]
-        public bool Sess3_S1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess3.S1.0 Bucket Settings")]
-        public double Sess3_S1_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess3.S1.0 Bucket Settings")]
-        public double Sess3_S1_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 S1 EMA Length", Order = 1, GroupName = "Sess3.S1.1 EMA Settings")]
-        public int Sess3_S1_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess3.S1.1 EMA Settings")]
-        public bool Sess3_S1_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 EMA Slope Mode", Order = 3, GroupName = "Sess3.S1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess3_S1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 S1 EMA Slope Bars", Order = 4, GroupName = "Sess3.S1.1 EMA Settings")]
-        public int Sess3_S1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 EMA Min Slope %", Order = 5, GroupName = "Sess3.S1.1 EMA Settings")]
-        public double Sess3_S1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable WMA Filter", Order = 1, GroupName = "Sess3.S1.1b WMA Filter")]
-        public bool Sess3_S1_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 S1 WMA Length", Order = 2, GroupName = "Sess3.S1.1b WMA Filter")]
-        public int Sess3_S1_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Stop Loss Type", Order = 1, GroupName = "Sess3.S1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess3_S1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess3.S1.3 Stop Loss")]
-        public double Sess3_S1_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 S1 SL Candle Multiplier", Order = 3, GroupName = "Sess3.S1.3 Stop Loss")]
-        public double Sess3_S1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess3.S1.3 Stop Loss")]
-        public double Sess3_S1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess3.S1.3 Stop Loss")]
-        public double Sess3_S1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Take Profit Type", Order = 1, GroupName = "Sess3.S1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess3_S1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S3 S1 Risk Reward Ratio", Order = 2, GroupName = "Sess3.S1.4 Take Profit")]
-        public double Sess3_S1_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess3.S1.4 Take Profit")]
-        public double Sess3_S1_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 S1 TP Candle Multiplier", Order = 4, GroupName = "Sess3.S1.4 Take Profit")]
-        public double Sess3_S1_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable Break Even", Order = 1, GroupName = "Sess3.S1.5 Break Even")]
-        public bool Sess3_S1_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Break Even Trigger Type", Order = 2, GroupName = "Sess3.S1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess3_S1_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Break Even Trigger Value", Order = 3, GroupName = "Sess3.S1.5 Break Even")]
-        public double Sess3_S1_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Break Even Offset (Points)", Order = 4, GroupName = "Sess3.S1.5 Break Even")]
-        public double Sess3_S1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable Price Trail Stop", Order = 1, GroupName = "Sess3.S1.6 Trailing Stop")]
-        public bool Sess3_S1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Trail Distance Mode", Order = 2, GroupName = "Sess3.S1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess3_S1_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 S1 Trail Distance Value", Order = 3, GroupName = "Sess3.S1.6 Trailing Stop")]
-        public double Sess3_S1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Trail Activation Mode", Order = 4, GroupName = "Sess3.S1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess3_S1_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Trail Activation Value", Order = 5, GroupName = "Sess3.S1.6 Trailing Stop")]
-        public double Sess3_S1_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S3 S1 Trail Step (Ticks)", Order = 6, GroupName = "Sess3.S1.6 Trailing Stop")]
-        public int Sess3_S1_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable Body % Filter", Order = 1, GroupName = "Sess3.S1.7 Signal Filters")]
-        public bool Sess3_S1_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S3 S1 Min Body % of Range", Order = 2, GroupName = "Sess3.S1.7 Signal Filters")]
-        public double Sess3_S1_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable Direction Flip", Order = 1, GroupName = "Sess3.S1.8 Direction Flip")]
-        public bool Sess3_S1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable Max Daily Loss", Order = 1, GroupName = "Sess3.S1.9 Risk Management")]
-        public bool Sess3_S1_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess3.S1.9 Risk Management")]
-        public double Sess3_S1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable Max Daily Profit", Order = 3, GroupName = "Sess3.S1.9 Risk Management")]
-        public bool Sess3_S1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess3.S1.9 Risk Management")]
-        public double Sess3_S1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess3.S1.9 Risk Management")]
-        public bool Sess3_S1_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 S1 Max Trades Per Day", Order = 6, GroupName = "Sess3.S1.9 Risk Management")]
-        public int Sess3_S1_MaxTradesPerDay { get; set; }
-
-        // ── Sess3 S2 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess3.S2.0 Bucket Settings")]
-        public bool Sess3_S2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess3.S2.0 Bucket Settings")]
-        public double Sess3_S2_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess3.S2.0 Bucket Settings")]
-        public double Sess3_S2_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 S2 EMA Length", Order = 1, GroupName = "Sess3.S2.1 EMA Settings")]
-        public int Sess3_S2_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess3.S2.1 EMA Settings")]
-        public bool Sess3_S2_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 EMA Slope Mode", Order = 3, GroupName = "Sess3.S2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess3_S2_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 S2 EMA Slope Bars", Order = 4, GroupName = "Sess3.S2.1 EMA Settings")]
-        public int Sess3_S2_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 EMA Min Slope %", Order = 5, GroupName = "Sess3.S2.1 EMA Settings")]
-        public double Sess3_S2_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable WMA Filter", Order = 1, GroupName = "Sess3.S2.1b WMA Filter")]
-        public bool Sess3_S2_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 S2 WMA Length", Order = 2, GroupName = "Sess3.S2.1b WMA Filter")]
-        public int Sess3_S2_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Stop Loss Type", Order = 1, GroupName = "Sess3.S2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess3_S2_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess3.S2.3 Stop Loss")]
-        public double Sess3_S2_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 S2 SL Candle Multiplier", Order = 3, GroupName = "Sess3.S2.3 Stop Loss")]
-        public double Sess3_S2_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess3.S2.3 Stop Loss")]
-        public double Sess3_S2_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess3.S2.3 Stop Loss")]
-        public double Sess3_S2_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Take Profit Type", Order = 1, GroupName = "Sess3.S2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess3_S2_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S3 S2 Risk Reward Ratio", Order = 2, GroupName = "Sess3.S2.4 Take Profit")]
-        public double Sess3_S2_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess3.S2.4 Take Profit")]
-        public double Sess3_S2_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 S2 TP Candle Multiplier", Order = 4, GroupName = "Sess3.S2.4 Take Profit")]
-        public double Sess3_S2_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable Break Even", Order = 1, GroupName = "Sess3.S2.5 Break Even")]
-        public bool Sess3_S2_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Break Even Trigger Type", Order = 2, GroupName = "Sess3.S2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess3_S2_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Break Even Trigger Value", Order = 3, GroupName = "Sess3.S2.5 Break Even")]
-        public double Sess3_S2_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Break Even Offset (Points)", Order = 4, GroupName = "Sess3.S2.5 Break Even")]
-        public double Sess3_S2_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable Price Trail Stop", Order = 1, GroupName = "Sess3.S2.6 Trailing Stop")]
-        public bool Sess3_S2_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Trail Distance Mode", Order = 2, GroupName = "Sess3.S2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess3_S2_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S3 S2 Trail Distance Value", Order = 3, GroupName = "Sess3.S2.6 Trailing Stop")]
-        public double Sess3_S2_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Trail Activation Mode", Order = 4, GroupName = "Sess3.S2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess3_S2_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Trail Activation Value", Order = 5, GroupName = "Sess3.S2.6 Trailing Stop")]
-        public double Sess3_S2_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S3 S2 Trail Step (Ticks)", Order = 6, GroupName = "Sess3.S2.6 Trailing Stop")]
-        public int Sess3_S2_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable Body % Filter", Order = 1, GroupName = "Sess3.S2.7 Signal Filters")]
-        public bool Sess3_S2_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S3 S2 Min Body % of Range", Order = 2, GroupName = "Sess3.S2.7 Signal Filters")]
-        public double Sess3_S2_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable Direction Flip", Order = 1, GroupName = "Sess3.S2.8 Direction Flip")]
-        public bool Sess3_S2_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable Max Daily Loss", Order = 1, GroupName = "Sess3.S2.9 Risk Management")]
-        public bool Sess3_S2_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess3.S2.9 Risk Management")]
-        public double Sess3_S2_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable Max Daily Profit", Order = 3, GroupName = "Sess3.S2.9 Risk Management")]
-        public bool Sess3_S2_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S3 S2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess3.S2.9 Risk Management")]
-        public double Sess3_S2_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S3 S2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess3.S2.9 Risk Management")]
-        public bool Sess3_S2_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S3 S2 Max Trades Per Day", Order = 6, GroupName = "Sess3.S2.9 Risk Management")]
-        public int Sess3_S2_MaxTradesPerDay { get; set; }
-
-        #endregion
-
-        // ════════════ SESSION 4 ════════════
-        #region Session 4 Bucket Parameters
-
-        // ── Sess4 L1 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess4.L1.0 Bucket Settings")]
-        public bool Sess4_L1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess4.L1.0 Bucket Settings")]
-        public double Sess4_L1_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess4.L1.0 Bucket Settings")]
-        public double Sess4_L1_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 L1 EMA Length", Order = 1, GroupName = "Sess4.L1.1 EMA Settings")]
-        public int Sess4_L1_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess4.L1.1 EMA Settings")]
-        public bool Sess4_L1_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 EMA Slope Mode", Order = 3, GroupName = "Sess4.L1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess4_L1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 L1 EMA Slope Bars", Order = 4, GroupName = "Sess4.L1.1 EMA Settings")]
-        public int Sess4_L1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 EMA Min Slope %", Order = 5, GroupName = "Sess4.L1.1 EMA Settings")]
-        public double Sess4_L1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable WMA Filter", Order = 1, GroupName = "Sess4.L1.1b WMA Filter")]
-        public bool Sess4_L1_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 L1 WMA Length", Order = 2, GroupName = "Sess4.L1.1b WMA Filter")]
-        public int Sess4_L1_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Stop Loss Type", Order = 1, GroupName = "Sess4.L1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess4_L1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess4.L1.3 Stop Loss")]
-        public double Sess4_L1_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 L1 SL Candle Multiplier", Order = 3, GroupName = "Sess4.L1.3 Stop Loss")]
-        public double Sess4_L1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess4.L1.3 Stop Loss")]
-        public double Sess4_L1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess4.L1.3 Stop Loss")]
-        public double Sess4_L1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Take Profit Type", Order = 1, GroupName = "Sess4.L1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess4_L1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S4 L1 Risk Reward Ratio", Order = 2, GroupName = "Sess4.L1.4 Take Profit")]
-        public double Sess4_L1_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess4.L1.4 Take Profit")]
-        public double Sess4_L1_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 L1 TP Candle Multiplier", Order = 4, GroupName = "Sess4.L1.4 Take Profit")]
-        public double Sess4_L1_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable Break Even", Order = 1, GroupName = "Sess4.L1.5 Break Even")]
-        public bool Sess4_L1_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Break Even Trigger Type", Order = 2, GroupName = "Sess4.L1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess4_L1_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Break Even Trigger Value", Order = 3, GroupName = "Sess4.L1.5 Break Even")]
-        public double Sess4_L1_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Break Even Offset (Points)", Order = 4, GroupName = "Sess4.L1.5 Break Even")]
-        public double Sess4_L1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable Price Trail Stop", Order = 1, GroupName = "Sess4.L1.6 Trailing Stop")]
-        public bool Sess4_L1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Trail Distance Mode", Order = 2, GroupName = "Sess4.L1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess4_L1_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 L1 Trail Distance Value", Order = 3, GroupName = "Sess4.L1.6 Trailing Stop")]
-        public double Sess4_L1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Trail Activation Mode", Order = 4, GroupName = "Sess4.L1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess4_L1_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Trail Activation Value", Order = 5, GroupName = "Sess4.L1.6 Trailing Stop")]
-        public double Sess4_L1_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S4 L1 Trail Step (Ticks)", Order = 6, GroupName = "Sess4.L1.6 Trailing Stop")]
-        public int Sess4_L1_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable Body % Filter", Order = 1, GroupName = "Sess4.L1.7 Signal Filters")]
-        public bool Sess4_L1_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S4 L1 Min Body % of Range", Order = 2, GroupName = "Sess4.L1.7 Signal Filters")]
-        public double Sess4_L1_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable Direction Flip", Order = 1, GroupName = "Sess4.L1.8 Direction Flip")]
-        public bool Sess4_L1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable Max Daily Loss", Order = 1, GroupName = "Sess4.L1.9 Risk Management")]
-        public bool Sess4_L1_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess4.L1.9 Risk Management")]
-        public double Sess4_L1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable Max Daily Profit", Order = 3, GroupName = "Sess4.L1.9 Risk Management")]
-        public bool Sess4_L1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess4.L1.9 Risk Management")]
-        public double Sess4_L1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess4.L1.9 Risk Management")]
-        public bool Sess4_L1_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 L1 Max Trades Per Day", Order = 6, GroupName = "Sess4.L1.9 Risk Management")]
-        public int Sess4_L1_MaxTradesPerDay { get; set; }
-
-        // ── Sess4 L2 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess4.L2.0 Bucket Settings")]
-        public bool Sess4_L2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess4.L2.0 Bucket Settings")]
-        public double Sess4_L2_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess4.L2.0 Bucket Settings")]
-        public double Sess4_L2_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 L2 EMA Length", Order = 1, GroupName = "Sess4.L2.1 EMA Settings")]
-        public int Sess4_L2_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess4.L2.1 EMA Settings")]
-        public bool Sess4_L2_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 EMA Slope Mode", Order = 3, GroupName = "Sess4.L2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess4_L2_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 L2 EMA Slope Bars", Order = 4, GroupName = "Sess4.L2.1 EMA Settings")]
-        public int Sess4_L2_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 EMA Min Slope %", Order = 5, GroupName = "Sess4.L2.1 EMA Settings")]
-        public double Sess4_L2_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable WMA Filter", Order = 1, GroupName = "Sess4.L2.1b WMA Filter")]
-        public bool Sess4_L2_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 L2 WMA Length", Order = 2, GroupName = "Sess4.L2.1b WMA Filter")]
-        public int Sess4_L2_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Stop Loss Type", Order = 1, GroupName = "Sess4.L2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess4_L2_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess4.L2.3 Stop Loss")]
-        public double Sess4_L2_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 L2 SL Candle Multiplier", Order = 3, GroupName = "Sess4.L2.3 Stop Loss")]
-        public double Sess4_L2_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess4.L2.3 Stop Loss")]
-        public double Sess4_L2_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess4.L2.3 Stop Loss")]
-        public double Sess4_L2_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Take Profit Type", Order = 1, GroupName = "Sess4.L2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess4_L2_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S4 L2 Risk Reward Ratio", Order = 2, GroupName = "Sess4.L2.4 Take Profit")]
-        public double Sess4_L2_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess4.L2.4 Take Profit")]
-        public double Sess4_L2_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 L2 TP Candle Multiplier", Order = 4, GroupName = "Sess4.L2.4 Take Profit")]
-        public double Sess4_L2_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable Break Even", Order = 1, GroupName = "Sess4.L2.5 Break Even")]
-        public bool Sess4_L2_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Break Even Trigger Type", Order = 2, GroupName = "Sess4.L2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess4_L2_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Break Even Trigger Value", Order = 3, GroupName = "Sess4.L2.5 Break Even")]
-        public double Sess4_L2_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Break Even Offset (Points)", Order = 4, GroupName = "Sess4.L2.5 Break Even")]
-        public double Sess4_L2_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable Price Trail Stop", Order = 1, GroupName = "Sess4.L2.6 Trailing Stop")]
-        public bool Sess4_L2_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Trail Distance Mode", Order = 2, GroupName = "Sess4.L2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess4_L2_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 L2 Trail Distance Value", Order = 3, GroupName = "Sess4.L2.6 Trailing Stop")]
-        public double Sess4_L2_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Trail Activation Mode", Order = 4, GroupName = "Sess4.L2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess4_L2_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Trail Activation Value", Order = 5, GroupName = "Sess4.L2.6 Trailing Stop")]
-        public double Sess4_L2_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S4 L2 Trail Step (Ticks)", Order = 6, GroupName = "Sess4.L2.6 Trailing Stop")]
-        public int Sess4_L2_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable Body % Filter", Order = 1, GroupName = "Sess4.L2.7 Signal Filters")]
-        public bool Sess4_L2_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S4 L2 Min Body % of Range", Order = 2, GroupName = "Sess4.L2.7 Signal Filters")]
-        public double Sess4_L2_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable Direction Flip", Order = 1, GroupName = "Sess4.L2.8 Direction Flip")]
-        public bool Sess4_L2_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable Max Daily Loss", Order = 1, GroupName = "Sess4.L2.9 Risk Management")]
-        public bool Sess4_L2_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess4.L2.9 Risk Management")]
-        public double Sess4_L2_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable Max Daily Profit", Order = 3, GroupName = "Sess4.L2.9 Risk Management")]
-        public bool Sess4_L2_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 L2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess4.L2.9 Risk Management")]
-        public double Sess4_L2_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 L2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess4.L2.9 Risk Management")]
-        public bool Sess4_L2_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 L2 Max Trades Per Day", Order = 6, GroupName = "Sess4.L2.9 Risk Management")]
-        public int Sess4_L2_MaxTradesPerDay { get; set; }
-
-        // ── Sess4 S1 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess4.S1.0 Bucket Settings")]
-        public bool Sess4_S1_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess4.S1.0 Bucket Settings")]
-        public double Sess4_S1_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess4.S1.0 Bucket Settings")]
-        public double Sess4_S1_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 S1 EMA Length", Order = 1, GroupName = "Sess4.S1.1 EMA Settings")]
-        public int Sess4_S1_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable EMA Slope Filter", Order = 2, GroupName = "Sess4.S1.1 EMA Settings")]
-        public bool Sess4_S1_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 EMA Slope Mode", Order = 3, GroupName = "Sess4.S1.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess4_S1_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 S1 EMA Slope Bars", Order = 4, GroupName = "Sess4.S1.1 EMA Settings")]
-        public int Sess4_S1_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 EMA Min Slope %", Order = 5, GroupName = "Sess4.S1.1 EMA Settings")]
-        public double Sess4_S1_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable WMA Filter", Order = 1, GroupName = "Sess4.S1.1b WMA Filter")]
-        public bool Sess4_S1_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 S1 WMA Length", Order = 2, GroupName = "Sess4.S1.1b WMA Filter")]
-        public int Sess4_S1_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Stop Loss Type", Order = 1, GroupName = "Sess4.S1.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess4_S1_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess4.S1.3 Stop Loss")]
-        public double Sess4_S1_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 S1 SL Candle Multiplier", Order = 3, GroupName = "Sess4.S1.3 Stop Loss")]
-        public double Sess4_S1_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess4.S1.3 Stop Loss")]
-        public double Sess4_S1_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess4.S1.3 Stop Loss")]
-        public double Sess4_S1_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Take Profit Type", Order = 1, GroupName = "Sess4.S1.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess4_S1_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S4 S1 Risk Reward Ratio", Order = 2, GroupName = "Sess4.S1.4 Take Profit")]
-        public double Sess4_S1_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess4.S1.4 Take Profit")]
-        public double Sess4_S1_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 S1 TP Candle Multiplier", Order = 4, GroupName = "Sess4.S1.4 Take Profit")]
-        public double Sess4_S1_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable Break Even", Order = 1, GroupName = "Sess4.S1.5 Break Even")]
-        public bool Sess4_S1_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Break Even Trigger Type", Order = 2, GroupName = "Sess4.S1.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess4_S1_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Break Even Trigger Value", Order = 3, GroupName = "Sess4.S1.5 Break Even")]
-        public double Sess4_S1_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Break Even Offset (Points)", Order = 4, GroupName = "Sess4.S1.5 Break Even")]
-        public double Sess4_S1_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable Price Trail Stop", Order = 1, GroupName = "Sess4.S1.6 Trailing Stop")]
-        public bool Sess4_S1_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Trail Distance Mode", Order = 2, GroupName = "Sess4.S1.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess4_S1_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 S1 Trail Distance Value", Order = 3, GroupName = "Sess4.S1.6 Trailing Stop")]
-        public double Sess4_S1_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Trail Activation Mode", Order = 4, GroupName = "Sess4.S1.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess4_S1_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Trail Activation Value", Order = 5, GroupName = "Sess4.S1.6 Trailing Stop")]
-        public double Sess4_S1_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S4 S1 Trail Step (Ticks)", Order = 6, GroupName = "Sess4.S1.6 Trailing Stop")]
-        public int Sess4_S1_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable Body % Filter", Order = 1, GroupName = "Sess4.S1.7 Signal Filters")]
-        public bool Sess4_S1_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S4 S1 Min Body % of Range", Order = 2, GroupName = "Sess4.S1.7 Signal Filters")]
-        public double Sess4_S1_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable Direction Flip", Order = 1, GroupName = "Sess4.S1.8 Direction Flip")]
-        public bool Sess4_S1_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable Max Daily Loss", Order = 1, GroupName = "Sess4.S1.9 Risk Management")]
-        public bool Sess4_S1_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Max Daily Loss (Points)", Order = 2, GroupName = "Sess4.S1.9 Risk Management")]
-        public double Sess4_S1_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable Max Daily Profit", Order = 3, GroupName = "Sess4.S1.9 Risk Management")]
-        public bool Sess4_S1_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S1 Max Daily Profit (Points)", Order = 4, GroupName = "Sess4.S1.9 Risk Management")]
-        public double Sess4_S1_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S1 Enable Max Trades Per Day", Order = 5, GroupName = "Sess4.S1.9 Risk Management")]
-        public bool Sess4_S1_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 S1 Max Trades Per Day", Order = 6, GroupName = "Sess4.S1.9 Risk Management")]
-        public int Sess4_S1_MaxTradesPerDay { get; set; }
-
-        // ── Sess4 S2 ─────────────────────────────────────
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable", Description = "Enable this bucket", Order = 1, GroupName = "Sess4.S2.0 Bucket Settings")]
-        public bool Sess4_S2_Enable { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Min Candle Range (Points)", Description = "Minimum signal candle range", Order = 2, GroupName = "Sess4.S2.0 Bucket Settings")]
-        public double Sess4_S2_MinCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Max Candle Range (Points)", Description = "0 = no max", Order = 3, GroupName = "Sess4.S2.0 Bucket Settings")]
-        public double Sess4_S2_MaxCandleRange { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 S2 EMA Length", Order = 1, GroupName = "Sess4.S2.1 EMA Settings")]
-        public int Sess4_S2_EmaLength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable EMA Slope Filter", Order = 2, GroupName = "Sess4.S2.1 EMA Settings")]
-        public bool Sess4_S2_EnableEmaSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 EMA Slope Mode", Order = 3, GroupName = "Sess4.S2.1 EMA Settings")]
-        public HugoTesting_EmaSlopeModeEnum Sess4_S2_EmaSlopeMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 S2 EMA Slope Bars", Order = 4, GroupName = "Sess4.S2.1 EMA Settings")]
-        public int Sess4_S2_EmaSlopeBars { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 EMA Min Slope %", Order = 5, GroupName = "Sess4.S2.1 EMA Settings")]
-        public double Sess4_S2_EmaSlopeMinPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable WMA Filter", Order = 1, GroupName = "Sess4.S2.1b WMA Filter")]
-        public bool Sess4_S2_EnableWMAFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 S2 WMA Length", Order = 2, GroupName = "Sess4.S2.1b WMA Filter")]
-        public int Sess4_S2_WMALength { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Stop Loss Type", Order = 1, GroupName = "Sess4.S2.3 Stop Loss")]
-        public HugoTesting_StopLossTypeEnum Sess4_S2_StopLossType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Fixed Stop Loss (Points)", Order = 2, GroupName = "Sess4.S2.3 Stop Loss")]
-        public double Sess4_S2_FixedStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 S2 SL Candle Multiplier", Order = 3, GroupName = "Sess4.S2.3 Stop Loss")]
-        public double Sess4_S2_SLCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Stop Loss Offset (Points)", Order = 4, GroupName = "Sess4.S2.3 Stop Loss")]
-        public double Sess4_S2_StopLossOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Maximum Stop Loss (Points)", Order = 5, GroupName = "Sess4.S2.3 Stop Loss")]
-        public double Sess4_S2_MaxStopLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Take Profit Type", Order = 1, GroupName = "Sess4.S2.4 Take Profit")]
-        public HugoTesting_TakeProfitTypeEnum Sess4_S2_TakeProfitType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.1, double.MaxValue)]
-        [Display(Name = "S4 S2 Risk Reward Ratio", Order = 2, GroupName = "Sess4.S2.4 Take Profit")]
-        public double Sess4_S2_RiskRewardRatio { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Fixed Take Profit (Points)", Order = 3, GroupName = "Sess4.S2.4 Take Profit")]
-        public double Sess4_S2_FixedTakeProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 S2 TP Candle Multiplier", Order = 4, GroupName = "Sess4.S2.4 Take Profit")]
-        public double Sess4_S2_TPCandleMultiplier { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable Break Even", Order = 1, GroupName = "Sess4.S2.5 Break Even")]
-        public bool Sess4_S2_EnableBreakEven { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Break Even Trigger Type", Order = 2, GroupName = "Sess4.S2.5 Break Even")]
-        public HugoTesting_BreakEvenTriggerEnum Sess4_S2_BreakEvenTriggerType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Break Even Trigger Value", Order = 3, GroupName = "Sess4.S2.5 Break Even")]
-        public double Sess4_S2_BreakEvenTriggerValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Break Even Offset (Points)", Order = 4, GroupName = "Sess4.S2.5 Break Even")]
-        public double Sess4_S2_BreakEvenOffset { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable Price Trail Stop", Order = 1, GroupName = "Sess4.S2.6 Trailing Stop")]
-        public bool Sess4_S2_EnablePriceTrail { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Trail Distance Mode", Order = 2, GroupName = "Sess4.S2.6 Trailing Stop")]
-        public HugoTesting_TrailDistanceModeEnum Sess4_S2_TrailDistanceMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0.01, double.MaxValue)]
-        [Display(Name = "S4 S2 Trail Distance Value", Order = 3, GroupName = "Sess4.S2.6 Trailing Stop")]
-        public double Sess4_S2_TrailDistanceValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Trail Activation Mode", Order = 4, GroupName = "Sess4.S2.6 Trailing Stop")]
-        public HugoTesting_TrailActivationModeEnum Sess4_S2_TrailActivationMode { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Trail Activation Value", Order = 5, GroupName = "Sess4.S2.6 Trailing Stop")]
-        public double Sess4_S2_TrailActivationValue { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "S4 S2 Trail Step (Ticks)", Order = 6, GroupName = "Sess4.S2.6 Trailing Stop")]
-        public int Sess4_S2_TrailStepTicks { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable Body % Filter", Order = 1, GroupName = "Sess4.S2.7 Signal Filters")]
-        public bool Sess4_S2_EnableBodyPctFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "S4 S2 Min Body % of Range", Order = 2, GroupName = "Sess4.S2.7 Signal Filters")]
-        public double Sess4_S2_MinBodyPct { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable Direction Flip", Order = 1, GroupName = "Sess4.S2.8 Direction Flip")]
-        public bool Sess4_S2_EnableDirectionFlip { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable Max Daily Loss", Order = 1, GroupName = "Sess4.S2.9 Risk Management")]
-        public bool Sess4_S2_EnableMaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Max Daily Loss (Points)", Order = 2, GroupName = "Sess4.S2.9 Risk Management")]
-        public double Sess4_S2_MaxDailyLoss { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable Max Daily Profit", Order = 3, GroupName = "Sess4.S2.9 Risk Management")]
-        public bool Sess4_S2_EnableMaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "S4 S2 Max Daily Profit (Points)", Order = 4, GroupName = "Sess4.S2.9 Risk Management")]
-        public double Sess4_S2_MaxDailyProfit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "S4 S2 Enable Max Trades Per Day", Order = 5, GroupName = "Sess4.S2.9 Risk Management")]
-        public bool Sess4_S2_EnableMaxTradesPerDay { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "S4 S2 Max Trades Per Day", Order = 6, GroupName = "Sess4.S2.9 Risk Management")]
-        public int Sess4_S2_MaxTradesPerDay { get; set; }
-
-        #endregion
-
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  ACCESSORS
-        // ════════════════════════════════════════════════════════════════════════
-
-        #region Accessors
-
-        private EMA GetEma(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return emaSess1_L1;
-                case (1, "L2"): return emaSess1_L2;
-                case (1, "S1"): return emaSess1_S1;
-                case (1, "S2"): return emaSess1_S2;
-                case (2, "L1"): return emaSess2_L1;
-                case (2, "L2"): return emaSess2_L2;
-                case (2, "S1"): return emaSess2_S1;
-                case (2, "S2"): return emaSess2_S2;
-                case (3, "L1"): return emaSess3_L1;
-                case (3, "L2"): return emaSess3_L2;
-                case (3, "S1"): return emaSess3_S1;
-                case (3, "S2"): return emaSess3_S2;
-                case (4, "L1"): return emaSess4_L1;
-                case (4, "L2"): return emaSess4_L2;
-                case (4, "S1"): return emaSess4_S1;
-                case (4, "S2"): return emaSess4_S2;
-                default: return emaSess1_L1;
-            }
-        }
-
-        private WMA GetWma(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return wmaSess1_L1;
-                case (1, "L2"): return wmaSess1_L2;
-                case (1, "S1"): return wmaSess1_S1;
-                case (1, "S2"): return wmaSess1_S2;
-                case (2, "L1"): return wmaSess2_L1;
-                case (2, "L2"): return wmaSess2_L2;
-                case (2, "S1"): return wmaSess2_S1;
-                case (2, "S2"): return wmaSess2_S2;
-                case (3, "L1"): return wmaSess3_L1;
-                case (3, "L2"): return wmaSess3_L2;
-                case (3, "S1"): return wmaSess3_S1;
-                case (3, "S2"): return wmaSess3_S2;
-                case (4, "L1"): return wmaSess4_L1;
-                case (4, "L2"): return wmaSess4_L2;
-                case (4, "S1"): return wmaSess4_S1;
-                case (4, "S2"): return wmaSess4_S2;
-                default: return wmaSess1_L1;
-            }
-        }
-
-        private bool IsBucketEnabled(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_Enable;
-                case (1, "L2"): return Sess1_L2_Enable;
-                case (1, "S1"): return Sess1_S1_Enable;
-                case (1, "S2"): return Sess1_S2_Enable;
-                case (2, "L1"): return Sess2_L1_Enable;
-                case (2, "L2"): return Sess2_L2_Enable;
-                case (2, "S1"): return Sess2_S1_Enable;
-                case (2, "S2"): return Sess2_S2_Enable;
-                case (3, "L1"): return Sess3_L1_Enable;
-                case (3, "L2"): return Sess3_L2_Enable;
-                case (3, "S1"): return Sess3_S1_Enable;
-                case (3, "S2"): return Sess3_S2_Enable;
-                case (4, "L1"): return Sess4_L1_Enable;
-                case (4, "L2"): return Sess4_L2_Enable;
-                case (4, "S1"): return Sess4_S1_Enable;
-                case (4, "S2"): return Sess4_S2_Enable;
-                default: return false;
-            }
-        }
-
-        private bool B_EnableEmaSlope(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnableEmaSlope;
-                case (1, "L2"): return Sess1_L2_EnableEmaSlope;
-                case (1, "S1"): return Sess1_S1_EnableEmaSlope;
-                case (1, "S2"): return Sess1_S2_EnableEmaSlope;
-                case (2, "L1"): return Sess2_L1_EnableEmaSlope;
-                case (2, "L2"): return Sess2_L2_EnableEmaSlope;
-                case (2, "S1"): return Sess2_S1_EnableEmaSlope;
-                case (2, "S2"): return Sess2_S2_EnableEmaSlope;
-                case (3, "L1"): return Sess3_L1_EnableEmaSlope;
-                case (3, "L2"): return Sess3_L2_EnableEmaSlope;
-                case (3, "S1"): return Sess3_S1_EnableEmaSlope;
-                case (3, "S2"): return Sess3_S2_EnableEmaSlope;
-                case (4, "L1"): return Sess4_L1_EnableEmaSlope;
-                case (4, "L2"): return Sess4_L2_EnableEmaSlope;
-                case (4, "S1"): return Sess4_S1_EnableEmaSlope;
-                case (4, "S2"): return Sess4_S2_EnableEmaSlope;
-                default: return false;
-            }
-        }
-
-        private HugoTesting_EmaSlopeModeEnum B_EmaSlopeMode(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EmaSlopeMode;
-                case (1, "L2"): return Sess1_L2_EmaSlopeMode;
-                case (1, "S1"): return Sess1_S1_EmaSlopeMode;
-                case (1, "S2"): return Sess1_S2_EmaSlopeMode;
-                case (2, "L1"): return Sess2_L1_EmaSlopeMode;
-                case (2, "L2"): return Sess2_L2_EmaSlopeMode;
-                case (2, "S1"): return Sess2_S1_EmaSlopeMode;
-                case (2, "S2"): return Sess2_S2_EmaSlopeMode;
-                case (3, "L1"): return Sess3_L1_EmaSlopeMode;
-                case (3, "L2"): return Sess3_L2_EmaSlopeMode;
-                case (3, "S1"): return Sess3_S1_EmaSlopeMode;
-                case (3, "S2"): return Sess3_S2_EmaSlopeMode;
-                case (4, "L1"): return Sess4_L1_EmaSlopeMode;
-                case (4, "L2"): return Sess4_L2_EmaSlopeMode;
-                case (4, "S1"): return Sess4_S1_EmaSlopeMode;
-                case (4, "S2"): return Sess4_S2_EmaSlopeMode;
-                default: return HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-            }
-        }
-
-        private int B_EmaSlopeBars(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EmaSlopeBars;
-                case (1, "L2"): return Sess1_L2_EmaSlopeBars;
-                case (1, "S1"): return Sess1_S1_EmaSlopeBars;
-                case (1, "S2"): return Sess1_S2_EmaSlopeBars;
-                case (2, "L1"): return Sess2_L1_EmaSlopeBars;
-                case (2, "L2"): return Sess2_L2_EmaSlopeBars;
-                case (2, "S1"): return Sess2_S1_EmaSlopeBars;
-                case (2, "S2"): return Sess2_S2_EmaSlopeBars;
-                case (3, "L1"): return Sess3_L1_EmaSlopeBars;
-                case (3, "L2"): return Sess3_L2_EmaSlopeBars;
-                case (3, "S1"): return Sess3_S1_EmaSlopeBars;
-                case (3, "S2"): return Sess3_S2_EmaSlopeBars;
-                case (4, "L1"): return Sess4_L1_EmaSlopeBars;
-                case (4, "L2"): return Sess4_L2_EmaSlopeBars;
-                case (4, "S1"): return Sess4_S1_EmaSlopeBars;
-                case (4, "S2"): return Sess4_S2_EmaSlopeBars;
-                default: return 49;
-            }
-        }
-
-        private double B_EmaSlopeMinPct(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EmaSlopeMinPct;
-                case (1, "L2"): return Sess1_L2_EmaSlopeMinPct;
-                case (1, "S1"): return Sess1_S1_EmaSlopeMinPct;
-                case (1, "S2"): return Sess1_S2_EmaSlopeMinPct;
-                case (2, "L1"): return Sess2_L1_EmaSlopeMinPct;
-                case (2, "L2"): return Sess2_L2_EmaSlopeMinPct;
-                case (2, "S1"): return Sess2_S1_EmaSlopeMinPct;
-                case (2, "S2"): return Sess2_S2_EmaSlopeMinPct;
-                case (3, "L1"): return Sess3_L1_EmaSlopeMinPct;
-                case (3, "L2"): return Sess3_L2_EmaSlopeMinPct;
-                case (3, "S1"): return Sess3_S1_EmaSlopeMinPct;
-                case (3, "S2"): return Sess3_S2_EmaSlopeMinPct;
-                case (4, "L1"): return Sess4_L1_EmaSlopeMinPct;
-                case (4, "L2"): return Sess4_L2_EmaSlopeMinPct;
-                case (4, "S1"): return Sess4_S1_EmaSlopeMinPct;
-                case (4, "S2"): return Sess4_S2_EmaSlopeMinPct;
-                default: return 0;
-            }
-        }
-
-        private HugoTesting_StopLossTypeEnum B_StopLossType(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_StopLossType;
-                case (1, "L2"): return Sess1_L2_StopLossType;
-                case (1, "S1"): return Sess1_S1_StopLossType;
-                case (1, "S2"): return Sess1_S2_StopLossType;
-                case (2, "L1"): return Sess2_L1_StopLossType;
-                case (2, "L2"): return Sess2_L2_StopLossType;
-                case (2, "S1"): return Sess2_S1_StopLossType;
-                case (2, "S2"): return Sess2_S2_StopLossType;
-                case (3, "L1"): return Sess3_L1_StopLossType;
-                case (3, "L2"): return Sess3_L2_StopLossType;
-                case (3, "S1"): return Sess3_S1_StopLossType;
-                case (3, "S2"): return Sess3_S2_StopLossType;
-                case (4, "L1"): return Sess4_L1_StopLossType;
-                case (4, "L2"): return Sess4_L2_StopLossType;
-                case (4, "S1"): return Sess4_S1_StopLossType;
-                case (4, "S2"): return Sess4_S2_StopLossType;
-                default: return HugoTesting_StopLossTypeEnum.Fixed;
-            }
-        }
-
-        private double B_FixedStopLoss(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_FixedStopLoss;
-                case (1, "L2"): return Sess1_L2_FixedStopLoss;
-                case (1, "S1"): return Sess1_S1_FixedStopLoss;
-                case (1, "S2"): return Sess1_S2_FixedStopLoss;
-                case (2, "L1"): return Sess2_L1_FixedStopLoss;
-                case (2, "L2"): return Sess2_L2_FixedStopLoss;
-                case (2, "S1"): return Sess2_S1_FixedStopLoss;
-                case (2, "S2"): return Sess2_S2_FixedStopLoss;
-                case (3, "L1"): return Sess3_L1_FixedStopLoss;
-                case (3, "L2"): return Sess3_L2_FixedStopLoss;
-                case (3, "S1"): return Sess3_S1_FixedStopLoss;
-                case (3, "S2"): return Sess3_S2_FixedStopLoss;
-                case (4, "L1"): return Sess4_L1_FixedStopLoss;
-                case (4, "L2"): return Sess4_L2_FixedStopLoss;
-                case (4, "S1"): return Sess4_S1_FixedStopLoss;
-                case (4, "S2"): return Sess4_S2_FixedStopLoss;
-                default: return 57;
-            }
-        }
-
-        private double B_StopLossOffset(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_StopLossOffset;
-                case (1, "L2"): return Sess1_L2_StopLossOffset;
-                case (1, "S1"): return Sess1_S1_StopLossOffset;
-                case (1, "S2"): return Sess1_S2_StopLossOffset;
-                case (2, "L1"): return Sess2_L1_StopLossOffset;
-                case (2, "L2"): return Sess2_L2_StopLossOffset;
-                case (2, "S1"): return Sess2_S1_StopLossOffset;
-                case (2, "S2"): return Sess2_S2_StopLossOffset;
-                case (3, "L1"): return Sess3_L1_StopLossOffset;
-                case (3, "L2"): return Sess3_L2_StopLossOffset;
-                case (3, "S1"): return Sess3_S1_StopLossOffset;
-                case (3, "S2"): return Sess3_S2_StopLossOffset;
-                case (4, "L1"): return Sess4_L1_StopLossOffset;
-                case (4, "L2"): return Sess4_L2_StopLossOffset;
-                case (4, "S1"): return Sess4_S1_StopLossOffset;
-                case (4, "S2"): return Sess4_S2_StopLossOffset;
-                default: return 56;
-            }
-        }
-
-        private double B_MaxStopLoss(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_MaxStopLoss;
-                case (1, "L2"): return Sess1_L2_MaxStopLoss;
-                case (1, "S1"): return Sess1_S1_MaxStopLoss;
-                case (1, "S2"): return Sess1_S2_MaxStopLoss;
-                case (2, "L1"): return Sess2_L1_MaxStopLoss;
-                case (2, "L2"): return Sess2_L2_MaxStopLoss;
-                case (2, "S1"): return Sess2_S1_MaxStopLoss;
-                case (2, "S2"): return Sess2_S2_MaxStopLoss;
-                case (3, "L1"): return Sess3_L1_MaxStopLoss;
-                case (3, "L2"): return Sess3_L2_MaxStopLoss;
-                case (3, "S1"): return Sess3_S1_MaxStopLoss;
-                case (3, "S2"): return Sess3_S2_MaxStopLoss;
-                case (4, "L1"): return Sess4_L1_MaxStopLoss;
-                case (4, "L2"): return Sess4_L2_MaxStopLoss;
-                case (4, "S1"): return Sess4_S1_MaxStopLoss;
-                case (4, "S2"): return Sess4_S2_MaxStopLoss;
-                default: return 50;
-            }
-        }
-
-        private double B_SLCandleMultiplier(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_SLCandleMultiplier;
-                case (1, "L2"): return Sess1_L2_SLCandleMultiplier;
-                case (1, "S1"): return Sess1_S1_SLCandleMultiplier;
-                case (1, "S2"): return Sess1_S2_SLCandleMultiplier;
-                case (2, "L1"): return Sess2_L1_SLCandleMultiplier;
-                case (2, "L2"): return Sess2_L2_SLCandleMultiplier;
-                case (2, "S1"): return Sess2_S1_SLCandleMultiplier;
-                case (2, "S2"): return Sess2_S2_SLCandleMultiplier;
-                case (3, "L1"): return Sess3_L1_SLCandleMultiplier;
-                case (3, "L2"): return Sess3_L2_SLCandleMultiplier;
-                case (3, "S1"): return Sess3_S1_SLCandleMultiplier;
-                case (3, "S2"): return Sess3_S2_SLCandleMultiplier;
-                case (4, "L1"): return Sess4_L1_SLCandleMultiplier;
-                case (4, "L2"): return Sess4_L2_SLCandleMultiplier;
-                case (4, "S1"): return Sess4_S1_SLCandleMultiplier;
-                case (4, "S2"): return Sess4_S2_SLCandleMultiplier;
-                default: return 1.0;
-            }
-        }
-
-        private HugoTesting_TakeProfitTypeEnum B_TakeProfitType(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_TakeProfitType;
-                case (1, "L2"): return Sess1_L2_TakeProfitType;
-                case (1, "S1"): return Sess1_S1_TakeProfitType;
-                case (1, "S2"): return Sess1_S2_TakeProfitType;
-                case (2, "L1"): return Sess2_L1_TakeProfitType;
-                case (2, "L2"): return Sess2_L2_TakeProfitType;
-                case (2, "S1"): return Sess2_S1_TakeProfitType;
-                case (2, "S2"): return Sess2_S2_TakeProfitType;
-                case (3, "L1"): return Sess3_L1_TakeProfitType;
-                case (3, "L2"): return Sess3_L2_TakeProfitType;
-                case (3, "S1"): return Sess3_S1_TakeProfitType;
-                case (3, "S2"): return Sess3_S2_TakeProfitType;
-                case (4, "L1"): return Sess4_L1_TakeProfitType;
-                case (4, "L2"): return Sess4_L2_TakeProfitType;
-                case (4, "S1"): return Sess4_S1_TakeProfitType;
-                case (4, "S2"): return Sess4_S2_TakeProfitType;
-                default: return HugoTesting_TakeProfitTypeEnum.RiskReward;
-            }
-        }
-
-        private double B_RiskRewardRatio(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_RiskRewardRatio;
-                case (1, "L2"): return Sess1_L2_RiskRewardRatio;
-                case (1, "S1"): return Sess1_S1_RiskRewardRatio;
-                case (1, "S2"): return Sess1_S2_RiskRewardRatio;
-                case (2, "L1"): return Sess2_L1_RiskRewardRatio;
-                case (2, "L2"): return Sess2_L2_RiskRewardRatio;
-                case (2, "S1"): return Sess2_S1_RiskRewardRatio;
-                case (2, "S2"): return Sess2_S2_RiskRewardRatio;
-                case (3, "L1"): return Sess3_L1_RiskRewardRatio;
-                case (3, "L2"): return Sess3_L2_RiskRewardRatio;
-                case (3, "S1"): return Sess3_S1_RiskRewardRatio;
-                case (3, "S2"): return Sess3_S2_RiskRewardRatio;
-                case (4, "L1"): return Sess4_L1_RiskRewardRatio;
-                case (4, "L2"): return Sess4_L2_RiskRewardRatio;
-                case (4, "S1"): return Sess4_S1_RiskRewardRatio;
-                case (4, "S2"): return Sess4_S2_RiskRewardRatio;
-                default: return 3.42;
-            }
-        }
-
-        private double B_FixedTakeProfit(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_FixedTakeProfit;
-                case (1, "L2"): return Sess1_L2_FixedTakeProfit;
-                case (1, "S1"): return Sess1_S1_FixedTakeProfit;
-                case (1, "S2"): return Sess1_S2_FixedTakeProfit;
-                case (2, "L1"): return Sess2_L1_FixedTakeProfit;
-                case (2, "L2"): return Sess2_L2_FixedTakeProfit;
-                case (2, "S1"): return Sess2_S1_FixedTakeProfit;
-                case (2, "S2"): return Sess2_S2_FixedTakeProfit;
-                case (3, "L1"): return Sess3_L1_FixedTakeProfit;
-                case (3, "L2"): return Sess3_L2_FixedTakeProfit;
-                case (3, "S1"): return Sess3_S1_FixedTakeProfit;
-                case (3, "S2"): return Sess3_S2_FixedTakeProfit;
-                case (4, "L1"): return Sess4_L1_FixedTakeProfit;
-                case (4, "L2"): return Sess4_L2_FixedTakeProfit;
-                case (4, "S1"): return Sess4_S1_FixedTakeProfit;
-                case (4, "S2"): return Sess4_S2_FixedTakeProfit;
-                default: return 100;
-            }
-        }
-
-        private double B_TPCandleMultiplier(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_TPCandleMultiplier;
-                case (1, "L2"): return Sess1_L2_TPCandleMultiplier;
-                case (1, "S1"): return Sess1_S1_TPCandleMultiplier;
-                case (1, "S2"): return Sess1_S2_TPCandleMultiplier;
-                case (2, "L1"): return Sess2_L1_TPCandleMultiplier;
-                case (2, "L2"): return Sess2_L2_TPCandleMultiplier;
-                case (2, "S1"): return Sess2_S1_TPCandleMultiplier;
-                case (2, "S2"): return Sess2_S2_TPCandleMultiplier;
-                case (3, "L1"): return Sess3_L1_TPCandleMultiplier;
-                case (3, "L2"): return Sess3_L2_TPCandleMultiplier;
-                case (3, "S1"): return Sess3_S1_TPCandleMultiplier;
-                case (3, "S2"): return Sess3_S2_TPCandleMultiplier;
-                case (4, "L1"): return Sess4_L1_TPCandleMultiplier;
-                case (4, "L2"): return Sess4_L2_TPCandleMultiplier;
-                case (4, "S1"): return Sess4_S1_TPCandleMultiplier;
-                case (4, "S2"): return Sess4_S2_TPCandleMultiplier;
-                default: return 1.0;
-            }
-        }
-
-        private bool B_EnableBreakEven(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnableBreakEven;
-                case (1, "L2"): return Sess1_L2_EnableBreakEven;
-                case (1, "S1"): return Sess1_S1_EnableBreakEven;
-                case (1, "S2"): return Sess1_S2_EnableBreakEven;
-                case (2, "L1"): return Sess2_L1_EnableBreakEven;
-                case (2, "L2"): return Sess2_L2_EnableBreakEven;
-                case (2, "S1"): return Sess2_S1_EnableBreakEven;
-                case (2, "S2"): return Sess2_S2_EnableBreakEven;
-                case (3, "L1"): return Sess3_L1_EnableBreakEven;
-                case (3, "L2"): return Sess3_L2_EnableBreakEven;
-                case (3, "S1"): return Sess3_S1_EnableBreakEven;
-                case (3, "S2"): return Sess3_S2_EnableBreakEven;
-                case (4, "L1"): return Sess4_L1_EnableBreakEven;
-                case (4, "L2"): return Sess4_L2_EnableBreakEven;
-                case (4, "S1"): return Sess4_S1_EnableBreakEven;
-                case (4, "S2"): return Sess4_S2_EnableBreakEven;
-                default: return false;
-            }
-        }
-
-        private HugoTesting_BreakEvenTriggerEnum B_BreakEvenTriggerType(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_BreakEvenTriggerType;
-                case (1, "L2"): return Sess1_L2_BreakEvenTriggerType;
-                case (1, "S1"): return Sess1_S1_BreakEvenTriggerType;
-                case (1, "S2"): return Sess1_S2_BreakEvenTriggerType;
-                case (2, "L1"): return Sess2_L1_BreakEvenTriggerType;
-                case (2, "L2"): return Sess2_L2_BreakEvenTriggerType;
-                case (2, "S1"): return Sess2_S1_BreakEvenTriggerType;
-                case (2, "S2"): return Sess2_S2_BreakEvenTriggerType;
-                case (3, "L1"): return Sess3_L1_BreakEvenTriggerType;
-                case (3, "L2"): return Sess3_L2_BreakEvenTriggerType;
-                case (3, "S1"): return Sess3_S1_BreakEvenTriggerType;
-                case (3, "S2"): return Sess3_S2_BreakEvenTriggerType;
-                case (4, "L1"): return Sess4_L1_BreakEvenTriggerType;
-                case (4, "L2"): return Sess4_L2_BreakEvenTriggerType;
-                case (4, "S1"): return Sess4_S1_BreakEvenTriggerType;
-                case (4, "S2"): return Sess4_S2_BreakEvenTriggerType;
-                default: return HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-            }
-        }
-
-        private double B_BreakEvenTriggerValue(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_BreakEvenTriggerValue;
-                case (1, "L2"): return Sess1_L2_BreakEvenTriggerValue;
-                case (1, "S1"): return Sess1_S1_BreakEvenTriggerValue;
-                case (1, "S2"): return Sess1_S2_BreakEvenTriggerValue;
-                case (2, "L1"): return Sess2_L1_BreakEvenTriggerValue;
-                case (2, "L2"): return Sess2_L2_BreakEvenTriggerValue;
-                case (2, "S1"): return Sess2_S1_BreakEvenTriggerValue;
-                case (2, "S2"): return Sess2_S2_BreakEvenTriggerValue;
-                case (3, "L1"): return Sess3_L1_BreakEvenTriggerValue;
-                case (3, "L2"): return Sess3_L2_BreakEvenTriggerValue;
-                case (3, "S1"): return Sess3_S1_BreakEvenTriggerValue;
-                case (3, "S2"): return Sess3_S2_BreakEvenTriggerValue;
-                case (4, "L1"): return Sess4_L1_BreakEvenTriggerValue;
-                case (4, "L2"): return Sess4_L2_BreakEvenTriggerValue;
-                case (4, "S1"): return Sess4_S1_BreakEvenTriggerValue;
-                case (4, "S2"): return Sess4_S2_BreakEvenTriggerValue;
-                default: return 3.29;
-            }
-        }
-
-        private double B_BreakEvenOffset(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_BreakEvenOffset;
-                case (1, "L2"): return Sess1_L2_BreakEvenOffset;
-                case (1, "S1"): return Sess1_S1_BreakEvenOffset;
-                case (1, "S2"): return Sess1_S2_BreakEvenOffset;
-                case (2, "L1"): return Sess2_L1_BreakEvenOffset;
-                case (2, "L2"): return Sess2_L2_BreakEvenOffset;
-                case (2, "S1"): return Sess2_S1_BreakEvenOffset;
-                case (2, "S2"): return Sess2_S2_BreakEvenOffset;
-                case (3, "L1"): return Sess3_L1_BreakEvenOffset;
-                case (3, "L2"): return Sess3_L2_BreakEvenOffset;
-                case (3, "S1"): return Sess3_S1_BreakEvenOffset;
-                case (3, "S2"): return Sess3_S2_BreakEvenOffset;
-                case (4, "L1"): return Sess4_L1_BreakEvenOffset;
-                case (4, "L2"): return Sess4_L2_BreakEvenOffset;
-                case (4, "S1"): return Sess4_S1_BreakEvenOffset;
-                case (4, "S2"): return Sess4_S2_BreakEvenOffset;
-                default: return 2;
-            }
-        }
-
-        private bool B_EnablePriceTrail(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnablePriceTrail;
-                case (1, "L2"): return Sess1_L2_EnablePriceTrail;
-                case (1, "S1"): return Sess1_S1_EnablePriceTrail;
-                case (1, "S2"): return Sess1_S2_EnablePriceTrail;
-                case (2, "L1"): return Sess2_L1_EnablePriceTrail;
-                case (2, "L2"): return Sess2_L2_EnablePriceTrail;
-                case (2, "S1"): return Sess2_S1_EnablePriceTrail;
-                case (2, "S2"): return Sess2_S2_EnablePriceTrail;
-                case (3, "L1"): return Sess3_L1_EnablePriceTrail;
-                case (3, "L2"): return Sess3_L2_EnablePriceTrail;
-                case (3, "S1"): return Sess3_S1_EnablePriceTrail;
-                case (3, "S2"): return Sess3_S2_EnablePriceTrail;
-                case (4, "L1"): return Sess4_L1_EnablePriceTrail;
-                case (4, "L2"): return Sess4_L2_EnablePriceTrail;
-                case (4, "S1"): return Sess4_S1_EnablePriceTrail;
-                case (4, "S2"): return Sess4_S2_EnablePriceTrail;
-                default: return false;
-            }
-        }
-
-        private HugoTesting_TrailDistanceModeEnum B_TrailDistanceMode(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_TrailDistanceMode;
-                case (1, "L2"): return Sess1_L2_TrailDistanceMode;
-                case (1, "S1"): return Sess1_S1_TrailDistanceMode;
-                case (1, "S2"): return Sess1_S2_TrailDistanceMode;
-                case (2, "L1"): return Sess2_L1_TrailDistanceMode;
-                case (2, "L2"): return Sess2_L2_TrailDistanceMode;
-                case (2, "S1"): return Sess2_S1_TrailDistanceMode;
-                case (2, "S2"): return Sess2_S2_TrailDistanceMode;
-                case (3, "L1"): return Sess3_L1_TrailDistanceMode;
-                case (3, "L2"): return Sess3_L2_TrailDistanceMode;
-                case (3, "S1"): return Sess3_S1_TrailDistanceMode;
-                case (3, "S2"): return Sess3_S2_TrailDistanceMode;
-                case (4, "L1"): return Sess4_L1_TrailDistanceMode;
-                case (4, "L2"): return Sess4_L2_TrailDistanceMode;
-                case (4, "S1"): return Sess4_S1_TrailDistanceMode;
-                case (4, "S2"): return Sess4_S2_TrailDistanceMode;
-                default: return HugoTesting_TrailDistanceModeEnum.FixedPoints;
-            }
-        }
-
-        private double B_TrailDistanceValue(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_TrailDistanceValue;
-                case (1, "L2"): return Sess1_L2_TrailDistanceValue;
-                case (1, "S1"): return Sess1_S1_TrailDistanceValue;
-                case (1, "S2"): return Sess1_S2_TrailDistanceValue;
-                case (2, "L1"): return Sess2_L1_TrailDistanceValue;
-                case (2, "L2"): return Sess2_L2_TrailDistanceValue;
-                case (2, "S1"): return Sess2_S1_TrailDistanceValue;
-                case (2, "S2"): return Sess2_S2_TrailDistanceValue;
-                case (3, "L1"): return Sess3_L1_TrailDistanceValue;
-                case (3, "L2"): return Sess3_L2_TrailDistanceValue;
-                case (3, "S1"): return Sess3_S1_TrailDistanceValue;
-                case (3, "S2"): return Sess3_S2_TrailDistanceValue;
-                case (4, "L1"): return Sess4_L1_TrailDistanceValue;
-                case (4, "L2"): return Sess4_L2_TrailDistanceValue;
-                case (4, "S1"): return Sess4_S1_TrailDistanceValue;
-                case (4, "S2"): return Sess4_S2_TrailDistanceValue;
-                default: return 20;
-            }
-        }
-
-        private HugoTesting_TrailActivationModeEnum B_TrailActivationMode(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_TrailActivationMode;
-                case (1, "L2"): return Sess1_L2_TrailActivationMode;
-                case (1, "S1"): return Sess1_S1_TrailActivationMode;
-                case (1, "S2"): return Sess1_S2_TrailActivationMode;
-                case (2, "L1"): return Sess2_L1_TrailActivationMode;
-                case (2, "L2"): return Sess2_L2_TrailActivationMode;
-                case (2, "S1"): return Sess2_S1_TrailActivationMode;
-                case (2, "S2"): return Sess2_S2_TrailActivationMode;
-                case (3, "L1"): return Sess3_L1_TrailActivationMode;
-                case (3, "L2"): return Sess3_L2_TrailActivationMode;
-                case (3, "S1"): return Sess3_S1_TrailActivationMode;
-                case (3, "S2"): return Sess3_S2_TrailActivationMode;
-                case (4, "L1"): return Sess4_L1_TrailActivationMode;
-                case (4, "L2"): return Sess4_L2_TrailActivationMode;
-                case (4, "S1"): return Sess4_S1_TrailActivationMode;
-                case (4, "S2"): return Sess4_S2_TrailActivationMode;
-                default: return HugoTesting_TrailActivationModeEnum.FixedPoints;
-            }
-        }
-
-        private double B_TrailActivationValue(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_TrailActivationValue;
-                case (1, "L2"): return Sess1_L2_TrailActivationValue;
-                case (1, "S1"): return Sess1_S1_TrailActivationValue;
-                case (1, "S2"): return Sess1_S2_TrailActivationValue;
-                case (2, "L1"): return Sess2_L1_TrailActivationValue;
-                case (2, "L2"): return Sess2_L2_TrailActivationValue;
-                case (2, "S1"): return Sess2_S1_TrailActivationValue;
-                case (2, "S2"): return Sess2_S2_TrailActivationValue;
-                case (3, "L1"): return Sess3_L1_TrailActivationValue;
-                case (3, "L2"): return Sess3_L2_TrailActivationValue;
-                case (3, "S1"): return Sess3_S1_TrailActivationValue;
-                case (3, "S2"): return Sess3_S2_TrailActivationValue;
-                case (4, "L1"): return Sess4_L1_TrailActivationValue;
-                case (4, "L2"): return Sess4_L2_TrailActivationValue;
-                case (4, "S1"): return Sess4_S1_TrailActivationValue;
-                case (4, "S2"): return Sess4_S2_TrailActivationValue;
-                default: return 30;
-            }
-        }
-
-        private int B_TrailStepTicks(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_TrailStepTicks;
-                case (1, "L2"): return Sess1_L2_TrailStepTicks;
-                case (1, "S1"): return Sess1_S1_TrailStepTicks;
-                case (1, "S2"): return Sess1_S2_TrailStepTicks;
-                case (2, "L1"): return Sess2_L1_TrailStepTicks;
-                case (2, "L2"): return Sess2_L2_TrailStepTicks;
-                case (2, "S1"): return Sess2_S1_TrailStepTicks;
-                case (2, "S2"): return Sess2_S2_TrailStepTicks;
-                case (3, "L1"): return Sess3_L1_TrailStepTicks;
-                case (3, "L2"): return Sess3_L2_TrailStepTicks;
-                case (3, "S1"): return Sess3_S1_TrailStepTicks;
-                case (3, "S2"): return Sess3_S2_TrailStepTicks;
-                case (4, "L1"): return Sess4_L1_TrailStepTicks;
-                case (4, "L2"): return Sess4_L2_TrailStepTicks;
-                case (4, "S1"): return Sess4_S1_TrailStepTicks;
-                case (4, "S2"): return Sess4_S2_TrailStepTicks;
-                default: return 0;
-            }
-        }
-
-        private bool B_EnableBodyPctFilter(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnableBodyPctFilter;
-                case (1, "L2"): return Sess1_L2_EnableBodyPctFilter;
-                case (1, "S1"): return Sess1_S1_EnableBodyPctFilter;
-                case (1, "S2"): return Sess1_S2_EnableBodyPctFilter;
-                case (2, "L1"): return Sess2_L1_EnableBodyPctFilter;
-                case (2, "L2"): return Sess2_L2_EnableBodyPctFilter;
-                case (2, "S1"): return Sess2_S1_EnableBodyPctFilter;
-                case (2, "S2"): return Sess2_S2_EnableBodyPctFilter;
-                case (3, "L1"): return Sess3_L1_EnableBodyPctFilter;
-                case (3, "L2"): return Sess3_L2_EnableBodyPctFilter;
-                case (3, "S1"): return Sess3_S1_EnableBodyPctFilter;
-                case (3, "S2"): return Sess3_S2_EnableBodyPctFilter;
-                case (4, "L1"): return Sess4_L1_EnableBodyPctFilter;
-                case (4, "L2"): return Sess4_L2_EnableBodyPctFilter;
-                case (4, "S1"): return Sess4_S1_EnableBodyPctFilter;
-                case (4, "S2"): return Sess4_S2_EnableBodyPctFilter;
-                default: return false;
-            }
-        }
-
-        private double B_MinBodyPct(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_MinBodyPct;
-                case (1, "L2"): return Sess1_L2_MinBodyPct;
-                case (1, "S1"): return Sess1_S1_MinBodyPct;
-                case (1, "S2"): return Sess1_S2_MinBodyPct;
-                case (2, "L1"): return Sess2_L1_MinBodyPct;
-                case (2, "L2"): return Sess2_L2_MinBodyPct;
-                case (2, "S1"): return Sess2_S1_MinBodyPct;
-                case (2, "S2"): return Sess2_S2_MinBodyPct;
-                case (3, "L1"): return Sess3_L1_MinBodyPct;
-                case (3, "L2"): return Sess3_L2_MinBodyPct;
-                case (3, "S1"): return Sess3_S1_MinBodyPct;
-                case (3, "S2"): return Sess3_S2_MinBodyPct;
-                case (4, "L1"): return Sess4_L1_MinBodyPct;
-                case (4, "L2"): return Sess4_L2_MinBodyPct;
-                case (4, "S1"): return Sess4_S1_MinBodyPct;
-                case (4, "S2"): return Sess4_S2_MinBodyPct;
-                default: return 33;
-            }
-        }
-
-        private bool B_EnableDirectionFlip(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnableDirectionFlip;
-                case (1, "L2"): return Sess1_L2_EnableDirectionFlip;
-                case (1, "S1"): return Sess1_S1_EnableDirectionFlip;
-                case (1, "S2"): return Sess1_S2_EnableDirectionFlip;
-                case (2, "L1"): return Sess2_L1_EnableDirectionFlip;
-                case (2, "L2"): return Sess2_L2_EnableDirectionFlip;
-                case (2, "S1"): return Sess2_S1_EnableDirectionFlip;
-                case (2, "S2"): return Sess2_S2_EnableDirectionFlip;
-                case (3, "L1"): return Sess3_L1_EnableDirectionFlip;
-                case (3, "L2"): return Sess3_L2_EnableDirectionFlip;
-                case (3, "S1"): return Sess3_S1_EnableDirectionFlip;
-                case (3, "S2"): return Sess3_S2_EnableDirectionFlip;
-                case (4, "L1"): return Sess4_L1_EnableDirectionFlip;
-                case (4, "L2"): return Sess4_L2_EnableDirectionFlip;
-                case (4, "S1"): return Sess4_S1_EnableDirectionFlip;
-                case (4, "S2"): return Sess4_S2_EnableDirectionFlip;
-                default: return false;
-            }
-        }
-
-        private bool B_EnableMaxDailyLoss(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnableMaxDailyLoss;
-                case (1, "L2"): return Sess1_L2_EnableMaxDailyLoss;
-                case (1, "S1"): return Sess1_S1_EnableMaxDailyLoss;
-                case (1, "S2"): return Sess1_S2_EnableMaxDailyLoss;
-                case (2, "L1"): return Sess2_L1_EnableMaxDailyLoss;
-                case (2, "L2"): return Sess2_L2_EnableMaxDailyLoss;
-                case (2, "S1"): return Sess2_S1_EnableMaxDailyLoss;
-                case (2, "S2"): return Sess2_S2_EnableMaxDailyLoss;
-                case (3, "L1"): return Sess3_L1_EnableMaxDailyLoss;
-                case (3, "L2"): return Sess3_L2_EnableMaxDailyLoss;
-                case (3, "S1"): return Sess3_S1_EnableMaxDailyLoss;
-                case (3, "S2"): return Sess3_S2_EnableMaxDailyLoss;
-                case (4, "L1"): return Sess4_L1_EnableMaxDailyLoss;
-                case (4, "L2"): return Sess4_L2_EnableMaxDailyLoss;
-                case (4, "S1"): return Sess4_S1_EnableMaxDailyLoss;
-                case (4, "S2"): return Sess4_S2_EnableMaxDailyLoss;
-                default: return false;
-            }
-        }
-
-        private double B_MaxDailyLoss(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_MaxDailyLoss;
-                case (1, "L2"): return Sess1_L2_MaxDailyLoss;
-                case (1, "S1"): return Sess1_S1_MaxDailyLoss;
-                case (1, "S2"): return Sess1_S2_MaxDailyLoss;
-                case (2, "L1"): return Sess2_L1_MaxDailyLoss;
-                case (2, "L2"): return Sess2_L2_MaxDailyLoss;
-                case (2, "S1"): return Sess2_S1_MaxDailyLoss;
-                case (2, "S2"): return Sess2_S2_MaxDailyLoss;
-                case (3, "L1"): return Sess3_L1_MaxDailyLoss;
-                case (3, "L2"): return Sess3_L2_MaxDailyLoss;
-                case (3, "S1"): return Sess3_S1_MaxDailyLoss;
-                case (3, "S2"): return Sess3_S2_MaxDailyLoss;
-                case (4, "L1"): return Sess4_L1_MaxDailyLoss;
-                case (4, "L2"): return Sess4_L2_MaxDailyLoss;
-                case (4, "S1"): return Sess4_S1_MaxDailyLoss;
-                case (4, "S2"): return Sess4_S2_MaxDailyLoss;
-                default: return 307;
-            }
-        }
-
-        private bool B_EnableMaxDailyProfit(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnableMaxDailyProfit;
-                case (1, "L2"): return Sess1_L2_EnableMaxDailyProfit;
-                case (1, "S1"): return Sess1_S1_EnableMaxDailyProfit;
-                case (1, "S2"): return Sess1_S2_EnableMaxDailyProfit;
-                case (2, "L1"): return Sess2_L1_EnableMaxDailyProfit;
-                case (2, "L2"): return Sess2_L2_EnableMaxDailyProfit;
-                case (2, "S1"): return Sess2_S1_EnableMaxDailyProfit;
-                case (2, "S2"): return Sess2_S2_EnableMaxDailyProfit;
-                case (3, "L1"): return Sess3_L1_EnableMaxDailyProfit;
-                case (3, "L2"): return Sess3_L2_EnableMaxDailyProfit;
-                case (3, "S1"): return Sess3_S1_EnableMaxDailyProfit;
-                case (3, "S2"): return Sess3_S2_EnableMaxDailyProfit;
-                case (4, "L1"): return Sess4_L1_EnableMaxDailyProfit;
-                case (4, "L2"): return Sess4_L2_EnableMaxDailyProfit;
-                case (4, "S1"): return Sess4_S1_EnableMaxDailyProfit;
-                case (4, "S2"): return Sess4_S2_EnableMaxDailyProfit;
-                default: return false;
-            }
-        }
-
-        private double B_MaxDailyProfit(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_MaxDailyProfit;
-                case (1, "L2"): return Sess1_L2_MaxDailyProfit;
-                case (1, "S1"): return Sess1_S1_MaxDailyProfit;
-                case (1, "S2"): return Sess1_S2_MaxDailyProfit;
-                case (2, "L1"): return Sess2_L1_MaxDailyProfit;
-                case (2, "L2"): return Sess2_L2_MaxDailyProfit;
-                case (2, "S1"): return Sess2_S1_MaxDailyProfit;
-                case (2, "S2"): return Sess2_S2_MaxDailyProfit;
-                case (3, "L1"): return Sess3_L1_MaxDailyProfit;
-                case (3, "L2"): return Sess3_L2_MaxDailyProfit;
-                case (3, "S1"): return Sess3_S1_MaxDailyProfit;
-                case (3, "S2"): return Sess3_S2_MaxDailyProfit;
-                case (4, "L1"): return Sess4_L1_MaxDailyProfit;
-                case (4, "L2"): return Sess4_L2_MaxDailyProfit;
-                case (4, "S1"): return Sess4_S1_MaxDailyProfit;
-                case (4, "S2"): return Sess4_S2_MaxDailyProfit;
-                default: return 186;
-            }
-        }
-
-        private bool B_EnableMaxTradesPerDay(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnableMaxTradesPerDay;
-                case (1, "L2"): return Sess1_L2_EnableMaxTradesPerDay;
-                case (1, "S1"): return Sess1_S1_EnableMaxTradesPerDay;
-                case (1, "S2"): return Sess1_S2_EnableMaxTradesPerDay;
-                case (2, "L1"): return Sess2_L1_EnableMaxTradesPerDay;
-                case (2, "L2"): return Sess2_L2_EnableMaxTradesPerDay;
-                case (2, "S1"): return Sess2_S1_EnableMaxTradesPerDay;
-                case (2, "S2"): return Sess2_S2_EnableMaxTradesPerDay;
-                case (3, "L1"): return Sess3_L1_EnableMaxTradesPerDay;
-                case (3, "L2"): return Sess3_L2_EnableMaxTradesPerDay;
-                case (3, "S1"): return Sess3_S1_EnableMaxTradesPerDay;
-                case (3, "S2"): return Sess3_S2_EnableMaxTradesPerDay;
-                case (4, "L1"): return Sess4_L1_EnableMaxTradesPerDay;
-                case (4, "L2"): return Sess4_L2_EnableMaxTradesPerDay;
-                case (4, "S1"): return Sess4_S1_EnableMaxTradesPerDay;
-                case (4, "S2"): return Sess4_S2_EnableMaxTradesPerDay;
-                default: return false;
-            }
-        }
-
-        private int B_MaxTradesPerDay(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_MaxTradesPerDay;
-                case (1, "L2"): return Sess1_L2_MaxTradesPerDay;
-                case (1, "S1"): return Sess1_S1_MaxTradesPerDay;
-                case (1, "S2"): return Sess1_S2_MaxTradesPerDay;
-                case (2, "L1"): return Sess2_L1_MaxTradesPerDay;
-                case (2, "L2"): return Sess2_L2_MaxTradesPerDay;
-                case (2, "S1"): return Sess2_S1_MaxTradesPerDay;
-                case (2, "S2"): return Sess2_S2_MaxTradesPerDay;
-                case (3, "L1"): return Sess3_L1_MaxTradesPerDay;
-                case (3, "L2"): return Sess3_L2_MaxTradesPerDay;
-                case (3, "S1"): return Sess3_S1_MaxTradesPerDay;
-                case (3, "S2"): return Sess3_S2_MaxTradesPerDay;
-                case (4, "L1"): return Sess4_L1_MaxTradesPerDay;
-                case (4, "L2"): return Sess4_L2_MaxTradesPerDay;
-                case (4, "S1"): return Sess4_S1_MaxTradesPerDay;
-                case (4, "S2"): return Sess4_S2_MaxTradesPerDay;
-                default: return 6;
-            }
-        }
-
-        private bool B_EnableWMAFilter(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EnableWMAFilter;
-                case (1, "L2"): return Sess1_L2_EnableWMAFilter;
-                case (1, "S1"): return Sess1_S1_EnableWMAFilter;
-                case (1, "S2"): return Sess1_S2_EnableWMAFilter;
-                case (2, "L1"): return Sess2_L1_EnableWMAFilter;
-                case (2, "L2"): return Sess2_L2_EnableWMAFilter;
-                case (2, "S1"): return Sess2_S1_EnableWMAFilter;
-                case (2, "S2"): return Sess2_S2_EnableWMAFilter;
-                case (3, "L1"): return Sess3_L1_EnableWMAFilter;
-                case (3, "L2"): return Sess3_L2_EnableWMAFilter;
-                case (3, "S1"): return Sess3_S1_EnableWMAFilter;
-                case (3, "S2"): return Sess3_S2_EnableWMAFilter;
-                case (4, "L1"): return Sess4_L1_EnableWMAFilter;
-                case (4, "L2"): return Sess4_L2_EnableWMAFilter;
-                case (4, "S1"): return Sess4_S1_EnableWMAFilter;
-                case (4, "S2"): return Sess4_S2_EnableWMAFilter;
-                default: return false;
-            }
-        }
-
-        private int B_WMALength(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_WMALength;
-                case (1, "L2"): return Sess1_L2_WMALength;
-                case (1, "S1"): return Sess1_S1_WMALength;
-                case (1, "S2"): return Sess1_S2_WMALength;
-                case (2, "L1"): return Sess2_L1_WMALength;
-                case (2, "L2"): return Sess2_L2_WMALength;
-                case (2, "S1"): return Sess2_S1_WMALength;
-                case (2, "S2"): return Sess2_S2_WMALength;
-                case (3, "L1"): return Sess3_L1_WMALength;
-                case (3, "L2"): return Sess3_L2_WMALength;
-                case (3, "S1"): return Sess3_S1_WMALength;
-                case (3, "S2"): return Sess3_S2_WMALength;
-                case (4, "L1"): return Sess4_L1_WMALength;
-                case (4, "L2"): return Sess4_L2_WMALength;
-                case (4, "S1"): return Sess4_S1_WMALength;
-                case (4, "S2"): return Sess4_S2_WMALength;
-                default: return 20;
-            }
-        }
-
-        private double B_MinCandleRange(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_MinCandleRange;
-                case (1, "L2"): return Sess1_L2_MinCandleRange;
-                case (1, "S1"): return Sess1_S1_MinCandleRange;
-                case (1, "S2"): return Sess1_S2_MinCandleRange;
-                case (2, "L1"): return Sess2_L1_MinCandleRange;
-                case (2, "L2"): return Sess2_L2_MinCandleRange;
-                case (2, "S1"): return Sess2_S1_MinCandleRange;
-                case (2, "S2"): return Sess2_S2_MinCandleRange;
-                case (3, "L1"): return Sess3_L1_MinCandleRange;
-                case (3, "L2"): return Sess3_L2_MinCandleRange;
-                case (3, "S1"): return Sess3_S1_MinCandleRange;
-                case (3, "S2"): return Sess3_S2_MinCandleRange;
-                case (4, "L1"): return Sess4_L1_MinCandleRange;
-                case (4, "L2"): return Sess4_L2_MinCandleRange;
-                case (4, "S1"): return Sess4_S1_MinCandleRange;
-                case (4, "S2"): return Sess4_S2_MinCandleRange;
-                default: return 0;
-            }
-        }
-
-        private double B_MaxCandleRange(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_MaxCandleRange;
-                case (1, "L2"): return Sess1_L2_MaxCandleRange;
-                case (1, "S1"): return Sess1_S1_MaxCandleRange;
-                case (1, "S2"): return Sess1_S2_MaxCandleRange;
-                case (2, "L1"): return Sess2_L1_MaxCandleRange;
-                case (2, "L2"): return Sess2_L2_MaxCandleRange;
-                case (2, "S1"): return Sess2_S1_MaxCandleRange;
-                case (2, "S2"): return Sess2_S2_MaxCandleRange;
-                case (3, "L1"): return Sess3_L1_MaxCandleRange;
-                case (3, "L2"): return Sess3_L2_MaxCandleRange;
-                case (3, "S1"): return Sess3_S1_MaxCandleRange;
-                case (3, "S2"): return Sess3_S2_MaxCandleRange;
-                case (4, "L1"): return Sess4_L1_MaxCandleRange;
-                case (4, "L2"): return Sess4_L2_MaxCandleRange;
-                case (4, "S1"): return Sess4_S1_MaxCandleRange;
-                case (4, "S2"): return Sess4_S2_MaxCandleRange;
-                default: return 0;
-            }
-        }
-
-        private int B_EmaLength(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return Sess1_L1_EmaLength;
-                case (1, "L2"): return Sess1_L2_EmaLength;
-                case (1, "S1"): return Sess1_S1_EmaLength;
-                case (1, "S2"): return Sess1_S2_EmaLength;
-                case (2, "L1"): return Sess2_L1_EmaLength;
-                case (2, "L2"): return Sess2_L2_EmaLength;
-                case (2, "S1"): return Sess2_S1_EmaLength;
-                case (2, "S2"): return Sess2_S2_EmaLength;
-                case (3, "L1"): return Sess3_L1_EmaLength;
-                case (3, "L2"): return Sess3_L2_EmaLength;
-                case (3, "S1"): return Sess3_S1_EmaLength;
-                case (3, "S2"): return Sess3_S2_EmaLength;
-                case (4, "L1"): return Sess4_L1_EmaLength;
-                case (4, "L2"): return Sess4_L2_EmaLength;
-                case (4, "S1"): return Sess4_S1_EmaLength;
-                case (4, "S2"): return Sess4_S2_EmaLength;
-                default: return 1;
-            }
-        }
-
-        private double GetBucketDailyPnL(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return dailyPnL_Sess1_L1;
-                case (1, "L2"): return dailyPnL_Sess1_L2;
-                case (1, "S1"): return dailyPnL_Sess1_S1;
-                case (1, "S2"): return dailyPnL_Sess1_S2;
-                case (2, "L1"): return dailyPnL_Sess2_L1;
-                case (2, "L2"): return dailyPnL_Sess2_L2;
-                case (2, "S1"): return dailyPnL_Sess2_S1;
-                case (2, "S2"): return dailyPnL_Sess2_S2;
-                case (3, "L1"): return dailyPnL_Sess3_L1;
-                case (3, "L2"): return dailyPnL_Sess3_L2;
-                case (3, "S1"): return dailyPnL_Sess3_S1;
-                case (3, "S2"): return dailyPnL_Sess3_S2;
-                case (4, "L1"): return dailyPnL_Sess4_L1;
-                case (4, "L2"): return dailyPnL_Sess4_L2;
-                case (4, "S1"): return dailyPnL_Sess4_S1;
-                case (4, "S2"): return dailyPnL_Sess4_S2;
-                default: return default(double);
-            }
-        }
-
-        private int GetBucketTradeCount(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return dailyTradeCount_Sess1_L1;
-                case (1, "L2"): return dailyTradeCount_Sess1_L2;
-                case (1, "S1"): return dailyTradeCount_Sess1_S1;
-                case (1, "S2"): return dailyTradeCount_Sess1_S2;
-                case (2, "L1"): return dailyTradeCount_Sess2_L1;
-                case (2, "L2"): return dailyTradeCount_Sess2_L2;
-                case (2, "S1"): return dailyTradeCount_Sess2_S1;
-                case (2, "S2"): return dailyTradeCount_Sess2_S2;
-                case (3, "L1"): return dailyTradeCount_Sess3_L1;
-                case (3, "L2"): return dailyTradeCount_Sess3_L2;
-                case (3, "S1"): return dailyTradeCount_Sess3_S1;
-                case (3, "S2"): return dailyTradeCount_Sess3_S2;
-                case (4, "L1"): return dailyTradeCount_Sess4_L1;
-                case (4, "L2"): return dailyTradeCount_Sess4_L2;
-                case (4, "S1"): return dailyTradeCount_Sess4_S1;
-                case (4, "S2"): return dailyTradeCount_Sess4_S2;
-                default: return default(int);
-            }
-        }
-
-        private bool GetBucketLossHit(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return dailyLossHit_Sess1_L1;
-                case (1, "L2"): return dailyLossHit_Sess1_L2;
-                case (1, "S1"): return dailyLossHit_Sess1_S1;
-                case (1, "S2"): return dailyLossHit_Sess1_S2;
-                case (2, "L1"): return dailyLossHit_Sess2_L1;
-                case (2, "L2"): return dailyLossHit_Sess2_L2;
-                case (2, "S1"): return dailyLossHit_Sess2_S1;
-                case (2, "S2"): return dailyLossHit_Sess2_S2;
-                case (3, "L1"): return dailyLossHit_Sess3_L1;
-                case (3, "L2"): return dailyLossHit_Sess3_L2;
-                case (3, "S1"): return dailyLossHit_Sess3_S1;
-                case (3, "S2"): return dailyLossHit_Sess3_S2;
-                case (4, "L1"): return dailyLossHit_Sess4_L1;
-                case (4, "L2"): return dailyLossHit_Sess4_L2;
-                case (4, "S1"): return dailyLossHit_Sess4_S1;
-                case (4, "S2"): return dailyLossHit_Sess4_S2;
-                default: return default(bool);
-            }
-        }
-
-        private bool GetBucketProfitHit(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): return dailyProfitHit_Sess1_L1;
-                case (1, "L2"): return dailyProfitHit_Sess1_L2;
-                case (1, "S1"): return dailyProfitHit_Sess1_S1;
-                case (1, "S2"): return dailyProfitHit_Sess1_S2;
-                case (2, "L1"): return dailyProfitHit_Sess2_L1;
-                case (2, "L2"): return dailyProfitHit_Sess2_L2;
-                case (2, "S1"): return dailyProfitHit_Sess2_S1;
-                case (2, "S2"): return dailyProfitHit_Sess2_S2;
-                case (3, "L1"): return dailyProfitHit_Sess3_L1;
-                case (3, "L2"): return dailyProfitHit_Sess3_L2;
-                case (3, "S1"): return dailyProfitHit_Sess3_S1;
-                case (3, "S2"): return dailyProfitHit_Sess3_S2;
-                case (4, "L1"): return dailyProfitHit_Sess4_L1;
-                case (4, "L2"): return dailyProfitHit_Sess4_L2;
-                case (4, "S1"): return dailyProfitHit_Sess4_S1;
-                case (4, "S2"): return dailyProfitHit_Sess4_S2;
-                default: return default(bool);
-            }
-        }
-
-        private void AddBucketDailyPnL(int s, string b, double v)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): dailyPnL_Sess1_L1 += v; break;
-                case (1, "L2"): dailyPnL_Sess1_L2 += v; break;
-                case (1, "S1"): dailyPnL_Sess1_S1 += v; break;
-                case (1, "S2"): dailyPnL_Sess1_S2 += v; break;
-                case (2, "L1"): dailyPnL_Sess2_L1 += v; break;
-                case (2, "L2"): dailyPnL_Sess2_L2 += v; break;
-                case (2, "S1"): dailyPnL_Sess2_S1 += v; break;
-                case (2, "S2"): dailyPnL_Sess2_S2 += v; break;
-                case (3, "L1"): dailyPnL_Sess3_L1 += v; break;
-                case (3, "L2"): dailyPnL_Sess3_L2 += v; break;
-                case (3, "S1"): dailyPnL_Sess3_S1 += v; break;
-                case (3, "S2"): dailyPnL_Sess3_S2 += v; break;
-                case (4, "L1"): dailyPnL_Sess4_L1 += v; break;
-                case (4, "L2"): dailyPnL_Sess4_L2 += v; break;
-                case (4, "S1"): dailyPnL_Sess4_S1 += v; break;
-                case (4, "S2"): dailyPnL_Sess4_S2 += v; break;
-            }
-        }
-
-        private void IncBucketTradeCount(int s, string b)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): dailyTradeCount_Sess1_L1++; break;
-                case (1, "L2"): dailyTradeCount_Sess1_L2++; break;
-                case (1, "S1"): dailyTradeCount_Sess1_S1++; break;
-                case (1, "S2"): dailyTradeCount_Sess1_S2++; break;
-                case (2, "L1"): dailyTradeCount_Sess2_L1++; break;
-                case (2, "L2"): dailyTradeCount_Sess2_L2++; break;
-                case (2, "S1"): dailyTradeCount_Sess2_S1++; break;
-                case (2, "S2"): dailyTradeCount_Sess2_S2++; break;
-                case (3, "L1"): dailyTradeCount_Sess3_L1++; break;
-                case (3, "L2"): dailyTradeCount_Sess3_L2++; break;
-                case (3, "S1"): dailyTradeCount_Sess3_S1++; break;
-                case (3, "S2"): dailyTradeCount_Sess3_S2++; break;
-                case (4, "L1"): dailyTradeCount_Sess4_L1++; break;
-                case (4, "L2"): dailyTradeCount_Sess4_L2++; break;
-                case (4, "S1"): dailyTradeCount_Sess4_S1++; break;
-                case (4, "S2"): dailyTradeCount_Sess4_S2++; break;
-            }
-        }
-
-        private void SetBucketLossHit(int s, string b, bool v)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): dailyLossHit_Sess1_L1 = v; break;
-                case (1, "L2"): dailyLossHit_Sess1_L2 = v; break;
-                case (1, "S1"): dailyLossHit_Sess1_S1 = v; break;
-                case (1, "S2"): dailyLossHit_Sess1_S2 = v; break;
-                case (2, "L1"): dailyLossHit_Sess2_L1 = v; break;
-                case (2, "L2"): dailyLossHit_Sess2_L2 = v; break;
-                case (2, "S1"): dailyLossHit_Sess2_S1 = v; break;
-                case (2, "S2"): dailyLossHit_Sess2_S2 = v; break;
-                case (3, "L1"): dailyLossHit_Sess3_L1 = v; break;
-                case (3, "L2"): dailyLossHit_Sess3_L2 = v; break;
-                case (3, "S1"): dailyLossHit_Sess3_S1 = v; break;
-                case (3, "S2"): dailyLossHit_Sess3_S2 = v; break;
-                case (4, "L1"): dailyLossHit_Sess4_L1 = v; break;
-                case (4, "L2"): dailyLossHit_Sess4_L2 = v; break;
-                case (4, "S1"): dailyLossHit_Sess4_S1 = v; break;
-                case (4, "S2"): dailyLossHit_Sess4_S2 = v; break;
-            }
-        }
-
-        private void SetBucketProfitHit(int s, string b, bool v)
-        {
-            switch ((s, b))
-            {
-                case (1, "L1"): dailyProfitHit_Sess1_L1 = v; break;
-                case (1, "L2"): dailyProfitHit_Sess1_L2 = v; break;
-                case (1, "S1"): dailyProfitHit_Sess1_S1 = v; break;
-                case (1, "S2"): dailyProfitHit_Sess1_S2 = v; break;
-                case (2, "L1"): dailyProfitHit_Sess2_L1 = v; break;
-                case (2, "L2"): dailyProfitHit_Sess2_L2 = v; break;
-                case (2, "S1"): dailyProfitHit_Sess2_S1 = v; break;
-                case (2, "S2"): dailyProfitHit_Sess2_S2 = v; break;
-                case (3, "L1"): dailyProfitHit_Sess3_L1 = v; break;
-                case (3, "L2"): dailyProfitHit_Sess3_L2 = v; break;
-                case (3, "S1"): dailyProfitHit_Sess3_S1 = v; break;
-                case (3, "S2"): dailyProfitHit_Sess3_S2 = v; break;
-                case (4, "L1"): dailyProfitHit_Sess4_L1 = v; break;
-                case (4, "L2"): dailyProfitHit_Sess4_L2 = v; break;
-                case (4, "S1"): dailyProfitHit_Sess4_S1 = v; break;
-                case (4, "S2"): dailyProfitHit_Sess4_S2 = v; break;
-            }
-        }
-
-        private bool GetSessEnable(int s)
-        {
-            switch (s)
-            {
-                case 1: return Sess1_Enable;
-                case 2: return Sess2_Enable;
-                case 3: return Sess3_Enable;
-                case 4: return Sess4_Enable;
-                default: return false;
-            }
-        }
-
-        #endregion
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  SESSION ROUTING
-        // ════════════════════════════════════════════════════════════════════════
-
-        #region Session Routing
-
-        private double ToSessionMinutes(TimeSpan t)
-        {
-            double ssm = TimeSpan.Parse(SessionStartTime).TotalMinutes;
-            double m   = t.TotalMinutes - ssm;
-            if (m < 0) m += 1440.0;
-            return m;
-        }
-        private double SM(string ts) => ToSessionMinutes(TimeSpan.Parse(ts));
-
-        private double GetSessTradeWindowStartSM(int s) { switch(s) { case 1: return SM(Sess1_TradeWindowStart); case 2: return SM(Sess2_TradeWindowStart); case 3: return SM(Sess3_TradeWindowStart); case 4: return SM(Sess4_TradeWindowStart); default: return 0; } }
-        private double GetSessLastEntrySM(int s)        { switch(s) { case 1: return SM(Sess1_LastEntryTime);    case 2: return SM(Sess2_LastEntryTime);    case 3: return SM(Sess3_LastEntryTime);    case 4: return SM(Sess4_LastEntryTime);    default: return 0; } }
-        private double GetSessForceCloseSM(int s)       { switch(s) { case 1: return SM(Sess1_ForceCloseTime);  case 2: return SM(Sess2_ForceCloseTime);  case 3: return SM(Sess3_ForceCloseTime);  case 4: return SM(Sess4_ForceCloseTime);  default: return 0; } }
-        private double GetSessSessionEndSM(int s)       { switch(s) { case 1: return SM(Sess1_SessionEndTime);  case 2: return SM(Sess2_SessionEndTime);  case 3: return SM(Sess3_SessionEndTime);  case 4: return SM(Sess4_SessionEndTime);  default: return 0; } }
-        private bool   GetSessEnableForceClose(int s)   { switch(s) { case 1: return Sess1_EnableForceClose;    case 2: return Sess2_EnableForceClose;    case 3: return Sess3_EnableForceClose;    case 4: return Sess4_EnableForceClose;    default: return false; } }
-
-        // Priority: 4 -> 3 -> 2 -> 1 (higher session number wins on overlap)
-        private int ResolveActiveSession(double barSM)
-        {
-            for (int s = 4; s >= 1; s--)
-            {
-                if (!GetSessEnable(s)) continue;
-                double startSM = GetSessTradeWindowStartSM(s);
-                double endSM   = GetSessSessionEndSM(s);
-                if (startSM == endSM) continue;
-                bool inSession = endSM > startSM
-                    ? barSM >= startSM && barSM < endSM
-                    : barSM >= startSM || barSM < endSM;
-                if (inSession) return s;
-            }
-            return 0;
-        }
-
-        private string ResolveBucket(int session, int direction, double candleRange)
-        {
-            string[] candidates = direction == 1 ? new[] { "L1", "L2" } : new[] { "S1", "S2" };
-            foreach (string b in candidates)
-            {
-                if (!IsBucketEnabled(session, b)) continue;
-                if (candleRange < B_MinCandleRange(session, b)) continue;
-                double maxR = B_MaxCandleRange(session, b);
-                if (maxR > 0 && candleRange > maxR) continue;
-                if (GetBucketLossHit(session, b) || GetBucketProfitHit(session, b)) continue;
-                if (B_EnableMaxTradesPerDay(session, b) && GetBucketTradeCount(session, b) >= B_MaxTradesPerDay(session, b)) continue;
-                return b;
-            }
-            return null;
-        }
-
-        #endregion
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  OnStateChange
-        // ════════════════════════════════════════════════════════════════════════
+        // =====================================================================
+        #region OnStateChange
 
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
-                Description = "HUGO Multi v1 - 4-Session EMA Commercial Strategy";
-                Name        = "HUGOTesting";
-                Calculate                               = Calculate.OnBarClose;
-                EntriesPerDirection                     = 1;
-                EntryHandling                           = EntryHandling.AllEntries;
-                IsExitOnSessionCloseStrategy            = false;
-                ExitOnSessionCloseSeconds               = 30;
-                IsFillLimitOnTouch                      = false;
-                MaximumBarsLookBack                     = MaximumBarsLookBack.TwoHundredFiftySix;
-                OrderFillResolution                     = OrderFillResolution.Standard;
-                Slippage                                = 0;
-                StartBehavior                           = StartBehavior.ImmediatelySubmitSynchronizeAccount;
-                TimeInForce                             = TimeInForce.Gtc;
-                TraceOrders                             = false;
-                RealtimeErrorHandling                   = RealtimeErrorHandling.StopCancelClose;
-                StopTargetHandling                      = StopTargetHandling.PerEntryExecution;
-                BarsRequiredToTrade                     = 20;
+                Description  = "HUGO - 9-Session EMA37/90 commercial strategy (AutoEdge).";
+                Name         = "HUGOTesting";
+                Calculate    = Calculate.OnBarClose;
+                EntriesPerDirection   = 1;
+                EntryHandling         = EntryHandling.AllEntries;
+                IsExitOnSessionCloseStrategy = false;
+                ExitOnSessionCloseSeconds    = 30;
+                IsFillLimitOnTouch           = false;
+                MaximumBarsLookBack          = MaximumBarsLookBack.TwoHundredFiftySix;
+                OrderFillResolution          = OrderFillResolution.Standard;
+                Slippage                     = 0;
+                StartBehavior                = StartBehavior.WaitUntilFlat;
+                TimeInForce                  = TimeInForce.Gtc;
+                TraceOrders                  = true;
+                RealtimeErrorHandling        = RealtimeErrorHandling.StopCancelClose;
+                StopTargetHandling           = StopTargetHandling.PerEntryExecution;
+                BarsRequiredToTrade          = 20;
                 IsInstantiatedOnEachOptimizationIteration = true;
 
-                // ── Commercial defaults ──────────────────────────────────────
-                RequireEntryConfirmation = false;
-                WebhookUrl               = string.Empty;
-                WebhookTickerOverride    = string.Empty;
-                WebhookProviderType      = WebhookProvider.TradersPost;
-                ProjectXApiBaseUrl       = "https://api.topstepx.com";
-                ProjectXTradeAllAccounts = false;
-                ProjectXUsername         = string.Empty;
-                ProjectXApiKey           = string.Empty;
-                ProjectXAccountId        = string.Empty;
-                ProjectXContractId       = string.Empty;
-                MaxAccountBalance        = 0.0;
-                UseNewsSkip              = false;
-                NewsTime                 = string.Empty;
-                NewsBlockMinutes         = 1;
-                FlattenAtNewsStart       = false;
+                SessionStartTime = DateTime.Parse("18:00", System.Globalization.CultureInfo.InvariantCulture);
+                NyEnable = true;  EuEnable = true;  AsEnable = true;
+                NyAEngulfingExitAfterBars=50; NyAEngulfingExitPaddingTicks=4;
+                NyBEngulfingExitAfterBars=13; NyBEngulfingExitPaddingTicks=16;
+                NyCEngulfingExitAfterBars=18; NyCEngulfingExitPaddingTicks=5;
+                EuAEngulfingExitAfterBars=9; EuAEngulfingExitPaddingTicks=4;
+                EuBEngulfingExitAfterBars=13; EuBEngulfingExitPaddingTicks=2;
+                EuCEngulfingExitAfterBars=35; EuCEngulfingExitPaddingTicks=1;
+                AsAEngulfingExitAfterBars=47; AsAEngulfingExitPaddingTicks=5;
+                AsBEngulfingExitAfterBars=18; AsBEngulfingExitPaddingTicks=23;
+                AsCEngulfingExitAfterBars=0; AsCEngulfingExitPaddingTicks=5;
 
-                SessionStartTime            = "19:15";
-                ContractQuantity            = 1;
+                // ── Global MA settings ──────────────────────────────────────
+                // EMA37/90 variant: GlobalMaPeriod = fast EMA period (was SMA period),
+                // GlobalEmaPeriod = slow EMA period. GlobalMaType stays "Both" -- same
+                // Math.Max/Min band logic, just fast-EMA/slow-EMA instead of SMA/EMA(50).
+                GlobalMaPeriod=37; GlobalEmaPeriod=90; GlobalMaType=MAMode_EMA3790.Both;
+                // ── Global Contracts ─────────────────────────────────────────
+                GlobalContracts=1;
+                // ── Global PriceOffset Trail ─────────────────────────────────
+                GlobalEnablePriceOffsetTrail=true;
+
+                // ═══════════════════════════════════════════════════════════
+                // ── Commercial / AutoEdge defaults (mirror HUGOTesting-2) ────
+                // ═══════════════════════════════════════════════════════════
+                RequireEntryConfirmation    = false;
+                UseWebhooks                 = false;
+                DebugLogging                = false;
+                WebhookUrl                  = string.Empty;
+                WebhookTickerOverride       = string.Empty;
+                WebhookProviderType         = WebhookProvider.TradersPost;
+                ProjectXApiBaseUrl          = "https://api.topstepx.com";
+                ProjectXTradeAllAccounts    = false;
+                ProjectXUsername            = string.Empty;
+                ProjectXApiKey              = string.Empty;
+                ProjectXAccountId           = string.Empty;
+                ProjectXContractId          = string.Empty;
+                MaxAccountBalance           = 0.0;
+                // Skip time window
                 EnableSkipTime              = false;
                 SkipTimeStart               = "08:15";
                 SkipTimeEnd                 = "08:45";
                 FlattenAtSkipStart          = false;
+                // News skip
+                UseNewsSkip                 = false;
+                NewsTime                    = string.Empty;
+                NewsBlockMinutes            = 1;
+                FlattenAtNewsStart          = false;
+                // Global daily risk (points). Default OFF so HUGOTesting reproduces
+                // the MichalEMA base exactly; enable per-user if desired. (Threshold
+                // values retained from HUGOTesting-2 for convenience.)
                 EnableGlobalMaxDailyLoss    = false;
                 GlobalMaxDailyLoss          = 230;
-                EnableGlobalMaxDailyProfit  = true;
+                EnableGlobalMaxDailyProfit  = false;
                 GlobalMaxDailyProfit        = 330;
-                EnableGlobalMaxTradesPerDay = true;
+                EnableGlobalMaxTradesPerDay = false;
                 GlobalMaxTradesPerDay       = 5;
 
-                Sess1_Enable           = true;
-                Sess1_TradeWindowStart  = "19:15";
-                Sess1_LastEntryTime     = "00:00";
-                Sess1_EnableForceClose  = true;
-                Sess1_ForceCloseTime    = "03:40";
-                Sess1_SessionEndTime    = "17:00";
+                // ── Global MA Exit Filter (0 = disabled) ─────────────────────
 
-                Sess2_Enable           = true;
-                Sess2_TradeWindowStart  = "00:00";
-                Sess2_LastEntryTime     = "03:50";
-                Sess2_EnableForceClose  = true;
-                Sess2_ForceCloseTime    = "04:00";
-                Sess2_SessionEndTime    = "17:00";
+                // ── NY-A ─────────────────────────────────────────────────────
+                NyAEnable = true;
+                NyATradeWindowStart       = DateTime.Parse("09:16", System.Globalization.CultureInfo.InvariantCulture);
+                NyAEnableNoNewTradesAfter = true;
+                NyANoNewTradesAfter       = DateTime.Parse("11:17", System.Globalization.CultureInfo.InvariantCulture);
+                NyAEnableForcedClose      = false;
+                NyAForcedCloseTime        = DateTime.Parse("11:55", System.Globalization.CultureInfo.InvariantCulture);
+                NyAMaxSessionProfitTicks=1350; NyAMaxSessionLossTicks=160;
+                NyAMaxTradesPerSession=2; NyAMaxLossesPerSession=2;
+                // Long
+                NyALongCandleMultiplier=6.34; NyALongMaxTakeProfitTicks=1490;
+                NyALongSlExtraTicks=43; NyALongMaxSlTicks=352; NyALongMaxSlToTpRatio=0.30;
+                NyALongUsePriorCandleSl=true; NyALongSlAtMa=false; NyALongMoveSlToEntryBar=false;
+                NyALongTrailOffsetTicks=124; NyALongTrailDelayBars=1; NyALongTrailCandleOffset=20;
+                NyALongEnableBreakeven=false; NyALongBreakevenTriggerTicks=385; NyALongBreakevenOffsetTicks=5;
+                NyALongMaxBarsInTrade=51;
+                NyALongEnablePriceOffsetTrail=false; NyALongPriceOffsetReductionTicks=17;
+                NyARequireDirectionFlip=true; NyAAllowSameDirectionAfterLoss=true;
+                NyALongEnableWmaFilter=true; NyALongWmaPeriod=200;
+                NyALongMinBodyPct=47.0;
+                NyALongTrendConfirmBars=3; NyALongEnableAdxFilter=true; NyALongAdxPeriod=14; NyALongAdxMinLevel=13.4; NyALongAdxMaxLevel=0.0; NyALongAdxPeakDrawdown=0.0;
+                // Short
+                NyAShortCandleMultiplier=6.24; NyAShortMaxTakeProfitTicks=1022;
+                NyAShortSlExtraTicks=26; NyAShortMaxSlTicks=323; NyAShortMaxSlToTpRatio=0.77;
+                NyAShortUsePriorCandleSl=true; NyAShortSlAtMa=false; NyAShortMoveSlToEntryBar=false;
+                NyAShortTrailOffsetTicks=93; NyAShortTrailDelayBars=14; NyAShortTrailCandleOffset=8;
+                NyAShortEnableBreakeven=false; NyAShortBreakevenTriggerTicks=385; NyAShortBreakevenOffsetTicks=230;
+                NyAShortMaxBarsInTrade=15;
+                NyAShortEnablePriceOffsetTrail=false; NyAShortPriceOffsetReductionTicks=42;
+                NyAShortEnableWmaFilter=true; NyAShortWmaPeriod=47;
+                NyAShortMinBodyPct=3.5;
+                NyAShortTrendConfirmBars=3; NyAShortEnableAdxFilter=true; NyAShortAdxPeriod=14; NyAShortAdxMinLevel=17.4; NyAShortAdxMaxLevel=0.0; NyAShortAdxPeakDrawdown=5.1;
 
-                Sess3_Enable           = true;
-                Sess3_TradeWindowStart  = "04:00";
-                Sess3_LastEntryTime     = "08:15";
-                Sess3_EnableForceClose  = true;
-                Sess3_ForceCloseTime    = "15:15";
-                Sess3_SessionEndTime    = "17:00";
+                // ── NY-B ─────────────────────────────────────────────────────
+                NyBEnable = true;
+                NyBTradeWindowStart       = DateTime.Parse("11:32", System.Globalization.CultureInfo.InvariantCulture);
+                NyBEnableNoNewTradesAfter = true;
+                NyBNoNewTradesAfter       = DateTime.Parse("13:33", System.Globalization.CultureInfo.InvariantCulture);
+                NyBEnableForcedClose      = false;
+                NyBForcedCloseTime        = DateTime.Parse("14:25", System.Globalization.CultureInfo.InvariantCulture);
+                NyBMaxSessionProfitTicks=1075; NyBMaxSessionLossTicks=160;
+                NyBMaxTradesPerSession=2; NyBMaxLossesPerSession=2;
+                // Long
+                NyBLongCandleMultiplier=3.51; NyBLongMaxTakeProfitTicks=855;
+                NyBLongSlExtraTicks=35; NyBLongMaxSlTicks=332; NyBLongMaxSlToTpRatio=0.45;
+                NyBLongUsePriorCandleSl=true; NyBLongSlAtMa=false; NyBLongMoveSlToEntryBar=false;
+                NyBLongTrailOffsetTicks=30; NyBLongTrailDelayBars=2; NyBLongTrailCandleOffset=10;
+                NyBLongEnableBreakeven=true; NyBLongBreakevenTriggerTicks=105; NyBLongBreakevenOffsetTicks=35;
+                NyBLongMaxBarsInTrade=15;
+                NyBLongEnablePriceOffsetTrail=true; NyBLongPriceOffsetReductionTicks=75;
+                NyBRequireDirectionFlip=true; NyBAllowSameDirectionAfterLoss=true;
+                NyBLongEnableWmaFilter=true; NyBLongWmaPeriod=200;
+                NyBLongMinBodyPct=31.0;
+                NyBLongTrendConfirmBars=18; NyBLongEnableAdxFilter=true; NyBLongAdxPeriod=14; NyBLongAdxMinLevel=19.4; NyBLongAdxMaxLevel=0.0; NyBLongAdxPeakDrawdown=0.0;
+                // Short
+                NyBShortCandleMultiplier=4.41; NyBShortMaxTakeProfitTicks=525;
+                NyBShortSlExtraTicks=4; NyBShortMaxSlTicks=265; NyBShortMaxSlToTpRatio=0.61;
+                NyBShortUsePriorCandleSl=true; NyBShortSlAtMa=true; NyBShortMoveSlToEntryBar=false;
+                NyBShortTrailOffsetTicks=68; NyBShortTrailDelayBars=2; NyBShortTrailCandleOffset=9;
+                NyBShortEnableBreakeven=true; NyBShortBreakevenTriggerTicks=376; NyBShortBreakevenOffsetTicks=141;
+                NyBShortMaxBarsInTrade=33;
+                NyBShortEnablePriceOffsetTrail=false; NyBShortPriceOffsetReductionTicks=103;
+                NyBShortEnableWmaFilter=true; NyBShortWmaPeriod=100;
+                NyBShortMinBodyPct=8.5;
+                NyBShortTrendConfirmBars=9; NyBShortEnableAdxFilter=true; NyBShortAdxPeriod=14; NyBShortAdxMinLevel=14.4; NyBShortAdxMaxLevel=0.0; NyBShortAdxPeakDrawdown=16.0;
 
-                Sess4_Enable           = true;
-                Sess4_TradeWindowStart  = "08:45";
-                Sess4_LastEntryTime     = "14:45";
-                Sess4_EnableForceClose  = true;
-                Sess4_ForceCloseTime    = "15:00";
-                Sess4_SessionEndTime    = "17:00";
+                // ── NY-C ─────────────────────────────────────────────────────
+                NyCEnable = true;
+                NyCTradeWindowStart       = DateTime.Parse("11:20", System.Globalization.CultureInfo.InvariantCulture);
+                NyCEnableNoNewTradesAfter = true;
+                NyCNoNewTradesAfter       = DateTime.Parse("14:45", System.Globalization.CultureInfo.InvariantCulture);
+                NyCEnableForcedClose      = true;
+                NyCForcedCloseTime        = DateTime.Parse("15:32", System.Globalization.CultureInfo.InvariantCulture);
+                NyCMaxSessionProfitTicks=1075; NyCMaxSessionLossTicks=160;
+                NyCMaxTradesPerSession=3; NyCMaxLossesPerSession=2;
+                // Long
+                NyCLongCandleMultiplier=4.42; NyCLongMaxTakeProfitTicks=615;
+                NyCLongSlExtraTicks=4; NyCLongMaxSlTicks=360; NyCLongMaxSlToTpRatio=0.60;
+                NyCLongUsePriorCandleSl=false; NyCLongSlAtMa=false; NyCLongMoveSlToEntryBar=true;
+                NyCLongTrailOffsetTicks=14; NyCLongTrailDelayBars=1; NyCLongTrailCandleOffset=30;
+                NyCLongEnableBreakeven=true; NyCLongBreakevenTriggerTicks=290; NyCLongBreakevenOffsetTicks=80;
+                NyCLongMaxBarsInTrade=2;
+                NyCLongEnablePriceOffsetTrail=true; NyCLongPriceOffsetReductionTicks=90;
+                NyCRequireDirectionFlip=true; NyCAllowSameDirectionAfterLoss=true;
+                NyCLongEnableWmaFilter=true; NyCLongWmaPeriod=100;
+                NyCLongMinBodyPct=54.7;
+                NyCLongTrendConfirmBars=19; NyCLongEnableAdxFilter=true; NyCLongAdxPeriod=21; NyCLongAdxMinLevel=11.6; NyCLongAdxMaxLevel=0.0; NyCLongAdxPeakDrawdown=0.0;
+                // Short
+                NyCShortCandleMultiplier=3.52; NyCShortMaxTakeProfitTicks=675;
+                NyCShortSlExtraTicks=19; NyCShortMaxSlTicks=198; NyCShortMaxSlToTpRatio=0.35;
+                NyCShortUsePriorCandleSl=true; NyCShortSlAtMa=true; NyCShortMoveSlToEntryBar=true;
+                NyCShortTrailOffsetTicks=27; NyCShortTrailDelayBars=0; NyCShortTrailCandleOffset=15;
+                NyCShortEnableBreakeven=false; NyCShortBreakevenTriggerTicks=235; NyCShortBreakevenOffsetTicks=55;
+                NyCShortMaxBarsInTrade=0;
+                NyCShortEnablePriceOffsetTrail=true; NyCShortPriceOffsetReductionTicks=25;
+                NyCShortEnableWmaFilter=true; NyCShortWmaPeriod=20;
+                NyCShortMinBodyPct=13.0;
+                NyCShortTrendConfirmBars=9; NyCShortEnableAdxFilter=true; NyCShortAdxPeriod=21; NyCShortAdxMinLevel=19.4; NyCShortAdxMaxLevel=0.0; NyCShortAdxPeakDrawdown=12.0;
 
-                // ── Sess1 L1 ──
-                Sess1_L1_Enable = true;
-                Sess1_L1_MinCandleRange = 0;
-                Sess1_L1_MaxCandleRange = 20;
-                Sess1_L1_EmaLength = 34;
-                Sess1_L1_EnableEmaSlope = true;
-                Sess1_L1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess1_L1_EmaSlopeBars = 53;
-                Sess1_L1_EmaSlopeMinPct = 0.131;
-                Sess1_L1_EnableWMAFilter = false;
-                Sess1_L1_WMALength = 55;
-                Sess1_L1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess1_L1_FixedStopLoss = 72;
-                Sess1_L1_SLCandleMultiplier = 1.0;
-                Sess1_L1_StopLossOffset = 22;
-                Sess1_L1_MaxStopLoss = 72;
-                Sess1_L1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess1_L1_RiskRewardRatio = 3.7;
-                Sess1_L1_FixedTakeProfit = 203;
-                Sess1_L1_TPCandleMultiplier = 1.0;
-                Sess1_L1_EnableBreakEven = false;
-                Sess1_L1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess1_L1_BreakEvenTriggerValue = 1.06;
-                Sess1_L1_BreakEvenOffset = 30;
-                Sess1_L1_EnablePriceTrail = false;
-                Sess1_L1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess1_L1_TrailDistanceValue = 64;
-                Sess1_L1_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess1_L1_TrailActivationValue = 80;
-                Sess1_L1_TrailStepTicks = 0;
-                Sess1_L1_EnableBodyPctFilter = true;
-                Sess1_L1_MinBodyPct = 28;
-                Sess1_L1_EnableDirectionFlip = false;
-                Sess1_L1_EnableMaxDailyLoss = true;
-                Sess1_L1_MaxDailyLoss = 70;
-                Sess1_L1_EnableMaxDailyProfit = false;
-                Sess1_L1_MaxDailyProfit = 157;
-                Sess1_L1_EnableMaxTradesPerDay = true;
-                Sess1_L1_MaxTradesPerDay = 1;
+                // ── EU-A ─────────────────────────────────────────────────────
+                EuAEnable = true;
+                EuATradeWindowStart       = DateTime.Parse("00:26", System.Globalization.CultureInfo.InvariantCulture);
+                EuAEnableNoNewTradesAfter = true;
+                EuANoNewTradesAfter       = DateTime.Parse("04:30", System.Globalization.CultureInfo.InvariantCulture);
+                EuAEnableForcedClose      = true;
+                EuAForcedCloseTime        = DateTime.Parse("04:36", System.Globalization.CultureInfo.InvariantCulture);
+                EuAMaxSessionProfitTicks=1075; EuAMaxSessionLossTicks=160;
+                EuAMaxTradesPerSession=2; EuAMaxLossesPerSession=2;
+                // Long
+                EuALongCandleMultiplier=3.39; EuALongMaxTakeProfitTicks=650;
+                EuALongSlExtraTicks=17; EuALongMaxSlTicks=310; EuALongMaxSlToTpRatio=0.53;
+                EuALongUsePriorCandleSl=true; EuALongSlAtMa=true; EuALongMoveSlToEntryBar=true;
+                EuALongTrailOffsetTicks=15; EuALongTrailDelayBars=8; EuALongTrailCandleOffset=1;
+                EuALongEnableBreakeven=true; EuALongBreakevenTriggerTicks=95; EuALongBreakevenOffsetTicks=197;
+                EuALongMaxBarsInTrade=8;
+                EuALongEnablePriceOffsetTrail=true; EuALongPriceOffsetReductionTicks=55;
+                EuARequireDirectionFlip=true; EuAAllowSameDirectionAfterLoss=true;
+                EuALongEnableWmaFilter=true; EuALongWmaPeriod=100;
+                EuALongMinBodyPct=60.9;
+                EuALongTrendConfirmBars=2; EuALongEnableAdxFilter=true; EuALongAdxPeriod=14; EuALongAdxMinLevel=9.6; EuALongAdxMaxLevel=0.0; EuALongAdxPeakDrawdown=2.9;
+                // Short
+                EuAShortCandleMultiplier=5.97; EuAShortMaxTakeProfitTicks=1000;
+                EuAShortSlExtraTicks=41; EuAShortMaxSlTicks=326; EuAShortMaxSlToTpRatio=0.50;
+                EuAShortUsePriorCandleSl=true; EuAShortSlAtMa=false; EuAShortMoveSlToEntryBar=false;
+                EuAShortTrailOffsetTicks=23; EuAShortTrailDelayBars=2; EuAShortTrailCandleOffset=10;
+                EuAShortEnableBreakeven=true; EuAShortBreakevenTriggerTicks=157; EuAShortBreakevenOffsetTicks=12;
+                EuAShortMaxBarsInTrade=8;
+                EuAShortEnablePriceOffsetTrail=false; EuAShortPriceOffsetReductionTicks=30;
+                EuAShortEnableWmaFilter=true; EuAShortWmaPeriod=100;
+                EuAShortMinBodyPct=13.2;
+                EuAShortTrendConfirmBars=12; EuAShortEnableAdxFilter=true; EuAShortAdxPeriod=14; EuAShortAdxMinLevel=4.8; EuAShortAdxMaxLevel=0.0; EuAShortAdxPeakDrawdown=0.0;
 
-                // ── Sess1 L2 ──
-                Sess1_L2_Enable = true;
-                Sess1_L2_MinCandleRange = 40.25;
-                Sess1_L2_MaxCandleRange = 49;
-                Sess1_L2_EmaLength = 50;
-                Sess1_L2_EnableEmaSlope = true;
-                Sess1_L2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess1_L2_EmaSlopeBars = 21;
-                Sess1_L2_EmaSlopeMinPct = 0.1;
-                Sess1_L2_EnableWMAFilter = true;
-                Sess1_L2_WMALength = 100;
-                Sess1_L2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess1_L2_FixedStopLoss = 36.75;
-                Sess1_L2_SLCandleMultiplier = 1.0;
-                Sess1_L2_StopLossOffset = 46;
-                Sess1_L2_MaxStopLoss = 50;
-                Sess1_L2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess1_L2_RiskRewardRatio = 4.4;
-                Sess1_L2_FixedTakeProfit = 100;
-                Sess1_L2_TPCandleMultiplier = 1.0;
-                Sess1_L2_EnableBreakEven = true;
-                Sess1_L2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess1_L2_BreakEvenTriggerValue = 1.4;
-                Sess1_L2_BreakEvenOffset = 2;
-                Sess1_L2_EnablePriceTrail = false;
-                Sess1_L2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess1_L2_TrailDistanceValue = 25;
-                Sess1_L2_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess1_L2_TrailActivationValue = 191;
-                Sess1_L2_TrailStepTicks = 0;
-                Sess1_L2_EnableBodyPctFilter = true;
-                Sess1_L2_MinBodyPct = 21;
-                Sess1_L2_EnableDirectionFlip = true;
-                Sess1_L2_EnableMaxDailyLoss = false;
-                Sess1_L2_MaxDailyLoss = 41;
-                Sess1_L2_EnableMaxDailyProfit = false;
-                Sess1_L2_MaxDailyProfit = 100;
-                Sess1_L2_EnableMaxTradesPerDay = true;
-                Sess1_L2_MaxTradesPerDay = 1;
+                // ── EU-B ─────────────────────────────────────────────────────
+                EuBEnable = true;
+                EuBTradeWindowStart       = DateTime.Parse("02:40", System.Globalization.CultureInfo.InvariantCulture);
+                EuBEnableNoNewTradesAfter = true;
+                EuBNoNewTradesAfter       = DateTime.Parse("05:15", System.Globalization.CultureInfo.InvariantCulture);
+                EuBEnableForcedClose      = true;
+                EuBForcedCloseTime        = DateTime.Parse("05:21", System.Globalization.CultureInfo.InvariantCulture);
+                EuBMaxSessionProfitTicks=1075; EuBMaxSessionLossTicks=160;
+                EuBMaxTradesPerSession=3; EuBMaxLossesPerSession=2;
+                // Long
+                EuBLongCandleMultiplier=3.46; EuBLongMaxTakeProfitTicks=630;
+                EuBLongSlExtraTicks=42; EuBLongMaxSlTicks=285; EuBLongMaxSlToTpRatio=0.47;
+                EuBLongUsePriorCandleSl=true; EuBLongSlAtMa=false; EuBLongMoveSlToEntryBar=true;
+                EuBLongTrailOffsetTicks=59; EuBLongTrailDelayBars=3; EuBLongTrailCandleOffset=4;
+                EuBLongEnableBreakeven=true; EuBLongBreakevenTriggerTicks=134; EuBLongBreakevenOffsetTicks=26;
+                EuBLongMaxBarsInTrade=7;
+                EuBLongEnablePriceOffsetTrail=false; EuBLongPriceOffsetReductionTicks=0;
+                EuBRequireDirectionFlip=false; EuBAllowSameDirectionAfterLoss=true;
+                EuBLongEnableWmaFilter=true; EuBLongWmaPeriod=30;
+                EuBLongMinBodyPct=21.0;
+                EuBLongTrendConfirmBars=27; EuBLongEnableAdxFilter=true; EuBLongAdxPeriod=14; EuBLongAdxMinLevel=5.7; EuBLongAdxMaxLevel=33.0; EuBLongAdxPeakDrawdown=0.8;
+                // Short
+                EuBShortCandleMultiplier=4.41; EuBShortMaxTakeProfitTicks=590;
+                EuBShortSlExtraTicks=30; EuBShortMaxSlTicks=280; EuBShortMaxSlToTpRatio=0.48;
+                EuBShortUsePriorCandleSl=true; EuBShortSlAtMa=true; EuBShortMoveSlToEntryBar=false;
+                EuBShortTrailOffsetTicks=93; EuBShortTrailDelayBars=1; EuBShortTrailCandleOffset=10;
+                EuBShortEnableBreakeven=true; EuBShortBreakevenTriggerTicks=225; EuBShortBreakevenOffsetTicks=102;
+                EuBShortMaxBarsInTrade=20;
+                EuBShortEnablePriceOffsetTrail=false; EuBShortPriceOffsetReductionTicks=8;
+                EuBShortEnableWmaFilter=true; EuBShortWmaPeriod=140;
+                EuBShortMinBodyPct=27.8;
+                EuBShortTrendConfirmBars=7; EuBShortEnableAdxFilter=true; EuBShortAdxPeriod=14; EuBShortAdxMinLevel=15.4; EuBShortAdxMaxLevel=0.0; EuBShortAdxPeakDrawdown=0.0;
 
-                // ── Sess1 S1 ──
-                Sess1_S1_Enable = true;
-                Sess1_S1_MinCandleRange = 0;
-                Sess1_S1_MaxCandleRange = 20;
-                Sess1_S1_EmaLength = 21;
-                Sess1_S1_EnableEmaSlope = true;
-                Sess1_S1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess1_S1_EmaSlopeBars = 45;
-                Sess1_S1_EmaSlopeMinPct = 0.005;
-                Sess1_S1_EnableWMAFilter = true;
-                Sess1_S1_WMALength = 30;
-                Sess1_S1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess1_S1_FixedStopLoss = 50;
-                Sess1_S1_SLCandleMultiplier = 1.0;
-                Sess1_S1_StopLossOffset = 40;
-                Sess1_S1_MaxStopLoss = 50;
-                Sess1_S1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess1_S1_RiskRewardRatio = 4.3;
-                Sess1_S1_FixedTakeProfit = 100;
-                Sess1_S1_TPCandleMultiplier = 1.0;
-                Sess1_S1_EnableBreakEven = true;
-                Sess1_S1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess1_S1_BreakEvenTriggerValue = 2.7;
-                Sess1_S1_BreakEvenOffset = 9;
-                Sess1_S1_EnablePriceTrail = false;
-                Sess1_S1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess1_S1_TrailDistanceValue = 20;
-                Sess1_S1_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess1_S1_TrailActivationValue = 147;
-                Sess1_S1_TrailStepTicks = 0;
-                Sess1_S1_EnableBodyPctFilter = true;
-                Sess1_S1_MinBodyPct = 11;
-                Sess1_S1_EnableDirectionFlip = false;
-                Sess1_S1_EnableMaxDailyLoss = false;
-                Sess1_S1_MaxDailyLoss = 155;
-                Sess1_S1_EnableMaxDailyProfit = false;
-                Sess1_S1_MaxDailyProfit = 187;
-                Sess1_S1_EnableMaxTradesPerDay = true;
-                Sess1_S1_MaxTradesPerDay = 2;
+                // ── EU-C ─────────────────────────────────────────────────────
+                EuCEnable = true;
+                EuCTradeWindowStart       = DateTime.Parse("05:05", System.Globalization.CultureInfo.InvariantCulture);
+                EuCEnableNoNewTradesAfter = true;
+                EuCNoNewTradesAfter       = DateTime.Parse("08:05", System.Globalization.CultureInfo.InvariantCulture);
+                EuCEnableForcedClose      = true;
+                EuCForcedCloseTime        = DateTime.Parse("11:00", System.Globalization.CultureInfo.InvariantCulture);
+                EuCMaxSessionProfitTicks=1075; EuCMaxSessionLossTicks=160;
+                EuCMaxTradesPerSession=1; EuCMaxLossesPerSession=1;
+                // Long
+                EuCLongCandleMultiplier=4.35; EuCLongMaxTakeProfitTicks=387;
+                EuCLongSlExtraTicks=42; EuCLongMaxSlTicks=215; EuCLongMaxSlToTpRatio=0.52;
+                EuCLongUsePriorCandleSl=true; EuCLongSlAtMa=false; EuCLongMoveSlToEntryBar=false;
+                EuCLongTrailOffsetTicks=44; EuCLongTrailDelayBars=0; EuCLongTrailCandleOffset=12;
+                EuCLongEnableBreakeven=true; EuCLongBreakevenTriggerTicks=115; EuCLongBreakevenOffsetTicks=69;
+                EuCLongMaxBarsInTrade=27;
+                EuCLongEnablePriceOffsetTrail=true; EuCLongPriceOffsetReductionTicks=20;
+                EuCRequireDirectionFlip=true; EuCAllowSameDirectionAfterLoss=false;
+                EuCLongEnableWmaFilter=true; EuCLongWmaPeriod=20;
+                EuCLongMinBodyPct=18.0;
+                EuCLongTrendConfirmBars=23; EuCLongEnableAdxFilter=true; EuCLongAdxPeriod=14; EuCLongAdxMinLevel=11.9; EuCLongAdxMaxLevel=46.0; EuCLongAdxPeakDrawdown=10.0;
+                // Short
+                EuCShortCandleMultiplier=3.44; EuCShortMaxTakeProfitTicks=799;
+                EuCShortSlExtraTicks=72; EuCShortMaxSlTicks=310; EuCShortMaxSlToTpRatio=0.43;
+                EuCShortUsePriorCandleSl=true; EuCShortSlAtMa=false; EuCShortMoveSlToEntryBar=false;
+                EuCShortTrailOffsetTicks=100; EuCShortTrailDelayBars=5; EuCShortTrailCandleOffset=5;
+                EuCShortEnableBreakeven=true; EuCShortBreakevenTriggerTicks=325; EuCShortBreakevenOffsetTicks=50;
+                EuCShortMaxBarsInTrade=18;
+                EuCShortEnablePriceOffsetTrail=false; EuCShortPriceOffsetReductionTicks=2;
+                EuCShortEnableWmaFilter=true; EuCShortWmaPeriod=40;
+                EuCShortMinBodyPct=10.5;
+                EuCShortTrendConfirmBars=20; EuCShortEnableAdxFilter=true; EuCShortAdxPeriod=14; EuCShortAdxMinLevel=8.0; EuCShortAdxMaxLevel=0.0; EuCShortAdxPeakDrawdown=13.9;
 
-                // ── Sess1 S2 ──
-                Sess1_S2_Enable = true;
-                Sess1_S2_MinCandleRange = 30.25;
-                Sess1_S2_MaxCandleRange = 158;
-                Sess1_S2_EmaLength = 34;
-                Sess1_S2_EnableEmaSlope = true;
-                Sess1_S2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess1_S2_EmaSlopeBars = 46;
-                Sess1_S2_EmaSlopeMinPct = 0.01;
-                Sess1_S2_EnableWMAFilter = false;
-                Sess1_S2_WMALength = 61;
-                Sess1_S2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess1_S2_FixedStopLoss = 49;
-                Sess1_S2_SLCandleMultiplier = 1.0;
-                Sess1_S2_StopLossOffset = 56;
-                Sess1_S2_MaxStopLoss = 46;
-                Sess1_S2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess1_S2_RiskRewardRatio = 5.1;
-                Sess1_S2_FixedTakeProfit = 100;
-                Sess1_S2_TPCandleMultiplier = 1.0;
-                Sess1_S2_EnableBreakEven = true;
-                Sess1_S2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess1_S2_BreakEvenTriggerValue = 2.7;
-                Sess1_S2_BreakEvenOffset = 5;
-                Sess1_S2_EnablePriceTrail = false;
-                Sess1_S2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess1_S2_TrailDistanceValue = 60;
-                Sess1_S2_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess1_S2_TrailActivationValue = 196;
-                Sess1_S2_TrailStepTicks = 0;
-                Sess1_S2_EnableBodyPctFilter = true;
-                Sess1_S2_MinBodyPct = 46;
-                Sess1_S2_EnableDirectionFlip = false;
-                Sess1_S2_EnableMaxDailyLoss = true;
-                Sess1_S2_MaxDailyLoss = 105;
-                Sess1_S2_EnableMaxDailyProfit = true;
-                Sess1_S2_MaxDailyProfit = 131;
-                Sess1_S2_EnableMaxTradesPerDay = true;
-                Sess1_S2_MaxTradesPerDay = 2;
+                // ── AS-A ─────────────────────────────────────────────────────
+                AsAEnable = true;
+                AsATradeWindowStart       = DateTime.Parse("18:25", System.Globalization.CultureInfo.InvariantCulture);
+                AsAEnableNoNewTradesAfter = true;
+                AsANoNewTradesAfter       = DateTime.Parse("20:10", System.Globalization.CultureInfo.InvariantCulture);
+                AsAEnableForcedClose      = false;
+                AsAForcedCloseTime        = DateTime.Parse("20:00", System.Globalization.CultureInfo.InvariantCulture);
+                AsAMaxSessionProfitTicks=500; AsAMaxSessionLossTicks=200;
+                AsAMaxTradesPerSession=2; AsAMaxLossesPerSession=2;
+                // Long
+                AsALongCandleMultiplier=4.15; AsALongMaxTakeProfitTicks=760;
+                AsALongSlExtraTicks=55; AsALongMaxSlTicks=280; AsALongMaxSlToTpRatio=0.49;
+                AsALongUsePriorCandleSl=true; AsALongSlAtMa=true; AsALongMoveSlToEntryBar=false;
+                AsALongTrailOffsetTicks=54; AsALongTrailDelayBars=20; AsALongTrailCandleOffset=4;
+                AsALongEnableBreakeven=true; AsALongBreakevenTriggerTicks=172; AsALongBreakevenOffsetTicks=88;
+                AsALongMaxBarsInTrade=32;
+                AsALongEnablePriceOffsetTrail=true; AsALongPriceOffsetReductionTicks=110;
+                AsARequireDirectionFlip=false; AsAAllowSameDirectionAfterLoss=true;
+                AsALongEnableWmaFilter=true; AsALongWmaPeriod=50;
+                AsALongMinBodyPct=47.0;
+                AsALongTrendConfirmBars=6; AsALongEnableAdxFilter=true; AsALongAdxPeriod=14; AsALongAdxMinLevel=12.0; AsALongAdxMaxLevel=0.0; AsALongAdxPeakDrawdown=0.0;
+                // Short
+                AsAShortCandleMultiplier=6.07; AsAShortMaxTakeProfitTicks=1104;
+                AsAShortSlExtraTicks=7; AsAShortMaxSlTicks=180; AsAShortMaxSlToTpRatio=0.26;
+                AsAShortUsePriorCandleSl=true; AsAShortSlAtMa=true; AsAShortMoveSlToEntryBar=true;
+                AsAShortTrailOffsetTicks=5; AsAShortTrailDelayBars=39; AsAShortTrailCandleOffset=5;
+                AsAShortEnableBreakeven=true; AsAShortBreakevenTriggerTicks=91; AsAShortBreakevenOffsetTicks=26;
+                AsAShortMaxBarsInTrade=35;
+                AsAShortEnablePriceOffsetTrail=true; AsAShortPriceOffsetReductionTicks=26;
+                AsAShortEnableWmaFilter=true; AsAShortWmaPeriod=20;
+                AsAShortMinBodyPct=34.5;
+                AsAShortTrendConfirmBars=22; AsAShortEnableAdxFilter=true; AsAShortAdxPeriod=14; AsAShortAdxMinLevel=16.4; AsAShortAdxMaxLevel=0.0; AsAShortAdxPeakDrawdown=10.5;
 
-                // ── Sess2 L1 ──
-                Sess2_L1_Enable = true;
-                Sess2_L1_MinCandleRange = 14;
-                Sess2_L1_MaxCandleRange = 40;
-                Sess2_L1_EmaLength = 67;
-                Sess2_L1_EnableEmaSlope = true;
-                Sess2_L1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess2_L1_EmaSlopeBars = 53;
-                Sess2_L1_EmaSlopeMinPct = 0.029;
-                Sess2_L1_EnableWMAFilter = true;
-                Sess2_L1_WMALength = 100;
-                Sess2_L1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess2_L1_FixedStopLoss = 43;
-                Sess2_L1_SLCandleMultiplier = 1.0;
-                Sess2_L1_StopLossOffset = 22;
-                Sess2_L1_MaxStopLoss = 43;
-                Sess2_L1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess2_L1_RiskRewardRatio = 4.04;
-                Sess2_L1_FixedTakeProfit = 203;
-                Sess2_L1_TPCandleMultiplier = 1.0;
-                Sess2_L1_EnableBreakEven = false;
-                Sess2_L1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess2_L1_BreakEvenTriggerValue = 1.2;
-                Sess2_L1_BreakEvenOffset = 11;
-                Sess2_L1_EnablePriceTrail = false;
-                Sess2_L1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess2_L1_TrailDistanceValue = 55;
-                Sess2_L1_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess2_L1_TrailActivationValue = 150;
-                Sess2_L1_TrailStepTicks = 0;
-                Sess2_L1_EnableBodyPctFilter = true;
-                Sess2_L1_MinBodyPct = 40;
-                Sess2_L1_EnableDirectionFlip = true;
-                Sess2_L1_EnableMaxDailyLoss = false;
-                Sess2_L1_MaxDailyLoss = 203;
-                Sess2_L1_EnableMaxDailyProfit = false;
-                Sess2_L1_MaxDailyProfit = 157;
-                Sess2_L1_EnableMaxTradesPerDay = true;
-                Sess2_L1_MaxTradesPerDay = 1;
+                // ── AS-B ─────────────────────────────────────────────────────
+                AsBEnable = true;
+                AsBTradeWindowStart       = DateTime.Parse("19:10", System.Globalization.CultureInfo.InvariantCulture);
+                AsBEnableNoNewTradesAfter = true;
+                AsBNoNewTradesAfter       = DateTime.Parse("00:00", System.Globalization.CultureInfo.InvariantCulture);
+                AsBEnableForcedClose      = true;
+                AsBForcedCloseTime        = DateTime.Parse("01:05", System.Globalization.CultureInfo.InvariantCulture);
+                AsBMaxSessionProfitTicks=500; AsBMaxSessionLossTicks=200;
+                AsBMaxTradesPerSession=2; AsBMaxLossesPerSession=2;
+                // Long
+                AsBLongCandleMultiplier=3.59; AsBLongMaxTakeProfitTicks=425;
+                AsBLongSlExtraTicks=38; AsBLongMaxSlTicks=245; AsBLongMaxSlToTpRatio=0.50;
+                AsBLongUsePriorCandleSl=true; AsBLongSlAtMa=true; AsBLongMoveSlToEntryBar=false;
+                AsBLongTrailOffsetTicks=55; AsBLongTrailDelayBars=6; AsBLongTrailCandleOffset=5;
+                AsBLongEnableBreakeven=true; AsBLongBreakevenTriggerTicks=125; AsBLongBreakevenOffsetTicks=128;
+                AsBLongMaxBarsInTrade=41;
+                AsBLongEnablePriceOffsetTrail=false; AsBLongPriceOffsetReductionTicks=5;
+                AsBRequireDirectionFlip=true; AsBAllowSameDirectionAfterLoss=true;
+                AsBLongEnableWmaFilter=true; AsBLongWmaPeriod=50;
+                AsBLongMinBodyPct=12.0;
+                AsBLongTrendConfirmBars=7; AsBLongEnableAdxFilter=true; AsBLongAdxPeriod=14; AsBLongAdxMinLevel=11.6; AsBLongAdxMaxLevel=0.0; AsBLongAdxPeakDrawdown=0.0;
+                // Short
+                AsBShortCandleMultiplier=6.80; AsBShortMaxTakeProfitTicks=750;
+                AsBShortSlExtraTicks=57; AsBShortMaxSlTicks=150; AsBShortMaxSlToTpRatio=0.97;
+                AsBShortUsePriorCandleSl=true; AsBShortSlAtMa=true; AsBShortMoveSlToEntryBar=true;
+                AsBShortTrailOffsetTicks=0; AsBShortTrailDelayBars=19; AsBShortTrailCandleOffset=9;
+                AsBShortEnableBreakeven=true; AsBShortBreakevenTriggerTicks=166; AsBShortBreakevenOffsetTicks=7;
+                AsBShortMaxBarsInTrade=31;
+                AsBShortEnablePriceOffsetTrail=true; AsBShortPriceOffsetReductionTicks=159;
+                AsBShortEnableWmaFilter=true; AsBShortWmaPeriod=50;
+                AsBShortMinBodyPct=12.2;
+                AsBShortTrendConfirmBars=27; AsBShortEnableAdxFilter=true; AsBShortAdxPeriod=14; AsBShortAdxMinLevel=4.9; AsBShortAdxMaxLevel=0.0; AsBShortAdxPeakDrawdown=0.0;
 
-                // ── Sess2 L2 ──
-                Sess2_L2_Enable = true;
-                Sess2_L2_MinCandleRange = 30.25;
-                Sess2_L2_MaxCandleRange = 45;
-                Sess2_L2_EmaLength = 50;
-                Sess2_L2_EnableEmaSlope = true;
-                Sess2_L2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess2_L2_EmaSlopeBars = 27;
-                Sess2_L2_EmaSlopeMinPct = 0.09;
-                Sess2_L2_EnableWMAFilter = true;
-                Sess2_L2_WMALength = 100;
-                Sess2_L2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess2_L2_FixedStopLoss = 44;
-                Sess2_L2_SLCandleMultiplier = 1.0;
-                Sess2_L2_StopLossOffset = 56;
-                Sess2_L2_MaxStopLoss = 44;
-                Sess2_L2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess2_L2_RiskRewardRatio = 3.56;
-                Sess2_L2_FixedTakeProfit = 100;
-                Sess2_L2_TPCandleMultiplier = 1.0;
-                Sess2_L2_EnableBreakEven = true;
-                Sess2_L2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess2_L2_BreakEvenTriggerValue = 0.93;
-                Sess2_L2_BreakEvenOffset = 15;
-                Sess2_L2_EnablePriceTrail = false;
-                Sess2_L2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess2_L2_TrailDistanceValue = 25;
-                Sess2_L2_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess2_L2_TrailActivationValue = 192;
-                Sess2_L2_TrailStepTicks = 0;
-                Sess2_L2_EnableBodyPctFilter = true;
-                Sess2_L2_MinBodyPct = 10;
-                Sess2_L2_EnableDirectionFlip = true;
-                Sess2_L2_EnableMaxDailyLoss = true;
-                Sess2_L2_MaxDailyLoss = 207;
-                Sess2_L2_EnableMaxDailyProfit = true;
-                Sess2_L2_MaxDailyProfit = 186;
-                Sess2_L2_EnableMaxTradesPerDay = false;
-                Sess2_L2_MaxTradesPerDay = 6;
-
-                // ── Sess2 S1 ──
-                Sess2_S1_Enable = true;
-                Sess2_S1_MinCandleRange = 0;
-                Sess2_S1_MaxCandleRange = 50;
-                Sess2_S1_EmaLength = 50;
-                Sess2_S1_EnableEmaSlope = true;
-                Sess2_S1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess2_S1_EmaSlopeBars = 45;
-                Sess2_S1_EmaSlopeMinPct = 0.077;
-                Sess2_S1_EnableWMAFilter = true;
-                Sess2_S1_WMALength = 100;
-                Sess2_S1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess2_S1_FixedStopLoss = 21.75;
-                Sess2_S1_SLCandleMultiplier = 1.0;
-                Sess2_S1_StopLossOffset = 56;
-                Sess2_S1_MaxStopLoss = 22;
-                Sess2_S1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess2_S1_RiskRewardRatio = 2.52;
-                Sess2_S1_FixedTakeProfit = 100;
-                Sess2_S1_TPCandleMultiplier = 1.0;
-                Sess2_S1_EnableBreakEven = true;
-                Sess2_S1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess2_S1_BreakEvenTriggerValue = 1.04;
-                Sess2_S1_BreakEvenOffset = 3;
-                Sess2_S1_EnablePriceTrail = false;
-                Sess2_S1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess2_S1_TrailDistanceValue = 20;
-                Sess2_S1_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess2_S1_TrailActivationValue = 147;
-                Sess2_S1_TrailStepTicks = 0;
-                Sess2_S1_EnableBodyPctFilter = true;
-                Sess2_S1_MinBodyPct = 23;
-                Sess2_S1_EnableDirectionFlip = true;
-                Sess2_S1_EnableMaxDailyLoss = true;
-                Sess2_S1_MaxDailyLoss = 155;
-                Sess2_S1_EnableMaxDailyProfit = true;
-                Sess2_S1_MaxDailyProfit = 187;
-                Sess2_S1_EnableMaxTradesPerDay = false;
-                Sess2_S1_MaxTradesPerDay = 1;
-
-                // ── Sess2 S2 ──
-                Sess2_S2_Enable = true;
-                Sess2_S2_MinCandleRange = 50;
-                Sess2_S2_MaxCandleRange = 34.25;
-                Sess2_S2_EmaLength = 46;
-                Sess2_S2_EnableEmaSlope = true;
-                Sess2_S2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess2_S2_EmaSlopeBars = 46;
-                Sess2_S2_EmaSlopeMinPct = 0.042;
-                Sess2_S2_EnableWMAFilter = true;
-                Sess2_S2_WMALength = 34;
-                Sess2_S2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess2_S2_FixedStopLoss = 60;
-                Sess2_S2_SLCandleMultiplier = 1.0;
-                Sess2_S2_StopLossOffset = 56;
-                Sess2_S2_MaxStopLoss = 47;
-                Sess2_S2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess2_S2_RiskRewardRatio = 3.4;
-                Sess2_S2_FixedTakeProfit = 100;
-                Sess2_S2_TPCandleMultiplier = 1.0;
-                Sess2_S2_EnableBreakEven = true;
-                Sess2_S2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess2_S2_BreakEvenTriggerValue = 2.43;
-                Sess2_S2_BreakEvenOffset = 2;
-                Sess2_S2_EnablePriceTrail = false;
-                Sess2_S2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess2_S2_TrailDistanceValue = 60;
-                Sess2_S2_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess2_S2_TrailActivationValue = 196;
-                Sess2_S2_TrailStepTicks = 0;
-                Sess2_S2_EnableBodyPctFilter = true;
-                Sess2_S2_MinBodyPct = 23;
-                Sess2_S2_EnableDirectionFlip = true;
-                Sess2_S2_EnableMaxDailyLoss = true;
-                Sess2_S2_MaxDailyLoss = 105;
-                Sess2_S2_EnableMaxDailyProfit = true;
-                Sess2_S2_MaxDailyProfit = 131;
-                Sess2_S2_EnableMaxTradesPerDay = true;
-                Sess2_S2_MaxTradesPerDay = 1;
-
-                // ── Sess3 L1 ──
-                Sess3_L1_Enable = true;
-                Sess3_L1_MinCandleRange = 0;
-                Sess3_L1_MaxCandleRange = 50;
-                Sess3_L1_EmaLength = 50;
-                Sess3_L1_EnableEmaSlope = true;
-                Sess3_L1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess3_L1_EmaSlopeBars = 53;
-                Sess3_L1_EmaSlopeMinPct = 0.071;
-                Sess3_L1_EnableWMAFilter = true;
-                Sess3_L1_WMALength = 20;
-                Sess3_L1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess3_L1_FixedStopLoss = 72.25;
-                Sess3_L1_SLCandleMultiplier = 1.0;
-                Sess3_L1_StopLossOffset = 22;
-                Sess3_L1_MaxStopLoss = 45;
-                Sess3_L1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess3_L1_RiskRewardRatio = 6.6;
-                Sess3_L1_FixedTakeProfit = 203;
-                Sess3_L1_TPCandleMultiplier = 1.0;
-                Sess3_L1_EnableBreakEven = true;
-                Sess3_L1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess3_L1_BreakEvenTriggerValue = 3.95;
-                Sess3_L1_BreakEvenOffset = 20;
-                Sess3_L1_EnablePriceTrail = false;
-                Sess3_L1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess3_L1_TrailDistanceValue = 55;
-                Sess3_L1_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess3_L1_TrailActivationValue = 150;
-                Sess3_L1_TrailStepTicks = 0;
-                Sess3_L1_EnableBodyPctFilter = true;
-                Sess3_L1_MinBodyPct = 41;
-                Sess3_L1_EnableDirectionFlip = false;
-                Sess3_L1_EnableMaxDailyLoss = false;
-                Sess3_L1_MaxDailyLoss = 203;
-                Sess3_L1_EnableMaxDailyProfit = false;
-                Sess3_L1_MaxDailyProfit = 150;
-                Sess3_L1_EnableMaxTradesPerDay = true;
-                Sess3_L1_MaxTradesPerDay = 2;
-
-                // ── Sess3 L2 ──
-                Sess3_L2_Enable = true;
-                Sess3_L2_MinCandleRange = 50.25;
-                Sess3_L2_MaxCandleRange = 0;
-                Sess3_L2_EmaLength = 50;
-                Sess3_L2_EnableEmaSlope = true;
-                Sess3_L2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess3_L2_EmaSlopeBars = 27;
-                Sess3_L2_EmaSlopeMinPct = 0.05;
-                Sess3_L2_EnableWMAFilter = true;
-                Sess3_L2_WMALength = 50;
-                Sess3_L2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess3_L2_FixedStopLoss = 58;
-                Sess3_L2_SLCandleMultiplier = 1.0;
-                Sess3_L2_StopLossOffset = 56;
-                Sess3_L2_MaxStopLoss = 47.5;
-                Sess3_L2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess3_L2_RiskRewardRatio = 2.21;
-                Sess3_L2_FixedTakeProfit = 100;
-                Sess3_L2_TPCandleMultiplier = 1.0;
-                Sess3_L2_EnableBreakEven = true;
-                Sess3_L2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess3_L2_BreakEvenTriggerValue = 1.25;
-                Sess3_L2_BreakEvenOffset = 33;
-                Sess3_L2_EnablePriceTrail = false;
-                Sess3_L2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess3_L2_TrailDistanceValue = 25;
-                Sess3_L2_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess3_L2_TrailActivationValue = 192;
-                Sess3_L2_TrailStepTicks = 0;
-                Sess3_L2_EnableBodyPctFilter = true;
-                Sess3_L2_MinBodyPct = 20;
-                Sess3_L2_EnableDirectionFlip = true;
-                Sess3_L2_EnableMaxDailyLoss = false;
-                Sess3_L2_MaxDailyLoss = 207;
-                Sess3_L2_EnableMaxDailyProfit = false;
-                Sess3_L2_MaxDailyProfit = 186;
-                Sess3_L2_EnableMaxTradesPerDay = true;
-                Sess3_L2_MaxTradesPerDay = 1;
-
-                // ── Sess3 S1 ──
-                Sess3_S1_Enable = true;
-                Sess3_S1_MinCandleRange = 0;
-                Sess3_S1_MaxCandleRange = 50;
-                Sess3_S1_EmaLength = 50;
-                Sess3_S1_EnableEmaSlope = true;
-                Sess3_S1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess3_S1_EmaSlopeBars = 45;
-                Sess3_S1_EmaSlopeMinPct = 0.102;
-                Sess3_S1_EnableWMAFilter = true;
-                Sess3_S1_WMALength = 56;
-                Sess3_S1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess3_S1_FixedStopLoss = 51.5;
-                Sess3_S1_SLCandleMultiplier = 1.0;
-                Sess3_S1_StopLossOffset = 56;
-                Sess3_S1_MaxStopLoss = 53;
-                Sess3_S1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess3_S1_RiskRewardRatio = 3.42;
-                Sess3_S1_FixedTakeProfit = 100;
-                Sess3_S1_TPCandleMultiplier = 1.0;
-                Sess3_S1_EnableBreakEven = true;
-                Sess3_S1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess3_S1_BreakEvenTriggerValue = 1.15;
-                Sess3_S1_BreakEvenOffset = 13;
-                Sess3_S1_EnablePriceTrail = false;
-                Sess3_S1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess3_S1_TrailDistanceValue = 20;
-                Sess3_S1_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess3_S1_TrailActivationValue = 147;
-                Sess3_S1_TrailStepTicks = 0;
-                Sess3_S1_EnableBodyPctFilter = true;
-                Sess3_S1_MinBodyPct = 18;
-                Sess3_S1_EnableDirectionFlip = true;
-                Sess3_S1_EnableMaxDailyLoss = false;
-                Sess3_S1_MaxDailyLoss = 155;
-                Sess3_S1_EnableMaxDailyProfit = true;
-                Sess3_S1_MaxDailyProfit = 187;
-                Sess3_S1_EnableMaxTradesPerDay = true;
-                Sess3_S1_MaxTradesPerDay = 1;
-
-                // ── Sess3 S2 ──
-                Sess3_S2_Enable = true;
-                Sess3_S2_MinCandleRange = 50.25;
-                Sess3_S2_MaxCandleRange = 193;
-                Sess3_S2_EmaLength = 46;
-                Sess3_S2_EnableEmaSlope = true;
-                Sess3_S2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess3_S2_EmaSlopeBars = 46;
-                Sess3_S2_EmaSlopeMinPct = 0.039;
-                Sess3_S2_EnableWMAFilter = false;
-                Sess3_S2_WMALength = 25;
-                Sess3_S2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess3_S2_FixedStopLoss = 67;
-                Sess3_S2_SLCandleMultiplier = 1.0;
-                Sess3_S2_StopLossOffset = 56;
-                Sess3_S2_MaxStopLoss = 57;
-                Sess3_S2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess3_S2_RiskRewardRatio = 4.54;
-                Sess3_S2_FixedTakeProfit = 100;
-                Sess3_S2_TPCandleMultiplier = 1.0;
-                Sess3_S2_EnableBreakEven = true;
-                Sess3_S2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess3_S2_BreakEvenTriggerValue = 2.92;
-                Sess3_S2_BreakEvenOffset = 15;
-                Sess3_S2_EnablePriceTrail = false;
-                Sess3_S2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess3_S2_TrailDistanceValue = 60;
-                Sess3_S2_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess3_S2_TrailActivationValue = 196;
-                Sess3_S2_TrailStepTicks = 0;
-                Sess3_S2_EnableBodyPctFilter = true;
-                Sess3_S2_MinBodyPct = 44;
-                Sess3_S2_EnableDirectionFlip = false;
-                Sess3_S2_EnableMaxDailyLoss = false;
-                Sess3_S2_MaxDailyLoss = 105;
-                Sess3_S2_EnableMaxDailyProfit = true;
-                Sess3_S2_MaxDailyProfit = 47;
-                Sess3_S2_EnableMaxTradesPerDay = true;
-                Sess3_S2_MaxTradesPerDay = 2;
-
-                // ── Sess4 L1 ──
-                Sess4_L1_Enable = true;
-                Sess4_L1_MinCandleRange = 0;
-                Sess4_L1_MaxCandleRange = 40;
-                Sess4_L1_EmaLength = 50;
-                Sess4_L1_EnableEmaSlope = true;
-                Sess4_L1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess4_L1_EmaSlopeBars = 53;
-                Sess4_L1_EmaSlopeMinPct = 0.105;
-                Sess4_L1_EnableWMAFilter = true;
-                Sess4_L1_WMALength = 65;
-                Sess4_L1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess4_L1_FixedStopLoss = 69;
-                Sess4_L1_SLCandleMultiplier = 1.0;
-                Sess4_L1_StopLossOffset = 22;
-                Sess4_L1_MaxStopLoss = 32;
-                Sess4_L1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess4_L1_RiskRewardRatio = 4.02;
-                Sess4_L1_FixedTakeProfit = 203;
-                Sess4_L1_TPCandleMultiplier = 1.0;
-                Sess4_L1_EnableBreakEven = true;
-                Sess4_L1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess4_L1_BreakEvenTriggerValue = 2.47;
-                Sess4_L1_BreakEvenOffset = 4;
-                Sess4_L1_EnablePriceTrail = false;
-                Sess4_L1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess4_L1_TrailDistanceValue = 55;
-                Sess4_L1_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess4_L1_TrailActivationValue = 150;
-                Sess4_L1_TrailStepTicks = 0;
-                Sess4_L1_EnableBodyPctFilter = true;
-                Sess4_L1_MinBodyPct = 20;
-                Sess4_L1_EnableDirectionFlip = true;
-                Sess4_L1_EnableMaxDailyLoss = true;
-                Sess4_L1_MaxDailyLoss = 203;
-                Sess4_L1_EnableMaxDailyProfit = false;
-                Sess4_L1_MaxDailyProfit = 150;
-                Sess4_L1_EnableMaxTradesPerDay = true;
-                Sess4_L1_MaxTradesPerDay = 1;
-
-                // ── Sess4 L2 ──
-                Sess4_L2_Enable = true;
-                Sess4_L2_MinCandleRange = 50.25;
-                Sess4_L2_MaxCandleRange = 0;
-                Sess4_L2_EmaLength = 50;
-                Sess4_L2_EnableEmaSlope = true;
-                Sess4_L2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess4_L2_EmaSlopeBars = 27;
-                Sess4_L2_EmaSlopeMinPct = 0.15;
-                Sess4_L2_EnableWMAFilter = true;
-                Sess4_L2_WMALength = 100;
-                Sess4_L2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess4_L2_FixedStopLoss = 69.5;
-                Sess4_L2_SLCandleMultiplier = 1.0;
-                Sess4_L2_StopLossOffset = 56;
-                Sess4_L2_MaxStopLoss = 49;
-                Sess4_L2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess4_L2_RiskRewardRatio = 2.7;
-                Sess4_L2_FixedTakeProfit = 100;
-                Sess4_L2_TPCandleMultiplier = 1.0;
-                Sess4_L2_EnableBreakEven = true;
-                Sess4_L2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess4_L2_BreakEvenTriggerValue = 1.51;
-                Sess4_L2_BreakEvenOffset = 33;
-                Sess4_L2_EnablePriceTrail = false;
-                Sess4_L2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess4_L2_TrailDistanceValue = 25;
-                Sess4_L2_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess4_L2_TrailActivationValue = 192;
-                Sess4_L2_TrailStepTicks = 0;
-                Sess4_L2_EnableBodyPctFilter = true;
-                Sess4_L2_MinBodyPct = 40;
-                Sess4_L2_EnableDirectionFlip = true;
-                Sess4_L2_EnableMaxDailyLoss = false;
-                Sess4_L2_MaxDailyLoss = 207;
-                Sess4_L2_EnableMaxDailyProfit = false;
-                Sess4_L2_MaxDailyProfit = 186;
-                Sess4_L2_EnableMaxTradesPerDay = true;
-                Sess4_L2_MaxTradesPerDay = 1;
-
-                // ── Sess4 S1 ──
-                Sess4_S1_Enable = true;
-                Sess4_S1_MinCandleRange = 0;
-                Sess4_S1_MaxCandleRange = 45;
-                Sess4_S1_EmaLength = 50;
-                Sess4_S1_EnableEmaSlope = true;
-                Sess4_S1_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess4_S1_EmaSlopeBars = 45;
-                Sess4_S1_EmaSlopeMinPct = 0.001;
-                Sess4_S1_EnableWMAFilter = true;
-                Sess4_S1_WMALength = 67;
-                Sess4_S1_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess4_S1_FixedStopLoss = 81.25;
-                Sess4_S1_SLCandleMultiplier = 1.0;
-                Sess4_S1_StopLossOffset = 56;
-                Sess4_S1_MaxStopLoss = 63;
-                Sess4_S1_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess4_S1_RiskRewardRatio = 4.99;
-                Sess4_S1_FixedTakeProfit = 100;
-                Sess4_S1_TPCandleMultiplier = 1.0;
-                Sess4_S1_EnableBreakEven = true;
-                Sess4_S1_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess4_S1_BreakEvenTriggerValue = 1.2;
-                Sess4_S1_BreakEvenOffset = 2;
-                Sess4_S1_EnablePriceTrail = false;
-                Sess4_S1_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess4_S1_TrailDistanceValue = 20;
-                Sess4_S1_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess4_S1_TrailActivationValue = 147;
-                Sess4_S1_TrailStepTicks = 0;
-                Sess4_S1_EnableBodyPctFilter = true;
-                Sess4_S1_MinBodyPct = 16;
-                Sess4_S1_EnableDirectionFlip = true;
-                Sess4_S1_EnableMaxDailyLoss = true;
-                Sess4_S1_MaxDailyLoss = 155;
-                Sess4_S1_EnableMaxDailyProfit = true;
-                Sess4_S1_MaxDailyProfit = 187;
-                Sess4_S1_EnableMaxTradesPerDay = true;
-                Sess4_S1_MaxTradesPerDay = 1;
-
-                // ── Sess4 S2 ──
-                Sess4_S2_Enable = true;
-                Sess4_S2_MinCandleRange = 55.25;
-                Sess4_S2_MaxCandleRange = 183;
-                Sess4_S2_EmaLength = 46;
-                Sess4_S2_EnableEmaSlope = true;
-                Sess4_S2_EmaSlopeMode = HugoTesting_EmaSlopeModeEnum.MagnitudeOnly;
-                Sess4_S2_EmaSlopeBars = 46;
-                Sess4_S2_EmaSlopeMinPct = 0.075;
-                Sess4_S2_EnableWMAFilter = true;
-                Sess4_S2_WMALength = 35;
-                Sess4_S2_StopLossType = HugoTesting_StopLossTypeEnum.Fixed;
-                Sess4_S2_FixedStopLoss = 40.75;
-                Sess4_S2_SLCandleMultiplier = 1.0;
-                Sess4_S2_StopLossOffset = 56;
-                Sess4_S2_MaxStopLoss = 41;
-                Sess4_S2_TakeProfitType = HugoTesting_TakeProfitTypeEnum.RiskReward;
-                Sess4_S2_RiskRewardRatio = 4.24;
-                Sess4_S2_FixedTakeProfit = 100;
-                Sess4_S2_TPCandleMultiplier = 1.0;
-                Sess4_S2_EnableBreakEven = true;
-                Sess4_S2_BreakEvenTriggerType = HugoTesting_BreakEvenTriggerEnum.RiskMultiple;
-                Sess4_S2_BreakEvenTriggerValue = 2.13;
-                Sess4_S2_BreakEvenOffset = 5;
-                Sess4_S2_EnablePriceTrail = false;
-                Sess4_S2_TrailDistanceMode = HugoTesting_TrailDistanceModeEnum.FixedPoints;
-                Sess4_S2_TrailDistanceValue = 60;
-                Sess4_S2_TrailActivationMode = HugoTesting_TrailActivationModeEnum.FixedPoints;
-                Sess4_S2_TrailActivationValue = 196;
-                Sess4_S2_TrailStepTicks = 0;
-                Sess4_S2_EnableBodyPctFilter = true;
-                Sess4_S2_MinBodyPct = 14;
-                Sess4_S2_EnableDirectionFlip = false;
-                Sess4_S2_EnableMaxDailyLoss = false;
-                Sess4_S2_MaxDailyLoss = 105;
-                Sess4_S2_EnableMaxDailyProfit = true;
-                Sess4_S2_MaxDailyProfit = 27;
-                Sess4_S2_EnableMaxTradesPerDay = true;
-                Sess4_S2_MaxTradesPerDay = 3;
-
-            }
-            else if (State == State.Configure)
-            {
-                longSignalActive          = false;
-                shortSignalActive         = false;
-                globalDailyPnL            = 0;
-                currentSessionDate        = DateTime.MinValue;
-                globalDailyLossLimitHit   = false;
-                globalDailyProfitLimitHit = false;
-                globalDailyTradeCount     = 0;
-                pendingDirection          = 0;
-                breakEvenMoved            = false;
-                currentTradeDirection     = 0;
-                lastTradeDirection        = new int[5];
-                lastTradePnL              = new double[5];
-                activeBucket              = null;
-                activeSession             = 0;
-                inSkipWindow              = false;
-                inNewsSkipWindow          = false;
-                entryOrder                = null;
-                bestPriceSinceEntry       = 0;
-                trailActivated            = false;
-                trailLocked               = false;
-                initialStopDistance       = 0;
-                initialTPDistance         = 0;
-                maxAccountLimitHit           = false;
-                isConfiguredTimeframeValid   = true;
-                isConfiguredInstrumentValid  = true;
-                timeframePopupShown          = false;
-                instrumentPopupShown         = false;
-            dailyPnL_Sess1_L1        = 0;
-            dailyTradeCount_Sess1_L1 = 0;
-            dailyLossHit_Sess1_L1    = false;
-            dailyProfitHit_Sess1_L1  = false;
-            dailyPnL_Sess1_L2        = 0;
-            dailyTradeCount_Sess1_L2 = 0;
-            dailyLossHit_Sess1_L2    = false;
-            dailyProfitHit_Sess1_L2  = false;
-            dailyPnL_Sess1_S1        = 0;
-            dailyTradeCount_Sess1_S1 = 0;
-            dailyLossHit_Sess1_S1    = false;
-            dailyProfitHit_Sess1_S1  = false;
-            dailyPnL_Sess1_S2        = 0;
-            dailyTradeCount_Sess1_S2 = 0;
-            dailyLossHit_Sess1_S2    = false;
-            dailyProfitHit_Sess1_S2  = false;
-            dailyPnL_Sess2_L1        = 0;
-            dailyTradeCount_Sess2_L1 = 0;
-            dailyLossHit_Sess2_L1    = false;
-            dailyProfitHit_Sess2_L1  = false;
-            dailyPnL_Sess2_L2        = 0;
-            dailyTradeCount_Sess2_L2 = 0;
-            dailyLossHit_Sess2_L2    = false;
-            dailyProfitHit_Sess2_L2  = false;
-            dailyPnL_Sess2_S1        = 0;
-            dailyTradeCount_Sess2_S1 = 0;
-            dailyLossHit_Sess2_S1    = false;
-            dailyProfitHit_Sess2_S1  = false;
-            dailyPnL_Sess2_S2        = 0;
-            dailyTradeCount_Sess2_S2 = 0;
-            dailyLossHit_Sess2_S2    = false;
-            dailyProfitHit_Sess2_S2  = false;
-            dailyPnL_Sess3_L1        = 0;
-            dailyTradeCount_Sess3_L1 = 0;
-            dailyLossHit_Sess3_L1    = false;
-            dailyProfitHit_Sess3_L1  = false;
-            dailyPnL_Sess3_L2        = 0;
-            dailyTradeCount_Sess3_L2 = 0;
-            dailyLossHit_Sess3_L2    = false;
-            dailyProfitHit_Sess3_L2  = false;
-            dailyPnL_Sess3_S1        = 0;
-            dailyTradeCount_Sess3_S1 = 0;
-            dailyLossHit_Sess3_S1    = false;
-            dailyProfitHit_Sess3_S1  = false;
-            dailyPnL_Sess3_S2        = 0;
-            dailyTradeCount_Sess3_S2 = 0;
-            dailyLossHit_Sess3_S2    = false;
-            dailyProfitHit_Sess3_S2  = false;
-            dailyPnL_Sess4_L1        = 0;
-            dailyTradeCount_Sess4_L1 = 0;
-            dailyLossHit_Sess4_L1    = false;
-            dailyProfitHit_Sess4_L1  = false;
-            dailyPnL_Sess4_L2        = 0;
-            dailyTradeCount_Sess4_L2 = 0;
-            dailyLossHit_Sess4_L2    = false;
-            dailyProfitHit_Sess4_L2  = false;
-            dailyPnL_Sess4_S1        = 0;
-            dailyTradeCount_Sess4_S1 = 0;
-            dailyLossHit_Sess4_S1    = false;
-            dailyProfitHit_Sess4_S1  = false;
-            dailyPnL_Sess4_S2        = 0;
-            dailyTradeCount_Sess4_S2 = 0;
-            dailyLossHit_Sess4_S2    = false;
-            dailyProfitHit_Sess4_S2  = false;
+                // ── AS-C ─────────────────────────────────────────────────────
+                AsCEnable = true;
+                AsCTradeWindowStart       = DateTime.Parse("23:22", System.Globalization.CultureInfo.InvariantCulture);
+                AsCEnableNoNewTradesAfter = true;
+                AsCNoNewTradesAfter       = DateTime.Parse("01:05", System.Globalization.CultureInfo.InvariantCulture);
+                AsCEnableForcedClose      = true;
+                AsCForcedCloseTime        = DateTime.Parse("02:16", System.Globalization.CultureInfo.InvariantCulture);
+                AsCMaxSessionProfitTicks=500; AsCMaxSessionLossTicks=200;
+                AsCMaxTradesPerSession=2; AsCMaxLossesPerSession=1;
+                // Long
+                AsCLongCandleMultiplier=3.40; AsCLongMaxTakeProfitTicks=209;
+                AsCLongSlExtraTicks=9; AsCLongMaxSlTicks=0; AsCLongMaxSlToTpRatio=0.58;
+                AsCLongUsePriorCandleSl=true; AsCLongSlAtMa=true; AsCLongMoveSlToEntryBar=true;
+                AsCLongTrailOffsetTicks=4; AsCLongTrailDelayBars=8; AsCLongTrailCandleOffset=13;
+                AsCLongEnableBreakeven=true; AsCLongBreakevenTriggerTicks=125; AsCLongBreakevenOffsetTicks=40;
+                AsCLongMaxBarsInTrade=10;
+                AsCLongEnablePriceOffsetTrail=true; AsCLongPriceOffsetReductionTicks=4;
+                AsCRequireDirectionFlip=true; AsCAllowSameDirectionAfterLoss=true;
+                AsCLongEnableWmaFilter=true; AsCLongWmaPeriod=100;
+                AsCLongMinBodyPct=36.5;
+                AsCLongTrendConfirmBars=9; AsCLongEnableAdxFilter=true; AsCLongAdxPeriod=14; AsCLongAdxMinLevel=13.4; AsCLongAdxMaxLevel=0.0; AsCLongAdxPeakDrawdown=3.0;
+                // Short
+                AsCShortCandleMultiplier=5.24; AsCShortMaxTakeProfitTicks=484;
+                AsCShortSlExtraTicks=51; AsCShortMaxSlTicks=202; AsCShortMaxSlToTpRatio=0.58;
+                AsCShortUsePriorCandleSl=true; AsCShortSlAtMa=true; AsCShortMoveSlToEntryBar=true;
+                AsCShortTrailOffsetTicks=36; AsCShortTrailDelayBars=21; AsCShortTrailCandleOffset=2;
+                AsCShortEnableBreakeven=true; AsCShortBreakevenTriggerTicks=252; AsCShortBreakevenOffsetTicks=90;
+                AsCShortMaxBarsInTrade=20;
+                AsCShortEnablePriceOffsetTrail=false; AsCShortPriceOffsetReductionTicks=123;
+                AsCShortEnableWmaFilter=true; AsCShortWmaPeriod=50;
+                AsCShortMinBodyPct=18.9;
+                AsCShortTrendConfirmBars=13; AsCShortEnableAdxFilter=true; AsCShortAdxPeriod=14; AsCShortAdxMinLevel=10.5; AsCShortAdxMaxLevel=0.0; AsCShortAdxPeakDrawdown=0.0;
             }
             else if (State == State.DataLoaded)
             {
-                emaSess1_L1 = EMA(Sess1_L1_EmaLength);
-                wmaSess1_L1 = WMA(Sess1_L1_WMALength);
-                emaSess1_L2 = EMA(Sess1_L2_EmaLength);
-                wmaSess1_L2 = WMA(Sess1_L2_WMALength);
-                emaSess1_S1 = EMA(Sess1_S1_EmaLength);
-                wmaSess1_S1 = WMA(Sess1_S1_WMALength);
-                emaSess1_S2 = EMA(Sess1_S2_EmaLength);
-                wmaSess1_S2 = WMA(Sess1_S2_WMALength);
-                emaSess2_L1 = EMA(Sess2_L1_EmaLength);
-                wmaSess2_L1 = WMA(Sess2_L1_WMALength);
-                emaSess2_L2 = EMA(Sess2_L2_EmaLength);
-                wmaSess2_L2 = WMA(Sess2_L2_WMALength);
-                emaSess2_S1 = EMA(Sess2_S1_EmaLength);
-                wmaSess2_S1 = WMA(Sess2_S1_WMALength);
-                emaSess2_S2 = EMA(Sess2_S2_EmaLength);
-                wmaSess2_S2 = WMA(Sess2_S2_WMALength);
-                emaSess3_L1 = EMA(Sess3_L1_EmaLength);
-                wmaSess3_L1 = WMA(Sess3_L1_WMALength);
-                emaSess3_L2 = EMA(Sess3_L2_EmaLength);
-                wmaSess3_L2 = WMA(Sess3_L2_WMALength);
-                emaSess3_S1 = EMA(Sess3_S1_EmaLength);
-                wmaSess3_S1 = WMA(Sess3_S1_WMALength);
-                emaSess3_S2 = EMA(Sess3_S2_EmaLength);
-                wmaSess3_S2 = WMA(Sess3_S2_WMALength);
-                emaSess4_L1 = EMA(Sess4_L1_EmaLength);
-                wmaSess4_L1 = WMA(Sess4_L1_WMALength);
-                emaSess4_L2 = EMA(Sess4_L2_EmaLength);
-                wmaSess4_L2 = WMA(Sess4_L2_WMALength);
-                emaSess4_S1 = EMA(Sess4_S1_EmaLength);
-                wmaSess4_S1 = WMA(Sess4_S1_WMALength);
-                emaSess4_S2 = EMA(Sess4_S2_EmaLength);
-                wmaSess4_S2 = WMA(Sess4_S2_WMALength);
-                AddChartIndicator(emaSess4_L1);
+                for (int sid = 1; sid <= SubSessionCount; sid++)
+                {
+                    if (!S_Active(sid)) continue;
+                    // EMA37/90 variant: fast EMA (was SMA) at GlobalMaPeriod
+                    smaHighL[sid] = EMA(Close, SD_MaPeriod(sid, 1));
+                    smaLowL[sid]  = EMA(Close, SD_MaPeriod(sid, 1));
+                    smaHighS[sid] = EMA(Close, SD_MaPeriod(sid,-1));
+                    smaLowS[sid]  = EMA(Close, SD_MaPeriod(sid,-1));
+                    emaHighL[sid] = EMA(Close, SD_EmaPeriod(sid, 1));
+                    emaLowL[sid]  = EMA(Close, SD_EmaPeriod(sid, 1));
+                    emaHighS[sid] = EMA(Close, SD_EmaPeriod(sid,-1));
+                    emaLowS[sid]  = EMA(Close, SD_EmaPeriod(sid,-1));
+                    wmaLong[sid]  = WMA(Close, SD_WmaPeriod(sid,  1));
+                    wmaShort[sid] = WMA(Close, SD_WmaPeriod(sid, -1));
+                    adxLong[sid]  = ADX(SD_AdxPeriod(sid,  1));
+                    adxShort[sid] = ADX(SD_AdxPeriod(sid, -1));
+                    swingInd[sid] = Swing(Math.Max(SD_SwingStrength(sid,1), SD_SwingStrength(sid,-1)));
+                }
 
-                // ── Commercial: validate TF and instrument ───────────────────
+                // ── Commercial: order-handling protection + feature init ─────
                 ValidateRequiredPrimaryTimeframe(RequiredPrimaryTimeframeMinutes);
                 ValidateRequiredPrimaryInstrument();
                 EnsureNewsDatesInitialized();
 
-                // ── Heartbeat reporter (TopstepX API access) ─────────────────
+                // ── Heartbeat reporter (TopstepX API access). External AddOn. ─
                 if (Category != null)
                 {
                     try
@@ -5576,10 +819,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                     catch { heartbeatReporter = null; }
                 }
+                // ── ProjectX session/state reset ────────────────────────────
                 InitializeProjectXRouter();
                 if (projectXRouter != null)
                     projectXRouter.Reset();
+                projectXSessionToken = null;
+                projectXTokenAcquiredUtc = Core.Globals.MinDate;
+                projectXAccounts = null;
+                projectXLastOrderIds.Clear();
+                projectXResolvedContractId = null;
+                projectXResolvedInstrumentKey = string.Empty;
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
             }
+            else if (State == State.Transition) { ResetAll(); }
             else if (State == State.Realtime)
             {
                 if (heartbeatReporter != null)
@@ -5593,99 +846,944 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     heartbeatReporter.Dispose();
                     heartbeatReporter = null;
                 }
+                projectXSessionToken = null;
+                projectXTokenAcquiredUtc = Core.Globals.MinDate;
+                projectXAccounts = null;
+                projectXLastOrderIds.Clear();
+                projectXResolvedContractId = null;
+                projectXResolvedInstrumentKey = string.Empty;
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
+                if (projectXRouter != null)
+                    projectXRouter.Reset();
+                projectXRouter = null;
                 DisposeInfoBoxOverlay();
             }
         }
 
+        #endregion
+
+        // =====================================================================
+        #region Session Accessor Methods  S_() and SD_()
+
+        private bool S_ParentEnable(int sid) { int p=(sid<=3)?1:(sid<=6)?2:3; return p==1?NyEnable:p==2?EuEnable:AsEnable; }
+        private bool S_SubEnable(int sid) { switch(sid){case 1:return NyAEnable;case 2:return NyBEnable;case 3:return NyCEnable;case 4:return EuAEnable;case 5:return EuBEnable;case 6:return EuCEnable;case 7:return AsAEnable;case 8:return AsBEnable;case 9:return AsCEnable;}return false; }
+        private bool S_Active(int sid) { return S_ParentEnable(sid) && S_SubEnable(sid); }
+        private string S_Label(int sid) { switch(sid){case 1:return"NY-A";case 2:return"NY-B";case 3:return"NY-C";case 4:return"EU-A";case 5:return"EU-B";case 6:return"EU-C";case 7:return"AS-A";case 8:return"AS-B";case 9:return"AS-C";}return"???"; }
+        private string GetRegion(int sid) { if(sid<=3)return"NY";if(sid<=6)return"EU";return"AS"; }
+        private DateTime S_TradeWindowStart(int sid) { switch(sid){case 1:return NyATradeWindowStart;case 2:return NyBTradeWindowStart;case 3:return NyCTradeWindowStart;case 4:return EuATradeWindowStart;case 5:return EuBTradeWindowStart;case 6:return EuCTradeWindowStart;case 7:return AsATradeWindowStart;case 8:return AsBTradeWindowStart;case 9:return AsCTradeWindowStart;}return default(DateTime); }
+        private DateTime S_NoNewTradesAfter(int sid) { switch(sid){case 1:return NyANoNewTradesAfter;case 2:return NyBNoNewTradesAfter;case 3:return NyCNoNewTradesAfter;case 4:return EuANoNewTradesAfter;case 5:return EuBNoNewTradesAfter;case 6:return EuCNoNewTradesAfter;case 7:return AsANoNewTradesAfter;case 8:return AsBNoNewTradesAfter;case 9:return AsCNoNewTradesAfter;}return default(DateTime); }
+        private DateTime S_ForcedCloseTime(int sid) { switch(sid){case 1:return NyAForcedCloseTime;case 2:return NyBForcedCloseTime;case 3:return NyCForcedCloseTime;case 4:return EuAForcedCloseTime;case 5:return EuBForcedCloseTime;case 6:return EuCForcedCloseTime;case 7:return AsAForcedCloseTime;case 8:return AsBForcedCloseTime;case 9:return AsCForcedCloseTime;}return default(DateTime); }
+        private bool S_EnableNoNewTradesAfter(int sid) { switch(sid){case 1:return NyAEnableNoNewTradesAfter;case 2:return NyBEnableNoNewTradesAfter;case 3:return NyCEnableNoNewTradesAfter;case 4:return EuAEnableNoNewTradesAfter;case 5:return EuBEnableNoNewTradesAfter;case 6:return EuCEnableNoNewTradesAfter;case 7:return AsAEnableNoNewTradesAfter;case 8:return AsBEnableNoNewTradesAfter;case 9:return AsCEnableNoNewTradesAfter;}return false; }
+        private bool S_EnableForcedClose(int sid) { switch(sid){case 1:return NyAEnableForcedClose;case 2:return NyBEnableForcedClose;case 3:return NyCEnableForcedClose;case 4:return EuAEnableForcedClose;case 5:return EuBEnableForcedClose;case 6:return EuCEnableForcedClose;case 7:return AsAEnableForcedClose;case 8:return AsBEnableForcedClose;case 9:return AsCEnableForcedClose;}return false; }
+        private int  S_Contracts(int sid) { return GlobalContracts; }
+        private int  S_MaxTradesPerSession(int sid) { switch(sid){case 1:return NyAMaxTradesPerSession;case 2:return NyBMaxTradesPerSession;case 3:return NyCMaxTradesPerSession;case 4:return EuAMaxTradesPerSession;case 5:return EuBMaxTradesPerSession;case 6:return EuCMaxTradesPerSession;case 7:return AsAMaxTradesPerSession;case 8:return AsBMaxTradesPerSession;case 9:return AsCMaxTradesPerSession;}return 3; }
+        private int  S_MaxLossesPerSession(int sid) { switch(sid){case 1:return NyAMaxLossesPerSession;case 2:return NyBMaxLossesPerSession;case 3:return NyCMaxLossesPerSession;case 4:return EuAMaxLossesPerSession;case 5:return EuBMaxLossesPerSession;case 6:return EuCMaxLossesPerSession;case 7:return AsAMaxLossesPerSession;case 8:return AsBMaxLossesPerSession;case 9:return AsCMaxLossesPerSession;}return 2; }
+        private int  S_MaxSessionProfitTicks(int sid) { switch(sid){case 1:return NyAMaxSessionProfitTicks;case 2:return NyBMaxSessionProfitTicks;case 3:return NyCMaxSessionProfitTicks;case 4:return EuAMaxSessionProfitTicks;case 5:return EuBMaxSessionProfitTicks;case 6:return EuCMaxSessionProfitTicks;case 7:return AsAMaxSessionProfitTicks;case 8:return AsBMaxSessionProfitTicks;case 9:return AsCMaxSessionProfitTicks;}return 1075; }
+        private int  S_MaxSessionLossTicks(int sid) { switch(sid){case 1:return NyAMaxSessionLossTicks;case 2:return NyBMaxSessionLossTicks;case 3:return NyCMaxSessionLossTicks;case 4:return EuAMaxSessionLossTicks;case 5:return EuBMaxSessionLossTicks;case 6:return EuCMaxSessionLossTicks;case 7:return AsAMaxSessionLossTicks;case 8:return AsBMaxSessionLossTicks;case 9:return AsCMaxSessionLossTicks;}return 160; }
+        private bool S_EnableLongTrades(int sid)  { return true; }
+        private bool S_EnableShortTrades(int sid) { return true; }
+        private bool   S_GetLimitsReached(int sid) { return subLimitsReached[sid]; }
+        private void   S_SetLimitsReached(int sid, bool v) { subLimitsReached[sid]=v; }
+        private int    S_GetTradeCount(int sid)  { return subTradeCount[sid]; }
+        private int    S_GetLossCount(int sid)   { return subLossCount[sid]; }
+        private double S_GetPnLTicks(int sid)    { return subPnLTicks[sid]; }
+        private int S_EngulfingExitAfterBars(int sid)    { switch(sid){case 1:return NyAEngulfingExitAfterBars;case 2:return NyBEngulfingExitAfterBars;case 3:return NyCEngulfingExitAfterBars;case 4:return EuAEngulfingExitAfterBars;case 5:return EuBEngulfingExitAfterBars;case 6:return EuCEngulfingExitAfterBars;case 7:return AsAEngulfingExitAfterBars;case 8:return AsBEngulfingExitAfterBars;case 9:return AsCEngulfingExitAfterBars;}return 0; }
+        private int S_EngulfingExitPaddingTicks(int sid) { switch(sid){case 1:return NyAEngulfingExitPaddingTicks;case 2:return NyBEngulfingExitPaddingTicks;case 3:return NyCEngulfingExitPaddingTicks;case 4:return EuAEngulfingExitPaddingTicks;case 5:return EuBEngulfingExitPaddingTicks;case 6:return EuCEngulfingExitPaddingTicks;case 7:return AsAEngulfingExitPaddingTicks;case 8:return AsBEngulfingExitPaddingTicks;case 9:return AsCEngulfingExitPaddingTicks;}return 0; }
+
+        // ── SD_ per-session per-direction entry parameter dispatch ─────────────
+        private int    SD_MaPeriod(int sid,int d)          { return GlobalMaPeriod; }
+        private int    SD_EmaPeriod(int sid,int d)         { return GlobalEmaPeriod; }
+        private MAMode_EMA3790 SD_MaType(int sid,int d)            { return GlobalMaType; }
+        private double SD_CandleMultiplier(int sid,int d)  { if(d==1)switch(sid){case 1:return NyALongCandleMultiplier;case 2:return NyBLongCandleMultiplier;case 3:return NyCLongCandleMultiplier;case 4:return EuALongCandleMultiplier;case 5:return EuBLongCandleMultiplier;case 6:return EuCLongCandleMultiplier;case 7:return AsALongCandleMultiplier;case 8:return AsBLongCandleMultiplier;case 9:return AsCLongCandleMultiplier;} else switch(sid){case 1:return NyAShortCandleMultiplier;case 2:return NyBShortCandleMultiplier;case 3:return NyCShortCandleMultiplier;case 4:return EuAShortCandleMultiplier;case 5:return EuBShortCandleMultiplier;case 6:return EuCShortCandleMultiplier;case 7:return AsAShortCandleMultiplier;case 8:return AsBShortCandleMultiplier;case 9:return AsCShortCandleMultiplier;}return 4.3; }
+        private int    SD_MaxTakeProfitTicks(int sid,int d){ if(d==1)switch(sid){case 1:return NyALongMaxTakeProfitTicks;case 2:return NyBLongMaxTakeProfitTicks;case 3:return NyCLongMaxTakeProfitTicks;case 4:return EuALongMaxTakeProfitTicks;case 5:return EuBLongMaxTakeProfitTicks;case 6:return EuCLongMaxTakeProfitTicks;case 7:return AsALongMaxTakeProfitTicks;case 8:return AsBLongMaxTakeProfitTicks;case 9:return AsCLongMaxTakeProfitTicks;} else switch(sid){case 1:return NyAShortMaxTakeProfitTicks;case 2:return NyBShortMaxTakeProfitTicks;case 3:return NyCShortMaxTakeProfitTicks;case 4:return EuAShortMaxTakeProfitTicks;case 5:return EuBShortMaxTakeProfitTicks;case 6:return EuCShortMaxTakeProfitTicks;case 7:return AsAShortMaxTakeProfitTicks;case 8:return AsBShortMaxTakeProfitTicks;case 9:return AsCShortMaxTakeProfitTicks;}return 1179; }
+        private int    SD_SlExtraTicks(int sid,int d)      { if(d==1)switch(sid){case 1:return NyALongSlExtraTicks;case 2:return NyBLongSlExtraTicks;case 3:return NyCLongSlExtraTicks;case 4:return EuALongSlExtraTicks;case 5:return EuBLongSlExtraTicks;case 6:return EuCLongSlExtraTicks;case 7:return AsALongSlExtraTicks;case 8:return AsBLongSlExtraTicks;case 9:return AsCLongSlExtraTicks;} else switch(sid){case 1:return NyAShortSlExtraTicks;case 2:return NyBShortSlExtraTicks;case 3:return NyCShortSlExtraTicks;case 4:return EuAShortSlExtraTicks;case 5:return EuBShortSlExtraTicks;case 6:return EuCShortSlExtraTicks;case 7:return AsAShortSlExtraTicks;case 8:return AsBShortSlExtraTicks;case 9:return AsCShortSlExtraTicks;}return 42; }
+        private int    SD_MaxSlTicks(int sid,int d)        { if(d==1)switch(sid){case 1:return NyALongMaxSlTicks;case 2:return NyBLongMaxSlTicks;case 3:return NyCLongMaxSlTicks;case 4:return EuALongMaxSlTicks;case 5:return EuBLongMaxSlTicks;case 6:return EuCLongMaxSlTicks;case 7:return AsALongMaxSlTicks;case 8:return AsBLongMaxSlTicks;case 9:return AsCLongMaxSlTicks;} else switch(sid){case 1:return NyAShortMaxSlTicks;case 2:return NyBShortMaxSlTicks;case 3:return NyCShortMaxSlTicks;case 4:return EuAShortMaxSlTicks;case 5:return EuBShortMaxSlTicks;case 6:return EuCShortMaxSlTicks;case 7:return AsAShortMaxSlTicks;case 8:return AsBShortMaxSlTicks;case 9:return AsCShortMaxSlTicks;}return 331; }
+        private double SD_MaxSlToTpRatio(int sid,int d)    { if(d==1)switch(sid){case 1:return NyALongMaxSlToTpRatio;case 2:return NyBLongMaxSlToTpRatio;case 3:return NyCLongMaxSlToTpRatio;case 4:return EuALongMaxSlToTpRatio;case 5:return EuBLongMaxSlToTpRatio;case 6:return EuCLongMaxSlToTpRatio;case 7:return AsALongMaxSlToTpRatio;case 8:return AsBLongMaxSlToTpRatio;case 9:return AsCLongMaxSlToTpRatio;} else switch(sid){case 1:return NyAShortMaxSlToTpRatio;case 2:return NyBShortMaxSlToTpRatio;case 3:return NyCShortMaxSlToTpRatio;case 4:return EuAShortMaxSlToTpRatio;case 5:return EuBShortMaxSlToTpRatio;case 6:return EuCShortMaxSlToTpRatio;case 7:return AsAShortMaxSlToTpRatio;case 8:return AsBShortMaxSlToTpRatio;case 9:return AsCShortMaxSlToTpRatio;}return 0.48; }
+        private bool   SD_UsePriorCandleSl(int sid,int d) { if(d==1)switch(sid){case 1:return NyALongUsePriorCandleSl;case 2:return NyBLongUsePriorCandleSl;case 3:return NyCLongUsePriorCandleSl;case 4:return EuALongUsePriorCandleSl;case 5:return EuBLongUsePriorCandleSl;case 6:return EuCLongUsePriorCandleSl;case 7:return AsALongUsePriorCandleSl;case 8:return AsBLongUsePriorCandleSl;case 9:return AsCLongUsePriorCandleSl;} else switch(sid){case 1:return NyAShortUsePriorCandleSl;case 2:return NyBShortUsePriorCandleSl;case 3:return NyCShortUsePriorCandleSl;case 4:return EuAShortUsePriorCandleSl;case 5:return EuBShortUsePriorCandleSl;case 6:return EuCShortUsePriorCandleSl;case 7:return AsAShortUsePriorCandleSl;case 8:return AsBShortUsePriorCandleSl;case 9:return AsCShortUsePriorCandleSl;}return true; }
+        private bool   SD_SlAtMa(int sid,int d)            { if(d==1)switch(sid){case 1:return NyALongSlAtMa;case 2:return NyBLongSlAtMa;case 3:return NyCLongSlAtMa;case 4:return EuALongSlAtMa;case 5:return EuBLongSlAtMa;case 6:return EuCLongSlAtMa;case 7:return AsALongSlAtMa;case 8:return AsBLongSlAtMa;case 9:return AsCLongSlAtMa;} else switch(sid){case 1:return NyAShortSlAtMa;case 2:return NyBShortSlAtMa;case 3:return NyCShortSlAtMa;case 4:return EuAShortSlAtMa;case 5:return EuBShortSlAtMa;case 6:return EuCShortSlAtMa;case 7:return AsAShortSlAtMa;case 8:return AsBShortSlAtMa;case 9:return AsCShortSlAtMa;}return false; }
+        private bool   SD_MoveSlToEntryBar(int sid,int d)  { if(d==1)switch(sid){case 1:return NyALongMoveSlToEntryBar;case 2:return NyBLongMoveSlToEntryBar;case 3:return NyCLongMoveSlToEntryBar;case 4:return EuALongMoveSlToEntryBar;case 5:return EuBLongMoveSlToEntryBar;case 6:return EuCLongMoveSlToEntryBar;case 7:return AsALongMoveSlToEntryBar;case 8:return AsBLongMoveSlToEntryBar;case 9:return AsCLongMoveSlToEntryBar;} else switch(sid){case 1:return NyAShortMoveSlToEntryBar;case 2:return NyBShortMoveSlToEntryBar;case 3:return NyCShortMoveSlToEntryBar;case 4:return EuAShortMoveSlToEntryBar;case 5:return EuBShortMoveSlToEntryBar;case 6:return EuCShortMoveSlToEntryBar;case 7:return AsAShortMoveSlToEntryBar;case 8:return AsBShortMoveSlToEntryBar;case 9:return AsCShortMoveSlToEntryBar;}return false; }
+        private int    SD_TrailOffsetTicks(int sid,int d)  { if(d==1)switch(sid){case 1:return NyALongTrailOffsetTicks;case 2:return NyBLongTrailOffsetTicks;case 3:return NyCLongTrailOffsetTicks;case 4:return EuALongTrailOffsetTicks;case 5:return EuBLongTrailOffsetTicks;case 6:return EuCLongTrailOffsetTicks;case 7:return AsALongTrailOffsetTicks;case 8:return AsBLongTrailOffsetTicks;case 9:return AsCLongTrailOffsetTicks;} else switch(sid){case 1:return NyAShortTrailOffsetTicks;case 2:return NyBShortTrailOffsetTicks;case 3:return NyCShortTrailOffsetTicks;case 4:return EuAShortTrailOffsetTicks;case 5:return EuBShortTrailOffsetTicks;case 6:return EuCShortTrailOffsetTicks;case 7:return AsAShortTrailOffsetTicks;case 8:return AsBShortTrailOffsetTicks;case 9:return AsCShortTrailOffsetTicks;}return 41; }
+        private int    SD_TrailDelayBars(int sid,int d)    { if(d==1)switch(sid){case 1:return NyALongTrailDelayBars;case 2:return NyBLongTrailDelayBars;case 3:return NyCLongTrailDelayBars;case 4:return EuALongTrailDelayBars;case 5:return EuBLongTrailDelayBars;case 6:return EuCLongTrailDelayBars;case 7:return AsALongTrailDelayBars;case 8:return AsBLongTrailDelayBars;case 9:return AsCLongTrailDelayBars;} else switch(sid){case 1:return NyAShortTrailDelayBars;case 2:return NyBShortTrailDelayBars;case 3:return NyCShortTrailDelayBars;case 4:return EuAShortTrailDelayBars;case 5:return EuBShortTrailDelayBars;case 6:return EuCShortTrailDelayBars;case 7:return AsAShortTrailDelayBars;case 8:return AsBShortTrailDelayBars;case 9:return AsCShortTrailDelayBars;}return 2; }
+        private int    SD_TrailCandleOffset(int sid,int d) { if(d==1)switch(sid){case 1:return NyALongTrailCandleOffset;case 2:return NyBLongTrailCandleOffset;case 3:return NyCLongTrailCandleOffset;case 4:return EuALongTrailCandleOffset;case 5:return EuBLongTrailCandleOffset;case 6:return EuCLongTrailCandleOffset;case 7:return AsALongTrailCandleOffset;case 8:return AsBLongTrailCandleOffset;case 9:return AsCLongTrailCandleOffset;} else switch(sid){case 1:return NyAShortTrailCandleOffset;case 2:return NyBShortTrailCandleOffset;case 3:return NyCShortTrailCandleOffset;case 4:return EuAShortTrailCandleOffset;case 5:return EuBShortTrailCandleOffset;case 6:return EuCShortTrailCandleOffset;case 7:return AsAShortTrailCandleOffset;case 8:return AsBShortTrailCandleOffset;case 9:return AsCShortTrailCandleOffset;}return 0; }
+        private bool   SD_EnableBreakeven(int sid,int d)   { if(d==1)switch(sid){case 1:return NyALongEnableBreakeven;case 2:return NyBLongEnableBreakeven;case 3:return NyCLongEnableBreakeven;case 4:return EuALongEnableBreakeven;case 5:return EuBLongEnableBreakeven;case 6:return EuCLongEnableBreakeven;case 7:return AsALongEnableBreakeven;case 8:return AsBLongEnableBreakeven;case 9:return AsCLongEnableBreakeven;} else switch(sid){case 1:return NyAShortEnableBreakeven;case 2:return NyBShortEnableBreakeven;case 3:return NyCShortEnableBreakeven;case 4:return EuAShortEnableBreakeven;case 5:return EuBShortEnableBreakeven;case 6:return EuCShortEnableBreakeven;case 7:return AsAShortEnableBreakeven;case 8:return AsBShortEnableBreakeven;case 9:return AsCShortEnableBreakeven;}return true; }
+        private BEMode2_EMA3790 SD_BreakevenMode(int sid,int d)    { return BEMode2_EMA3790.FixedTicks; }
+        private int    SD_BreakevenTriggerTicks(int sid,int d) { if(d==1)switch(sid){case 1:return NyALongBreakevenTriggerTicks;case 2:return NyBLongBreakevenTriggerTicks;case 3:return NyCLongBreakevenTriggerTicks;case 4:return EuALongBreakevenTriggerTicks;case 5:return EuBLongBreakevenTriggerTicks;case 6:return EuCLongBreakevenTriggerTicks;case 7:return AsALongBreakevenTriggerTicks;case 8:return AsBLongBreakevenTriggerTicks;case 9:return AsCLongBreakevenTriggerTicks;} else switch(sid){case 1:return NyAShortBreakevenTriggerTicks;case 2:return NyBShortBreakevenTriggerTicks;case 3:return NyCShortBreakevenTriggerTicks;case 4:return EuAShortBreakevenTriggerTicks;case 5:return EuBShortBreakevenTriggerTicks;case 6:return EuCShortBreakevenTriggerTicks;case 7:return AsAShortBreakevenTriggerTicks;case 8:return AsBShortBreakevenTriggerTicks;case 9:return AsCShortBreakevenTriggerTicks;}return 357; }
+        private double SD_BreakevenCandlePct(int sid,int d){ return 50.0; }
+        private int    SD_BreakevenOffsetTicks(int sid,int d) { if(d==1)switch(sid){case 1:return NyALongBreakevenOffsetTicks;case 2:return NyBLongBreakevenOffsetTicks;case 3:return NyCLongBreakevenOffsetTicks;case 4:return EuALongBreakevenOffsetTicks;case 5:return EuBLongBreakevenOffsetTicks;case 6:return EuCLongBreakevenOffsetTicks;case 7:return AsALongBreakevenOffsetTicks;case 8:return AsBLongBreakevenOffsetTicks;case 9:return AsCLongBreakevenOffsetTicks;} else switch(sid){case 1:return NyAShortBreakevenOffsetTicks;case 2:return NyBShortBreakevenOffsetTicks;case 3:return NyCShortBreakevenOffsetTicks;case 4:return EuAShortBreakevenOffsetTicks;case 5:return EuBShortBreakevenOffsetTicks;case 6:return EuCShortBreakevenOffsetTicks;case 7:return AsAShortBreakevenOffsetTicks;case 8:return AsBShortBreakevenOffsetTicks;case 9:return AsCShortBreakevenOffsetTicks;}return 3; }
+        private int    SD_MaxBarsInTrade(int sid,int d)    { if(d==1)switch(sid){case 1:return NyALongMaxBarsInTrade;case 2:return NyBLongMaxBarsInTrade;case 3:return NyCLongMaxBarsInTrade;case 4:return EuALongMaxBarsInTrade;case 5:return EuBLongMaxBarsInTrade;case 6:return EuCLongMaxBarsInTrade;case 7:return AsALongMaxBarsInTrade;case 8:return AsBLongMaxBarsInTrade;case 9:return AsCLongMaxBarsInTrade;} else switch(sid){case 1:return NyAShortMaxBarsInTrade;case 2:return NyBShortMaxBarsInTrade;case 3:return NyCShortMaxBarsInTrade;case 4:return EuAShortMaxBarsInTrade;case 5:return EuBShortMaxBarsInTrade;case 6:return EuCShortMaxBarsInTrade;case 7:return AsAShortMaxBarsInTrade;case 8:return AsBShortMaxBarsInTrade;case 9:return AsCShortMaxBarsInTrade;}return 39; }
+        private bool   SD_EnablePriceOffsetTrail(int sid,int d) { if(d==1)switch(sid){case 1:return NyALongEnablePriceOffsetTrail;case 2:return NyBLongEnablePriceOffsetTrail;case 3:return NyCLongEnablePriceOffsetTrail;case 4:return EuALongEnablePriceOffsetTrail;case 5:return EuBLongEnablePriceOffsetTrail;case 6:return EuCLongEnablePriceOffsetTrail;case 7:return AsALongEnablePriceOffsetTrail;case 8:return AsBLongEnablePriceOffsetTrail;case 9:return AsCLongEnablePriceOffsetTrail;} else switch(sid){case 1:return NyAShortEnablePriceOffsetTrail;case 2:return NyBShortEnablePriceOffsetTrail;case 3:return NyCShortEnablePriceOffsetTrail;case 4:return EuAShortEnablePriceOffsetTrail;case 5:return EuBShortEnablePriceOffsetTrail;case 6:return EuCShortEnablePriceOffsetTrail;case 7:return AsAShortEnablePriceOffsetTrail;case 8:return AsBShortEnablePriceOffsetTrail;case 9:return AsCShortEnablePriceOffsetTrail;}return false; }
+        private int    SD_PriceOffsetReductionTicks(int sid,int d) { if(d==1)switch(sid){case 1:return NyALongPriceOffsetReductionTicks;case 2:return NyBLongPriceOffsetReductionTicks;case 3:return NyCLongPriceOffsetReductionTicks;case 4:return EuALongPriceOffsetReductionTicks;case 5:return EuBLongPriceOffsetReductionTicks;case 6:return EuCLongPriceOffsetReductionTicks;case 7:return AsALongPriceOffsetReductionTicks;case 8:return AsBLongPriceOffsetReductionTicks;case 9:return AsCLongPriceOffsetReductionTicks;} else switch(sid){case 1:return NyAShortPriceOffsetReductionTicks;case 2:return NyBShortPriceOffsetReductionTicks;case 3:return NyCShortPriceOffsetReductionTicks;case 4:return EuAShortPriceOffsetReductionTicks;case 5:return EuBShortPriceOffsetReductionTicks;case 6:return EuCShortPriceOffsetReductionTicks;case 7:return AsAShortPriceOffsetReductionTicks;case 8:return AsBShortPriceOffsetReductionTicks;case 9:return AsCShortPriceOffsetReductionTicks;}return 0; }
+        private bool   SD_EnableOpposingBarExit(int sid,int d) { return false; }
+        private bool   SD_EnableEngulfingExit(int sid,int d) { return false; } // replaced by EngulfingExitAfterBars
+        private bool   SD_RequireDirectionFlip(int sid,int d) { switch(sid){case 1:return NyARequireDirectionFlip;case 2:return NyBRequireDirectionFlip;case 3:return NyCRequireDirectionFlip;case 4:return EuARequireDirectionFlip;case 5:return EuBRequireDirectionFlip;case 6:return EuCRequireDirectionFlip;case 7:return AsARequireDirectionFlip;case 8:return AsBRequireDirectionFlip;case 9:return AsCRequireDirectionFlip;}return true; }
+        private bool   SD_AllowSameDirectionAfterLoss(int sid,int d) { switch(sid){case 1:return NyAAllowSameDirectionAfterLoss;case 2:return NyBAllowSameDirectionAfterLoss;case 3:return NyCAllowSameDirectionAfterLoss;case 4:return EuAAllowSameDirectionAfterLoss;case 5:return EuBAllowSameDirectionAfterLoss;case 6:return EuCAllowSameDirectionAfterLoss;case 7:return AsAAllowSameDirectionAfterLoss;case 8:return AsBAllowSameDirectionAfterLoss;case 9:return AsCAllowSameDirectionAfterLoss;}return true; }
+        private bool   SD_RequireMaSlope(int sid,int d)    { return false; }
+        private int    SD_MaSlopeLookback(int sid,int d)   { return 1; }
+        private bool   SD_EnableWmaFilter(int sid,int d)   { if(d==1)switch(sid){case 1:return NyALongEnableWmaFilter;case 2:return NyBLongEnableWmaFilter;case 3:return NyCLongEnableWmaFilter;case 4:return EuALongEnableWmaFilter;case 5:return EuBLongEnableWmaFilter;case 6:return EuCLongEnableWmaFilter;case 7:return AsALongEnableWmaFilter;case 8:return AsBLongEnableWmaFilter;case 9:return AsCLongEnableWmaFilter;} else switch(sid){case 1:return NyAShortEnableWmaFilter;case 2:return NyBShortEnableWmaFilter;case 3:return NyCShortEnableWmaFilter;case 4:return EuAShortEnableWmaFilter;case 5:return EuBShortEnableWmaFilter;case 6:return EuCShortEnableWmaFilter;case 7:return AsAShortEnableWmaFilter;case 8:return AsBShortEnableWmaFilter;case 9:return AsCShortEnableWmaFilter;}return true; }
+        private int    SD_WmaPeriod(int sid,int d)         { if(d==1)switch(sid){case 1:return NyALongWmaPeriod;case 2:return NyBLongWmaPeriod;case 3:return NyCLongWmaPeriod;case 4:return EuALongWmaPeriod;case 5:return EuBLongWmaPeriod;case 6:return EuCLongWmaPeriod;case 7:return AsALongWmaPeriod;case 8:return AsBLongWmaPeriod;case 9:return AsCLongWmaPeriod;} else switch(sid){case 1:return NyAShortWmaPeriod;case 2:return NyBShortWmaPeriod;case 3:return NyCShortWmaPeriod;case 4:return EuAShortWmaPeriod;case 5:return EuBShortWmaPeriod;case 6:return EuCShortWmaPeriod;case 7:return AsAShortWmaPeriod;case 8:return AsBShortWmaPeriod;case 9:return AsCShortWmaPeriod;}return 82; }
+        private int    SD_MaxSignalCandleTicks(int sid,int d) { return 0; }
+        private double SD_MinBodyPct(int sid,int d)        { if(d==1)switch(sid){case 1:return NyALongMinBodyPct;case 2:return NyBLongMinBodyPct;case 3:return NyCLongMinBodyPct;case 4:return EuALongMinBodyPct;case 5:return EuBLongMinBodyPct;case 6:return EuCLongMinBodyPct;case 7:return AsALongMinBodyPct;case 8:return AsBLongMinBodyPct;case 9:return AsCLongMinBodyPct;} else switch(sid){case 1:return NyAShortMinBodyPct;case 2:return NyBShortMinBodyPct;case 3:return NyCShortMinBodyPct;case 4:return EuAShortMinBodyPct;case 5:return EuBShortMinBodyPct;case 6:return EuCShortMinBodyPct;case 7:return AsAShortMinBodyPct;case 8:return AsBShortMinBodyPct;case 9:return AsCShortMinBodyPct;}return 0; }
+        private int    SD_TrendConfirmBars(int sid,int d)  { if(d==1)switch(sid){case 1:return NyALongTrendConfirmBars;case 2:return NyBLongTrendConfirmBars;case 3:return NyCLongTrendConfirmBars;case 4:return EuALongTrendConfirmBars;case 5:return EuBLongTrendConfirmBars;case 6:return EuCLongTrendConfirmBars;case 7:return AsALongTrendConfirmBars;case 8:return AsBLongTrendConfirmBars;case 9:return AsCLongTrendConfirmBars;} else switch(sid){case 1:return NyAShortTrendConfirmBars;case 2:return NyBShortTrendConfirmBars;case 3:return NyCShortTrendConfirmBars;case 4:return EuAShortTrendConfirmBars;case 5:return EuBShortTrendConfirmBars;case 6:return EuCShortTrendConfirmBars;case 7:return AsAShortTrendConfirmBars;case 8:return AsBShortTrendConfirmBars;case 9:return AsCShortTrendConfirmBars;}return 13; }
+        private int    SD_MaxDistanceFromMaTicks(int sid,int d) { return 0; }
+        private bool   SD_EnableAdxFilter(int sid,int d)   { if(d==1)switch(sid){case 1:return NyALongEnableAdxFilter;case 2:return NyBLongEnableAdxFilter;case 3:return NyCLongEnableAdxFilter;case 4:return EuALongEnableAdxFilter;case 5:return EuBLongEnableAdxFilter;case 6:return EuCLongEnableAdxFilter;case 7:return AsALongEnableAdxFilter;case 8:return AsBLongEnableAdxFilter;case 9:return AsCLongEnableAdxFilter;} else switch(sid){case 1:return NyAShortEnableAdxFilter;case 2:return NyBShortEnableAdxFilter;case 3:return NyCShortEnableAdxFilter;case 4:return EuAShortEnableAdxFilter;case 5:return EuBShortEnableAdxFilter;case 6:return EuCShortEnableAdxFilter;case 7:return AsAShortEnableAdxFilter;case 8:return AsBShortEnableAdxFilter;case 9:return AsCShortEnableAdxFilter;}return true; }
+        private int    SD_AdxPeriod(int sid,int d)         { if(d==1)switch(sid){case 1:return NyALongAdxPeriod;case 2:return NyBLongAdxPeriod;case 3:return NyCLongAdxPeriod;case 4:return EuALongAdxPeriod;case 5:return EuBLongAdxPeriod;case 6:return EuCLongAdxPeriod;case 7:return AsALongAdxPeriod;case 8:return AsBLongAdxPeriod;case 9:return AsCLongAdxPeriod;} else switch(sid){case 1:return NyAShortAdxPeriod;case 2:return NyBShortAdxPeriod;case 3:return NyCShortAdxPeriod;case 4:return EuAShortAdxPeriod;case 5:return EuBShortAdxPeriod;case 6:return EuCShortAdxPeriod;case 7:return AsAShortAdxPeriod;case 8:return AsBShortAdxPeriod;case 9:return AsCShortAdxPeriod;}return 3; }
+        private double SD_AdxMinLevel(int sid,int d)       { if(d==1)switch(sid){case 1:return NyALongAdxMinLevel;case 2:return NyBLongAdxMinLevel;case 3:return NyCLongAdxMinLevel;case 4:return EuALongAdxMinLevel;case 5:return EuBLongAdxMinLevel;case 6:return EuCLongAdxMinLevel;case 7:return AsALongAdxMinLevel;case 8:return AsBLongAdxMinLevel;case 9:return AsCLongAdxMinLevel;} else switch(sid){case 1:return NyAShortAdxMinLevel;case 2:return NyBShortAdxMinLevel;case 3:return NyCShortAdxMinLevel;case 4:return EuAShortAdxMinLevel;case 5:return EuBShortAdxMinLevel;case 6:return EuCShortAdxMinLevel;case 7:return AsAShortAdxMinLevel;case 8:return AsBShortAdxMinLevel;case 9:return AsCShortAdxMinLevel;}return 15.0; }
+        private double SD_AdxMaxLevel(int sid,int d)       { if(d==1)switch(sid){case 1:return NyALongAdxMaxLevel;case 2:return NyBLongAdxMaxLevel;case 3:return NyCLongAdxMaxLevel;case 4:return EuALongAdxMaxLevel;case 5:return EuBLongAdxMaxLevel;case 6:return EuCLongAdxMaxLevel;case 7:return AsALongAdxMaxLevel;case 8:return AsBLongAdxMaxLevel;case 9:return AsCLongAdxMaxLevel;} else switch(sid){case 1:return NyAShortAdxMaxLevel;case 2:return NyBShortAdxMaxLevel;case 3:return NyCShortAdxMaxLevel;case 4:return EuAShortAdxMaxLevel;case 5:return EuBShortAdxMaxLevel;case 6:return EuCShortAdxMaxLevel;case 7:return AsAShortAdxMaxLevel;case 8:return AsBShortAdxMaxLevel;case 9:return AsCShortAdxMaxLevel;}return 0; }
+        private double SD_AdxPeakDrawdown(int sid,int d)   { if(d==1)switch(sid){case 1:return NyALongAdxPeakDrawdown;case 2:return NyBLongAdxPeakDrawdown;case 3:return NyCLongAdxPeakDrawdown;case 4:return EuALongAdxPeakDrawdown;case 5:return EuBLongAdxPeakDrawdown;case 6:return EuCLongAdxPeakDrawdown;case 7:return AsALongAdxPeakDrawdown;case 8:return AsBLongAdxPeakDrawdown;case 9:return AsCLongAdxPeakDrawdown;} else switch(sid){case 1:return NyAShortAdxPeakDrawdown;case 2:return NyBShortAdxPeakDrawdown;case 3:return NyCShortAdxPeakDrawdown;case 4:return EuAShortAdxPeakDrawdown;case 5:return EuBShortAdxPeakDrawdown;case 6:return EuCShortAdxPeakDrawdown;case 7:return AsAShortAdxPeakDrawdown;case 8:return AsBShortAdxPeakDrawdown;case 9:return AsCShortAdxPeakDrawdown;}return 0; }
+
+        private MichalEntryMode_EMA3790 SD_EntryMode(int sid,int d) { return MichalEntryMode_EMA3790.Market; } // V1.00: Market only for now, per-session override in v1.01
+        private int    SD_LimitOffsetTicks(int sid,int d)    { return 1; } // V1.00: default placeholder
+        private double SD_LimitRetracementPct(int sid,int d) { return 1.0; } // V1.00: default placeholder
+        private MichalTPMode_EMA3790 SD_TakeProfitMode(int sid,int d) { return MichalTPMode_EMA3790.CandleMultiple; } // V1.00: CandleMultiple as V106 default
+        private int    SD_TakeProfitTicks(int sid,int d)     { return 310; } // V1.00: V106 default fallback
+        private int    SD_SwingStrength(int sid,int d)       { return 1; } // V1.00: V106 default
+
+        #endregion
+
+        // =====================================================================
+        #region MA Helpers (per session + direction)
+
+        private double GetUpperMA(int sid, int dir, int barsAgo)
+        {
+            EMA sh = dir==1 ? smaHighL[sid] : smaHighS[sid];
+            EMA eh = dir==1 ? emaHighL[sid] : emaHighS[sid];
+            switch (SD_MaType(sid,dir))
+            {
+                case MAMode_EMA3790.SMA:  return sh[barsAgo];
+                case MAMode_EMA3790.EMA:  return eh[barsAgo];
+                case MAMode_EMA3790.Both: return Math.Max(sh[barsAgo], eh[barsAgo]);
+                default:          return sh[barsAgo];
+            }
+        }
+        private double GetLowerMA(int sid, int dir, int barsAgo)
+        {
+            EMA sl = dir==1 ? smaLowL[sid] : smaLowS[sid];
+            EMA el = dir==1 ? emaLowL[sid] : emaLowS[sid];
+            switch (SD_MaType(sid,dir))
+            {
+                case MAMode_EMA3790.SMA:  return sl[barsAgo];
+                case MAMode_EMA3790.EMA:  return el[barsAgo];
+                case MAMode_EMA3790.Both: return Math.Min(sl[barsAgo], el[barsAgo]);
+                default:          return sl[barsAgo];
+            }
+        }
+        // For trailing stops — long uses lower MA, short uses upper MA
+        private double GetLowerMAForTrail(int sid, int dir)
+        {
+            EMA sl = dir==1 ? smaLowL[sid] : smaLowS[sid];
+            EMA el = dir==1 ? emaLowL[sid] : emaLowS[sid];
+            switch (SD_MaType(sid,dir))
+            {
+                case MAMode_EMA3790.SMA:  return sl[0];
+                case MAMode_EMA3790.EMA:  return el[0];
+                case MAMode_EMA3790.Both: return Math.Max(sl[0], el[0]);
+                default:          return sl[0];
+            }
+        }
+        private double GetUpperMAForTrail(int sid, int dir)
+        {
+            EMA sh = dir==1 ? smaHighL[sid] : smaHighS[sid];
+            EMA eh = dir==1 ? emaHighL[sid] : emaHighS[sid];
+            switch (SD_MaType(sid,dir))
+            {
+                case MAMode_EMA3790.SMA:  return sh[0];
+                case MAMode_EMA3790.EMA:  return eh[0];
+                case MAMode_EMA3790.Both: return Math.Min(sh[0], eh[0]);
+                default:          return sh[0];
+            }
+        }
+        private bool IsSlopeRising(int sid, int dir, int lb)
+        {
+            EMA sh=dir==1?smaHighL[sid]:smaHighS[sid]; EMA sl=dir==1?smaLowL[sid]:smaLowS[sid];
+            EMA eh=dir==1?emaHighL[sid]:emaHighS[sid]; EMA el=dir==1?emaLowL[sid]:emaLowS[sid];
+            bool s = sh[0]>sh[lb] && sl[0]>sl[lb];
+            bool e = eh[0]>eh[lb] && el[0]>el[lb];
+            switch(SD_MaType(sid,dir)){ case MAMode_EMA3790.SMA:return s; case MAMode_EMA3790.EMA:return e; case MAMode_EMA3790.Both:return s&&e; default:return s; }
+        }
+        private bool IsSlopeFalling(int sid, int dir, int lb)
+        {
+            EMA sh=dir==1?smaHighL[sid]:smaHighS[sid]; EMA sl=dir==1?smaLowL[sid]:smaLowS[sid];
+            EMA eh=dir==1?emaHighL[sid]:emaHighS[sid]; EMA el=dir==1?emaLowL[sid]:emaLowS[sid];
+            bool s = sh[0]<sh[lb] && sl[0]<sl[lb];
+            bool e = eh[0]<eh[lb] && el[0]<el[lb];
+            switch(SD_MaType(sid,dir)){ case MAMode_EMA3790.SMA:return s; case MAMode_EMA3790.EMA:return e; case MAMode_EMA3790.Both:return s&&e; default:return s; }
+        }
+
+        #endregion
+
+        // =====================================================================
+        #region OnBarUpdate
+
         protected override void OnBarUpdate()
         {
-            if (CurrentBar < BarsRequiredToTrade) return;
+            // Minimum bars check across all active sessions
+            int minBars = 20;
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+            {
+                if (!S_Active(sid)) continue;
+                minBars = Math.Max(minBars, SD_MaPeriod(sid,1)+2);
+                minBars = Math.Max(minBars, SD_MaPeriod(sid,-1)+2);
+                minBars = Math.Max(minBars, SD_EmaPeriod(sid,1)+2);
+                minBars = Math.Max(minBars, SD_EmaPeriod(sid,-1)+2);
+                minBars = Math.Max(minBars, SD_WmaPeriod(sid,1)+1);
+                minBars = Math.Max(minBars, SD_WmaPeriod(sid,-1)+1);
+                minBars = Math.Max(minBars, SD_AdxPeriod(sid,1)+2);
+                minBars = Math.Max(minBars, SD_AdxPeriod(sid,-1)+2);
+                minBars = Math.Max(minBars, SD_TrendConfirmBars(sid,1)+1);
+                minBars = Math.Max(minBars, SD_TrendConfirmBars(sid,-1)+1);
+                minBars = Math.Max(minBars, SD_MaSlopeLookback(sid,1)+1);
+                minBars = Math.Max(minBars, SD_MaSlopeLookback(sid,-1)+1);
+            }
+            if (CurrentBar < minBars) return;
 
-            // ── Chart overlays (realtime only) ───────────────────────────────
+            // ── Commercial: chart overlays (info box + session/skip/news) ─────
             if (ChartControl != null)
             {
                 DrawSessionTimeWindows();
                 UpdateInfoBox();
             }
 
-            // ── Configuration validation guard ───────────────────────────────
+            // ── Commercial: order-handling protection (timeframe/instrument) ──
             if (!isConfiguredTimeframeValid || !isConfiguredInstrumentValid)
             {
-                if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; }
+                CancelWorkingEntryOrder();
                 if (Position.MarketPosition == MarketPosition.Long)  ExitLong("InvalidConfig");
                 if (Position.MarketPosition == MarketPosition.Short) ExitShort("InvalidConfig");
                 return;
             }
 
-            // ── Max account balance guard ────────────────────────────────────
+            // ── Commercial: max account balance guard ────────────────────────
             if (IsAccountBalanceBlocked())
                 return;
 
-            // ── Daily reset (session-anchored, midnight-crossing safe) ────────
-            TimeSpan barTOD          = Time[0].TimeOfDay;
-            TimeSpan sessionStartTOD = TimeSpan.Parse(SessionStartTime);
-            DateTime sessionDate     = barTOD >= sessionStartTOD ? Time[0].Date : Time[0].Date.AddDays(-1);
+            CheckSessionReset();
 
-            if (sessionDate != currentSessionDate)
+            // ── Commercial: skip / news time windows ─────────────────────────
+            if (ProcessSkipAndNewsWindows())
+                return;
+
+            // ── Commercial: global daily risk guards (points) ────────────────
+            if (ProcessGlobalDailyGuards())
+                return;
+
+            // Forced close for active session
+            if (activeSessionId > 0 && S_EnableForcedClose(activeSessionId) && IsInSessionForcedClose(activeSessionId))
             {
-                globalDailyPnL            = 0;
-                currentSessionDate        = sessionDate;
-                globalDailyLossLimitHit   = false;
-                globalDailyProfitLimitHit = false;
-                globalDailyTradeCount     = 0;
-                lastTradeDirection        = new int[5];
-                lastTradePnL              = new double[5];
-                ResetAllBucketCounters();
+                FlattenAndCancel("ForcedClose");
+                if (hasActivePosition && Position.MarketPosition == MarketPosition.Flat)
+                    HandlePositionClosed(activeSessionId);
+                prevMarketPosition = Position.MarketPosition;
+                return;
             }
 
-            // ── Resolve bar's session ────────────────────────────────────────
-            double barSM      = ToSessionMinutes(barTOD);
-            int    barSession = ResolveActiveSession(barSM);
+            // Detect position closed externally (TP/SL hit)
+            if (hasActivePosition && Position.MarketPosition == MarketPosition.Flat)
+                HandlePositionClosed(activeSessionId);
 
-            // ── Force Close: fires on the position's OWN session ─────────────
-            if (Position.MarketPosition != MarketPosition.Flat && activeSession != 0
-                && GetSessEnableForceClose(activeSession))
+            if (Position.MarketPosition != MarketPosition.Flat && !hasActivePosition && tradeEntryPrice > 0)
+                hasActivePosition = true;
+
+            // Trade management while in position
+            if (activeSessionId > 0 && hasActivePosition && Position.MarketPosition != MarketPosition.Flat)
             {
-                double fcSM  = GetSessForceCloseSM(activeSession);
-                double endSM = GetSessSessionEndSM(activeSession);
-                bool inFC    = fcSM <= endSM ? barSM >= fcSM : barSM >= fcSM || barSM < endSM;
-                if (inFC)
+                barsSinceEntry++;
+                int d = tradeDirection; int sid = activeSessionId;
+                int maxBars = SD_MaxBarsInTrade(sid, d);
+                if (maxBars > 0 && barsSinceEntry >= maxBars)
                 {
-                    CancelAllOrders(); ResetSignals();
-                    if (Position.MarketPosition == MarketPosition.Long)
-                        ExitLong(Math.Max(1, Position.Quantity), "ForceClose", LongEntrySignalName);
-                    else if (Position.MarketPosition == MarketPosition.Short)
-                        ExitShort(Math.Max(1, Position.Quantity), "ForceClose", ShortEntrySignalName);
-                    return;
+                    FlattenAndCancel("MaxBarsInTrade");
+                    if (hasActivePosition && Position.MarketPosition == MarketPosition.Flat)
+                        HandlePositionClosed(sid);
+                }
+                if (hasActivePosition && Position.MarketPosition != MarketPosition.Flat)
+                {
+                    CheckEngulfingExit(sid); // timed engulfing: activated after EngulfingExitAfterBars bars
+                    if (SD_EnableOpposingBarExit(sid,d)) CheckOpposingBarExit(sid);
+                }
+                if (hasActivePosition && Position.MarketPosition != MarketPosition.Flat)
+                {
+                    ManageBreakeven(sid);
+                    ManageEntryBarSl(sid);
+                    ManageTrailingStop(sid);
+                    ManageCandleLagTrail(sid);
+                    ManagePriceOffsetTrail(sid);
+                    ManageAdxPeakDrawdown(sid);
+                }
+                if (hasActivePosition && Position.MarketPosition == MarketPosition.Flat)
+                    HandlePositionClosed(sid);
+            }
+
+            // Entry check when flat (commercial: block during skip/news/global limits)
+            if (Position.MarketPosition == MarketPosition.Flat && !hasActivePosition
+                && !inSkipWindow && !inNewsSkipWindow && !GlobalEntriesBlocked())
+            {
+                int entrySid = DetermineEntrySession();
+                if (entrySid > 0) CheckForEntrySignal(entrySid);
+            }
+
+            prevMarketPosition = Position.MarketPosition;
+        }
+
+        #endregion
+
+        // =====================================================================
+        #region Session Detection
+
+        private double ToSessionMinutes(TimeSpan t)
+        {
+            double m = t.TotalMinutes - SessionStartTime.TimeOfDay.TotalMinutes;
+            if (m < 0) m += 1440;
+            return m;
+        }
+        private int DetermineEntrySession()
+        {
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+                if (S_Active(sid) && !subLimitsReached[sid] && IsInSessionTradeWindow(sid)) return sid;
+            return 0;
+        }
+        private bool IsInSessionTradeWindow(int sid)
+        {
+            double barSM   = ToSessionMinutes(Time[0].TimeOfDay);
+            double startSM = ToSessionMinutes(S_TradeWindowStart(sid).TimeOfDay);
+            if (barSM < startSM) return false;
+            double endSM = S_EnableNoNewTradesAfter(sid)
+                ? ToSessionMinutes(S_NoNewTradesAfter(sid).TimeOfDay)
+                : ToSessionMinutes(S_ForcedCloseTime(sid).TimeOfDay);
+            return barSM < endSM;
+        }
+        private bool IsInSessionForcedClose(int sid)
+        {
+            if (!S_EnableForcedClose(sid)) return false;
+            double barSM   = ToSessionMinutes(Time[0].TimeOfDay);
+            double closeSM = ToSessionMinutes(S_ForcedCloseTime(sid).TimeOfDay);
+            return barSM >= closeSM;
+        }
+
+        #endregion
+
+        // =====================================================================
+        #region Entry Signal
+
+        private void CheckForEntrySignal(int sid)
+        {
+            double cC=Close[0],cO=Open[0],cH=High[0],cL=Low[0];
+            double pC=Close[1],pO=Open[1],pH=High[1],pL=Low[1];
+            // Long MAs
+            double uCL=GetUpperMA(sid,1,0), lCL=GetLowerMA(sid,1,0);
+            double uPL=GetUpperMA(sid,1,1), lPL=GetLowerMA(sid,1,1);
+            // Short MAs
+            double uCS=GetUpperMA(sid,-1,0), lCS=GetLowerMA(sid,-1,0);
+            double uPS=GetUpperMA(sid,-1,1), lPS=GetLowerMA(sid,-1,1);
+            bool bull=cC>cO, bear=cC<cO;
+
+            // LONG signal: bull candle, close above both MAs current+prior bars, open above lower MA, confirms vs prior bar
+            if (S_EnableLongTrades(sid) && bull
+                && cC>uCL && cC>lCL && cC>uPL && cC>lPL
+                && cO>lCL && cC>pO && cC>pC
+                && IsDirectionAllowed(sid,1))
+            {
+                if (PassesFilters(sid,1,cC,cH,cL))
+                    SubmitEntry(sid,1,cC,cH,cL,pH,pL);
+            }
+            // SHORT signal: bear candle, close below both MAs current+prior bars, open below upper MA, confirms vs prior bar
+            else if (S_EnableShortTrades(sid) && bear
+                && cC<uCS && cC<lCS && cC<uPS && cC<lPS
+                && cO<uCS && cC<pO && cC<pC
+                && IsDirectionAllowed(sid,-1))
+            {
+                if (PassesFilters(sid,-1,cC,cH,cL))
+                    SubmitEntry(sid,-1,cC,cH,cL,pH,pL);
+            }
+        }
+
+        private bool IsDirectionAllowed(int sid, int dir)
+        {
+            int lastDir = subLastTradeDirection[sid];
+            if (lastDir == 0) return true;
+            if (!SD_RequireDirectionFlip(sid,dir)) return true;
+            if (lastDir == dir)
+            {
+                if (SD_AllowSameDirectionAfterLoss(sid,dir) && subLastTradeWasLoss[sid]) return true;
+                return false;
+            }
+            return true;
+        }
+
+        private bool PassesFilters(int sid, int dir, double close, double high, double low)
+        {
+            double range = high - low;
+            double body  = Math.Abs(close - Open[0]);
+            string lbl   = S_Label(sid) + (dir==1?" LONG":" SHORT");
+
+            int maxCandle = SD_MaxSignalCandleTicks(sid,dir);
+            if (maxCandle > 0 && range/TickSize > maxCandle)
+            { Print(string.Format("{0} | {1} REJECT: CandleSize {2:F0}t>{3}", Time[0],lbl,range/TickSize,maxCandle)); return false; }
+
+            double minBody = SD_MinBodyPct(sid,dir);
+            if (minBody > 0 && range > 0 && (body/range)*100.0 < minBody)
+            { Print(string.Format("{0} | {1} REJECT: Body% {2:F1}<{3:F1}", Time[0],lbl,(body/range)*100.0,minBody)); return false; }
+
+            int maxDist = SD_MaxDistanceFromMaTicks(sid,dir);
+            if (maxDist > 0)
+            {
+                double dist = dir==1
+                    ? (close - GetUpperMA(sid,dir,0))/TickSize
+                    : (GetLowerMA(sid,dir,0) - close)/TickSize;
+                if (dist > maxDist)
+                { Print(string.Format("{0} | {1} REJECT: MADist {2:F1}t>{3}", Time[0],lbl,dist,maxDist)); return false; }
+            }
+
+            if (SD_RequireMaSlope(sid,dir))
+            {
+                int lb = SD_MaSlopeLookback(sid,dir);
+                if (dir== 1 && !IsSlopeRising(sid,dir,lb))  { Print(string.Format("{0} | {1} REJECT: MA not rising", Time[0],lbl));  return false; }
+                if (dir==-1 && !IsSlopeFalling(sid,dir,lb)) { Print(string.Format("{0} | {1} REJECT: MA not falling", Time[0],lbl)); return false; }
+            }
+
+            if (SD_EnableWmaFilter(sid,dir))
+            {
+                WMA w = dir==1 ? wmaLong[sid] : wmaShort[sid];
+                if (dir== 1 && close <= w[0]) { Print(string.Format("{0} | {1} REJECT: price<=WMA", Time[0],lbl)); return false; }
+                if (dir==-1 && close >= w[0]) { Print(string.Format("{0} | {1} REJECT: price>=WMA", Time[0],lbl)); return false; }
+            }
+
+            int tcb = SD_TrendConfirmBars(sid,dir);
+            if (tcb > 0)
+            {
+                if (dir== 1 && close <= Open[tcb]) { Print(string.Format("{0} | {1} REJECT: no uptrend {2}b", Time[0],lbl,tcb));   return false; }
+                if (dir==-1 && close >= Open[tcb]) { Print(string.Format("{0} | {1} REJECT: no downtrend {2}b", Time[0],lbl,tcb)); return false; }
+            }
+
+            if (SD_EnableAdxFilter(sid,dir))
+            {
+                ADX a = dir==1 ? adxLong[sid] : adxShort[sid];
+                if (a[0] < SD_AdxMinLevel(sid,dir))
+                { Print(string.Format("{0} | {1} REJECT: ADX {2:F1}<{3}", Time[0],lbl,a[0],SD_AdxMinLevel(sid,dir))); return false; }
+                double maxAdx = SD_AdxMaxLevel(sid,dir);
+                if (maxAdx > 0 && a[0] > maxAdx)
+                { Print(string.Format("{0} | {1} REJECT: ADX {2:F1}>{3}", Time[0],lbl,a[0],maxAdx)); return false; }
+            }
+
+            return true;
+        }
+
+        private void SubmitEntry(int sid, int dir, double close, double cH, double cL, double pH, double pL)
+        {
+            double range  = cH - cL;
+            double slP    = dir==1 ? pL - SD_SlExtraTicks(sid,dir)*TickSize : pH + SD_SlExtraTicks(sid,dir)*TickSize;
+            double slDist = Math.Abs(close - slP)/TickSize;
+
+            int maxSl = SD_MaxSlTicks(sid,dir);
+            if (maxSl > 0 && slDist > maxSl)
+            { Print(string.Format("{0} | [{1}] {2} REJECT: SL {3:F0}t>{4}", Time[0],S_Label(sid),dir==1?"LONG":"SHORT",slDist,maxSl)); return; }
+
+            double maxRatio = SD_MaxSlToTpRatio(sid,dir);
+            if (maxRatio > 0)
+            {
+                double tpDist = CalculateTPDistanceTicks(sid,dir,range);
+                if (tpDist > 0 && slDist/tpDist > maxRatio)
+                { Print(string.Format("{0} | [{1}] {2} REJECT: SL:TP {3:F2}>{4:F2}", Time[0],S_Label(sid),dir==1?"LONG":"SHORT",slDist/tpDist,maxRatio)); return; }
+            }
+
+            // ── Commercial: entry confirmation (realtime, opt-in) ────────────
+            if (RequireEntryConfirmation
+                && !ShowEntryConfirmation(dir==1?"Long":"Short", close, Math.Max(1, S_Contracts(sid))))
+            { Print(string.Format("{0} | [{1}] {2} entry declined by user confirmation.", Time[0], S_Label(sid), dir==1?"LONG":"SHORT")); return; }
+
+            activeSessionId   = sid;
+            tradeDirection    = dir;
+            signalCandleRange = range;
+            priorCandleHigh   = pH;
+            priorCandleLow    = pL;
+
+            int qty = Math.Max(1, S_Contracts(sid));
+            string name = dir==1 ? "LongEntry" : "ShortEntry";
+            MichalEntryMode_EMA3790 mode = SD_EntryMode(sid,dir);
+            if (mode == MichalEntryMode_EMA3790.LimitOffset)
+            {
+                double lp = dir==1 ? close - SD_LimitOffsetTicks(sid,dir)*TickSize : close + SD_LimitOffsetTicks(sid,dir)*TickSize;
+                entryOrder = dir==1 ? EnterLongLimit(0,true,qty,lp,name) : EnterShortLimit(0,true,qty,lp,name);
+            }
+            else if (mode == MichalEntryMode_EMA3790.LimitRetracement)
+            {
+                double ret = range * (SD_LimitRetracementPct(sid,dir)/100.0);
+                double lp = dir==1 ? close - ret : close + ret;
+                entryOrder = dir==1 ? EnterLongLimit(0,true,qty,lp,name) : EnterShortLimit(0,true,qty,lp,name);
+            }
+            else
+            {
+                entryOrder = dir==1 ? EnterLong(qty,name) : EnterShort(qty,name);
+            }
+            Print(string.Format("{0} | [{1}] SIGNAL {2} @ {3:F2}", Time[0],S_Label(sid),dir==1?"LONG":"SHORT",close));
+        }
+
+        #endregion
+
+        // =====================================================================
+        #region OnExecutionUpdate / OnOrderUpdate
+
+        protected override void OnExecutionUpdate(Execution exec, string execId, double price,
+            int qty, MarketPosition mp, string orderId, DateTime time)
+        {
+            if (exec.Order == null) return;
+            string n = exec.Order.Name;
+            if ((n=="LongEntry"||n=="ShortEntry") && exec.Order.OrderState==OrderState.Filled && !hasActivePosition)
+            {
+                tradeEntryPrice=exec.Price; hasActivePosition=true;
+                barsSinceEntry=0; breakEvenApplied=false; entryBarSlApplied=false;
+                priceOffsetTrailActive=false; priceOffsetTrailDistance=0;
+                opposingBarBenchmark=0; opposingBarBenchmarkSet=false;
+                adxPeakSinceEntry=0;
+
+                int sid=activeSessionId; int d=tradeDirection;
+                string eName = d==1?"LongEntry":"ShortEntry";
+                double tp = CalculateTakeProfit(sid,d,tradeEntryPrice);
+                double sl = CalculateStopLoss(sid,d);
+
+                if (d==1)  { if(tp<=tradeEntryPrice) tp=tradeEntryPrice+SD_TakeProfitTicks(sid,d)*TickSize; if(sl>=tradeEntryPrice) sl=tradeEntryPrice-4*TickSize; }
+                else       { if(tp>=tradeEntryPrice) tp=tradeEntryPrice-SD_TakeProfitTicks(sid,d)*TickSize; if(sl<=tradeEntryPrice) sl=tradeEntryPrice+4*TickSize; }
+                originalStopPrice=sl;
+
+                if (d==1) { ExitLongLimit(0,true,Position.Quantity,tp,"TP",eName); ExitLongStopMarket(0,true,Position.Quantity,sl,"SL",eName); }
+                else      { ExitShortLimit(0,true,Position.Quantity,tp,"TP",eName); ExitShortStopMarket(0,true,Position.Quantity,sl,"SL",eName); }
+                Print(string.Format("{0} | [{1}] FILLED {2} @ {3:F2} | TP={4:F2} SL={5:F2}",
+                    time,S_Label(sid),d==1?"LONG":"SHORT",tradeEntryPrice,tp,sl));
+
+                // ── Commercial: webhook — mirror protective prices + fire entry
+                currentTargetPrice = tp;
+                currentStopPrice   = sl;
+                SendWebhook(d==1?"buy":"sell", tradeEntryPrice, tp, sl, true, qty);
+            }
+            // ── Commercial: webhook — fire exit when a protective/exit order flattens
+            else if (Position.MarketPosition == MarketPosition.Flat
+                && (n=="TP"||n=="SL"||n=="ForcedExit"||n=="OppBarExit"||n=="MaxBarsInTrade"
+                    ||n=="MaxAccountBalance"||n=="GlobalMaxLoss"||n=="GlobalMaxProfit"
+                    ||n=="InvalidConfig"||n=="SkipWindowFlat"||n=="NewsSkip"))
+            {
+                SendWebhook("exit", 0, 0, 0, true, qty);
+                currentTargetPrice = 0.0;
+                currentStopPrice   = 0.0;
+            }
+        }
+
+        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice,
+            int qty, int filled, double avgFill, OrderState state, DateTime time, ErrorCode err, string nativeErr)
+        {
+            if (order == null) return;
+
+            // ── Commercial: ProjectX protective-order mirror (realtime only) ──
+            TrySyncProjectXProtectiveOrder(order, limitPrice, stopPrice, state);
+
+            if (entryOrder!=null && order==entryOrder && (state==OrderState.Cancelled||state==OrderState.Rejected))
+            {
+                // ── Commercial: webhook — cancel pending entry ───────────────
+                SendWebhook("cancel");
+                entryOrder=null; hasActivePosition=false; activeSessionId=0;
+                currentTargetPrice=0.0; currentStopPrice=0.0;
+                if (projectXRouter != null)
+                    projectXRouter.ResetProtectiveSync();
+            }
+        }
+
+        #endregion
+
+        // =====================================================================
+        #region TP / SL Calculation
+
+        private double CalculateTakeProfit(int sid, int dir, double fill)
+        {
+            double dist;
+            switch (SD_TakeProfitMode(sid,dir))
+            {
+                case MichalTPMode_EMA3790.FixedTicks:     dist = SD_TakeProfitTicks(sid,dir)*TickSize; break;
+                case MichalTPMode_EMA3790.SwingPoint:     return GetSwingTarget(sid,fill,dir);
+                case MichalTPMode_EMA3790.CandleMultiple: dist = signalCandleRange * SD_CandleMultiplier(sid,dir); break;
+                default:                          dist = SD_TakeProfitTicks(sid,dir)*TickSize; break;
+            }
+            int maxTp = SD_MaxTakeProfitTicks(sid,dir);
+            if (maxTp>0 && dist > maxTp*TickSize) dist = maxTp*TickSize;
+            return dir==1 ? fill+dist : fill-dist;
+        }
+
+        private double CalculateTPDistanceTicks(int sid, int dir, double range)
+        {
+            double t;
+            switch (SD_TakeProfitMode(sid,dir))
+            {
+                case MichalTPMode_EMA3790.CandleMultiple: t = (range * SD_CandleMultiplier(sid,dir))/TickSize; break;
+                default:                          t = SD_TakeProfitTicks(sid,dir); break;
+            }
+            int maxTp = SD_MaxTakeProfitTicks(sid,dir);
+            if (maxTp>0 && t>maxTp) t=maxTp;
+            return t;
+        }
+
+        private double GetSwingTarget(int sid, double fill, int dir)
+        {
+            int ss = SD_SwingStrength(sid,dir);
+            if (dir==1) { for (int i=0;i<CurrentBar-ss;i++) { double v=swingInd[sid].SwingHigh[i]; if(v>0&&v>fill) return v; } }
+            else        { for (int i=0;i<CurrentBar-ss;i++) { double v=swingInd[sid].SwingLow[i];  if(v>0&&v<fill) return v; } }
+            return dir==1 ? fill+SD_TakeProfitTicks(sid,dir)*TickSize : fill-SD_TakeProfitTicks(sid,dir)*TickSize;
+        }
+        private double CalculateStopLoss(int sid, int dir)
+        {
+            int extra = SD_SlExtraTicks(sid,dir);
+            if (SD_SlAtMa(sid,dir))
+                return dir==1 ? GetLowerMA(sid,dir,0)-extra*TickSize : GetUpperMA(sid,dir,0)+extra*TickSize;
+            if (SD_UsePriorCandleSl(sid,dir) && CurrentBar>=2)
+            {
+                if (dir==1) return Math.Min(priorCandleLow,  Low[2]) -extra*TickSize;
+                else        return Math.Max(priorCandleHigh, High[2])+extra*TickSize;
+            }
+            return dir==1 ? priorCandleLow-extra*TickSize : priorCandleHigh+extra*TickSize;
+        }
+
+        #endregion
+
+        // =====================================================================
+        #region Trade Management
+
+        private void ManageBreakeven(int sid)
+        {
+            int d=tradeDirection;
+            if (!SD_EnableBreakeven(sid,d)||breakEvenApplied||tradeEntryPrice==0) return;
+            double trig = SD_BreakevenMode(sid,d)==BEMode2_EMA3790.FixedTicks
+                ? SD_BreakevenTriggerTicks(sid,d)*TickSize
+                : signalCandleRange*(SD_BreakevenCandlePct(sid,d)/100.0);
+            bool hit=(d==1&&Position.MarketPosition==MarketPosition.Long&&High[0]>=tradeEntryPrice+trig)
+                   ||(d==-1&&Position.MarketPosition==MarketPosition.Short&&Low[0]<=tradeEntryPrice-trig);
+            if (!hit) return;
+            double be = d==1
+                ? tradeEntryPrice+SD_BreakevenOffsetTicks(sid,d)*TickSize
+                : tradeEntryPrice-SD_BreakevenOffsetTicks(sid,d)*TickSize;
+            be=Instrument.MasterInstrument.RoundToTickSize(be);
+            string eName=d==1?"LongEntry":"ShortEntry";
+            if (d==1 &&be>originalStopPrice&&be<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,be,"SL",eName);  originalStopPrice=be; breakEvenApplied=true; }
+            if (d==-1&&be<originalStopPrice&&be>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,be,"SL",eName); originalStopPrice=be; breakEvenApplied=true; }
+        }
+
+        private void ManageEntryBarSl(int sid)
+        {
+            int d=tradeDirection;
+            if (!SD_MoveSlToEntryBar(sid,d)||entryBarSlApplied||barsSinceEntry!=1) return;
+            entryBarSlApplied=true;
+            string eName=d==1?"LongEntry":"ShortEntry";
+            if (d==1&&Position.MarketPosition==MarketPosition.Long&&Close[1]>Open[1])
+            {
+                double ns=Instrument.MasterInstrument.RoundToTickSize(Low[1]-SD_SlExtraTicks(sid,d)*TickSize);
+                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+            }
+            if (d==-1&&Position.MarketPosition==MarketPosition.Short&&Close[1]<Open[1])
+            {
+                double ns=Instrument.MasterInstrument.RoundToTickSize(High[1]+SD_SlExtraTicks(sid,d)*TickSize);
+                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+            }
+        }
+
+        private void ManageTrailingStop(int sid)
+        {
+            int d=tradeDirection;
+            if (barsSinceEntry < SD_TrailDelayBars(sid,d)) return;
+            string eName=d==1?"LongEntry":"ShortEntry";
+            if (d==1&&Position.MarketPosition==MarketPosition.Long)
+            {
+                double ns=Instrument.MasterInstrument.RoundToTickSize(GetLowerMAForTrail(sid,d)-SD_TrailOffsetTicks(sid,d)*TickSize);
+                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+            }
+            else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
+            {
+                double ns=Instrument.MasterInstrument.RoundToTickSize(GetUpperMAForTrail(sid,d)+SD_TrailOffsetTicks(sid,d)*TickSize);
+                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+            }
+        }
+
+        private void ManageCandleLagTrail(int sid)
+        {
+            int d=tradeDirection; int offset=SD_TrailCandleOffset(sid,d);
+            if (offset<=0||barsSinceEntry<offset+SD_TrailDelayBars(sid,d)) return;
+            string eName=d==1?"LongEntry":"ShortEntry";
+            if (d==1&&Position.MarketPosition==MarketPosition.Long)
+            {
+                double ns=Instrument.MasterInstrument.RoundToTickSize(Low[offset]-SD_SlExtraTicks(sid,d)*TickSize);
+                if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+            }
+            else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
+            {
+                double ns=Instrument.MasterInstrument.RoundToTickSize(High[offset]+SD_SlExtraTicks(sid,d)*TickSize);
+                if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+            }
+        }
+
+        private void ManagePriceOffsetTrail(int sid)
+        {
+            int d=tradeDirection;
+            if (!GlobalEnablePriceOffsetTrail||!SD_EnablePriceOffsetTrail(sid,d)||tradeEntryPrice==0) return;
+            string eName=d==1?"LongEntry":"ShortEntry";
+            if (d==1&&Position.MarketPosition==MarketPosition.Long)
+            {
+                if (!priceOffsetTrailActive&&GetLowerMAForTrail(sid,d)>originalStopPrice)
+                {
+                    priceOffsetTrailDistance=Close[0]-originalStopPrice-SD_PriceOffsetReductionTicks(sid,d)*TickSize;
+                    if (priceOffsetTrailDistance<TickSize) priceOffsetTrailDistance=TickSize;
+                    priceOffsetTrailActive=true;
+                }
+                if (priceOffsetTrailActive)
+                {
+                    double ns=Instrument.MasterInstrument.RoundToTickSize(Close[0]-priceOffsetTrailDistance);
+                    if (ns>originalStopPrice&&ns<Close[0]) { ExitLongStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
                 }
             }
-
-            // ── Block new entries past force close or outside session ─────────
-            bool newEntriesBlockedByFC = false;
-            if (barSession != 0 && GetSessEnableForceClose(barSession))
+            else if (d==-1&&Position.MarketPosition==MarketPosition.Short)
             {
-                double fcSM  = GetSessForceCloseSM(barSession);
-                double endSM = GetSessSessionEndSM(barSession);
-                newEntriesBlockedByFC = fcSM <= endSM ? barSM >= fcSM && barSM < endSM : barSM >= fcSM || barSM < endSM;
+                if (!priceOffsetTrailActive&&GetUpperMAForTrail(sid,d)<originalStopPrice)
+                {
+                    priceOffsetTrailDistance=originalStopPrice-Close[0]-SD_PriceOffsetReductionTicks(sid,d)*TickSize;
+                    if (priceOffsetTrailDistance<TickSize) priceOffsetTrailDistance=TickSize;
+                    priceOffsetTrailActive=true;
+                }
+                if (priceOffsetTrailActive)
+                {
+                    double ns=Instrument.MasterInstrument.RoundToTickSize(Close[0]+priceOffsetTrailDistance);
+                    if (ns<originalStopPrice&&ns>Close[0]) { ExitShortStopMarket(0,true,Position.Quantity,ns,"SL",eName); originalStopPrice=ns; }
+                }
             }
+        }
 
-            bool isWithinAnySession = barSession != 0;
-            bool canEnterNewTrades  = false;
-            if (barSession != 0)
+        private void ManageAdxPeakDrawdown(int sid)
+        {
+            int d = tradeDirection;
+            double dd = SD_AdxPeakDrawdown(sid, d);
+            if (dd <= 0) return;
+            ADX a = d == 1 ? adxLong[sid] : adxShort[sid];
+            double cur = a[0];
+            if (cur > adxPeakSinceEntry) adxPeakSinceEntry = cur;
+            if (adxPeakSinceEntry > 0 && (adxPeakSinceEntry - cur) >= dd)
             {
-                double tws  = GetSessTradeWindowStartSM(barSession);
-                double last = GetSessLastEntrySM(barSession);
-                bool inWindow = last >= tws ? barSM >= tws && barSM <= last : barSM >= tws || barSM <= last;
-                canEnterNewTrades = inWindow && !newEntriesBlockedByFC;
+                FlattenAndCancel("AdxPeakDrawdown");
+                Print(string.Format("{0} | [{1}] ADX PEAK DRAWDOWN EXIT: peak={2:F1} cur={3:F1} dd={4}",
+                    Time[0], S_Label(sid), adxPeakSinceEntry, cur, dd));
             }
+        }
 
-            if (!canEnterNewTrades && entryOrder != null) { CancelOrder(entryOrder); ResetSignals(); }
+        #endregion
 
-            // ── Skip Time Window (global) ────────────────────────────────────
-            if (EnableSkipTime)
+        // =====================================================================
+        #region Engulfing / Opposing Bar Exits
+
+        private void CheckEngulfingExit(int sid)
+        {
+            int afterBars = S_EngulfingExitAfterBars(sid);
+            if (afterBars <= 0 || barsSinceEntry < afterBars) return;
+
+            double padding = S_EngulfingExitPaddingTicks(sid) * TickSize;
+            int d = tradeDirection;
+
+            // SHORT trade: close if current bullish candle closes above High[1] + padding
+            if (d == -1 && Position.MarketPosition == MarketPosition.Short)
             {
-                double skipStartSM = SM(SkipTimeStart);
-                double skipEndSM   = SM(SkipTimeEnd);
+                bool bullish = Close[0] > Open[0];
+                if (bullish && Close[0] > High[1] + padding)
+                {
+                    FlattenAndCancel("EngulfingExit");
+                    Print(string.Format("{0} | [{1}] ENGULFING EXIT SHORT: Close={2:F2} > High[1]={3:F2} + pad={4:F2}",
+                        Time[0], S_Label(sid), Close[0], High[1], padding));
+                }
+            }
+            // LONG trade: close if current bearish candle closes below Low[1] - padding
+            else if (d == 1 && Position.MarketPosition == MarketPosition.Long)
+            {
+                bool bearish = Close[0] < Open[0];
+                if (bearish && Close[0] < Low[1] - padding)
+                {
+                    FlattenAndCancel("EngulfingExit");
+                    Print(string.Format("{0} | [{1}] ENGULFING EXIT LONG: Close={2:F2} < Low[1]={3:F2} - pad={4:F2}",
+                        Time[0], S_Label(sid), Close[0], Low[1], padding));
+                }
+            }
+        }
+        private void CheckOpposingBarExit(int sid)
+        {
+            bool bull=Close[0]>Open[0], bear=Close[0]<Open[0];
+            int d=tradeDirection;
+            if (d==-1&&Position.MarketPosition==MarketPosition.Short&&bull)
+            {
+                if (!opposingBarBenchmarkSet) { opposingBarBenchmark=Close[0]; opposingBarBenchmarkSet=true; }
+                else if (Close[0]>opposingBarBenchmark) ExitShort(Position.Quantity,"OppBarExit","ShortEntry");
+            }
+            if (d== 1&&Position.MarketPosition==MarketPosition.Long&&bear)
+            {
+                if (!opposingBarBenchmarkSet) { opposingBarBenchmark=Close[0]; opposingBarBenchmarkSet=true; }
+                else if (Close[0]<opposingBarBenchmark) ExitLong(Position.Quantity,"OppBarExit","LongEntry");
+            }
+        }
+
+        #endregion
+
+        // =====================================================================
+        #region Session Management
+
+        private void CheckSessionReset()
+        {
+            TimeSpan barTOD   = Time[0].TimeOfDay;
+            DateTime sessDate = barTOD >= SessionStartTime.TimeOfDay ? Time[0].Date : Time[0].Date.AddDays(-1);
+            if (sessDate != currentSessionDate)
+            {
+                if (Position.MarketPosition != MarketPosition.Flat) FlattenAndCancel("SessionRollover");
+                currentSessionDate = sessDate;
+                ResetAll();
+                Print(string.Format("{0} | ═══ NEW SESSION ═══ {1:yyyy-MM-dd}", Time[0], sessDate));
+            }
+        }
+
+        private void ResetAll()
+        {
+            for (int i=1;i<=SubSessionCount;i++)
+            {
+                subTradeCount[i]=0; subWinCount[i]=0; subLossCount[i]=0;
+                subPnLTicks[i]=0.0; subLimitsReached[i]=false;
+                subLastTradeDirection[i]=0; subLastTradeWasLoss[i]=false;
+                subWasInNoTradesAfterWindow[i]=false;
+            }
+            activeSessionId=0; tradeDirection=0; signalCandleRange=0;
+            priorCandleHigh=0; priorCandleLow=0; originalStopPrice=0;
+            tradeEntryPrice=0; hasActivePosition=false; barsSinceEntry=0;
+            breakEvenApplied=false; entryBarSlApplied=false;
+            priceOffsetTrailActive=false; priceOffsetTrailDistance=0;
+            opposingBarBenchmark=0; opposingBarBenchmarkSet=false;
+            entryOrder=null; prevMarketPosition=MarketPosition.Flat;
+            adxPeakSinceEntry=0;
+
+            // ── Commercial: reset global daily risk + window state (per day) ──
+            globalDailyPnL=0; globalDailyTradeCount=0;
+            globalDailyLossLimitHit=false; globalDailyProfitLimitHit=false;
+            inSkipWindow=false; inNewsSkipWindow=false;
+            currentTargetPrice=0; currentStopPrice=0;
+            if (projectXRouter != null)
+                projectXRouter.ResetProtectiveSync();
+        }
+
+        private void HandlePositionClosed(int sid)
+        {
+            if (sid < 1 || sid > SubSessionCount) { hasActivePosition=false; activeSessionId=0; return; }
+            double pnl=0;
+            if (SystemPerformance!=null && SystemPerformance.AllTrades.Count>0)
+                pnl=SystemPerformance.AllTrades[SystemPerformance.AllTrades.Count-1].ProfitTicks;
+            else
+                pnl=tradeDirection==1?(Close[0]-tradeEntryPrice)/TickSize:(tradeEntryPrice-Close[0])/TickSize;
+
+            subPnLTicks[sid]+=pnl; subTradeCount[sid]++;
+            subLastTradeDirection[sid]=tradeDirection;
+            if (pnl>0){subWinCount[sid]++;subLastTradeWasLoss[sid]=false;}
+            else      {subLossCount[sid]++;subLastTradeWasLoss[sid]=true;}
+
+            Print(string.Format("{0} | [{1}] CLOSED {2} PnL={3:F1}t W={4} L={5}",
+                Time[0],S_Label(sid),pnl>0?"PROFIT":"LOSS",pnl,subWinCount[sid],subLossCount[sid]));
+            CheckSessionLimitsInternal(sid);
+
+            // ── Commercial: accumulate global daily P&L (points) ─────────────
+            double pnlPts;
+            if (SystemPerformance!=null && SystemPerformance.AllTrades.Count>0)
+                pnlPts = SystemPerformance.AllTrades[SystemPerformance.AllTrades.Count-1].ProfitPoints;
+            else
+                pnlPts = pnl * TickSize;
+            globalDailyPnL += pnlPts;
+            globalDailyTradeCount++;
+            if (EnableGlobalMaxDailyProfit && globalDailyPnL >=  GlobalMaxDailyProfit) globalDailyProfitLimitHit = true;
+            if (EnableGlobalMaxDailyLoss   && globalDailyPnL <= -GlobalMaxDailyLoss)   globalDailyLossLimitHit   = true;
+
+            hasActivePosition=false; tradeDirection=0; signalCandleRange=0;
+            priorCandleHigh=0; priorCandleLow=0; originalStopPrice=0;
+            tradeEntryPrice=0; barsSinceEntry=0; breakEvenApplied=false;
+            entryBarSlApplied=false; priceOffsetTrailActive=false; priceOffsetTrailDistance=0;
+            opposingBarBenchmark=0; opposingBarBenchmarkSet=false;
+            entryOrder=null; activeSessionId=0;
+            adxPeakSinceEntry=0;
+        }
+
+        private void CheckSessionLimitsInternal(int sid)
+        {
+            if (S_GetLimitsReached(sid)) return;
+            string reason="";
+            if (S_GetTradeCount(sid) >= S_MaxTradesPerSession(sid))                           reason=string.Format("MaxTrades({0})",S_MaxTradesPerSession(sid));
+            else if (S_MaxLossesPerSession(sid)>0 && S_GetLossCount(sid)>=S_MaxLossesPerSession(sid)) reason=string.Format("MaxLosses({0})",S_MaxLossesPerSession(sid));
+            else if (S_GetPnLTicks(sid) >= S_MaxSessionProfitTicks(sid))                      reason=string.Format("MaxProfit({0:F0}t)",S_GetPnLTicks(sid));
+            else if (S_GetPnLTicks(sid) <= -S_MaxSessionLossTicks(sid))                       reason=string.Format("MaxLoss({0:F0}t)",S_GetPnLTicks(sid));
+            if (!string.IsNullOrEmpty(reason))
+            { S_SetLimitsReached(sid,true); Print(string.Format("{0} | [{1}] *** LIMIT: {2} ***",Time[0],S_Label(sid),reason)); }
+        }
+        private void FlattenAndCancel(string reason)
+        {
+            CancelWorkingEntryOrder();
+            if (Position.MarketPosition==MarketPosition.Long)  ExitLong(Position.Quantity,"ForcedExit","LongEntry");
+            if (Position.MarketPosition==MarketPosition.Short) ExitShort(Position.Quantity,"ForcedExit","ShortEntry");
+        }
+        private void CancelWorkingEntryOrder()
+        {
+            if (entryOrder!=null && (entryOrder.OrderState==OrderState.Working||entryOrder.OrderState==OrderState.Accepted))
+            { CancelOrder(entryOrder); entryOrder=null; }
+        }
+
+        #endregion
+
+        // =====================================================================
+        #region Commercial / AutoEdge Features
+
+        // ── Global daily risk (points, layered on top of base per-session) ───
+        private bool GlobalEntriesBlocked()
+        {
+            if (globalDailyLossLimitHit || globalDailyProfitLimitHit) return true;
+            if (EnableGlobalMaxTradesPerDay && globalDailyTradeCount >= GlobalMaxTradesPerDay) return true;
+            return false;
+        }
+
+        private bool ProcessGlobalDailyGuards()
+        {
+            // Returns true if trading is halted this bar (a global limit is hit).
+            if (!EnableGlobalMaxDailyLoss && !EnableGlobalMaxDailyProfit)
+                return globalDailyLossLimitHit || globalDailyProfitLimitHit;
+
+            double unrealizedPnL = 0;
+            if (Position.MarketPosition == MarketPosition.Long)
+                unrealizedPnL = (Close[0] - Position.AveragePrice) * Position.Quantity;
+            else if (Position.MarketPosition == MarketPosition.Short)
+                unrealizedPnL = (Position.AveragePrice - Close[0]) * Position.Quantity;
+            double totalGlobalPnL = globalDailyPnL + unrealizedPnL;
+
+            if (EnableGlobalMaxDailyLoss && totalGlobalPnL <= -GlobalMaxDailyLoss)
+            {
+                globalDailyLossLimitHit = true;
+                FlattenAndCancel("GlobalMaxLoss");
+                Print(string.Format("{0} - GLOBAL Max LOSS hit: {1:0.00} pts.", Time[0], totalGlobalPnL));
+                return true;
+            }
+            if (EnableGlobalMaxDailyProfit && totalGlobalPnL >= GlobalMaxDailyProfit)
+            {
+                globalDailyProfitLimitHit = true;
+                FlattenAndCancel("GlobalMaxProfit");
+                Print(string.Format("{0} - GLOBAL Max PROFIT hit: {1:0.00} pts.", Time[0], totalGlobalPnL));
+                return true;
+            }
+            return globalDailyLossLimitHit || globalDailyProfitLimitHit;
+        }
+
+        // ── Skip / News window processing (called from OnBarUpdate) ──────────
+        private double MinutesFromString(string hhmm)
+        {
+            TimeSpan t;
+            if (!TimeSpan.TryParse(hhmm, out t)) return 0;
+            return ToSessionMinutes(t);
+        }
+
+        // Returns true if the bar should be skipped (flat & inside a blocking window).
+        private bool ProcessSkipAndNewsWindows()
+        {
+            double barSM = ToSessionMinutes(Time[0].TimeOfDay);
+
+            if (EnableSkipTime && !string.IsNullOrEmpty(SkipTimeStart) && !string.IsNullOrEmpty(SkipTimeEnd))
+            {
+                double skipStartSM = MinutesFromString(SkipTimeStart);
+                double skipEndSM   = MinutesFromString(SkipTimeEnd);
                 bool nowInSkip = skipEndSM >= skipStartSM
                     ? barSM >= skipStartSM && barSM < skipEndSM
                     : barSM >= skipStartSM || barSM < skipEndSM;
@@ -5694,23 +1792,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     inSkipWindow = true;
                     Print(Time[0] + " - Skip window started. No new entries.");
-                    if (FlattenAtSkipStart)
-                    {
-                        if (Position.MarketPosition == MarketPosition.Long)  ExitLong("SkipWindowFlat");
-                        if (Position.MarketPosition == MarketPosition.Short) ExitShort("SkipWindowFlat");
-                        CancelAllOrders(); ResetSignals();
-                    }
-                    else { if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; } }
+                    if (FlattenAtSkipStart) FlattenAndCancel("SkipWindowFlat");
+                    else CancelWorkingEntryOrder();
                 }
                 else if (!nowInSkip && inSkipWindow)
                 {
                     inSkipWindow = false;
                     Print(Time[0] + " - Skip window ended.");
                 }
-                if (inSkipWindow && Position.MarketPosition == MarketPosition.Flat) return;
+                if (inSkipWindow && Position.MarketPosition == MarketPosition.Flat) return true;
             }
 
-            // ── News Skip Window ─────────────────────────────────────────────
             if (IsNewsWindowConfigured())
             {
                 bool nowInNewsSkip = IsInNewsSkipWindow(Time[0]);
@@ -5718,600 +1810,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     inNewsSkipWindow = true;
                     Print(Time[0] + " - News skip window started. No new entries.");
-                    if (FlattenAtNewsStart)
-                    {
-                        if (Position.MarketPosition == MarketPosition.Long)  ExitLong("NewsSkip");
-                        if (Position.MarketPosition == MarketPosition.Short) ExitShort("NewsSkip");
-                        if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; }
-                        ResetSignals();
-                    }
-                    else { if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; } }
+                    if (FlattenAtNewsStart) FlattenAndCancel("NewsSkip");
+                    else CancelWorkingEntryOrder();
                 }
                 else if (!nowInNewsSkip && inNewsSkipWindow)
                 {
                     inNewsSkipWindow = false;
                     Print(Time[0] + " - News skip window ended.");
                 }
-                if (inNewsSkipWindow && Position.MarketPosition == MarketPosition.Flat) return;
+                if (inNewsSkipWindow && Position.MarketPosition == MarketPosition.Flat) return true;
             }
-
-            // ── Global Daily P&L guards ──────────────────────────────────────
-            double unrealizedPnL = 0;
-            if (Position.MarketPosition == MarketPosition.Long)
-                unrealizedPnL = (Close[0] - Position.AveragePrice) * Position.Quantity;
-            else if (Position.MarketPosition == MarketPosition.Short)
-                unrealizedPnL = (Position.AveragePrice - Close[0]) * Position.Quantity;
-
-            double totalGlobalPnL = globalDailyPnL + unrealizedPnL;
-
-            if (EnableGlobalMaxDailyLoss && totalGlobalPnL <= -GlobalMaxDailyLoss)
-            {
-                globalDailyLossLimitHit = true;
-                if (Position.MarketPosition == MarketPosition.Long)  ExitLong("GlobalMaxLoss");
-                if (Position.MarketPosition == MarketPosition.Short) ExitShort("GlobalMaxLoss");
-                CancelAllOrders(); ResetSignals();
-                Print(Time[0] + " - GLOBAL Max LOSS hit: " + totalGlobalPnL + " pts.");
-                return;
-            }
-            if (EnableGlobalMaxDailyProfit && totalGlobalPnL >= GlobalMaxDailyProfit)
-            {
-                globalDailyProfitLimitHit = true;
-                if (Position.MarketPosition == MarketPosition.Long)  ExitLong("GlobalMaxProfit");
-                if (Position.MarketPosition == MarketPosition.Short) ExitShort("GlobalMaxProfit");
-                CancelAllOrders(); ResetSignals();
-                Print(Time[0] + " - GLOBAL Max PROFIT hit: " + totalGlobalPnL + " pts.");
-                return;
-            }
-            if (globalDailyLossLimitHit || globalDailyProfitLimitHit || !isWithinAnySession) return;
-            if (EnableGlobalMaxTradesPerDay && globalDailyTradeCount >= GlobalMaxTradesPerDay
-                && Position.MarketPosition == MarketPosition.Flat) return;
-
-            // ── Per-bucket P&L guard ─────────────────────────────────────────
-            if (Position.MarketPosition != MarketPosition.Flat && activeBucket != null && activeSession != 0)
-            {
-                double bucketPnL = GetBucketDailyPnL(activeSession, activeBucket) + unrealizedPnL;
-                if (B_EnableMaxDailyLoss(activeSession, activeBucket) && bucketPnL <= -B_MaxDailyLoss(activeSession, activeBucket))
-                {
-                    SetBucketLossHit(activeSession, activeBucket, true);
-                    if (Position.MarketPosition == MarketPosition.Long)  ExitLong("Sess" + activeSession + "_" + activeBucket + "_MaxLoss");
-                    if (Position.MarketPosition == MarketPosition.Short) ExitShort("Sess" + activeSession + "_" + activeBucket + "_MaxLoss");
-                    CancelAllOrders(); ResetSignals();
-                    Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Max LOSS hit: " + bucketPnL + " pts.");
-                    return;
-                }
-                if (B_EnableMaxDailyProfit(activeSession, activeBucket) && bucketPnL >= B_MaxDailyProfit(activeSession, activeBucket))
-                {
-                    SetBucketProfitHit(activeSession, activeBucket, true);
-                    if (Position.MarketPosition == MarketPosition.Long)  ExitLong("Sess" + activeSession + "_" + activeBucket + "_MaxProfit");
-                    if (Position.MarketPosition == MarketPosition.Short) ExitShort("Sess" + activeSession + "_" + activeBucket + "_MaxProfit");
-                    CancelAllOrders(); ResetSignals();
-                    Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Max PROFIT hit: " + bucketPnL + " pts.");
-                    return;
-                }
-            }
-
-            // ── EMA crossover detection (bar's session indicators) ────────────
-            bool anyLongCross = false, anyShortCross = false;
-            if (barSession != 0)
-            {
-                EMA bsL1 = GetEma(barSession, "L1");
-                EMA bsL2 = GetEma(barSession, "L2");
-                EMA bsS1 = GetEma(barSession, "S1");
-                EMA bsS2 = GetEma(barSession, "S2");
-                bool crossAboveL1 = IsBucketEnabled(barSession, "L1") && CurrentBar >= B_EmaLength(barSession, "L1") && Close[0] > bsL1[0] && Close[1] <= bsL1[1];
-                bool crossAboveL2 = IsBucketEnabled(barSession, "L2") && CurrentBar >= B_EmaLength(barSession, "L2") && Close[0] > bsL2[0] && Close[1] <= bsL2[1];
-                bool crossBelowS1 = IsBucketEnabled(barSession, "S1") && CurrentBar >= B_EmaLength(barSession, "S1") && Close[0] < bsS1[0] && Close[1] >= bsS1[1];
-                bool crossBelowS2 = IsBucketEnabled(barSession, "S2") && CurrentBar >= B_EmaLength(barSession, "S2") && Close[0] < bsS2[0] && Close[1] >= bsS2[1];
-                anyLongCross  = crossAboveL1 || crossAboveL2;
-                anyShortCross = crossBelowS1 || crossBelowS2;
-            }
-
-            // ── Manage open position (uses position's OWN session) ────────────
-            if (Position.MarketPosition != MarketPosition.Flat && activeBucket != null && activeSession != 0)
-            {
-                EMA activeEma = GetEma(activeSession, activeBucket);
-
-                CheckBreakEven();
-                if (B_StopLossType(activeSession, activeBucket) == HugoTesting_StopLossTypeEnum.EMATrailing)
-                    UpdateEMATrailingStop(activeEma);
-                ManagePriceTrailingStop();
-
-                if (B_TakeProfitType(activeSession, activeBucket) == HugoTesting_TakeProfitTypeEnum.EMACross)
-                {
-                    if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
-                    { ExitLong("EMACrossExit"); return; }
-                    if (Position.MarketPosition == MarketPosition.Short && Close[0] > activeEma[0] && Close[1] <= activeEma[1])
-                    { ExitShort("EMACrossExit"); return; }
-                }
-
-                if (Position.MarketPosition == MarketPosition.Long && Close[0] < activeEma[0] && Close[1] >= activeEma[1])
-                    ExitLong("OppositeSignal");
-                else if (Position.MarketPosition == MarketPosition.Short && Close[0] > activeEma[0] && Close[1] <= activeEma[1])
-                    ExitShort("OppositeSignal");
-            }
-
-            // ── Cancel pending limit on opposite signal ───────────────────────
-            if (entryOrder != null)
-            {
-                if ((pendingDirection == 1 && anyShortCross) || (pendingDirection == -1 && anyLongCross))
-                { CancelOrder(entryOrder); ResetSignals(); }
-            }
-
-            if (Position.MarketPosition != MarketPosition.Flat || entryOrder != null || !canEnterNewTrades) return;
-            if (EnableGlobalMaxTradesPerDay && globalDailyTradeCount >= GlobalMaxTradesPerDay) return;
-            if (barSession == 0) return;
-            if (EnableSkipTime && inSkipWindow) return;
-            if (IsNewsWindowConfigured() && inNewsSkipWindow) return;
-
-            // ── New signal detection ─────────────────────────────────────────
-            double candleRange = High[0] - Low[0];
-
-            if (anyLongCross)
-            {
-                string bucket = ResolveBucket(barSession, 1, candleRange);
-                if (bucket == null) { Print(Time[0] + " - Sess" + barSession + " Long: no matching bucket."); return; }
-                if (!IsDirectionAllowed(1, barSession, bucket)) return;
-                if (!PassesEmaSlopeFilter(true, barSession, bucket)) return;
-                if (!PassesWMAFilter(true, barSession, bucket)) return;
-                if (!PassesBodyPctFilter(candleRange, barSession, bucket)) return;
-                crossoverCandleHigh = High[0];
-                crossoverCandleLow  = Low[0];
-                longSignalActive    = true;
-                shortSignalActive   = false;
-                signalBar           = CurrentBar;
-                pendingDirection    = 1;
-                activeBucket        = bucket;
-                activeSession       = barSession;
-                Print(Time[0] + " - Sess" + barSession + " " + bucket + " Long signal. Range: " + candleRange.ToString("F2") + " pts.");
-                ProcessLongEntry();
-            }
-            else if (anyShortCross)
-            {
-                string bucket = ResolveBucket(barSession, -1, candleRange);
-                if (bucket == null) { Print(Time[0] + " - Sess" + barSession + " Short: no matching bucket."); return; }
-                if (!IsDirectionAllowed(-1, barSession, bucket)) return;
-                if (!PassesEmaSlopeFilter(false, barSession, bucket)) return;
-                if (!PassesWMAFilter(false, barSession, bucket)) return;
-                if (!PassesBodyPctFilter(candleRange, barSession, bucket)) return;
-                crossoverCandleHigh = High[0];
-                crossoverCandleLow  = Low[0];
-                shortSignalActive   = true;
-                longSignalActive    = false;
-                signalBar           = CurrentBar;
-                pendingDirection    = -1;
-                activeBucket        = bucket;
-                activeSession       = barSession;
-                Print(Time[0] + " - Sess" + barSession + " " + bucket + " Short signal. Range: " + candleRange.ToString("F2") + " pts.");
-                ProcessShortEntry();
-            }
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Entry Processing — Immediate only
-        // ════════════════════════════════════════════════════════════════════════
-
-        private void ProcessLongEntry()
-        {
-            int sess = activeSession; string b = activeBucket;
-            EMA e = GetEma(sess, b);
-            currentTradeDirection = 1;
-            double stopLoss   = CalculateStopLoss(true, sess, b, e);
-            double takeProfit = CalculateTakeProfit(true, Close[0], stopLoss, sess, b);
-            if (B_MaxStopLoss(sess, b) > 0)
-            {
-                double slDist = Close[0] - stopLoss;
-                if (slDist > B_MaxStopLoss(sess, b)) stopLoss = Close[0] - B_MaxStopLoss(sess, b);
-            }
-
-            if (RequireEntryConfirmation && !ShowEntryConfirmation("Long", Close[0], ContractQuantity))
-            {
-                Print(Time[0] + " - Sess" + sess + " " + b + " Long entry confirmation declined.");
-                ResetSignals(); activeBucket = null; activeSession = 0; currentTradeDirection = 0;
-                return;
-            }
-
-            entryPrice          = Close[0];
-            currentStopPrice    = stopLoss;
-            bool hasTakeProfit  = B_TakeProfitType(sess, b) != HugoTesting_TakeProfitTypeEnum.EMACross;
-            currentTargetPrice  = hasTakeProfit ? takeProfit : 0.0;
-            breakEvenMoved      = false;
-            initialStopDistance = entryPrice - stopLoss;
-            initialTPDistance   = hasTakeProfit ? takeProfit - entryPrice : 0;
-            ResetTrailState();
-            SetStopLoss(CalculationMode.Price, stopLoss);
-            if (hasTakeProfit)
-                SetProfitTarget(CalculationMode.Price, takeProfit);
-            EnterLong(ContractQuantity, LongEntrySignalName);
-        }
-
-        private void ProcessShortEntry()
-        {
-            int sess = activeSession; string b = activeBucket;
-            EMA e = GetEma(sess, b);
-            currentTradeDirection = -1;
-            double stopLoss   = CalculateStopLoss(false, sess, b, e);
-            double takeProfit = CalculateTakeProfit(false, Close[0], stopLoss, sess, b);
-            if (B_MaxStopLoss(sess, b) > 0)
-            {
-                double slDist = stopLoss - Close[0];
-                if (slDist > B_MaxStopLoss(sess, b)) stopLoss = Close[0] + B_MaxStopLoss(sess, b);
-            }
-
-            if (RequireEntryConfirmation && !ShowEntryConfirmation("Short", Close[0], ContractQuantity))
-            {
-                Print(Time[0] + " - Sess" + sess + " " + b + " Short entry confirmation declined.");
-                ResetSignals(); activeBucket = null; activeSession = 0; currentTradeDirection = 0;
-                return;
-            }
-
-            entryPrice          = Close[0];
-            currentStopPrice    = stopLoss;
-            bool hasTakeProfit  = B_TakeProfitType(sess, b) != HugoTesting_TakeProfitTypeEnum.EMACross;
-            currentTargetPrice  = hasTakeProfit ? takeProfit : 0.0;
-            breakEvenMoved      = false;
-            initialStopDistance = stopLoss - entryPrice;
-            initialTPDistance   = hasTakeProfit ? entryPrice - takeProfit : 0;
-            ResetTrailState();
-            SetStopLoss(CalculationMode.Price, stopLoss);
-            if (hasTakeProfit)
-                SetProfitTarget(CalculationMode.Price, takeProfit);
-            EnterShort(ContractQuantity, ShortEntrySignalName);
-        }
-
-        private double CalculateStopLoss(bool isLong, int sess, string b, EMA e)
-        {
-            switch (B_StopLossType(sess, b))
-            {
-                case HugoTesting_StopLossTypeEnum.Fixed:
-                    return isLong ? Close[0] - B_FixedStopLoss(sess, b) : Close[0] + B_FixedStopLoss(sess, b);
-                case HugoTesting_StopLossTypeEnum.CandleHighLow:
-                    return isLong ? crossoverCandleLow - B_StopLossOffset(sess, b) : crossoverCandleHigh + B_StopLossOffset(sess, b);
-                case HugoTesting_StopLossTypeEnum.EMAFixed:
-                case HugoTesting_StopLossTypeEnum.EMATrailing:
-                    return isLong ? e[0] - B_StopLossOffset(sess, b) : e[0] + B_StopLossOffset(sess, b);
-                case HugoTesting_StopLossTypeEnum.CandleMultiple:
-                {
-                    double cr = crossoverCandleHigh - crossoverCandleLow;
-                    double dist = cr * B_SLCandleMultiplier(sess, b);
-                    return isLong ? Close[0] - dist : Close[0] + dist;
-                }
-                default:
-                    return isLong ? Close[0] - B_FixedStopLoss(sess, b) : Close[0] + B_FixedStopLoss(sess, b);
-            }
-        }
-
-        private double CalculateTakeProfit(bool isLong, double entry, double stopLoss, int sess, string b)
-        {
-            double risk = isLong ? entry - stopLoss : stopLoss - entry;
-            switch (B_TakeProfitType(sess, b))
-            {
-                case HugoTesting_TakeProfitTypeEnum.RiskReward:
-                    return isLong ? entry + risk * B_RiskRewardRatio(sess, b) : entry - risk * B_RiskRewardRatio(sess, b);
-                case HugoTesting_TakeProfitTypeEnum.Fixed:
-                    return isLong ? entry + B_FixedTakeProfit(sess, b) : entry - B_FixedTakeProfit(sess, b);
-                case HugoTesting_TakeProfitTypeEnum.EMACross:
-                    return isLong ? entry + 1000 : entry - 1000;
-                case HugoTesting_TakeProfitTypeEnum.CandleMultiple:
-                {
-                    double cr = crossoverCandleHigh - crossoverCandleLow;
-                    return isLong ? entry + cr * B_TPCandleMultiplier(sess, b) : entry - cr * B_TPCandleMultiplier(sess, b);
-                }
-                default:
-                    return isLong ? entry + B_FixedTakeProfit(sess, b) : entry - B_FixedTakeProfit(sess, b);
-            }
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Filters
-        // ════════════════════════════════════════════════════════════════════════
-
-        private bool IsDirectionAllowed(int dir, int sess, string b)
-        {
-            if (!B_EnableDirectionFlip(sess, b)) return true;
-            if (lastTradeDirection[sess] == 0)          return true;
-            if (dir != lastTradeDirection[sess])        return true;
             return false;
         }
 
-        private bool PassesEmaSlopeFilter(bool isLong, int sess, string b)
-        {
-            if (!B_EnableEmaSlope(sess, b)) return true;
-            int slopeBars = B_EmaSlopeBars(sess, b);
-            if (CurrentBar < slopeBars) return false;
-            EMA e = GetEma(sess, b);
-            double emaNow = e[0], emaThen = e[slopeBars];
-            if (emaThen == 0) return false;
-            double slopePct = (emaNow - emaThen) / emaThen * 100.0;
-            switch (B_EmaSlopeMode(sess, b))
-            {
-                case HugoTesting_EmaSlopeModeEnum.DirectionEnforced:
-                    return isLong ? slopePct >= B_EmaSlopeMinPct(sess, b) : slopePct <= -B_EmaSlopeMinPct(sess, b);
-                case HugoTesting_EmaSlopeModeEnum.MagnitudeOnly:
-                    return Math.Abs(slopePct) >= B_EmaSlopeMinPct(sess, b);
-                default: return true;
-            }
-        }
-
-        private bool PassesWMAFilter(bool isLong, int sess, string b)
-        {
-            if (!B_EnableWMAFilter(sess, b)) return true;
-            WMA w = GetWma(sess, b);
-            return isLong ? Close[0] > w[0] : Close[0] < w[0];
-        }
-
-        private bool PassesBodyPctFilter(double candleRange, int sess, string b)
-        {
-            if (!B_EnableBodyPctFilter(sess, b)) return true;
-            if (candleRange <= 0) return false;
-            double bodySize = Math.Abs(Close[0] - Open[0]);
-            return (bodySize / candleRange) * 100.0 >= B_MinBodyPct(sess, b);
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Break Even
-        // ════════════════════════════════════════════════════════════════════════
-
-        private void CheckBreakEven()
-        {
-            if (activeBucket == null || activeSession == 0) return;
-            if (!B_EnableBreakEven(activeSession, activeBucket) || breakEvenMoved || Position.MarketPosition == MarketPosition.Flat) return;
-            bool isLong = Position.MarketPosition == MarketPosition.Long;
-            double profit = isLong ? Close[0] - Position.AveragePrice : Position.AveragePrice - Close[0];
-            double risk   = isLong ? Position.AveragePrice - currentStopPrice : currentStopPrice - Position.AveragePrice;
-            bool trigger  = B_BreakEvenTriggerType(activeSession, activeBucket) == HugoTesting_BreakEvenTriggerEnum.Points
-                ? profit >= B_BreakEvenTriggerValue(activeSession, activeBucket)
-                : risk > 0 && (profit / risk) >= B_BreakEvenTriggerValue(activeSession, activeBucket);
-            if (!trigger) return;
-            double newStop = isLong
-                ? Position.AveragePrice + B_BreakEvenOffset(activeSession, activeBucket)
-                : Position.AveragePrice - B_BreakEvenOffset(activeSession, activeBucket);
-            SetStopLoss(CalculationMode.Price, newStop);
-            currentStopPrice = newStop;
-            breakEvenMoved   = true;
-            Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Break Even. New stop: " + newStop);
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  EMA Trailing Stop
-        // ════════════════════════════════════════════════════════════════════════
-
-        private void UpdateEMATrailingStop(EMA e)
-        {
-            if (breakEvenMoved || activeBucket == null || activeSession == 0) return;
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                double ns = e[0] - B_StopLossOffset(activeSession, activeBucket);
-                if (ns > currentStopPrice) { SetStopLoss(CalculationMode.Price, ns); currentStopPrice = ns; }
-            }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                double ns = e[0] + B_StopLossOffset(activeSession, activeBucket);
-                if (ns < currentStopPrice) { SetStopLoss(CalculationMode.Price, ns); currentStopPrice = ns; }
-            }
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Price Trailing Stop
-        // ════════════════════════════════════════════════════════════════════════
-
-        private void ManagePriceTrailingStop()
-        {
-            if (activeBucket == null || activeSession == 0) return;
-            if (!B_EnablePriceTrail(activeSession, activeBucket)) return;
-            if (Position.MarketPosition == MarketPosition.Flat || trailLocked) return;
-
-            bool isLong = Position.MarketPosition == MarketPosition.Long;
-            bestPriceSinceEntry = isLong ? Math.Max(bestPriceSinceEntry, High[0]) : Math.Min(bestPriceSinceEntry, Low[0]);
-            double profit = isLong ? bestPriceSinceEntry - entryPrice : entryPrice - bestPriceSinceEntry;
-
-            if (!trailActivated)
-            {
-                double thresh = B_TrailActivationMode(activeSession, activeBucket) == HugoTesting_TrailActivationModeEnum.PctOfRRTarget && initialTPDistance > 0
-                    ? initialTPDistance * B_TrailActivationValue(activeSession, activeBucket) / 100.0
-                    : B_TrailActivationValue(activeSession, activeBucket);
-                if (B_TrailActivationValue(activeSession, activeBucket) <= 0 || profit >= thresh)
-                {
-                    trailActivated = true;
-                    Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Trail ACTIVATED. Profit: " + profit.ToString("F2") + " pts.");
-                }
-                else return;
-            }
-
-            double trailDist = B_TrailDistanceMode(activeSession, activeBucket) == HugoTesting_TrailDistanceModeEnum.FixedPoints
-                ? B_TrailDistanceValue(activeSession, activeBucket)
-                : initialStopDistance > 0 ? initialStopDistance * B_TrailDistanceValue(activeSession, activeBucket) / 100.0 : B_TrailDistanceValue(activeSession, activeBucket);
-            if (trailDist <= 0) return;
-
-            double newStop = isLong
-                ? Instrument.MasterInstrument.RoundToTickSize(bestPriceSinceEntry - trailDist)
-                : Instrument.MasterInstrument.RoundToTickSize(bestPriceSinceEntry + trailDist);
-
-            if (B_TrailStepTicks(activeSession, activeBucket) > 0)
-            {
-                double stepDist = B_TrailStepTicks(activeSession, activeBucket) * TickSize;
-                double moveDist = isLong ? newStop - currentStopPrice : currentStopPrice - newStop;
-                if (moveDist < stepDist) return;
-            }
-
-            bool improves = isLong ? newStop > currentStopPrice : newStop < currentStopPrice;
-            if (!improves) return;
-            SetStopLoss(CalculationMode.Price, newStop);
-            currentStopPrice = newStop;
-            Print(Time[0] + " - Sess" + activeSession + " " + activeBucket + " Trail -> " + newStop.ToString("F2") + " | Profit: " + profit.ToString("F2") + " pts");
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Helpers
-        // ════════════════════════════════════════════════════════════════════════
-
-        private void ResetAllBucketCounters()
-        {
-            dailyPnL_Sess1_L1        = 0;
-            dailyTradeCount_Sess1_L1 = 0;
-            dailyLossHit_Sess1_L1    = false;
-            dailyProfitHit_Sess1_L1  = false;
-            dailyPnL_Sess1_L2        = 0;
-            dailyTradeCount_Sess1_L2 = 0;
-            dailyLossHit_Sess1_L2    = false;
-            dailyProfitHit_Sess1_L2  = false;
-            dailyPnL_Sess1_S1        = 0;
-            dailyTradeCount_Sess1_S1 = 0;
-            dailyLossHit_Sess1_S1    = false;
-            dailyProfitHit_Sess1_S1  = false;
-            dailyPnL_Sess1_S2        = 0;
-            dailyTradeCount_Sess1_S2 = 0;
-            dailyLossHit_Sess1_S2    = false;
-            dailyProfitHit_Sess1_S2  = false;
-            dailyPnL_Sess2_L1        = 0;
-            dailyTradeCount_Sess2_L1 = 0;
-            dailyLossHit_Sess2_L1    = false;
-            dailyProfitHit_Sess2_L1  = false;
-            dailyPnL_Sess2_L2        = 0;
-            dailyTradeCount_Sess2_L2 = 0;
-            dailyLossHit_Sess2_L2    = false;
-            dailyProfitHit_Sess2_L2  = false;
-            dailyPnL_Sess2_S1        = 0;
-            dailyTradeCount_Sess2_S1 = 0;
-            dailyLossHit_Sess2_S1    = false;
-            dailyProfitHit_Sess2_S1  = false;
-            dailyPnL_Sess2_S2        = 0;
-            dailyTradeCount_Sess2_S2 = 0;
-            dailyLossHit_Sess2_S2    = false;
-            dailyProfitHit_Sess2_S2  = false;
-            dailyPnL_Sess3_L1        = 0;
-            dailyTradeCount_Sess3_L1 = 0;
-            dailyLossHit_Sess3_L1    = false;
-            dailyProfitHit_Sess3_L1  = false;
-            dailyPnL_Sess3_L2        = 0;
-            dailyTradeCount_Sess3_L2 = 0;
-            dailyLossHit_Sess3_L2    = false;
-            dailyProfitHit_Sess3_L2  = false;
-            dailyPnL_Sess3_S1        = 0;
-            dailyTradeCount_Sess3_S1 = 0;
-            dailyLossHit_Sess3_S1    = false;
-            dailyProfitHit_Sess3_S1  = false;
-            dailyPnL_Sess3_S2        = 0;
-            dailyTradeCount_Sess3_S2 = 0;
-            dailyLossHit_Sess3_S2    = false;
-            dailyProfitHit_Sess3_S2  = false;
-            dailyPnL_Sess4_L1        = 0;
-            dailyTradeCount_Sess4_L1 = 0;
-            dailyLossHit_Sess4_L1    = false;
-            dailyProfitHit_Sess4_L1  = false;
-            dailyPnL_Sess4_L2        = 0;
-            dailyTradeCount_Sess4_L2 = 0;
-            dailyLossHit_Sess4_L2    = false;
-            dailyProfitHit_Sess4_L2  = false;
-            dailyPnL_Sess4_S1        = 0;
-            dailyTradeCount_Sess4_S1 = 0;
-            dailyLossHit_Sess4_S1    = false;
-            dailyProfitHit_Sess4_S1  = false;
-            dailyPnL_Sess4_S2        = 0;
-            dailyTradeCount_Sess4_S2 = 0;
-            dailyLossHit_Sess4_S2    = false;
-            dailyProfitHit_Sess4_S2  = false;
-        }
-
-        private void ResetTrailState()
-        {
-            bestPriceSinceEntry = entryPrice;
-            trailActivated      = false;
-            trailLocked         = false;
-        }
-
-        private void CancelAllOrders()
-        {
-            if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; }
-        }
-
-        private void ResetSignals()
-        {
-            longSignalActive  = false;
-            shortSignalActive = false;
-            pendingDirection  = 0;
-            entryOrder        = null;
-            currentTargetPrice = 0.0;
-            if (projectXRouter != null)
-                projectXRouter.ResetProtectiveSync();
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Order / Execution Callbacks
-        // ════════════════════════════════════════════════════════════════════════
-
-        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice,
-            int quantity, int filled, double averageFillPrice,
-            OrderState orderState, DateTime time, ErrorCode error, string nativeError)
-        {
-            if (order == null) return;
-            SyncProjectXProtectiveOrder(order, limitPrice, stopPrice, orderState);
-            if (order.Name == LongEntrySignalName || order.Name == ShortEntrySignalName)
-            {
-                if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
-                {
-                    SendWebhook("cancel");
-                    entryOrder = null; ResetSignals();
-                }
-                else if (orderState == OrderState.Filled)
-                {
-                    entryOrder  = null;
-                    entryPrice  = averageFillPrice;
-                    bestPriceSinceEntry = averageFillPrice;
-                }
-            }
-        }
-
-        protected override void OnExecutionUpdate(Execution execution, string executionId,
-            double price, int quantity, MarketPosition marketPosition,
-            string orderId, DateTime time)
-        {
-            if (execution == null || execution.Order == null) return;
-
-            // ── Webhook: fire on entry fills ─────────────────────────────────
-            string orderName = execution.Order.Name ?? string.Empty;
-            if (orderName == LongEntrySignalName || orderName == ShortEntrySignalName)
-            {
-                string action = orderName == LongEntrySignalName ? "buy" : "sell";
-                bool isMarket = execution.Order.OrderType == OrderType.Market || execution.Order.OrderType == OrderType.StopMarket;
-                SendWebhook(action, price, currentTargetPrice, currentStopPrice, isMarket, quantity);
-                return;
-            }
-
-            if (Position.MarketPosition != MarketPosition.Flat) return;
-
-            double tradePnL = 0;
-            if (SystemPerformance != null && SystemPerformance.AllTrades.Count > 0)
-                tradePnL = SystemPerformance.AllTrades[SystemPerformance.AllTrades.Count - 1].ProfitPoints;
-
-            globalDailyPnL        += tradePnL;
-            globalDailyTradeCount += 1;
-            if (activeBucket != null && activeSession != 0)
-            {
-                AddBucketDailyPnL(activeSession, activeBucket, tradePnL);
-                IncBucketTradeCount(activeSession, activeBucket);
-            }
-            lastTradeDirection[activeSession] = currentTradeDirection;
-            lastTradePnL[activeSession]       = tradePnL;
-            Print(Time[0] + " - Sess" + activeSession + " " + (activeBucket ?? "?") + " Trade #" + globalDailyTradeCount
-                + " closed. " + (lastTradeDirection[activeSession] == 1 ? "Long" : "Short")
-                + ". P&L: " + tradePnL + " pts. Global: " + globalDailyPnL + " pts.");
-
-            // ── Webhook: fire exit ───────────────────────────────────────────
-            SendWebhook("exit", 0, 0, 0, true, quantity);
-
-            ResetSignals();
-            breakEvenMoved      = false;
-            activeBucket        = null;
-            activeSession       = 0;
-            ResetTrailState();
-            initialStopDistance = 0;
-            initialTPDistance   = 0;
-        }
-
-        // ════════════════════════════════════════════════════════════════════════
-        //  Commercial: Entry Confirmation
-        // ════════════════════════════════════════════════════════════════════════
-
+        // ── Entry Confirmation ───────────────────────────────────────────────
         private bool ShowEntryConfirmation(string orderType, double price, int quantity)
         {
             if (State != State.Realtime) return true;
@@ -6328,10 +1840,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return result;
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  Commercial: Max Account Balance
-        // ════════════════════════════════════════════════════════════════════════
-
+        // ── Max Account Balance ──────────────────────────────────────────────
         private bool IsAccountBalanceBlocked()
         {
             if (MaxAccountBalance <= 0.0) return false;
@@ -6368,10 +1877,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             catch { return false; }
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  Commercial: Info Box Overlay
-        // ════════════════════════════════════════════════════════════════════════
-
+        // ── Info Box Overlay (HUGO) ──────────────────────────────────────────
         private void UpdateInfoBox()
         {
             if (State != State.Realtime && State != State.Historical) return;
@@ -6462,8 +1968,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
         {
             var lines = new List<(string, string, Brush, Brush)>();
-            lines.Add(("HUGO Multi v1", string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
-            lines.Add(("Contracts:", ContractQuantity.ToString(CultureInfo.InvariantCulture), Brushes.LightGray, InfoValueBrush));
+            lines.Add(("HUGO", string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add(("Contracts:", Math.Max(1, GlobalContracts).ToString(CultureInfo.InvariantCulture), Brushes.LightGray, InfoValueBrush));
             if (!UseNewsSkip)
             {
                 lines.Add(("News:", "Disabled", Brushes.LightGray, InfoValueBrush));
@@ -6491,9 +1997,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string GetCurrentSessionInfoText(DateTime time)
         {
             if (State < State.DataLoaded) return "None";
-            double bsm = ToSessionMinutes(time.TimeOfDay);
-            int sess = ResolveActiveSession(bsm);
-            return sess == 0 ? "None" : string.Format(CultureInfo.InvariantCulture, "Session {0}", sess);
+            for (int sid = 1; sid <= SubSessionCount; sid++)
+                if (S_Active(sid) && IsInSessionTradeWindow(sid)) return S_Label(sid);
+            return "None";
         }
 
         private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
@@ -6513,10 +2019,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return brush;
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  Commercial: Chart Drawing (Session windows, skip, news)
-        // ════════════════════════════════════════════════════════════════════════
-
+        // ── Chart Drawing (session windows, skip, news) ──────────────────────
         private void DrawSessionTimeWindows()
         {
             if (CurrentBar < 1) return;
@@ -6527,28 +2030,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void DrawSessionBackground(DateTime barTime)
         {
-            for (int s = 1; s <= 4; s++)
+            for (int sid = 1; sid <= SubSessionCount; sid++)
             {
-                if (!GetSessEnable(s)) continue;
-                string twStart = GetSessTradeWindowStartStr(s);
-                string sessEnd = GetSessSessionEndStr(s);
-                if (string.IsNullOrEmpty(twStart) || string.IsNullOrEmpty(sessEnd)) continue;
-                TimeSpan tsS, tsE;
-                if (!TimeSpan.TryParse(twStart, out tsS) || !TimeSpan.TryParse(sessEnd, out tsE)) continue;
+                if (!S_Active(sid)) continue;
+                TimeSpan tsS = S_TradeWindowStart(sid).TimeOfDay;
+                TimeSpan tsE = (S_EnableForcedClose(sid) ? S_ForcedCloseTime(sid) : S_NoNewTradesAfter(sid)).TimeOfDay;
                 double startSM = ToSessionMinutes(tsS);
                 double endSM   = ToSessionMinutes(tsE);
                 if (startSM == endSM) continue;
-                string tag = string.Format("HugoMulti_Sess{0}_{1:yyyyMMdd}", s, barTime.Date);
+                string tag = string.Format("HUGO_Sess{0}_{1:yyyyMMdd}", sid, barTime.Date);
                 if (DrawObjects[tag] != null) continue;
                 DateTime ws = barTime.Date + tsS;
                 DateTime we = barTime.Date + tsE;
                 if (we <= ws) we = we.AddDays(1);
-                Draw.Rectangle(this, tag, false, ws, VerticalFillLowerPriceBound, we, VerticalFillUpperPriceBound, Brushes.Transparent, Brushes.Gold, 10).ZOrder = -1;
+                Draw.Rectangle(this, tag, false, ws, 0, we, 30000, Brushes.Transparent, Brushes.Gold, 10).ZOrder = -1;
             }
         }
-
-        private string GetSessTradeWindowStartStr(int s) { switch(s) { case 1: return Sess1_TradeWindowStart; case 2: return Sess2_TradeWindowStart; case 3: return Sess3_TradeWindowStart; case 4: return Sess4_TradeWindowStart; default: return "00:00"; } }
-        private string GetSessSessionEndStr(int s)        { switch(s) { case 1: return Sess1_SessionEndTime;  case 2: return Sess2_SessionEndTime;  case 3: return Sess3_SessionEndTime;  case 4: return Sess4_SessionEndTime;  default: return "17:00"; } }
 
         private void DrawSkipWindow(DateTime barTime)
         {
@@ -6558,12 +2055,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime ws = barTime.Date + ss;
             DateTime we = barTime.Date + se;
             if (we <= ws) we = we.AddDays(1);
-            string tag = string.Format("HugoMulti_Skip_{0:yyyyMMdd_HHmm}", ws);
+            string tag = string.Format("HUGO_Skip_{0:yyyyMMdd_HHmm}", ws);
             if (DrawObjects[tag + "_Rect"] != null) return;
             var areaBrush = new SolidColorBrush(Color.FromArgb(60, 255, 0, 0));
             var lineBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
             try { if (areaBrush.CanFreeze) areaBrush.Freeze(); if (lineBrush.CanFreeze) lineBrush.Freeze(); } catch { }
-            Draw.Rectangle(this, tag + "_Rect", false, ws, VerticalFillLowerPriceBound, we, VerticalFillUpperPriceBound, lineBrush, areaBrush, 2).ZOrder = -1;
+            Draw.Rectangle(this, tag + "_Rect", false, ws, 0, we, 30000, lineBrush, areaBrush, 2).ZOrder = -1;
             Draw.VerticalLine(this, tag + "_Start", ws, Brushes.Red, DashStyleHelper.DashDot, 2);
             Draw.VerticalLine(this, tag + "_End",   we, Brushes.Red, DashStyleHelper.DashDot, 2);
         }
@@ -6577,21 +2074,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (newsTime.Date != barTime.Date) continue;
                 DateTime ws = newsTime.AddMinutes(-NewsBlockMinutes);
                 DateTime we = newsTime.AddMinutes(NewsBlockMinutes);
-                string tag = string.Format("HugoMulti_News_{0:yyyyMMdd_HHmm}", newsTime);
+                string tag = string.Format("HUGO_News_{0:yyyyMMdd_HHmm}", newsTime);
                 if (DrawObjects[tag + "_Rect"] != null) continue;
                 var areaBrush = new SolidColorBrush(Color.FromArgb(60, 255, 165, 0));
                 var lineBrush = new SolidColorBrush(Color.FromArgb(20, 30, 144, 255));
                 try { if (areaBrush.CanFreeze) areaBrush.Freeze(); if (lineBrush.CanFreeze) lineBrush.Freeze(); } catch { }
-                Draw.Rectangle(this, tag + "_Rect", false, ws, VerticalFillLowerPriceBound, we, VerticalFillUpperPriceBound, lineBrush, areaBrush, 2).ZOrder = -1;
+                Draw.Rectangle(this, tag + "_Rect", false, ws, 0, we, 30000, lineBrush, areaBrush, 2).ZOrder = -1;
                 Draw.VerticalLine(this, tag + "_Start", ws, lineBrush, DashStyleHelper.DashDot, 2);
                 Draw.VerticalLine(this, tag + "_End",   we, lineBrush, DashStyleHelper.DashDot, 2);
             }
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  Commercial: News Skip Window Logic
-        // ════════════════════════════════════════════════════════════════════════
-
+        // ── News Skip Window Logic ───────────────────────────────────────────
         private bool IsNewsWindowConfigured()
         {
             return UseNewsSkip && NewsBlockMinutes > 0 && NewsDates.Count > 0;
@@ -6650,9 +2144,238 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return weekNews;
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  Commercial: Webhooks
-        // ════════════════════════════════════════════════════════════════════════
+        // ── Webhooks / ProjectX (TopstepX) ───────────────────────────────────
+        private bool IsProjectXProtectiveOrderActiveState(OrderState orderState)
+        {
+            return orderState == OrderState.Submitted
+                || orderState == OrderState.Accepted
+                || orderState == OrderState.Working
+                || orderState == OrderState.PartFilled;
+        }
+
+        private double RoundToInstrumentTick(double price)
+        {
+            return Instrument != null && Instrument.MasterInstrument != null
+                ? Instrument.MasterInstrument.RoundToTickSize(price)
+                : price;
+        }
+
+        private bool ArePricesEquivalent(double left, double right)
+        {
+            if (left <= 0.0 || right <= 0.0)
+                return false;
+
+            return Math.Abs(left - right) <= TickSize * 0.5;
+        }
+
+        private void TrySyncProjectXProtectiveOrder(Order order, double limitPrice, double stopPrice, OrderState orderState)
+        {
+            if (!UseWebhooks || State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            EnsureProjectXRouter();
+            if (projectXRouter != null)
+                projectXRouter.SyncProtectiveOrder(order, limitPrice, stopPrice, orderState, IsEntrySignalName);
+        }
+
+        private bool SyncProjectXProtectivePrice(double price, bool isStopOrder)
+        {
+            if (price <= 0.0)
+                return false;
+            if (!EnsureProjectXSession())
+                return false;
+
+            List<ProjectXAccountInfo> targetAccounts;
+            string contractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+                return false;
+
+            bool modifiedAny = false;
+            foreach (var account in targetAccounts)
+            {
+                try
+                {
+                    if (ProjectXModifyProtectiveOrders(account.Id, contractId, price, isStopOrder))
+                        modifiedAny = true;
+                }
+                catch (Exception ex)
+                {
+                    LogDebug(string.Format(
+                        "ProjectX protective sync error | kind={0} accountId={1} contractId={2} price={3:0.00} error={4}",
+                        isStopOrder ? "stop" : "target",
+                        account.Id,
+                        contractId,
+                        price,
+                        ex.Message));
+                }
+            }
+
+            return modifiedAny;
+        }
+
+        private bool SendWebhook(string eventType, double entryPrice = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
+        {
+            if (!UseWebhooks || State != State.Realtime)
+                return false;
+
+            if (WebhookProviderType == WebhookProvider.ProjectX)
+            {
+                int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
+                LogDebug(string.Format(
+                    "Webhook attempt | provider=ProjectX event={0} qty={1} market={2} entry={3:0.00} tp={4:0.00} sl={5:0.00}",
+                    eventType,
+                    orderQtyForProvider,
+                    isMarketEntry,
+                    entryPrice,
+                    takeProfit,
+                    stopLoss));
+                return SendProjectXWebhook(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
+            }
+
+            if (string.IsNullOrWhiteSpace(WebhookUrl))
+            {
+                LogDebug(string.Format("Webhook skipped | provider=TradersPost event={0} reason=empty-url", eventType));
+                return false;
+            }
+
+            try
+            {
+                int orderQty = quantityOverride > 0 ? quantityOverride : GetDefaultWebhookQuantity();
+                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
+                    ? WebhookTickerOverride.Trim()
+                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
+                string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", System.Globalization.CultureInfo.InvariantCulture);
+                string action = (eventType ?? string.Empty).ToLowerInvariant();
+                string json = string.Empty;
+
+                if (action == "buy" || action == "sell")
+                {
+                    json = string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"time\":\"{5}\",\"takeProfit\":{{\"limitPrice\":{6}}},\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{7}}}}}",
+                        JsonEscape(ticker),
+                        action,
+                        isMarketEntry ? "market" : "limit",
+                        orderQty,
+                        entryPrice,
+                        JsonEscape(now),
+                        takeProfit,
+                        stopLoss);
+                }
+                else if (action == "exit")
+                {
+                    json = string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"exit\",\"orderType\":\"market\",\"quantityType\":\"fixed_quantity\",\"quantity\":{1},\"cancel\":true,\"time\":\"{2}\"}}",
+                        JsonEscape(ticker),
+                        orderQty,
+                        JsonEscape(now));
+                }
+                else if (action == "cancel")
+                {
+                    json = string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"cancel\",\"time\":\"{1}\"}}",
+                        JsonEscape(ticker),
+                        JsonEscape(now));
+                }
+
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    LogDebug(string.Format(
+                        "Webhook skipped | provider=TradersPost event={0} reason=empty-payload qty={1}",
+                        eventType,
+                        orderQty));
+                    return false;
+                }
+
+                LogDebug(string.Format(
+                    "Webhook attempt | provider=TradersPost event={0} action={1} qty={2} market={3} url={4}",
+                    eventType,
+                    action,
+                    orderQty,
+                    isMarketEntry,
+                    WebhookUrl));
+                LogDebug(string.Format("Webhook payload | {0}", json));
+
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    client.UploadString(WebhookUrl, "POST", json);
+                }
+
+                LogDebug(string.Format("Webhook sent | provider=TradersPost event={0} action={1} qty={2}", eventType, action, orderQty));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogDebug(string.Format("Webhook error | event={0} error={1}", eventType, ex.Message));
+                return false;
+            }
+        }
+
+        private int GetDefaultWebhookQuantity()
+        {
+            if (Position != null && Position.MarketPosition != MarketPosition.Flat && Math.Abs(Position.Quantity) > 0)
+                return Math.Abs(Position.Quantity);
+
+            if (activeSessionId > 0)
+                return Math.Max(1, S_Contracts(activeSessionId));
+
+            return Math.Max(1, GlobalContracts);
+        }
+
+        private string JsonEscape(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
+
+            return value
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n");
+        }
+
+        private void LogMessage(string message, bool forceLog)
+        {
+            if (!forceLog && !DebugLogging)
+                return;
+
+            if (Bars == null || CurrentBar < 0)
+            {
+                Print(string.Format("{0} | {1}", HeartbeatStrategyName, message));
+                return;
+            }
+
+            Print(string.Format("{0} | {3} | bar={1} | {2}", Time[0], CurrentBar, message, HeartbeatStrategyName));
+        }
+
+        private void LogDebug(string message)
+        {
+            LogMessage(message, false);
+        }
+
+        private void LogProjectXDiscovery(string message)
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            LogDebug(message);
+        }
+
+        private void LogProjectXStatus(string message)
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            LogMessage(message, true);
+        }
+
+        private void LogProjectX(string message)
+        {
+            LogProjectXStatus(message);
+        }
 
         private bool IsEntrySignalName(string orderName)
         {
@@ -6685,7 +2408,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void RunProjectXStartupPreflight()
         {
-            if (WebhookProviderType != WebhookProvider.ProjectX)
+            if (!UseWebhooks || WebhookProviderType != WebhookProvider.ProjectX)
                 return;
 
             EnsureProjectXRouter();
@@ -6699,75 +2422,1216 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return projectXRouter != null && projectXRouter.Send(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
         }
 
-        private void SyncProjectXProtectiveOrder(Order order, double limitPrice, double stopPrice, OrderState orderState)
+        private bool SendProjectX(string eventType, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
         {
-            if (State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
-                return;
-
-            EnsureProjectXRouter();
-            if (projectXRouter != null)
-                projectXRouter.SyncProtectiveOrder(order, limitPrice, stopPrice, orderState, IsEntrySignalName);
-        }
-
-        private void SendWebhook(string eventType, double entryPx = 0, double takeProfit = 0, double stopLoss = 0, bool isMarketEntry = false, int quantityOverride = 0)
-        {
-            if (State != State.Realtime) return;
-            if (WebhookProviderType == WebhookProvider.ProjectX)
+            if (!EnsureProjectXSession())
             {
-                int orderQtyForProvider = quantityOverride > 0 ? quantityOverride : Math.Max(1, ContractQuantity);
-                SendProjectXWebhook(eventType, entryPx, takeProfit, stopLoss, isMarketEntry, orderQtyForProvider);
-                return;
+                LogDebug(string.Format("Webhook skipped | provider=ProjectX event={0} reason=auth-unavailable", eventType));
+                return false;
             }
 
-            if (string.IsNullOrWhiteSpace(WebhookUrl)) return;
+            List<ProjectXAccountInfo> targetAccounts;
+            string contractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+            {
+                LogDebug(string.Format("Webhook skipped | provider=ProjectX event={0} reason=account-selection-or-contract-unavailable", eventType));
+                return false;
+            }
+
+            LogDebug(string.Format(
+                "ProjectX targets | event={0} accounts={1} contractId={2}",
+                eventType,
+                FormatProjectXAccountsForLog(targetAccounts),
+                contractId));
+
+            bool sentAny = false;
+            string action = (eventType ?? string.Empty).ToLowerInvariant();
+            foreach (var account in targetAccounts)
+            {
+                try
+                {
+                    if (action == "buy" || action == "sell")
+                    {
+                        if (ProjectXPrepareForEntry(account.Id, contractId))
+                        {
+                            string response = ProjectXPlaceOrder(action, account.Id, contractId, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+                            sentAny = sentAny || !string.IsNullOrWhiteSpace(response);
+                        }
+                    }
+                    else if (action == "exit")
+                    {
+                        ProjectXFlattenPosition(account.Id, contractId);
+                        sentAny = true;
+                    }
+                    else if (action == "cancel")
+                    {
+                        ProjectXCancelOrders(account.Id, contractId);
+                        sentAny = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogDebug(string.Format(
+                        "ProjectX account error | event={0} accountId={1} accountName={2} error={3}",
+                        eventType,
+                        account.Id,
+                        account.Name ?? string.Empty,
+                        ex.Message));
+                }
+            }
+
+            return sentAny;
+        }
+
+        private bool EnsureProjectXSession()
+        {
+            if (string.IsNullOrWhiteSpace(ProjectXApiBaseUrl))
+            {
+                LogProjectX("ProjectX login failed | reason=empty-base-url");
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(projectXSessionToken) &&
+                (DateTime.UtcNow - projectXTokenAcquiredUtc).TotalHours < 23)
+                return true;
+
+            if (string.IsNullOrWhiteSpace(ProjectXUsername) || string.IsNullOrWhiteSpace(ProjectXApiKey))
+            {
+                LogProjectX("ProjectX login failed | reason=missing-credentials");
+                return false;
+            }
+
+            string loginJson = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"userName\":\"{0}\",\"apiKey\":\"{1}\"}}",
+                JsonEscape(ProjectXUsername),
+                JsonEscape(ProjectXApiKey));
+
+            string response = ProjectXPost("/api/Auth/loginKey", loginJson, false, true);
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                LogProjectX("ProjectX login failed | reason=empty-response");
+                return false;
+            }
+
+            string token;
+            if (!TryGetJsonString(response, "token", out token))
+            {
+                LogProjectX("ProjectX login failed | reason=missing-token");
+                return false;
+            }
+
+            projectXSessionToken = token;
+            projectXTokenAcquiredUtc = DateTime.UtcNow;
+            projectXAccounts = null;
+            projectXLastOrderIds.Clear();
+            projectXResolvedContractId = null;
+            projectXResolvedInstrumentKey = string.Empty;
+            LogProjectX("ProjectX login succeeded");
+            return true;
+        }
+
+        private bool TryGetProjectXTargets(out List<ProjectXAccountInfo> targetAccounts, out string contractId)
+        {
+            targetAccounts = null;
+            contractId = null;
+
+            if (!TryResolveProjectXContractId(out contractId))
+                return false;
+
+            List<ProjectXAccountInfo> accounts;
+            if (!TryLoadProjectXAccounts(out accounts))
+                return false;
+
+            if (ProjectXTradeAllAccounts)
+            {
+                targetAccounts = accounts.Where(a => a.CanTrade).ToList();
+                if (targetAccounts.Count == 0)
+                    LogProjectX("ProjectX account selection failed | reason=no-tradable-accounts");
+                return targetAccounts.Count > 0;
+            }
+
+            var selectors = ParseProjectXAccountSelectors(ProjectXAccountId);
+            if (selectors.Count == 0)
+            {
+                LogProjectX("ProjectX account selection failed | reason=no-selection");
+                return false;
+            }
+
+            var matchedAccounts = new List<ProjectXAccountInfo>();
+            var matchedIds = new HashSet<int>();
+            var unmatchedSelectors = new List<string>();
+            foreach (string selector in selectors)
+            {
+                int accountId;
+                List<ProjectXAccountInfo> matches = int.TryParse(selector, NumberStyles.Integer, CultureInfo.InvariantCulture, out accountId)
+                    ? accounts.Where(a => a.CanTrade && a.Id == accountId).ToList()
+                    : accounts.Where(a => a.CanTrade && string.Equals(a.Name ?? string.Empty, selector, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (matches.Count == 0)
+                {
+                    unmatchedSelectors.Add(selector);
+                    continue;
+                }
+
+                foreach (var match in matches)
+                    if (matchedIds.Add(match.Id))
+                        matchedAccounts.Add(match);
+            }
+
+            if (unmatchedSelectors.Count > 0)
+            {
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX account selection unmatched | selectors={0}",
+                    string.Join(", ", unmatchedSelectors.ToArray())));
+            }
+
+            targetAccounts = matchedAccounts;
+            if (targetAccounts.Count == 0)
+                LogProjectX("ProjectX account selection failed | reason=no-matching-tradable-accounts");
+            return targetAccounts.Count > 0;
+        }
+
+        private bool TryLoadProjectXAccounts(out List<ProjectXAccountInfo> accounts)
+        {
+            if (projectXAccounts != null && projectXAccounts.Count > 0)
+            {
+                accounts = projectXAccounts;
+                return true;
+            }
+
+            string response = ProjectXPost("/api/Account/search", "{\"onlyActiveAccounts\":true}", true, true);
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                LogProjectX("ProjectX warning | no webhooks will be sent because no ProjectX accounts were found.");
+                LogProjectXDiscovery("ProjectX account load failed | reason=empty-response");
+                accounts = null;
+                return false;
+            }
+
+            accounts = ExtractProjectXAccounts(response).ToList();
+            projectXAccounts = accounts.Count > 0 ? accounts : null;
+
+            LogProjectX("ProjectX accounts found | count=" + accounts.Count);
+            if (accounts.Count == 0)
+            {
+                LogProjectX("ProjectX warning | no webhooks will be sent because no ProjectX accounts were found.");
+                return false;
+            }
+
+            foreach (var account in accounts)
+            {
+                LogProjectX(string.Format(
+                    "ProjectX account | id={0} name={1} canTrade={2} isVisible={3}",
+                    account.Id,
+                    account.Name ?? string.Empty,
+                    account.CanTrade,
+                    account.IsVisible));
+            }
+
+            return true;
+        }
+
+        private bool TryResolveProjectXContractId(out string contractId)
+        {
+            contractId = null;
+
+            if (!string.IsNullOrWhiteSpace(ProjectXContractId))
+            {
+                contractId = ProjectXContractId.Trim();
+                projectXResolvedInstrumentKey = GetProjectXInstrumentKey();
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX contract override | instrument={0} contractId={1}",
+                    projectXResolvedInstrumentKey,
+                    contractId));
+                return true;
+            }
+
+            string instrumentKey = GetProjectXInstrumentKey();
+            if (!string.IsNullOrWhiteSpace(projectXResolvedContractId) &&
+                string.Equals(projectXResolvedInstrumentKey, instrumentKey, StringComparison.OrdinalIgnoreCase))
+            {
+                contractId = projectXResolvedContractId;
+                return true;
+            }
+
+            string root = GetProjectXInstrumentRoot();
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                LogProjectXDiscovery("ProjectX contract resolve failed | reason=empty-instrument-root");
+                return false;
+            }
+
+            DateTime expiry;
+            string desiredSuffix = TryGetInstrumentExpiry(out expiry) || TryParseInstrumentExpiryFromFullName(out expiry)
+                ? GetProjectXFuturesMonthCode(expiry.Month) + expiry.ToString("yy", CultureInfo.InvariantCulture)
+                : string.Empty;
+
+            List<ProjectXContractInfo> contracts;
+            if (!TrySearchProjectXContracts(root, desiredSuffix, out contracts))
+                return false;
+
+            ProjectXContractInfo selected = SelectProjectXContract(root, desiredSuffix, contracts);
+            if (selected == null || string.IsNullOrWhiteSpace(selected.Id))
+            {
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX contract resolve failed | root={0} desiredSuffix={1} candidates={2}",
+                    root,
+                    string.IsNullOrWhiteSpace(desiredSuffix) ? "<none>" : desiredSuffix,
+                    contracts != null ? contracts.Count : 0));
+                return false;
+            }
+
+            contractId = selected.Id;
+            projectXResolvedContractId = contractId;
+            projectXResolvedInstrumentKey = instrumentKey;
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract resolved | instrument={0} root={1} desiredSuffix={2} contractId={3} name={4} active={5}",
+                instrumentKey,
+                root,
+                string.IsNullOrWhiteSpace(desiredSuffix) ? "<none>" : desiredSuffix,
+                selected.Id,
+                selected.Name ?? string.Empty,
+                selected.ActiveContract));
+            return true;
+        }
+
+        private bool TrySearchProjectXContracts(string root, string desiredSuffix, out List<ProjectXContractInfo> contracts)
+        {
+            contracts = null;
+
+            string primarySearchText = !string.IsNullOrWhiteSpace(desiredSuffix) ? root + desiredSuffix : root;
+            if (TrySearchProjectXContractsByText(primarySearchText, root, out contracts) && contracts.Count > 0)
+                return true;
+
+            if (!string.Equals(primarySearchText, root, StringComparison.OrdinalIgnoreCase) &&
+                TrySearchProjectXContractsByText(root, root, out contracts) && contracts.Count > 0)
+                return true;
+
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract search failed | root={0} desiredSuffix={1}",
+                root,
+                string.IsNullOrWhiteSpace(desiredSuffix) ? "<none>" : desiredSuffix));
+            return false;
+        }
+
+        private bool TrySearchProjectXContractsByText(string searchText, string root, out List<ProjectXContractInfo> contracts)
+        {
+            if (TrySearchProjectXContractsByText(searchText, root, true, out contracts) && contracts.Count > 0)
+                return true;
+
+            if (TrySearchProjectXContractsByText(searchText, root, false, out contracts) && contracts.Count > 0)
+                return true;
+
+            contracts = new List<ProjectXContractInfo>();
+            return false;
+        }
+
+        private bool TrySearchProjectXContractsByText(string searchText, string root, bool live, out List<ProjectXContractInfo> contracts)
+        {
+            string requestJson = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"live\":{0},\"searchText\":\"{1}\"}}",
+                live ? "true" : "false",
+                JsonEscape(searchText));
+            string response = ProjectXPost("/api/Contract/search", requestJson, true);
+            contracts = ExtractProjectXContracts(response)
+                .Where(c => DoesProjectXContractMatchRoot(c, root))
+                .ToList();
+            LogProjectXDiscovery(string.Format(
+                "ProjectX contract search | searchText={0} live={1} matches={2}",
+                searchText,
+                live,
+                contracts.Count));
+            return !string.IsNullOrWhiteSpace(response);
+        }
+
+        private ProjectXContractInfo SelectProjectXContract(string root, string desiredSuffix, List<ProjectXContractInfo> contracts)
+        {
+            if (contracts == null || contracts.Count == 0)
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(desiredSuffix))
+            {
+                var exactMatches = contracts
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Id) &&
+                        c.Id.EndsWith("." + desiredSuffix, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (exactMatches.Count > 0)
+                    return exactMatches.FirstOrDefault(c => c.ActiveContract) ?? exactMatches[0];
+            }
+
+            var activeMatches = contracts.Where(c => c.ActiveContract).ToList();
+            return activeMatches.Count > 0 ? activeMatches[0] : contracts[0];
+        }
+
+        private bool DoesProjectXContractMatchRoot(ProjectXContractInfo contract, string root)
+        {
+            if (contract == null || string.IsNullOrWhiteSpace(root))
+                return false;
+
+            string expectedSymbolId = "F.US." + root;
+            return (!string.IsNullOrWhiteSpace(contract.SymbolId) && string.Equals(contract.SymbolId, expectedSymbolId, StringComparison.OrdinalIgnoreCase))
+                || (!string.IsNullOrWhiteSpace(contract.Id) && contract.Id.IndexOf(".US." + root + ".", StringComparison.OrdinalIgnoreCase) >= 0)
+                || (!string.IsNullOrWhiteSpace(contract.Name) && contract.Name.StartsWith(root, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private string GetProjectXInstrumentKey()
+        {
+            if (Instrument == null)
+                return string.Empty;
+
+            string fullName = Instrument.FullName ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(fullName) ? fullName.Trim().ToUpperInvariant() : GetProjectXInstrumentRoot();
+        }
+
+        private string GetProjectXInstrumentRoot()
+        {
+            return Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+        }
+
+        private bool TryGetInstrumentExpiry(out DateTime expiry)
+        {
+            expiry = Core.Globals.MinDate;
+            if (Instrument == null)
+                return false;
+
             try
             {
-                int orderQty = quantityOverride > 0 ? quantityOverride : Math.Max(1, ContractQuantity);
-                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
-                    ? WebhookTickerOverride.Trim()
-                    : (Instrument != null && Instrument.MasterInstrument != null ? Instrument.MasterInstrument.Name : "UNKNOWN");
-                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture);
-                string json = string.Empty;
-                string action = (eventType ?? string.Empty).ToLowerInvariant();
+                PropertyInfo property = Instrument.GetType().GetProperty("Expiry", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+                if (property == null)
+                    return false;
 
-                if (action == "buy" || action == "sell")
+                object raw = property.GetValue(Instrument, null);
+                if (!(raw is DateTime))
+                    return false;
+
+                DateTime dt = (DateTime)raw;
+                if (dt.Year < 2000)
+                    return false;
+
+                expiry = dt;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryParseInstrumentExpiryFromFullName(out DateTime expiry)
+        {
+            expiry = Core.Globals.MinDate;
+            string fullName = Instrument != null ? (Instrument.FullName ?? string.Empty).Trim().ToUpperInvariant() : string.Empty;
+            if (string.IsNullOrWhiteSpace(fullName))
+                return false;
+
+            Match match = Regex.Match(fullName, @"\b(?<month>\d{1,2})[-/](?<year>\d{2,4})\b");
+            if (!match.Success)
+                return false;
+
+            int month;
+            int year;
+            if (!int.TryParse(match.Groups["month"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out month) ||
+                !int.TryParse(match.Groups["year"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out year))
+                return false;
+
+            if (year < 100)
+                year += 2000;
+            if (month < 1 || month > 12 || year < 2000)
+                return false;
+
+            expiry = new DateTime(year, month, 1);
+            return true;
+        }
+
+        private string GetProjectXFuturesMonthCode(int month)
+        {
+            switch (month)
+            {
+                case 1: return "F";
+                case 2: return "G";
+                case 3: return "H";
+                case 4: return "J";
+                case 5: return "K";
+                case 6: return "M";
+                case 7: return "N";
+                case 8: return "Q";
+                case 9: return "U";
+                case 10: return "V";
+                case 11: return "X";
+                case 12: return "Z";
+                default: return string.Empty;
+            }
+        }
+
+        private List<string> ParseProjectXAccountSelectors(string raw)
+        {
+            return (raw ?? string.Empty)
+                .Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private string FormatProjectXAccountsForLog(IEnumerable<ProjectXAccountInfo> accounts)
+        {
+            if (accounts == null)
+                return "<none>";
+
+            var items = accounts
+                .Select(a => string.Format(CultureInfo.InvariantCulture, "{0}:{1}", a.Id, a.Name ?? string.Empty))
+                .ToArray();
+            return items.Length > 0 ? string.Join(", ", items) : "<none>";
+        }
+
+        private string GetProjectXOrderKey(int accountId, string contractId)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
+        }
+
+        private bool ProjectXModifyProtectiveOrders(int accountId, string contractId, double price, bool isStopOrder)
+        {
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return false;
+
+            int expectedSide = Position.MarketPosition == MarketPosition.Long ? 1 : 0;
+            int expectedType = isStopOrder ? 4 : 1;
+            bool modifiedAny = false;
+
+            foreach (var order in ExtractProjectXOrders(searchResponse))
+            {
+                object contractObj;
+                if (!order.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object typeObj;
+                int type;
+                if (!order.TryGetValue("type", out typeObj) || !TryConvertToInt(typeObj, out type) || type != expectedType)
+                    continue;
+
+                object sideObj;
+                int side;
+                if (!order.TryGetValue("side", out sideObj) || !TryConvertToInt(sideObj, out side) || side != expectedSide)
+                    continue;
+
+                object idObj;
+                long orderId;
+                if (!order.TryGetValue("id", out idObj) || !TryConvertToLong(idObj, out orderId) || orderId <= 0)
+                    continue;
+
+                object sizeObj;
+                int size;
+                if (!order.TryGetValue("size", out sizeObj) || !TryConvertToInt(sizeObj, out size) || size <= 0)
+                    size = Math.Max(1, Position.Quantity);
+
+                object existingPriceObj;
+                double existingPrice;
+                if (isStopOrder)
                 {
-                    string tpPart = takeProfit > 0
-                        ? string.Format(CultureInfo.InvariantCulture, ",\"takeProfit\":{{\"limitPrice\":{0}}}", takeProfit)
-                        : string.Empty;
-                    string slPart = stopLoss > 0
-                        ? string.Format(CultureInfo.InvariantCulture, ",\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{0}}}", stopLoss)
-                        : string.Empty;
-                    json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"time\":\"{5}\"{6}{7}}}",
-                        ticker, action, isMarketEntry ? "market" : "limit", orderQty, entryPx, timestamp, tpPart, slPart);
+                    if (order.TryGetValue("stopPrice", out existingPriceObj)
+                        && existingPriceObj != null
+                        && double.TryParse(existingPriceObj.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out existingPrice)
+                        && ArePricesEquivalent(RoundToInstrumentTick(existingPrice), price))
+                        continue;
                 }
-                else if (action == "exit")
+                else
                 {
-                    json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"exit\",\"orderType\":\"market\",\"quantityType\":\"fixed_quantity\",\"quantity\":{1},\"cancel\":true,\"time\":\"{2}\"}}",
-                        ticker, orderQty, timestamp);
+                    if (order.TryGetValue("limitPrice", out existingPriceObj)
+                        && existingPriceObj != null
+                        && double.TryParse(existingPriceObj.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out existingPrice)
+                        && ArePricesEquivalent(RoundToInstrumentTick(existingPrice), price))
+                        continue;
                 }
-                else if (action == "cancel")
+
+                string response = ProjectXModifyOrder(accountId, orderId, size, isStopOrder ? (double?)null : price, isStopOrder ? (double?)price : null);
+                if (!string.IsNullOrWhiteSpace(response))
+                    modifiedAny = true;
+            }
+
+            if (!modifiedAny)
+            {
+                LogDebug(string.Format(
+                    "ProjectX protective sync skipped | kind={0} accountId={1} contractId={2} price={3:0.00} reason=no-open-order",
+                    isStopOrder ? "stop" : "target",
+                    accountId,
+                    contractId,
+                    price));
+            }
+
+            return modifiedAny;
+        }
+
+        private string ProjectXModifyOrder(int accountId, long orderId, int size, double? limitPrice, double? stopPrice)
+        {
+            string json = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"orderId\":{1},\"size\":{2},\"limitPrice\":{3},\"stopPrice\":{4},\"trailPrice\":null}}",
+                accountId,
+                orderId,
+                size > 0 ? size.ToString(CultureInfo.InvariantCulture) : "null",
+                limitPrice.HasValue ? limitPrice.Value.ToString(CultureInfo.InvariantCulture) : "null",
+                stopPrice.HasValue ? stopPrice.Value.ToString(CultureInfo.InvariantCulture) : "null");
+            return ProjectXPost("/api/Order/modify", json, true);
+        }
+
+        private string ProjectXPlaceOrder(string side, int accountId, string contractId, double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        {
+            int orderSide = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            int orderType = isMarketEntry ? 2 : 1;
+            int normalizedQuantity = Math.Max(1, quantity);
+            double entry = Instrument != null && Instrument.MasterInstrument != null
+                ? Instrument.MasterInstrument.RoundToTickSize(entryPrice)
+                : entryPrice;
+            bool isLong = orderSide == 0;
+            int tpTicks = NormalizeProjectXBracketTicks(PriceToTicks(takeProfit - entry), 4, isLong ? 1 : -1);
+            int slTicks = NormalizeProjectXBracketTicks(PriceToTicks(stopLoss - entry), 1, isLong ? -1 : 1);
+
+            string limitPart = isMarketEntry
+                ? string.Empty
+                : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", entry);
+
+            string json = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":{6},\"type\":1,\"ticks\":{7}}},\"stopLossBracket\":{{\"quantity\":{6},\"type\":4,\"ticks\":{8}}}}}",
+                accountId,
+                JsonEscape(contractId),
+                orderType,
+                orderSide,
+                normalizedQuantity,
+                limitPart,
+                normalizedQuantity,
+                tpTicks,
+                slTicks);
+
+            string response = ProjectXPost("/api/Order/place", json, true);
+            long orderId;
+            if (TryGetJsonLong(response, "orderId", out orderId))
+                projectXLastOrderIds[GetProjectXOrderKey(accountId, contractId)] = orderId;
+            return response;
+        }
+
+        private int NormalizeProjectXBracketTicks(int rawTicks, int minAbsTicks, int zeroTickDirection)
+        {
+            int direction = rawTicks == 0 ? Math.Sign(zeroTickDirection) : Math.Sign(rawTicks);
+            int absTicks = Math.Abs(rawTicks);
+            if (absTicks < minAbsTicks)
+                absTicks = minAbsTicks;
+            return direction * absTicks;
+        }
+
+        private bool ProjectXPrepareForEntry(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+            {
+                LogDebug(string.Format(
+                    "ProjectX prepare failed | stage=cancel-clear accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+                return false;
+            }
+
+            int positionSize;
+            if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
                 {
-                    json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"cancel\",\"time\":\"{1}\"}}",
-                        ticker, timestamp);
+                    LogDebug(string.Format(
+                        "ProjectX prepare failed | stage=flat accountId={0} contractId={1} positionSize={2}",
+                        accountId,
+                        contractId,
+                        positionSize));
+                    return false;
                 }
-                if (string.IsNullOrWhiteSpace(json)) return;
+
+                ProjectXCancelOrders(accountId, contractId);
+                if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                {
+                    LogDebug(string.Format(
+                        "ProjectX prepare failed | stage=post-close-cancel accountId={0} contractId={1}",
+                        accountId,
+                        contractId));
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void ProjectXFlattenPosition(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                LogDebug(string.Format(
+                    "ProjectX flatten warning | stage=cancel-clear accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+
+            int positionSize;
+            if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                    LogDebug(string.Format(
+                        "ProjectX flatten warning | stage=flat accountId={0} contractId={1} positionSize={2}",
+                        accountId,
+                        contractId,
+                        positionSize));
+            }
+
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                LogDebug(string.Format(
+                    "ProjectX flatten warning | stage=post-close-cancel accountId={0} contractId={1}",
+                    accountId,
+                    contractId));
+        }
+
+        private string ProjectXClosePosition(int accountId, string contractId)
+        {
+            string json = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\"}}",
+                accountId,
+                JsonEscape(contractId));
+            return ProjectXPost("/api/Position/closeContract", json, true);
+        }
+
+        private void ProjectXCancelOrders(int accountId, string contractId)
+        {
+            foreach (long orderId in GetProjectXOpenOrderIds(accountId, contractId))
+            {
+                string cancelJson = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{{\"accountId\":{0},\"orderId\":{1}}}",
+                    accountId,
+                    orderId);
+                ProjectXPost("/api/Order/cancel", cancelJson, true);
+            }
+
+            projectXLastOrderIds.Remove(GetProjectXOrderKey(accountId, contractId));
+        }
+
+        private bool WaitForProjectXFlat(int accountId, string contractId, int timeoutMs)
+        {
+            DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow <= deadlineUtc)
+            {
+                int positionSize;
+                if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize == 0)
+                    return true;
+                System.Threading.Thread.Sleep(150);
+            }
+
+            return false;
+        }
+
+        private bool WaitForProjectXOrdersCleared(int accountId, string contractId, int timeoutMs)
+        {
+            DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow <= deadlineUtc)
+            {
+                if (GetProjectXOpenOrderIds(accountId, contractId).Count == 0)
+                    return true;
+                System.Threading.Thread.Sleep(150);
+            }
+
+            return false;
+        }
+
+        private List<long> GetProjectXOpenOrderIds(int accountId, string contractId)
+        {
+            var orderIds = new List<long>();
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Order/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return orderIds;
+
+            foreach (var order in ExtractProjectXOrders(searchResponse))
+            {
+                object contractObj;
+                if (!order.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object idObj;
+                long id;
+                if (order.TryGetValue("id", out idObj) && TryConvertToLong(idObj, out id) && id > 0)
+                    orderIds.Add(id);
+            }
+
+            return orderIds;
+        }
+
+        private bool TryGetProjectXOpenPositionSize(int accountId, string contractId, out int signedSize)
+        {
+            signedSize = 0;
+            string searchJson = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string searchResponse = ProjectXPost("/api/Position/searchOpen", searchJson, true);
+            bool success;
+            if (TryGetJsonBool(searchResponse, "success", out success) && !success)
+                return false;
+
+            foreach (var position in ExtractProjectXPositions(searchResponse))
+            {
+                object contractObj;
+                if (!position.TryGetValue("contractId", out contractObj))
+                    continue;
+                if (!string.Equals(contractObj != null ? contractObj.ToString() : string.Empty, contractId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                object typeObj;
+                object sizeObj;
+                int type;
+                int size;
+                if (!position.TryGetValue("type", out typeObj) || !TryConvertToInt(typeObj, out type))
+                    continue;
+                if (!position.TryGetValue("size", out sizeObj) || !TryConvertToInt(sizeObj, out size) || size <= 0)
+                    continue;
+
+                signedSize += type == 2 ? -size : size;
+            }
+
+            return true;
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuth)
+        {
+            return ProjectXPost(path, json, requiresAuth, false);
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuth, bool alwaysLog)
+        {
+            string baseUrl = ProjectXApiBaseUrl != null ? ProjectXApiBaseUrl.TrimEnd('/') : string.Empty;
+            if (string.IsNullOrWhiteSpace(baseUrl))
+                return null;
+
+            if (alwaysLog)
+                LogProjectXDiscovery(string.Format(
+                    "ProjectX request | url={0}{1} auth={2} payload={3}",
+                    baseUrl,
+                    path,
+                    requiresAuth,
+                    SanitizeProjectXJsonForLog(json)));
+            else
+                LogDebug(string.Format(
+                    "ProjectX request | url={0}{1} auth={2} payload={3}",
+                    baseUrl,
+                    path,
+                    requiresAuth,
+                    SanitizeProjectXJsonForLog(json)));
+
+            try
+            {
                 using (var client = new System.Net.WebClient())
                 {
                     client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
-                    client.UploadString(WebhookUrl, "POST", json);
+                    if (requiresAuth && !string.IsNullOrWhiteSpace(projectXSessionToken))
+                        client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
+
+                    string response = client.UploadString(baseUrl + path, "POST", json);
+                    if (alwaysLog)
+                        LogProjectXDiscovery(string.Format(
+                            "ProjectX response | url={0}{1} body={2}",
+                            baseUrl,
+                            path,
+                            SanitizeProjectXJsonForLog(response)));
+                    else
+                        LogDebug(string.Format(
+                            "ProjectX response | url={0}{1} body={2}",
+                            baseUrl,
+                            path,
+                            SanitizeProjectXJsonForLog(response)));
+                    return response;
                 }
             }
-            catch { }
+            catch (System.Net.WebException ex)
+            {
+                string errorBody = ReadWebExceptionResponse(ex);
+                if (alwaysLog)
+                    LogProjectXDiscovery(string.Format(
+                        "ProjectX request failed | url={0}{1} error={2} body={3}",
+                        baseUrl,
+                        path,
+                        ex.Message,
+                        SanitizeProjectXJsonForLog(errorBody)));
+                else
+                    LogDebug(string.Format(
+                        "ProjectX request failed | url={0}{1} error={2} body={3}",
+                        baseUrl,
+                        path,
+                        ex.Message,
+                        SanitizeProjectXJsonForLog(errorBody)));
+                return errorBody;
+            }
+            catch (Exception ex)
+            {
+                if (alwaysLog)
+                    LogProjectXDiscovery(string.Format("ProjectX request failed | url={0}{1} error={2}", baseUrl, path, ex.Message));
+                else
+                    LogDebug(string.Format("ProjectX request failed | url={0}{1} error={2}", baseUrl, path, ex.Message));
+                return null;
+            }
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  Commercial: Timeframe & Instrument Validation (Order Handling Protection)
-        // ════════════════════════════════════════════════════════════════════════
+        private string ReadWebExceptionResponse(System.Net.WebException ex)
+        {
+            if (ex == null || ex.Response == null)
+                return null;
 
+            try
+            {
+                using (var stream = ex.Response.GetResponseStream())
+                {
+                    if (stream == null)
+                        return null;
+                    using (var reader = new System.IO.StreamReader(stream))
+                        return reader.ReadToEnd();
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string SanitizeProjectXJsonForLog(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return string.Empty;
+
+            string sanitized = json;
+            sanitized = RedactProjectXJsonValue(sanitized, "apiKey");
+            sanitized = RedactProjectXJsonValue(sanitized, "loginKey");
+            sanitized = RedactProjectXJsonValue(sanitized, "token");
+            sanitized = RedactProjectXJsonValue(sanitized, "newToken");
+            return sanitized;
+        }
+
+        private string RedactProjectXJsonValue(string json, string key)
+        {
+            if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(key))
+                return json ?? string.Empty;
+
+            return Regex.Replace(
+                json,
+                "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"[^\"]*\"",
+                "\"" + key + "\":\"***\"");
+        }
+
+        private int PriceToTicks(double priceDistance)
+        {
+            if (TickSize <= 0.0)
+                return 0;
+            return (int)Math.Round(priceDistance / TickSize, MidpointRounding.AwayFromZero);
+        }
+
+        private bool TryGetJsonString(string json, string key, out string value)
+        {
+            value = null;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                value = raw.ToString();
+                return !string.IsNullOrWhiteSpace(value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetJsonLong(string json, string key, out long value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return TryConvertToLong(raw, out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetJsonBool(string json, string key, out bool value)
+        {
+            value = false;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var serializer = new JavaScriptSerializer();
+                var data = serializer.Deserialize<Dictionary<string, object>>(json);
+                object raw;
+                if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                    return false;
+                return TryConvertToBool(raw, out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private IEnumerable<ProjectXAccountInfo> ExtractProjectXAccounts(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            Dictionary<string, object> data;
+            try
+            {
+                data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("accounts", out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict == null)
+                    continue;
+
+                object idObj;
+                int id;
+                if (!dict.TryGetValue("id", out idObj) || !TryConvertToInt(idObj, out id) || id <= 0)
+                    continue;
+
+                object nameObj;
+                object canTradeObj;
+                object isVisibleObj;
+                bool canTrade;
+                bool isVisible;
+                dict.TryGetValue("name", out nameObj);
+                dict.TryGetValue("canTrade", out canTradeObj);
+                dict.TryGetValue("isVisible", out isVisibleObj);
+                TryConvertToBool(canTradeObj, out canTrade);
+                TryConvertToBool(isVisibleObj, out isVisible);
+
+                yield return new ProjectXAccountInfo
+                {
+                    Id = id,
+                    Name = nameObj != null ? nameObj.ToString() : string.Empty,
+                    CanTrade = canTrade,
+                    IsVisible = isVisible
+                };
+            }
+        }
+
+        private IEnumerable<ProjectXContractInfo> ExtractProjectXContracts(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            Dictionary<string, object> data;
+            try
+            {
+                data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue("contracts", out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict == null)
+                    continue;
+
+                object idObj;
+                if (!dict.TryGetValue("id", out idObj) || idObj == null)
+                    continue;
+
+                object nameObj;
+                object descriptionObj;
+                object symbolIdObj;
+                object activeObj;
+                bool activeContract;
+                dict.TryGetValue("name", out nameObj);
+                dict.TryGetValue("description", out descriptionObj);
+                dict.TryGetValue("symbolId", out symbolIdObj);
+                dict.TryGetValue("activeContract", out activeObj);
+                TryConvertToBool(activeObj, out activeContract);
+
+                yield return new ProjectXContractInfo
+                {
+                    Id = idObj.ToString(),
+                    Name = nameObj != null ? nameObj.ToString() : string.Empty,
+                    Description = descriptionObj != null ? descriptionObj.ToString() : string.Empty,
+                    SymbolId = symbolIdObj != null ? symbolIdObj.ToString() : string.Empty,
+                    ActiveContract = activeContract
+                };
+            }
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXOrders(string json)
+        {
+            return ExtractProjectXDictionaryArray(json, "orders");
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXPositions(string json)
+        {
+            return ExtractProjectXDictionaryArray(json, "positions");
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXDictionaryArray(string json, string key)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                yield break;
+
+            Dictionary<string, object> data;
+            try
+            {
+                data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            object raw;
+            if (data == null || !data.TryGetValue(key, out raw) || raw == null)
+                yield break;
+
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (var item in items)
+            {
+                var dict = item as Dictionary<string, object>;
+                if (dict != null)
+                    yield return dict;
+            }
+        }
+
+        private bool TryConvertToInt(object raw, out int value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+            if (raw is int)
+            {
+                value = (int)raw;
+                return true;
+            }
+            if (raw is long)
+            {
+                long longValue = (long)raw;
+                if (longValue < int.MinValue || longValue > int.MaxValue)
+                    return false;
+                value = (int)longValue;
+                return true;
+            }
+            if (raw is decimal)
+            {
+                value = (int)(decimal)raw;
+                return true;
+            }
+            if (raw is double)
+            {
+                value = (int)(double)raw;
+                return true;
+            }
+            return int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToLong(object raw, out long value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+            if (raw is int)
+            {
+                value = (int)raw;
+                return true;
+            }
+            if (raw is long)
+            {
+                value = (long)raw;
+                return true;
+            }
+            if (raw is decimal)
+            {
+                decimal decimalValue = (decimal)raw;
+                if (decimalValue < long.MinValue || decimalValue > long.MaxValue)
+                    return false;
+                value = (long)decimalValue;
+                return true;
+            }
+            if (raw is double)
+            {
+                double doubleValue = (double)raw;
+                if (doubleValue < long.MinValue || doubleValue > long.MaxValue)
+                    return false;
+                value = (long)doubleValue;
+                return true;
+            }
+            return long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToBool(object raw, out bool value)
+        {
+            value = false;
+            if (raw == null)
+                return false;
+            if (raw is bool)
+            {
+                value = (bool)raw;
+                return true;
+            }
+            return bool.TryParse(raw.ToString(), out value);
+        }
+
+        // ── Order Handling Protection (timeframe / instrument validation) ────
         private void ValidateRequiredPrimaryTimeframe(int requiredMinutes)
         {
             bool ok = BarsPeriod != null && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute && BarsPeriod.Value == requiredMinutes;
@@ -6811,10 +3675,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             catch { }
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        //  Commercial: Licensing helper (gets add-on version)
-        // ════════════════════════════════════════════════════════════════════════
-
+        // ── Licensing helper (add-on version) ────────────────────────────────
         private string GetAddOnVersion()
         {
             Assembly assembly = GetType().Assembly;
@@ -6822,17 +3683,683 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return version != null ? version.ToString() : "1.0.0.0";
         }
 
-    }   // end class HUGOTesting
+        #endregion
 
-    // ════════════════════════════════════════════════════════════════════════
-    //  Enums
-    // ════════════════════════════════════════════════════════════════════════
+        // =====================================================================
+        #region Properties
 
-    public enum HugoTesting_EntryTypeEnum        { Immediate, WaitForPullback }
-    public enum HugoTesting_StopLossTypeEnum     { Fixed, CandleHighLow, EMAFixed, EMATrailing, CandleMultiple }
-    public enum HugoTesting_TakeProfitTypeEnum   { RiskReward, Fixed, EMACross, CandleMultiple }
-    public enum HugoTesting_BreakEvenTriggerEnum { Points, RiskMultiple }
-    public enum HugoTesting_EmaSlopeModeEnum     { DirectionEnforced, MagnitudeOnly }
-    public enum HugoTesting_TrailDistanceModeEnum   { FixedPoints, PctOfInitialSL }
-    public enum HugoTesting_TrailActivationModeEnum { FixedPoints, PctOfRRTarget }
+        // ── Global ─────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Session Start Time",Order=1,GroupName="0. Global")] public DateTime SessionStartTime {get;set;}
+        [NinjaScriptProperty][Display(Name="NY Enable (Parent)",Order=2,GroupName="0. Global")] public bool NyEnable {get;set;}
+        [NinjaScriptProperty][Display(Name="EU Enable (Parent)",Order=3,GroupName="0. Global")] public bool EuEnable {get;set;}
+        [NinjaScriptProperty][Display(Name="AS Enable (Parent)",Order=4,GroupName="0. Global")] public bool AsEnable {get;set;}
+
+        // ── Global MA (entry) ─────────────────────────────────────────────────
+        // EMA37/90 variant: both properties now drive EMA periods (fast/slow),
+        // not an SMA period + EMA period. Property names kept unchanged so this
+        // still lines up with GlobalMaPeriod/GlobalEmaPeriod references elsewhere.
+        [NinjaScriptProperty][Range(1,500)][Display(Name="EMA Fast Period (was MA)",  Order=10,GroupName="0. Global")] public int    GlobalMaPeriod  {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="EMA Slow Period", Order=11,GroupName="0. Global")] public int    GlobalEmaPeriod {get;set;}
+        [NinjaScriptProperty][Display(Name="MA Type (keep Both)",              Order=12,GroupName="0. Global")] public MAMode_EMA3790 GlobalMaType   {get;set;}
+        // ── Global Contracts ─────────────────────────────────────────────────
+        [NinjaScriptProperty][Range(1,10)][Display(Name="Contracts",Order=13,GroupName="0. Global")] public int GlobalContracts {get;set;}
+        // ── Global PriceOffset Trail ──────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail (Global)",Order=14,GroupName="0. Global")] public bool GlobalEnablePriceOffsetTrail {get;set;}
+
+
+
+        // ── NY-A Session ────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="1a. NY-A Session")] public bool NyAEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="1a. NY-A Session")] public DateTime NyATradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="1a. NY-A Session")] public bool NyAEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="1a. NY-A Session")] public DateTime NyANoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="1a. NY-A Session")] public bool NyAEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="1a. NY-A Session")] public DateTime NyAForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="1a. NY-A Session")] public int NyAMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="1a. NY-A Session")] public int NyAMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="1a. NY-A Session")] public int NyAMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="1a. NY-A Session")] public int NyAMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="1a. NY-A Session")] public bool NyARequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="1a. NY-A Session")] public bool NyAAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="1a. NY-A Session")] public int NyAEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="1a. NY-A Session")] public int NyAEngulfingExitPaddingTicks {get;set;}
+        // NY-A Long
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="1b. NY-A Long")] public double NyALongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="1b. NY-A Long")] public int NyALongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="1b. NY-A Long")] public int NyALongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="1b. NY-A Long")] public int NyALongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="1b. NY-A Long")] public double NyALongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="1b. NY-A Long")] public bool NyALongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="1b. NY-A Long")] public bool NyALongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="1b. NY-A Long")] public bool NyALongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="1b. NY-A Long")] public int NyALongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="1b. NY-A Long")] public int NyALongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="1b. NY-A Long")] public int NyALongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="1b. NY-A Long")] public bool NyALongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="1b. NY-A Long")] public int NyALongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="1b. NY-A Long")] public int NyALongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="1b. NY-A Long")] public int NyALongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="1b. NY-A Long")] public bool NyALongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="1b. NY-A Long")] public int NyALongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="1b. NY-A Long")] public bool NyALongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="1b. NY-A Long")] public int NyALongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="1b. NY-A Long")] public double NyALongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="1b. NY-A Long")] public int NyALongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="1b. NY-A Long")] public bool NyALongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="1b. NY-A Long")] public int NyALongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="1b. NY-A Long")] public double NyALongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="1b. NY-A Long")] public double NyALongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="1b. NY-A Long")] public double NyALongAdxPeakDrawdown {get;set;}
+        // NY-A Short
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="1c. NY-A Short")] public double NyAShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="1c. NY-A Short")] public int NyAShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="1c. NY-A Short")] public int NyAShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="1c. NY-A Short")] public int NyAShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="1c. NY-A Short")] public double NyAShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="1c. NY-A Short")] public bool NyAShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="1c. NY-A Short")] public bool NyAShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="1c. NY-A Short")] public bool NyAShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="1c. NY-A Short")] public int NyAShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="1c. NY-A Short")] public int NyAShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="1c. NY-A Short")] public int NyAShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="1c. NY-A Short")] public bool NyAShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="1c. NY-A Short")] public int NyAShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="1c. NY-A Short")] public int NyAShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="1c. NY-A Short")] public int NyAShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="1c. NY-A Short")] public bool NyAShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="1c. NY-A Short")] public int NyAShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="1c. NY-A Short")] public bool NyAShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="1c. NY-A Short")] public int NyAShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="1c. NY-A Short")] public double NyAShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="1c. NY-A Short")] public int NyAShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="1c. NY-A Short")] public bool NyAShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="1c. NY-A Short")] public int NyAShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="1c. NY-A Short")] public double NyAShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="1c. NY-A Short")] public double NyAShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="1c. NY-A Short")] public double NyAShortAdxPeakDrawdown {get;set;}
+
+        // ── NY-B ────────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="2a. NY-B Session")] public bool NyBEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="2a. NY-B Session")] public DateTime NyBTradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="2a. NY-B Session")] public bool NyBEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="2a. NY-B Session")] public DateTime NyBNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="2a. NY-B Session")] public bool NyBEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="2a. NY-B Session")] public DateTime NyBForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="2a. NY-B Session")] public int NyBMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="2a. NY-B Session")] public int NyBMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="2a. NY-B Session")] public int NyBMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="2a. NY-B Session")] public int NyBMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="2a. NY-B Session")] public bool NyBRequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="2a. NY-B Session")] public bool NyBAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="2a. NY-B Session")] public int NyBEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="2a. NY-B Session")] public int NyBEngulfingExitPaddingTicks {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="2b. NY-B Long")] public double NyBLongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="2b. NY-B Long")] public int NyBLongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="2b. NY-B Long")] public int NyBLongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="2b. NY-B Long")] public int NyBLongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="2b. NY-B Long")] public double NyBLongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="2b. NY-B Long")] public bool NyBLongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="2b. NY-B Long")] public bool NyBLongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="2b. NY-B Long")] public bool NyBLongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="2b. NY-B Long")] public int NyBLongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="2b. NY-B Long")] public int NyBLongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="2b. NY-B Long")] public int NyBLongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="2b. NY-B Long")] public bool NyBLongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="2b. NY-B Long")] public int NyBLongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="2b. NY-B Long")] public int NyBLongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="2b. NY-B Long")] public int NyBLongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="2b. NY-B Long")] public bool NyBLongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="2b. NY-B Long")] public int NyBLongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="2b. NY-B Long")] public bool NyBLongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="2b. NY-B Long")] public int NyBLongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="2b. NY-B Long")] public double NyBLongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="2b. NY-B Long")] public int NyBLongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="2b. NY-B Long")] public bool NyBLongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="2b. NY-B Long")] public int NyBLongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="2b. NY-B Long")] public double NyBLongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="2b. NY-B Long")] public double NyBLongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="2b. NY-B Long")] public double NyBLongAdxPeakDrawdown {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="2c. NY-B Short")] public double NyBShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="2c. NY-B Short")] public int NyBShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="2c. NY-B Short")] public int NyBShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="2c. NY-B Short")] public int NyBShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="2c. NY-B Short")] public double NyBShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="2c. NY-B Short")] public bool NyBShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="2c. NY-B Short")] public bool NyBShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="2c. NY-B Short")] public bool NyBShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="2c. NY-B Short")] public int NyBShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="2c. NY-B Short")] public int NyBShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="2c. NY-B Short")] public int NyBShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="2c. NY-B Short")] public bool NyBShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="2c. NY-B Short")] public int NyBShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="2c. NY-B Short")] public int NyBShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="2c. NY-B Short")] public int NyBShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="2c. NY-B Short")] public bool NyBShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="2c. NY-B Short")] public int NyBShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="2c. NY-B Short")] public bool NyBShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="2c. NY-B Short")] public int NyBShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="2c. NY-B Short")] public double NyBShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="2c. NY-B Short")] public int NyBShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="2c. NY-B Short")] public bool NyBShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="2c. NY-B Short")] public int NyBShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="2c. NY-B Short")] public double NyBShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="2c. NY-B Short")] public double NyBShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="2c. NY-B Short")] public double NyBShortAdxPeakDrawdown {get;set;}
+        // ── NY-C ────────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="3a. NY-C Session")] public bool NyCEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="3a. NY-C Session")] public DateTime NyCTradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="3a. NY-C Session")] public bool NyCEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="3a. NY-C Session")] public DateTime NyCNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="3a. NY-C Session")] public bool NyCEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="3a. NY-C Session")] public DateTime NyCForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="3a. NY-C Session")] public int NyCMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="3a. NY-C Session")] public int NyCMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="3a. NY-C Session")] public int NyCMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="3a. NY-C Session")] public int NyCMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="3a. NY-C Session")] public bool NyCRequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="3a. NY-C Session")] public bool NyCAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="3a. NY-C Session")] public int NyCEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="3a. NY-C Session")] public int NyCEngulfingExitPaddingTicks {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="3b. NY-C Long")] public double NyCLongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="3b. NY-C Long")] public int NyCLongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="3b. NY-C Long")] public int NyCLongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="3b. NY-C Long")] public int NyCLongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="3b. NY-C Long")] public double NyCLongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="3b. NY-C Long")] public bool NyCLongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="3b. NY-C Long")] public bool NyCLongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="3b. NY-C Long")] public bool NyCLongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="3b. NY-C Long")] public int NyCLongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="3b. NY-C Long")] public int NyCLongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="3b. NY-C Long")] public int NyCLongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="3b. NY-C Long")] public bool NyCLongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="3b. NY-C Long")] public int NyCLongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="3b. NY-C Long")] public int NyCLongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="3b. NY-C Long")] public int NyCLongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="3b. NY-C Long")] public bool NyCLongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="3b. NY-C Long")] public int NyCLongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="3b. NY-C Long")] public bool NyCLongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="3b. NY-C Long")] public int NyCLongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="3b. NY-C Long")] public double NyCLongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="3b. NY-C Long")] public int NyCLongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="3b. NY-C Long")] public bool NyCLongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="3b. NY-C Long")] public int NyCLongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="3b. NY-C Long")] public double NyCLongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="3b. NY-C Long")] public double NyCLongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="3b. NY-C Long")] public double NyCLongAdxPeakDrawdown {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="3c. NY-C Short")] public double NyCShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="3c. NY-C Short")] public int NyCShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="3c. NY-C Short")] public int NyCShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="3c. NY-C Short")] public int NyCShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="3c. NY-C Short")] public double NyCShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="3c. NY-C Short")] public bool NyCShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="3c. NY-C Short")] public bool NyCShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="3c. NY-C Short")] public bool NyCShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="3c. NY-C Short")] public int NyCShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="3c. NY-C Short")] public int NyCShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="3c. NY-C Short")] public int NyCShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="3c. NY-C Short")] public bool NyCShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="3c. NY-C Short")] public int NyCShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="3c. NY-C Short")] public int NyCShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="3c. NY-C Short")] public int NyCShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="3c. NY-C Short")] public bool NyCShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="3c. NY-C Short")] public int NyCShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="3c. NY-C Short")] public bool NyCShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="3c. NY-C Short")] public int NyCShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="3c. NY-C Short")] public double NyCShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="3c. NY-C Short")] public int NyCShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="3c. NY-C Short")] public bool NyCShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="3c. NY-C Short")] public int NyCShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="3c. NY-C Short")] public double NyCShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="3c. NY-C Short")] public double NyCShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="3c. NY-C Short")] public double NyCShortAdxPeakDrawdown {get;set;}
+        // ── EU-A ────────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="4a. EU-A Session")] public bool EuAEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="4a. EU-A Session")] public DateTime EuATradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="4a. EU-A Session")] public bool EuAEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="4a. EU-A Session")] public DateTime EuANoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="4a. EU-A Session")] public bool EuAEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="4a. EU-A Session")] public DateTime EuAForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="4a. EU-A Session")] public int EuAMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="4a. EU-A Session")] public int EuAMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="4a. EU-A Session")] public int EuAMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="4a. EU-A Session")] public int EuAMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="4a. EU-A Session")] public bool EuARequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="4a. EU-A Session")] public bool EuAAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="4a. EU-A Session")] public int EuAEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="4a. EU-A Session")] public int EuAEngulfingExitPaddingTicks {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="4b. EU-A Long")] public double EuALongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="4b. EU-A Long")] public int EuALongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="4b. EU-A Long")] public int EuALongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="4b. EU-A Long")] public int EuALongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="4b. EU-A Long")] public double EuALongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="4b. EU-A Long")] public bool EuALongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="4b. EU-A Long")] public bool EuALongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="4b. EU-A Long")] public bool EuALongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="4b. EU-A Long")] public int EuALongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="4b. EU-A Long")] public int EuALongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="4b. EU-A Long")] public int EuALongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="4b. EU-A Long")] public bool EuALongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="4b. EU-A Long")] public int EuALongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="4b. EU-A Long")] public int EuALongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="4b. EU-A Long")] public int EuALongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="4b. EU-A Long")] public bool EuALongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="4b. EU-A Long")] public int EuALongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="4b. EU-A Long")] public bool EuALongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="4b. EU-A Long")] public int EuALongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="4b. EU-A Long")] public double EuALongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="4b. EU-A Long")] public int EuALongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="4b. EU-A Long")] public bool EuALongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="4b. EU-A Long")] public int EuALongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="4b. EU-A Long")] public double EuALongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="4b. EU-A Long")] public double EuALongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="4b. EU-A Long")] public double EuALongAdxPeakDrawdown {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="4c. EU-A Short")] public double EuAShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="4c. EU-A Short")] public int EuAShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="4c. EU-A Short")] public int EuAShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="4c. EU-A Short")] public int EuAShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="4c. EU-A Short")] public double EuAShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="4c. EU-A Short")] public bool EuAShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="4c. EU-A Short")] public bool EuAShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="4c. EU-A Short")] public bool EuAShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="4c. EU-A Short")] public int EuAShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="4c. EU-A Short")] public int EuAShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="4c. EU-A Short")] public int EuAShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="4c. EU-A Short")] public bool EuAShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="4c. EU-A Short")] public int EuAShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="4c. EU-A Short")] public int EuAShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="4c. EU-A Short")] public int EuAShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="4c. EU-A Short")] public bool EuAShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="4c. EU-A Short")] public int EuAShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="4c. EU-A Short")] public bool EuAShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="4c. EU-A Short")] public int EuAShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="4c. EU-A Short")] public double EuAShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="4c. EU-A Short")] public int EuAShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="4c. EU-A Short")] public bool EuAShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="4c. EU-A Short")] public int EuAShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="4c. EU-A Short")] public double EuAShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="4c. EU-A Short")] public double EuAShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="4c. EU-A Short")] public double EuAShortAdxPeakDrawdown {get;set;}
+        // ── EU-B ────────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="5a. EU-B Session")] public bool EuBEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="5a. EU-B Session")] public DateTime EuBTradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="5a. EU-B Session")] public bool EuBEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="5a. EU-B Session")] public DateTime EuBNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="5a. EU-B Session")] public bool EuBEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="5a. EU-B Session")] public DateTime EuBForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="5a. EU-B Session")] public int EuBMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="5a. EU-B Session")] public int EuBMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="5a. EU-B Session")] public int EuBMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="5a. EU-B Session")] public int EuBMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="5a. EU-B Session")] public bool EuBRequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="5a. EU-B Session")] public bool EuBAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="5a. EU-B Session")] public int EuBEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="5a. EU-B Session")] public int EuBEngulfingExitPaddingTicks {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="5b. EU-B Long")] public double EuBLongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="5b. EU-B Long")] public int EuBLongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="5b. EU-B Long")] public int EuBLongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="5b. EU-B Long")] public int EuBLongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="5b. EU-B Long")] public double EuBLongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="5b. EU-B Long")] public bool EuBLongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="5b. EU-B Long")] public bool EuBLongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="5b. EU-B Long")] public bool EuBLongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="5b. EU-B Long")] public int EuBLongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="5b. EU-B Long")] public int EuBLongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="5b. EU-B Long")] public int EuBLongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="5b. EU-B Long")] public bool EuBLongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="5b. EU-B Long")] public int EuBLongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="5b. EU-B Long")] public int EuBLongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="5b. EU-B Long")] public int EuBLongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="5b. EU-B Long")] public bool EuBLongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="5b. EU-B Long")] public int EuBLongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="5b. EU-B Long")] public bool EuBLongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="5b. EU-B Long")] public int EuBLongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="5b. EU-B Long")] public double EuBLongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="5b. EU-B Long")] public int EuBLongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="5b. EU-B Long")] public bool EuBLongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="5b. EU-B Long")] public int EuBLongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="5b. EU-B Long")] public double EuBLongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="5b. EU-B Long")] public double EuBLongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="5b. EU-B Long")] public double EuBLongAdxPeakDrawdown {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="5c. EU-B Short")] public double EuBShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="5c. EU-B Short")] public int EuBShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="5c. EU-B Short")] public int EuBShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="5c. EU-B Short")] public int EuBShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="5c. EU-B Short")] public double EuBShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="5c. EU-B Short")] public bool EuBShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="5c. EU-B Short")] public bool EuBShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="5c. EU-B Short")] public bool EuBShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="5c. EU-B Short")] public int EuBShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="5c. EU-B Short")] public int EuBShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="5c. EU-B Short")] public int EuBShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="5c. EU-B Short")] public bool EuBShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="5c. EU-B Short")] public int EuBShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="5c. EU-B Short")] public int EuBShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="5c. EU-B Short")] public int EuBShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="5c. EU-B Short")] public bool EuBShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="5c. EU-B Short")] public int EuBShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="5c. EU-B Short")] public bool EuBShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="5c. EU-B Short")] public int EuBShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="5c. EU-B Short")] public double EuBShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="5c. EU-B Short")] public int EuBShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="5c. EU-B Short")] public bool EuBShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="5c. EU-B Short")] public int EuBShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="5c. EU-B Short")] public double EuBShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="5c. EU-B Short")] public double EuBShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="5c. EU-B Short")] public double EuBShortAdxPeakDrawdown {get;set;}
+        // ── EU-C ────────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="6a. EU-C Session")] public bool EuCEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="6a. EU-C Session")] public DateTime EuCTradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="6a. EU-C Session")] public bool EuCEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="6a. EU-C Session")] public DateTime EuCNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="6a. EU-C Session")] public bool EuCEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="6a. EU-C Session")] public DateTime EuCForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="6a. EU-C Session")] public int EuCMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="6a. EU-C Session")] public int EuCMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="6a. EU-C Session")] public int EuCMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="6a. EU-C Session")] public int EuCMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="6a. EU-C Session")] public bool EuCRequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="6a. EU-C Session")] public bool EuCAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="6a. EU-C Session")] public int EuCEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="6a. EU-C Session")] public int EuCEngulfingExitPaddingTicks {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="6b. EU-C Long")] public double EuCLongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="6b. EU-C Long")] public int EuCLongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="6b. EU-C Long")] public int EuCLongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="6b. EU-C Long")] public int EuCLongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="6b. EU-C Long")] public double EuCLongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="6b. EU-C Long")] public bool EuCLongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="6b. EU-C Long")] public bool EuCLongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="6b. EU-C Long")] public bool EuCLongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="6b. EU-C Long")] public int EuCLongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="6b. EU-C Long")] public int EuCLongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="6b. EU-C Long")] public int EuCLongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="6b. EU-C Long")] public bool EuCLongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="6b. EU-C Long")] public int EuCLongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="6b. EU-C Long")] public int EuCLongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="6b. EU-C Long")] public int EuCLongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="6b. EU-C Long")] public bool EuCLongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="6b. EU-C Long")] public int EuCLongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="6b. EU-C Long")] public bool EuCLongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="6b. EU-C Long")] public int EuCLongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="6b. EU-C Long")] public double EuCLongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="6b. EU-C Long")] public int EuCLongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="6b. EU-C Long")] public bool EuCLongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="6b. EU-C Long")] public int EuCLongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="6b. EU-C Long")] public double EuCLongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="6b. EU-C Long")] public double EuCLongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="6b. EU-C Long")] public double EuCLongAdxPeakDrawdown {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="6c. EU-C Short")] public double EuCShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="6c. EU-C Short")] public int EuCShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="6c. EU-C Short")] public int EuCShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="6c. EU-C Short")] public int EuCShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="6c. EU-C Short")] public double EuCShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="6c. EU-C Short")] public bool EuCShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="6c. EU-C Short")] public bool EuCShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="6c. EU-C Short")] public bool EuCShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="6c. EU-C Short")] public int EuCShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="6c. EU-C Short")] public int EuCShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="6c. EU-C Short")] public int EuCShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="6c. EU-C Short")] public bool EuCShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="6c. EU-C Short")] public int EuCShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="6c. EU-C Short")] public int EuCShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="6c. EU-C Short")] public int EuCShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="6c. EU-C Short")] public bool EuCShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="6c. EU-C Short")] public int EuCShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="6c. EU-C Short")] public bool EuCShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="6c. EU-C Short")] public int EuCShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="6c. EU-C Short")] public double EuCShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="6c. EU-C Short")] public int EuCShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="6c. EU-C Short")] public bool EuCShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="6c. EU-C Short")] public int EuCShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="6c. EU-C Short")] public double EuCShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="6c. EU-C Short")] public double EuCShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="6c. EU-C Short")] public double EuCShortAdxPeakDrawdown {get;set;}
+        // ── AS-A ────────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="7a. AS-A Session")] public bool AsAEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="7a. AS-A Session")] public DateTime AsATradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="7a. AS-A Session")] public bool AsAEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="7a. AS-A Session")] public DateTime AsANoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="7a. AS-A Session")] public bool AsAEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="7a. AS-A Session")] public DateTime AsAForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="7a. AS-A Session")] public int AsAMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="7a. AS-A Session")] public int AsAMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="7a. AS-A Session")] public int AsAMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="7a. AS-A Session")] public int AsAMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="7a. AS-A Session")] public bool AsARequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="7a. AS-A Session")] public bool AsAAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="7a. AS-A Session")] public int AsAEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="7a. AS-A Session")] public int AsAEngulfingExitPaddingTicks {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="7b. AS-A Long")] public double AsALongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="7b. AS-A Long")] public int AsALongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="7b. AS-A Long")] public int AsALongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="7b. AS-A Long")] public int AsALongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="7b. AS-A Long")] public double AsALongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="7b. AS-A Long")] public bool AsALongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="7b. AS-A Long")] public bool AsALongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="7b. AS-A Long")] public bool AsALongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="7b. AS-A Long")] public int AsALongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="7b. AS-A Long")] public int AsALongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="7b. AS-A Long")] public int AsALongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="7b. AS-A Long")] public bool AsALongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="7b. AS-A Long")] public int AsALongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="7b. AS-A Long")] public int AsALongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="7b. AS-A Long")] public int AsALongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="7b. AS-A Long")] public bool AsALongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="7b. AS-A Long")] public int AsALongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="7b. AS-A Long")] public bool AsALongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="7b. AS-A Long")] public int AsALongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="7b. AS-A Long")] public double AsALongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="7b. AS-A Long")] public int AsALongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="7b. AS-A Long")] public bool AsALongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="7b. AS-A Long")] public int AsALongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="7b. AS-A Long")] public double AsALongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="7b. AS-A Long")] public double AsALongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="7b. AS-A Long")] public double AsALongAdxPeakDrawdown {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="7c. AS-A Short")] public double AsAShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="7c. AS-A Short")] public int AsAShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="7c. AS-A Short")] public int AsAShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="7c. AS-A Short")] public int AsAShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="7c. AS-A Short")] public double AsAShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="7c. AS-A Short")] public bool AsAShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="7c. AS-A Short")] public bool AsAShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="7c. AS-A Short")] public bool AsAShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="7c. AS-A Short")] public int AsAShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="7c. AS-A Short")] public int AsAShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="7c. AS-A Short")] public int AsAShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="7c. AS-A Short")] public bool AsAShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="7c. AS-A Short")] public int AsAShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="7c. AS-A Short")] public int AsAShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="7c. AS-A Short")] public int AsAShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="7c. AS-A Short")] public bool AsAShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="7c. AS-A Short")] public int AsAShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="7c. AS-A Short")] public bool AsAShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="7c. AS-A Short")] public int AsAShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="7c. AS-A Short")] public double AsAShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="7c. AS-A Short")] public int AsAShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="7c. AS-A Short")] public bool AsAShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="7c. AS-A Short")] public int AsAShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="7c. AS-A Short")] public double AsAShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="7c. AS-A Short")] public double AsAShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="7c. AS-A Short")] public double AsAShortAdxPeakDrawdown {get;set;}
+        // ── AS-B ────────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="8a. AS-B Session")] public bool AsBEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="8a. AS-B Session")] public DateTime AsBTradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="8a. AS-B Session")] public bool AsBEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="8a. AS-B Session")] public DateTime AsBNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="8a. AS-B Session")] public bool AsBEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="8a. AS-B Session")] public DateTime AsBForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="8a. AS-B Session")] public int AsBMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="8a. AS-B Session")] public int AsBMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="8a. AS-B Session")] public int AsBMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="8a. AS-B Session")] public int AsBMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="8a. AS-B Session")] public bool AsBRequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="8a. AS-B Session")] public bool AsBAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="8a. AS-B Session")] public int AsBEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="8a. AS-B Session")] public int AsBEngulfingExitPaddingTicks {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="8b. AS-B Long")] public double AsBLongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="8b. AS-B Long")] public int AsBLongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="8b. AS-B Long")] public int AsBLongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="8b. AS-B Long")] public int AsBLongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="8b. AS-B Long")] public double AsBLongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="8b. AS-B Long")] public bool AsBLongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="8b. AS-B Long")] public bool AsBLongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="8b. AS-B Long")] public bool AsBLongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="8b. AS-B Long")] public int AsBLongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="8b. AS-B Long")] public int AsBLongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="8b. AS-B Long")] public int AsBLongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="8b. AS-B Long")] public bool AsBLongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="8b. AS-B Long")] public int AsBLongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="8b. AS-B Long")] public int AsBLongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="8b. AS-B Long")] public int AsBLongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="8b. AS-B Long")] public bool AsBLongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="8b. AS-B Long")] public int AsBLongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="8b. AS-B Long")] public bool AsBLongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="8b. AS-B Long")] public int AsBLongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="8b. AS-B Long")] public double AsBLongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="8b. AS-B Long")] public int AsBLongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="8b. AS-B Long")] public bool AsBLongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="8b. AS-B Long")] public int AsBLongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="8b. AS-B Long")] public double AsBLongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="8b. AS-B Long")] public double AsBLongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="8b. AS-B Long")] public double AsBLongAdxPeakDrawdown {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="8c. AS-B Short")] public double AsBShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="8c. AS-B Short")] public int AsBShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="8c. AS-B Short")] public int AsBShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="8c. AS-B Short")] public int AsBShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="8c. AS-B Short")] public double AsBShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="8c. AS-B Short")] public bool AsBShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="8c. AS-B Short")] public bool AsBShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="8c. AS-B Short")] public bool AsBShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="8c. AS-B Short")] public int AsBShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="8c. AS-B Short")] public int AsBShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="8c. AS-B Short")] public int AsBShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="8c. AS-B Short")] public bool AsBShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="8c. AS-B Short")] public int AsBShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="8c. AS-B Short")] public int AsBShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="8c. AS-B Short")] public int AsBShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="8c. AS-B Short")] public bool AsBShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="8c. AS-B Short")] public int AsBShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="8c. AS-B Short")] public bool AsBShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="8c. AS-B Short")] public int AsBShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="8c. AS-B Short")] public double AsBShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="8c. AS-B Short")] public int AsBShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="8c. AS-B Short")] public bool AsBShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="8c. AS-B Short")] public int AsBShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="8c. AS-B Short")] public double AsBShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="8c. AS-B Short")] public double AsBShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="8c. AS-B Short")] public double AsBShortAdxPeakDrawdown {get;set;}
+        // ── AS-C ────────────────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable",Order=1,GroupName="9a. AS-C Session")] public bool AsCEnable {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Trade Window Start",Order=2,GroupName="9a. AS-C Session")] public DateTime AsCTradeWindowStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable No-New-Trades After",Order=3,GroupName="9a. AS-C Session")] public bool AsCEnableNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="No New Trades After",Order=4,GroupName="9a. AS-C Session")] public DateTime AsCNoNewTradesAfter {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Forced Close",Order=5,GroupName="9a. AS-C Session")] public bool AsCEnableForcedClose {get;set;}
+        [NinjaScriptProperty][PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")][Display(Name="Forced Close Time",Order=6,GroupName="9a. AS-C Session")] public DateTime AsCForcedCloseTime {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Profit Ticks",Order=10,GroupName="9a. AS-C Session")] public int AsCMaxSessionProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="Max Loss Ticks",Order=11,GroupName="9a. AS-C Session")] public int AsCMaxSessionLossTicks {get;set;}
+                [NinjaScriptProperty][Range(1,20)][Display(Name="Max Trades",Order=8,GroupName="9a. AS-C Session")] public int AsCMaxTradesPerSession {get;set;}
+        [NinjaScriptProperty][Range(0,20)][Display(Name="Max Losses",Order=9,GroupName="9a. AS-C Session")] public int AsCMaxLossesPerSession {get;set;}
+        [NinjaScriptProperty][Display(Name="Require Direction Flip",Order=15,GroupName="9a. AS-C Session")] public bool AsCRequireDirectionFlip {get;set;}
+        [NinjaScriptProperty][Display(Name="Allow Same Dir After Loss",Order=16,GroupName="9a. AS-C Session")] public bool AsCAllowSameDirectionAfterLoss {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Engulfing Exit After Bars",Order=17,GroupName="9a. AS-C Session")] public int AsCEngulfingExitAfterBars {get;set;}
+        [NinjaScriptProperty][Range(0,50)][Display(Name="Engulfing Exit Padding Ticks",Order=18,GroupName="9a. AS-C Session")] public int AsCEngulfingExitPaddingTicks {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="9b. AS-C Long")] public double AsCLongCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="9b. AS-C Long")] public int AsCLongMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="9b. AS-C Long")] public int AsCLongSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="9b. AS-C Long")] public int AsCLongMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="9b. AS-C Long")] public double AsCLongMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="9b. AS-C Long")] public bool AsCLongUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="9b. AS-C Long")] public bool AsCLongSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="9b. AS-C Long")] public bool AsCLongMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="9b. AS-C Long")] public int AsCLongTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="9b. AS-C Long")] public int AsCLongTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="9b. AS-C Long")] public int AsCLongTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="9b. AS-C Long")] public bool AsCLongEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="9b. AS-C Long")] public int AsCLongBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="9b. AS-C Long")] public int AsCLongBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="9b. AS-C Long")] public int AsCLongMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="9b. AS-C Long")] public bool AsCLongEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="9b. AS-C Long")] public int AsCLongPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="9b. AS-C Long")] public bool AsCLongEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="9b. AS-C Long")] public int AsCLongWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="9b. AS-C Long")] public double AsCLongMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="9b. AS-C Long")] public int AsCLongTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="9b. AS-C Long")] public bool AsCLongEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="9b. AS-C Long")] public int AsCLongAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="9b. AS-C Long")] public double AsCLongAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="9b. AS-C Long")] public double AsCLongAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="9b. AS-C Long")] public double AsCLongAdxPeakDrawdown {get;set;}
+        [NinjaScriptProperty][Range(0.01,100)][Display(Name="Candle Multiplier",Order=4,GroupName="9c. AS-C Short")] public double AsCShortCandleMultiplier {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max TP Ticks",Order=5,GroupName="9c. AS-C Short")] public int AsCShortMaxTakeProfitTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="SL Extra Ticks",Order=6,GroupName="9c. AS-C Short")] public int AsCShortSlExtraTicks {get;set;}
+        [NinjaScriptProperty][Range(0,9999)][Display(Name="Max SL Ticks",Order=7,GroupName="9c. AS-C Short")] public int AsCShortMaxSlTicks {get;set;}
+        [NinjaScriptProperty][Range(0,10)][Display(Name="Max SL:TP Ratio",Order=8,GroupName="9c. AS-C Short")] public double AsCShortMaxSlToTpRatio {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Prior Candle SL",Order=9,GroupName="9c. AS-C Short")] public bool AsCShortUsePriorCandleSl {get;set;}
+        [NinjaScriptProperty][Display(Name="SL At MA",Order=10,GroupName="9c. AS-C Short")] public bool AsCShortSlAtMa {get;set;}
+        [NinjaScriptProperty][Display(Name="Move SL To Entry Bar",Order=11,GroupName="9c. AS-C Short")] public bool AsCShortMoveSlToEntryBar {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="Trail Offset Ticks",Order=12,GroupName="9c. AS-C Short")] public int AsCShortTrailOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Trail Delay Bars",Order=13,GroupName="9c. AS-C Short")] public int AsCShortTrailDelayBars {get;set;}
+        [NinjaScriptProperty][Range(0,500)][Display(Name="Trail Candle Offset",Order=14,GroupName="9c. AS-C Short")] public int AsCShortTrailCandleOffset {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Breakeven",Order=15,GroupName="9c. AS-C Short")] public bool AsCShortEnableBreakeven {get;set;}
+        [NinjaScriptProperty][Range(1,9999)][Display(Name="BE Trigger Ticks",Order=17,GroupName="9c. AS-C Short")] public int AsCShortBreakevenTriggerTicks {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="BE Offset Ticks",Order=19,GroupName="9c. AS-C Short")] public int AsCShortBreakevenOffsetTicks {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Max Bars In Trade",Order=20,GroupName="9c. AS-C Short")] public int AsCShortMaxBarsInTrade {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable PriceOffset Trail",Order=21,GroupName="9c. AS-C Short")] public bool AsCShortEnablePriceOffsetTrail {get;set;}
+        [NinjaScriptProperty][Range(0,999)][Display(Name="PriceOffset Reduction",Order=22,GroupName="9c. AS-C Short")] public int AsCShortPriceOffsetReductionTicks {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable WMA Filter",Order=29,GroupName="9c. AS-C Short")] public bool AsCShortEnableWmaFilter {get;set;}
+        [NinjaScriptProperty][Range(1,500)][Display(Name="WMA Period",Order=30,GroupName="9c. AS-C Short")] public int AsCShortWmaPeriod {get;set;}
+        [NinjaScriptProperty][Range(0,100)][Display(Name="Min Body %",Order=32,GroupName="9c. AS-C Short")] public double AsCShortMinBodyPct {get;set;}
+        [NinjaScriptProperty][Range(0,200)][Display(Name="Trend Confirm Bars",Order=33,GroupName="9c. AS-C Short")] public int AsCShortTrendConfirmBars {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable ADX Filter",Order=35,GroupName="9c. AS-C Short")] public bool AsCShortEnableAdxFilter {get;set;}
+        [NinjaScriptProperty][Range(1,100)][Display(Name="ADX Period",Order=36,GroupName="9c. AS-C Short")] public int AsCShortAdxPeriod {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Min Level",Order=37,GroupName="9c. AS-C Short")] public double AsCShortAdxMinLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Max Level",Order=38,GroupName="9c. AS-C Short")] public double AsCShortAdxMaxLevel {get;set;}
+        [NinjaScriptProperty][Range(0.0,100.0)][Display(Name="ADX Peak Drawdown",Order=39,GroupName="9c. AS-C Short")] public double AsCShortAdxPeakDrawdown {get;set;}
+
+        // ═══════════════════════════════════════════════════════════════════
+        // ── Commercial / AutoEdge parameters ────────────────────────────────
+        // ═══════════════════════════════════════════════════════════════════
+
+        // ── Execution ──────────────────────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Entry Confirmation",Order=1,GroupName="A. Common - Execution")] public bool RequireEntryConfirmation {get;set;}
+
+        // ── Skip / News time windows ───────────────────────────────────────
+        [NinjaScriptProperty][Display(Name="Enable Skip Time Window",Order=1,GroupName="A. Common - Time Windows")] public bool EnableSkipTime {get;set;}
+        [NinjaScriptProperty][Display(Name="Skip Time Start",Order=2,GroupName="A. Common - Time Windows")] public string SkipTimeStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Skip Time End",Order=3,GroupName="A. Common - Time Windows")] public string SkipTimeEnd {get;set;}
+        [NinjaScriptProperty][Display(Name="Flatten Position at Skip Start",Order=4,GroupName="A. Common - Time Windows")] public bool FlattenAtSkipStart {get;set;}
+        [NinjaScriptProperty][Display(Name="Use News Skip",Order=5,GroupName="A. Common - Time Windows")] public bool UseNewsSkip {get;set;}
+        [Browsable(false)][Display(Name="News Time",Order=6,GroupName="A. Common - Time Windows")] public string NewsTime {get;set;}
+        [NinjaScriptProperty][Range(0,240)][Display(Name="News Block Minutes",Order=7,GroupName="A. Common - Time Windows")] public int NewsBlockMinutes {get;set;}
+        [NinjaScriptProperty][Display(Name="Flatten Position at News Start",Order=8,GroupName="A. Common - Time Windows")] public bool FlattenAtNewsStart {get;set;}
+
+        // ── Webhooks / ProjectX (TopstepX) ─────────────────────────────────
+        [NinjaScriptProperty][Display(Name="TradersPost Webhook URL",Order=1,GroupName="A. Common - Webhooks")] public string WebhookUrl {get;set;}
+        [NinjaScriptProperty][Display(Name="Webhook Ticker Override",Order=2,GroupName="A. Common - Webhooks")] public string WebhookTickerOverride {get;set;}
+        [NinjaScriptProperty][Display(Name="Webhook Provider",Description="TradersPost or ProjectX.",Order=3,GroupName="A. Common - Webhooks")] public WebhookProvider WebhookProviderType {get;set;}
+        [NinjaScriptProperty][Browsable(false)][Display(Name="ProjectX API Base URL",Order=4,GroupName="A. Common - Webhooks")] public string ProjectXApiBaseUrl {get;set;}
+        [Browsable(false)] public bool ProjectXTradeAllAccounts {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX Username",Order=5,GroupName="A. Common - Webhooks")] public string ProjectXUsername {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX API Key",Order=6,GroupName="A. Common - Webhooks")] public string ProjectXApiKey {get;set;}
+        [NinjaScriptProperty][Display(Name="ProjectX Accounts",Description="Comma-separated ProjectX account ids or exact account names.",Order=7,GroupName="A. Common - Webhooks")] public string ProjectXAccountId {get;set;}
+        [NinjaScriptProperty][Browsable(false)][Display(Name="ProjectX Contract ID",Order=8,GroupName="A. Common - Webhooks")] public string ProjectXContractId {get;set;}
+
+        // ── Global Risk ────────────────────────────────────────────────────
+        [Browsable(false)] public bool EnableGlobalMaxDailyLoss {get;set;}
+        [NinjaScriptProperty][Range(0,double.MaxValue)][Display(Name="Global Max Daily Loss (Points)",Order=2,GroupName="A. Common - Global Risk")] public double GlobalMaxDailyLoss {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Global Max Daily Profit",Order=3,GroupName="A. Common - Global Risk")] public bool EnableGlobalMaxDailyProfit {get;set;}
+        [NinjaScriptProperty][Range(0,double.MaxValue)][Display(Name="Global Max Daily Profit (Points)",Order=4,GroupName="A. Common - Global Risk")] public double GlobalMaxDailyProfit {get;set;}
+        [NinjaScriptProperty][Display(Name="Enable Global Max Trades Per Day",Order=5,GroupName="A. Common - Global Risk")] public bool EnableGlobalMaxTradesPerDay {get;set;}
+        [NinjaScriptProperty][Range(1,int.MaxValue)][Display(Name="Global Max Trades Per Day",Order=6,GroupName="A. Common - Global Risk")] public int GlobalMaxTradesPerDay {get;set;}
+        [NinjaScriptProperty][Range(0.0,double.MaxValue)][Display(Name="Max Account Balance",Description="Net liquidation ceiling. When reached, entries are blocked and open positions are flattened. 0 = disabled.",Order=7,GroupName="A. Common - Global Risk")] public double MaxAccountBalance {get;set;}
+        [NinjaScriptProperty][Display(Name="Use Webhooks",Description="Master switch for outbound order webhooks (TradersPost / ProjectX).",Order=0,GroupName="A. Common - Webhooks")] public bool UseWebhooks {get;set;}
+        [NinjaScriptProperty][Browsable(false)][Display(Name="Debug Logging",Order=99,GroupName="A. Common - Webhooks")] public bool DebugLogging {get;set;}
+        #endregion
+    }
+
+    #region Enums
+    public enum MAMode_EMA3790           { SMA, EMA, Both }
+    public enum MichalEntryMode_EMA3790  { Market, LimitOffset, LimitRetracement }
+    public enum MichalTPMode_EMA3790     { FixedTicks, SwingPoint, CandleMultiple }
+    public enum BEMode2_EMA3790          { FixedTicks, CandlePercent }
+    #endregion
 }
