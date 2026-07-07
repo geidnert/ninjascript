@@ -489,11 +489,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── NY-A ─────────────────────────────────────────────────────
                 NyAEnable = true;
-                NyATradeWindowStart       = DateTime.Parse("09:16", System.Globalization.CultureInfo.InvariantCulture);
+                NyATradeWindowStart       = DateTime.Parse("09:30", System.Globalization.CultureInfo.InvariantCulture);
                 NyAEnableNoNewTradesAfter = true;
-                NyANoNewTradesAfter       = DateTime.Parse("11:17", System.Globalization.CultureInfo.InvariantCulture);
+                NyANoNewTradesAfter       = DateTime.Parse("11:30", System.Globalization.CultureInfo.InvariantCulture);
                 NyAEnableForcedClose      = false;
-                NyAForcedCloseTime        = DateTime.Parse("11:55", System.Globalization.CultureInfo.InvariantCulture);
+                NyAForcedCloseTime        = DateTime.Parse("12:00", System.Globalization.CultureInfo.InvariantCulture);
                 NyAMaxSessionProfitTicks=1350; NyAMaxSessionLossTicks=160;
                 NyAMaxTradesPerSession=2; NyAMaxLossesPerSession=2;
                 // Long
@@ -522,11 +522,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── NY-B ─────────────────────────────────────────────────────
                 NyBEnable = true;
-                NyBTradeWindowStart       = DateTime.Parse("11:32", System.Globalization.CultureInfo.InvariantCulture);
+                NyBTradeWindowStart       = DateTime.Parse("11:30", System.Globalization.CultureInfo.InvariantCulture);
                 NyBEnableNoNewTradesAfter = true;
-                NyBNoNewTradesAfter       = DateTime.Parse("13:33", System.Globalization.CultureInfo.InvariantCulture);
+                NyBNoNewTradesAfter       = DateTime.Parse("13:45", System.Globalization.CultureInfo.InvariantCulture);
                 NyBEnableForcedClose      = false;
-                NyBForcedCloseTime        = DateTime.Parse("14:25", System.Globalization.CultureInfo.InvariantCulture);
+                NyBForcedCloseTime        = DateTime.Parse("14:30", System.Globalization.CultureInfo.InvariantCulture);
                 NyBMaxSessionProfitTicks=1075; NyBMaxSessionLossTicks=160;
                 NyBMaxTradesPerSession=2; NyBMaxLossesPerSession=2;
                 // Long
@@ -555,11 +555,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── NY-C ─────────────────────────────────────────────────────
                 NyCEnable = true;
-                NyCTradeWindowStart       = DateTime.Parse("11:20", System.Globalization.CultureInfo.InvariantCulture);
+                NyCTradeWindowStart       = DateTime.Parse("13:45", System.Globalization.CultureInfo.InvariantCulture);
                 NyCEnableNoNewTradesAfter = true;
                 NyCNoNewTradesAfter       = DateTime.Parse("14:45", System.Globalization.CultureInfo.InvariantCulture);
                 NyCEnableForcedClose      = true;
-                NyCForcedCloseTime        = DateTime.Parse("15:32", System.Globalization.CultureInfo.InvariantCulture);
+                NyCForcedCloseTime        = DateTime.Parse("15:45", System.Globalization.CultureInfo.InvariantCulture);
                 NyCMaxSessionProfitTicks=1075; NyCMaxSessionLossTicks=160;
                 NyCMaxTradesPerSession=3; NyCMaxLossesPerSession=2;
                 // Long
@@ -588,11 +588,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── EU-A ─────────────────────────────────────────────────────
                 EuAEnable = true;
-                EuATradeWindowStart       = DateTime.Parse("00:26", System.Globalization.CultureInfo.InvariantCulture);
+                EuATradeWindowStart       = DateTime.Parse("00:30", System.Globalization.CultureInfo.InvariantCulture);
                 EuAEnableNoNewTradesAfter = true;
                 EuANoNewTradesAfter       = DateTime.Parse("04:30", System.Globalization.CultureInfo.InvariantCulture);
                 EuAEnableForcedClose      = true;
-                EuAForcedCloseTime        = DateTime.Parse("04:36", System.Globalization.CultureInfo.InvariantCulture);
+                EuAForcedCloseTime        = DateTime.Parse("04:45", System.Globalization.CultureInfo.InvariantCulture);
                 EuAMaxSessionProfitTicks=1075; EuAMaxSessionLossTicks=160;
                 EuAMaxTradesPerSession=2; EuAMaxLossesPerSession=2;
                 // Long
@@ -621,11 +621,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── EU-B ─────────────────────────────────────────────────────
                 EuBEnable = true;
-                EuBTradeWindowStart       = DateTime.Parse("02:40", System.Globalization.CultureInfo.InvariantCulture);
+                EuBTradeWindowStart       = DateTime.Parse("04:30", System.Globalization.CultureInfo.InvariantCulture);
                 EuBEnableNoNewTradesAfter = true;
                 EuBNoNewTradesAfter       = DateTime.Parse("05:15", System.Globalization.CultureInfo.InvariantCulture);
                 EuBEnableForcedClose      = true;
-                EuBForcedCloseTime        = DateTime.Parse("05:21", System.Globalization.CultureInfo.InvariantCulture);
+                EuBForcedCloseTime        = DateTime.Parse("05:30", System.Globalization.CultureInfo.InvariantCulture);
                 EuBMaxSessionProfitTicks=1075; EuBMaxSessionLossTicks=160;
                 EuBMaxTradesPerSession=3; EuBMaxLossesPerSession=2;
                 // Long
@@ -654,9 +654,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── EU-C ─────────────────────────────────────────────────────
                 EuCEnable = true;
-                EuCTradeWindowStart       = DateTime.Parse("05:05", System.Globalization.CultureInfo.InvariantCulture);
+                EuCTradeWindowStart       = DateTime.Parse("05:15", System.Globalization.CultureInfo.InvariantCulture);
                 EuCEnableNoNewTradesAfter = true;
-                EuCNoNewTradesAfter       = DateTime.Parse("08:05", System.Globalization.CultureInfo.InvariantCulture);
+                EuCNoNewTradesAfter       = DateTime.Parse("08:15", System.Globalization.CultureInfo.InvariantCulture);
                 EuCEnableForcedClose      = true;
                 EuCForcedCloseTime        = DateTime.Parse("11:00", System.Globalization.CultureInfo.InvariantCulture);
                 EuCMaxSessionProfitTicks=1075; EuCMaxSessionLossTicks=160;
@@ -687,9 +687,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── AS-A ─────────────────────────────────────────────────────
                 AsAEnable = true;
-                AsATradeWindowStart       = DateTime.Parse("18:25", System.Globalization.CultureInfo.InvariantCulture);
+                AsATradeWindowStart       = DateTime.Parse("18:30", System.Globalization.CultureInfo.InvariantCulture);
                 AsAEnableNoNewTradesAfter = true;
-                AsANoNewTradesAfter       = DateTime.Parse("20:10", System.Globalization.CultureInfo.InvariantCulture);
+                AsANoNewTradesAfter       = DateTime.Parse("20:15", System.Globalization.CultureInfo.InvariantCulture);
                 AsAEnableForcedClose      = false;
                 AsAForcedCloseTime        = DateTime.Parse("20:00", System.Globalization.CultureInfo.InvariantCulture);
                 AsAMaxSessionProfitTicks=500; AsAMaxSessionLossTicks=200;
@@ -720,11 +720,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── AS-B ─────────────────────────────────────────────────────
                 AsBEnable = true;
-                AsBTradeWindowStart       = DateTime.Parse("19:10", System.Globalization.CultureInfo.InvariantCulture);
+                AsBTradeWindowStart       = DateTime.Parse("20:15", System.Globalization.CultureInfo.InvariantCulture);
                 AsBEnableNoNewTradesAfter = true;
                 AsBNoNewTradesAfter       = DateTime.Parse("00:00", System.Globalization.CultureInfo.InvariantCulture);
                 AsBEnableForcedClose      = true;
-                AsBForcedCloseTime        = DateTime.Parse("01:05", System.Globalization.CultureInfo.InvariantCulture);
+                AsBForcedCloseTime        = DateTime.Parse("01:15", System.Globalization.CultureInfo.InvariantCulture);
                 AsBMaxSessionProfitTicks=500; AsBMaxSessionLossTicks=200;
                 AsBMaxTradesPerSession=2; AsBMaxLossesPerSession=2;
                 // Long
@@ -753,11 +753,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 // ── AS-C ─────────────────────────────────────────────────────
                 AsCEnable = true;
-                AsCTradeWindowStart       = DateTime.Parse("23:22", System.Globalization.CultureInfo.InvariantCulture);
+                AsCTradeWindowStart       = DateTime.Parse("00:00", System.Globalization.CultureInfo.InvariantCulture);
                 AsCEnableNoNewTradesAfter = true;
-                AsCNoNewTradesAfter       = DateTime.Parse("01:05", System.Globalization.CultureInfo.InvariantCulture);
+                AsCNoNewTradesAfter       = DateTime.Parse("00:30", System.Globalization.CultureInfo.InvariantCulture);
                 AsCEnableForcedClose      = true;
-                AsCForcedCloseTime        = DateTime.Parse("02:16", System.Globalization.CultureInfo.InvariantCulture);
+                AsCForcedCloseTime        = DateTime.Parse("02:30", System.Globalization.CultureInfo.InvariantCulture);
                 AsCMaxSessionProfitTicks=500; AsCMaxSessionLossTicks=200;
                 AsCMaxTradesPerSession=2; AsCMaxLossesPerSession=1;
                 // Long
