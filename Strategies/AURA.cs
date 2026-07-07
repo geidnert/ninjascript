@@ -330,7 +330,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         public AURA()
         {
-            VendorLicense(1235);
+            VendorLicense(1744);
         }
 
         // Chart label: show only the strategy name instead of the full parameter list
@@ -3454,14 +3454,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string instrumentName = Instrument != null && Instrument.MasterInstrument != null
                 ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
                 : string.Empty;
-            bool instrumentMatches = instrumentName == "MGC" || instrumentName == "GC";
+            bool instrumentMatches = instrumentName == "MGC";
             isConfiguredInstrumentValid = instrumentMatches;
             if (instrumentMatches) return;
 
             string actualInstrument = string.IsNullOrWhiteSpace(instrumentName) ? "Unknown" : instrumentName;
             string message = string.Format(
                 CultureInfo.InvariantCulture,
-                "{0} must run on MGC or GC. Current instrument is {1}.",
+                "{0} must run on MGC. Current instrument is {1}.",
                 Name,
                 actualInstrument);
 
