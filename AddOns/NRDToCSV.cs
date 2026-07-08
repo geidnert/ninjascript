@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -67,6 +68,7 @@ namespace NinjaTrader.Gui.NinjaScript
     {
         private static readonly int PARALLEL_THREADS_COUNT = 4;
         private TextBox tbCsvRootDir;
+        private Label lCsvRootDir;
         private Label lDateRange;
         private Label lHistoricalSeries;
         private ComboBox cbExportMode;
@@ -122,7 +124,7 @@ namespace NinjaTrader.Gui.NinjaScript
                 Margin = new Thickness(margin, 0, margin, margin),
                 Text = Path.Combine(Globals.UserDataDir, "db", "replay.csv"),
             };
-            Label lCsvRootDir = new Label()
+            lCsvRootDir = new Label()
             {
                 Foreground = FindResource("FontLabelBrush") as Brush,
                 Margin = new Thickness(margin, 0, margin, 0),
@@ -140,6 +142,7 @@ namespace NinjaTrader.Gui.NinjaScript
                 ItemsSource = new[]
                 {
                     new OptionItem<ExportMode>(ExportMode.Replay, "Replay top-of-book/trades (.nrd -> L1 CSV)"),
+                    new OptionItem<ExportMode>(ExportMode.AuditReplayCoverage, "Audit replay coverage (.nrd -> CSV/TXT report)"),
                     new OptionItem<ExportMode>(ExportMode.Historical, "Historical bars (.ncd -> CSV)"),
                 },
                 SelectedIndex = 0,
@@ -215,7 +218,7 @@ namespace NinjaTrader.Gui.NinjaScript
                 IsEditable = true,
                 IsTextSearchEnabled = false,
                 StaysOpenOnEdit = true,
-                ToolTip = "Leave blank to convert all instruments. Enter a base instrument such as MNQ or NQ, or a full contract name.",
+                ToolTip = "Leave blank to process all instruments. Enter a base instrument such as MNQ or NQ, or a full contract name.",
             };
             bConvert = new Button() { Margin = new Thickness(margin), IsDefault = true, Content = "_Convert" };
             bConvert.Click += OnConvertButtonClick;
@@ -346,16 +349,38 @@ namespace NinjaTrader.Gui.NinjaScript
 
         private void UpdateModeUiState()
         {
-            bool isHistorical = GetSelectedExportMode() == ExportMode.Historical;
+            ExportMode exportMode = GetSelectedExportMode();
+            bool isHistorical = exportMode == ExportMode.Historical;
+            bool isAudit = exportMode == ExportMode.AuditReplayCoverage;
+            string defaultCsvRootDir = Path.Combine(Globals.UserDataDir, "db", "replay.csv");
+            string defaultAuditOutputDir = Path.Combine(Globals.UserDataDir, "db", "replay-audit");
+            if (tbCsvRootDir != null)
+            {
+                if (isAudit && string.Equals(tbCsvRootDir.Text, defaultCsvRootDir, StringComparison.OrdinalIgnoreCase))
+                    tbCsvRootDir.Text = defaultAuditOutputDir;
+                else if (!isAudit && string.Equals(tbCsvRootDir.Text, defaultAuditOutputDir, StringComparison.OrdinalIgnoreCase))
+                    tbCsvRootDir.Text = defaultCsvRootDir;
+            }
+            if (lCsvRootDir != null)
+                lCsvRootDir.Content = isAudit
+                    ? "Output directory for replay audit reports:"
+                    : "Root directory of converted CSV files:";
             if (lDateRange != null)
-                lDateRange.Content = isHistorical
-                    ? "Historical data date range to export:"
-                    : "Replay CSV date range to produce (optional):";
+            {
+                if (isHistorical)
+                    lDateRange.Content = "Historical data date range to export:";
+                else if (isAudit)
+                    lDateRange.Content = "Replay coverage audit date range (optional; needed to report missing days before/after existing files):";
+                else
+                    lDateRange.Content = "Replay CSV date range to produce (optional):";
+            }
 
             if (lHistoricalSeries != null)
                 lHistoricalSeries.Visibility = isHistorical ? Visibility.Visible : Visibility.Collapsed;
             if (cbHistoricalSeries != null)
                 cbHistoricalSeries.Visibility = isHistorical ? Visibility.Visible : Visibility.Collapsed;
+            if (bConvert != null && !running)
+                bConvert.Content = isAudit ? "_Audit" : "_Convert";
         }
 
         private ExportMode GetSelectedExportMode()
@@ -401,7 +426,7 @@ namespace NinjaTrader.Gui.NinjaScript
                 if (!canceling)
                 {
                     canceling = true;
-                    logout("Canceling convertion...");
+                    logout(GetSelectedExportMode() == ExportMode.AuditReplayCoverage ? "Canceling audit..." : "Canceling conversion...");
                     bConvert.IsEnabled = false;
                     bConvert.Content = "Canceling...";
                 }
@@ -458,6 +483,8 @@ namespace NinjaTrader.Gui.NinjaScript
 
             if (exportMode == ExportMode.Historical)
                 StartHistoricalExport(csvDir, instrumentDirs, selectedStartDate.Value, selectedEndDate.Value, selectedInstruments);
+            else if (exportMode == ExportMode.AuditReplayCoverage)
+                StartReplayAudit(dataRootDir, csvDir, instrumentDirs, selectedStartDate, selectedEndDate, selectedInstruments);
             else
                 StartReplayExport(dataRootDir, csvDir, instrumentDirs, selectedStartDate, selectedEndDate, selectedInstruments);
         }
@@ -513,6 +540,609 @@ namespace NinjaTrader.Gui.NinjaScript
             }));
         }
 
+        private void StartReplayAudit(string nrdRoot, string outputDir, IEnumerable<string> instrumentDirs, DateTime? selectedStartDate, DateTime? selectedEndDate, HashSet<string> selectedInstruments)
+        {
+            Globals.RandomDispatcher.InvokeAsync(new Action(() =>
+            {
+                List<ReplayContractFolder> folders = BuildReplayAuditFolders(instrumentDirs, selectedInstruments);
+                if (folders.Count == 0)
+                {
+                    if (selectedInstruments.Count > 0)
+                        logout(string.Format("No replay contract folders found for instrument filter \"{0}\"", cbInstrumentFilter.Text));
+                    else
+                        logout("No replay contract folders found to audit");
+                    return;
+                }
+
+                List<ReplayAuditEntry> entries = BuildReplayAuditEntries(folders, selectedStartDate, selectedEndDate, selectedInstruments);
+                if (entries.Count == 0)
+                {
+                    logout("No replay dates found to audit. Select a date range to report missing replay days.");
+                    return;
+                }
+
+                logout(string.Format("Audit {0} replay date/file rows...", entries.Count));
+                run(entries.Count, false);
+                RunReplayAudit(nrdRoot, outputDir, entries, selectedStartDate, selectedEndDate, selectedInstruments);
+            }));
+        }
+
+        private List<ReplayContractFolder> BuildReplayAuditFolders(IEnumerable<string> instrumentDirs, HashSet<string> selectedInstruments)
+        {
+            List<ReplayContractFolder> folders = new List<ReplayContractFolder>();
+            foreach (string instrumentDir in instrumentDirs)
+            {
+                string fullName = Path.GetFileName(instrumentDir);
+                if (string.IsNullOrWhiteSpace(fullName))
+                    continue;
+
+                Collection<Instrument> instruments = InstrumentList.GetInstruments(fullName);
+                Cbi.Instrument instrument = instruments.Count == 1 ? instruments[0] : null;
+                string baseInstrument = instrument != null ? GetInstrumentFilterName(instrument) : GetInstrumentFilterName(fullName);
+                if (!MatchesReplayFolderFilter(fullName, baseInstrument, selectedInstruments))
+                    continue;
+
+                if (instruments.Count == 0)
+                    logout(string.Format("WARNING: Unable to find an instrument named \"{0}\". Audit can report file existence but cannot read timestamps.", fullName));
+                else if (instruments.Count > 1)
+                    logout(string.Format("WARNING: More than one instrument identified for name \"{0}\". Audit can report file existence but cannot read timestamps.", fullName));
+
+                folders.Add(new ReplayContractFolder()
+                {
+                    DirectoryPath = instrumentDir,
+                    ContractFolder = fullName,
+                    BaseInstrument = baseInstrument,
+                    Instrument = instrument,
+                });
+            }
+
+            return folders
+                .OrderBy(folder => folder.BaseInstrument, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(folder => folder.ContractFolder, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private List<ReplayAuditEntry> BuildReplayAuditEntries(List<ReplayContractFolder> folders, DateTime? selectedStartDate, DateTime? selectedEndDate, HashSet<string> selectedInstruments)
+        {
+            List<ReplayAuditEntry> entries = new List<ReplayAuditEntry>();
+            foreach (ReplayContractFolder folder in folders)
+            {
+                string[] fileEntries = Directory.GetFiles(folder.DirectoryPath, "*.nrd");
+                foreach (string fileName in fileEntries)
+                {
+                    DateTime? fileDate = TryParseReplayFileDate(fileName);
+                    if (fileDate.HasValue)
+                    {
+                        if (selectedStartDate.HasValue && fileDate.Value.Date < selectedStartDate.Value.Date)
+                            continue;
+                        if (selectedEndDate.HasValue && fileDate.Value.Date > selectedEndDate.Value.Date)
+                            continue;
+                    }
+                    else if (selectedStartDate.HasValue || selectedEndDate.HasValue)
+                    {
+                        continue;
+                    }
+
+                    FileInfo fileInfo = new FileInfo(fileName);
+                    entries.Add(new ReplayAuditEntry()
+                    {
+                        ContractFolder = folder.ContractFolder,
+                        BaseInstrument = folder.BaseInstrument,
+                        Instrument = folder.Instrument,
+                        Date = fileDate,
+                        FilePath = fileName,
+                        FileName = Path.GetFileName(fileName),
+                        FileExists = true,
+                        FileBytes = fileInfo.Exists ? fileInfo.Length : 0,
+                    });
+                }
+            }
+
+            AddMissingReplayAuditEntries(entries, folders, selectedStartDate, selectedEndDate, selectedInstruments);
+            MarkReplayAuditDuplicates(entries);
+
+            return entries
+                .OrderBy(entry => entry.Date.HasValue ? entry.Date.Value : DateTime.MaxValue)
+                .ThenBy(entry => entry.BaseInstrument, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(entry => entry.ContractFolder, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(entry => entry.FileName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private void AddMissingReplayAuditEntries(List<ReplayAuditEntry> entries, List<ReplayContractFolder> folders, DateTime? selectedStartDate, DateTime? selectedEndDate, HashSet<string> selectedInstruments)
+        {
+            DateTime auditStartDate;
+            DateTime auditEndDate;
+            if (!TryResolveReplayAuditDateRange(entries, selectedStartDate, selectedEndDate, out auditStartDate, out auditEndDate))
+                return;
+
+            bool missingByContract = ShouldReportMissingByContract(folders, selectedInstruments);
+            if (missingByContract)
+            {
+                HashSet<string> presentContractDates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (ReplayAuditEntry entry in entries.Where(entry => entry.FileExists && entry.Date.HasValue))
+                    presentContractDates.Add(BuildReplayAuditKey(entry.ContractFolder, entry.Date.Value));
+
+                foreach (ReplayContractFolder folder in folders)
+                {
+                    for (DateTime date = auditStartDate.Date; date <= auditEndDate.Date; date = date.AddDays(1))
+                    {
+                        if (!IsExpectedReplayCoverageDate(date))
+                            continue;
+                        if (presentContractDates.Contains(BuildReplayAuditKey(folder.ContractFolder, date)))
+                            continue;
+
+                        entries.Add(CreateMissingReplayAuditEntry(folder.ContractFolder, folder.BaseInstrument, folder.Instrument, date,
+                            Path.Combine(folder.DirectoryPath, date.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".nrd")));
+                    }
+                }
+
+                return;
+            }
+
+            HashSet<string> presentBaseDates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ReplayAuditEntry entry in entries.Where(entry => entry.FileExists && entry.Date.HasValue))
+                presentBaseDates.Add(BuildReplayAuditKey(entry.BaseInstrument, entry.Date.Value));
+
+            foreach (string baseInstrument in folders
+                .Select(folder => folder.BaseInstrument)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+            {
+                for (DateTime date = auditStartDate.Date; date <= auditEndDate.Date; date = date.AddDays(1))
+                {
+                    if (!IsExpectedReplayCoverageDate(date))
+                        continue;
+                    if (presentBaseDates.Contains(BuildReplayAuditKey(baseInstrument, date)))
+                        continue;
+
+                    entries.Add(CreateMissingReplayAuditEntry(baseInstrument, baseInstrument, null, date,
+                        date.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".nrd"));
+                }
+            }
+        }
+
+        private ReplayAuditEntry CreateMissingReplayAuditEntry(string contractFolder, string baseInstrument, Cbi.Instrument instrument, DateTime date, string filePath)
+        {
+            return new ReplayAuditEntry()
+            {
+                ContractFolder = contractFolder,
+                BaseInstrument = baseInstrument,
+                Instrument = instrument,
+                Date = date.Date,
+                FilePath = filePath,
+                FileName = Path.GetFileName(filePath),
+                FileExists = false,
+                Status = ReplayAuditStatus.MISSING,
+                Notes = "Expected Sunday-Friday replay coverage was not found.",
+            };
+        }
+
+        private bool TryResolveReplayAuditDateRange(List<ReplayAuditEntry> entries, DateTime? selectedStartDate, DateTime? selectedEndDate, out DateTime auditStartDate, out DateTime auditEndDate)
+        {
+            DateTime? minFileDate = null;
+            DateTime? maxFileDate = null;
+            foreach (ReplayAuditEntry entry in entries.Where(entry => entry.Date.HasValue))
+            {
+                DateTime date = entry.Date.Value.Date;
+                if (!minFileDate.HasValue || date < minFileDate.Value)
+                    minFileDate = date;
+                if (!maxFileDate.HasValue || date > maxFileDate.Value)
+                    maxFileDate = date;
+            }
+
+            if (selectedStartDate.HasValue)
+                auditStartDate = selectedStartDate.Value.Date;
+            else if (minFileDate.HasValue)
+                auditStartDate = minFileDate.Value.Date;
+            else if (selectedEndDate.HasValue)
+                auditStartDate = selectedEndDate.Value.Date;
+            else
+            {
+                auditStartDate = DateTime.MinValue;
+                auditEndDate = DateTime.MinValue;
+                return false;
+            }
+
+            if (selectedEndDate.HasValue)
+                auditEndDate = selectedEndDate.Value.Date;
+            else if (maxFileDate.HasValue)
+                auditEndDate = maxFileDate.Value.Date;
+            else
+                auditEndDate = auditStartDate;
+
+            return auditStartDate <= auditEndDate;
+        }
+
+        private bool ShouldReportMissingByContract(List<ReplayContractFolder> folders, HashSet<string> selectedInstruments)
+        {
+            if (selectedInstruments == null || selectedInstruments.Count == 0)
+                return false;
+
+            foreach (string selectedInstrument in selectedInstruments)
+            {
+                bool matchesContractFolder = folders.Any(folder => string.Equals(folder.ContractFolder, selectedInstrument, StringComparison.OrdinalIgnoreCase));
+                if (!matchesContractFolder)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private void MarkReplayAuditDuplicates(List<ReplayAuditEntry> entries)
+        {
+            foreach (IGrouping<string, ReplayAuditEntry> group in entries
+                .Where(entry => entry.FileExists && entry.Date.HasValue)
+                .GroupBy(entry => BuildReplayAuditKey(entry.BaseInstrument, entry.Date.Value), StringComparer.OrdinalIgnoreCase))
+            {
+                List<ReplayAuditEntry> duplicateEntries = group.ToList();
+                if (duplicateEntries.Count <= 1)
+                    continue;
+
+                string duplicateFolders = string.Join(", ", duplicateEntries
+                    .Select(entry => entry.ContractFolder)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+                foreach (ReplayAuditEntry entry in duplicateEntries)
+                {
+                    entry.IsDuplicate = true;
+                    entry.DuplicateContractFolders = duplicateFolders;
+                }
+            }
+        }
+
+        private void RunReplayAudit(string nrdRoot, string outputDir, List<ReplayAuditEntry> entries, DateTime? selectedStartDate, DateTime? selectedEndDate, HashSet<string> selectedInstruments)
+        {
+            try
+            {
+                for (int i = 0; i < entries.Count; i++)
+                {
+                    if (canceling)
+                        break;
+
+                    ReplayAuditEntry entry = entries[i];
+                    if (entry.FileExists)
+                        ScanReplayAuditFile(entry);
+                    FinalizeReplayAuditStatus(entry);
+                    logout(FormatReplayAuditLogLine(entry));
+
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        pbProgress.Value++;
+                        UpdateProgressLabel(entries.Count);
+                    });
+                }
+
+                if (canceling)
+                {
+                    logout("Replay coverage audit canceled");
+                    return;
+                }
+
+                ReplayAuditReportPaths reportPaths = WriteReplayAuditReports(nrdRoot, outputDir, entries, selectedStartDate, selectedEndDate, selectedInstruments);
+                logout(string.Format("Replay coverage audit complete. CSV: {0}", reportPaths.CsvPath));
+                logout(string.Format("Replay coverage audit summary: {0}", reportPaths.TxtPath));
+            }
+            catch (Exception error)
+            {
+                logout(string.Format("ERROR: Replay coverage audit failed: {0}", error));
+            }
+            finally
+            {
+                complete();
+            }
+        }
+
+        private void ScanReplayAuditFile(ReplayAuditEntry entry)
+        {
+            if (!entry.Date.HasValue)
+            {
+                AppendReplayAuditNote(entry, "File name is not a yyyyMMdd replay date.");
+                return;
+            }
+            if (entry.Instrument == null)
+            {
+                AppendReplayAuditNote(entry, "Unable to resolve the NT8 instrument for this replay folder.");
+                return;
+            }
+
+            string temporaryCsvFileName = Path.Combine(Path.GetTempPath(),
+                "NRDToCSV-Audit-" + Guid.NewGuid().ToString("N") + ".csv");
+            try
+            {
+                MarketReplay.DumpMarketDepth(entry.Instrument, entry.Date.Value, entry.Date.Value, temporaryCsvFileName);
+                ReadReplayAuditDump(entry, temporaryCsvFileName);
+            }
+            catch (Exception error)
+            {
+                AppendReplayAuditNote(entry, "Unable to read replay timestamps: " + error.Message);
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(temporaryCsvFileName))
+                        File.Delete(temporaryCsvFileName);
+                }
+                catch (Exception error)
+                {
+                    AppendReplayAuditNote(entry, "Unable to delete temporary audit CSV: " + error.Message);
+                }
+            }
+        }
+
+        private void ReadReplayAuditDump(ReplayAuditEntry entry, string temporaryCsvFileName)
+        {
+            TimeZoneInfo easternTimeZone = GetEasternTimeZone();
+            using (StreamReader reader = new StreamReader(temporaryCsvFileName))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (canceling)
+                        break;
+                    if (!IsReplayLevel1AskBidOrTrade(line))
+                        continue;
+
+                    DateTimeOffset timestamp;
+                    if (!TryParseReplayTimestamp(line, easternTimeZone, out timestamp))
+                    {
+                        entry.InvalidTimestampRows++;
+                        continue;
+                    }
+
+                    entry.Level1RowCount++;
+                    if (!entry.FirstTimestampEt.HasValue)
+                        entry.FirstTimestampEt = timestamp;
+                    entry.LastTimestampEt = timestamp;
+                }
+            }
+        }
+
+        private void FinalizeReplayAuditStatus(ReplayAuditEntry entry)
+        {
+            if (!entry.FileExists)
+            {
+                entry.Status = ReplayAuditStatus.MISSING;
+                return;
+            }
+
+            ReplayAuditStatus coverageStatus = GetReplayAuditCoverageStatus(entry);
+            if (entry.IsDuplicate)
+            {
+                AppendReplayAuditNote(entry, "Duplicate same-date " + entry.BaseInstrument + " replay files: " + entry.DuplicateContractFolders + ".");
+                if (coverageStatus != ReplayAuditStatus.SUSPICIOUS)
+                {
+                    if (coverageStatus == ReplayAuditStatus.PARTIAL)
+                        AppendReplayAuditNote(entry, "Coverage is also partial.");
+                    entry.Status = ReplayAuditStatus.DUPLICATE;
+                    return;
+                }
+            }
+
+            entry.Status = coverageStatus;
+        }
+
+        private ReplayAuditStatus GetReplayAuditCoverageStatus(ReplayAuditEntry entry)
+        {
+            if (!entry.Date.HasValue)
+            {
+                AppendReplayAuditNote(entry, "File name is not a yyyyMMdd replay date.");
+                return ReplayAuditStatus.SUSPICIOUS;
+            }
+            if (entry.FileBytes <= 0)
+            {
+                AppendReplayAuditNote(entry, "Replay file is empty.");
+                return ReplayAuditStatus.SUSPICIOUS;
+            }
+            if (entry.Level1RowCount == 0 || !entry.FirstTimestampEt.HasValue || !entry.LastTimestampEt.HasValue)
+            {
+                AppendReplayAuditNote(entry, "No L1 ask/bid/trade timestamps were found.");
+                return ReplayAuditStatus.SUSPICIOUS;
+            }
+            if (entry.InvalidTimestampRows > 0)
+                AppendReplayAuditNote(entry, string.Format("{0} L1 row(s) had invalid timestamps.", entry.InvalidTimestampRows));
+            if (entry.LastTimestampEt.Value < entry.FirstTimestampEt.Value)
+            {
+                AppendReplayAuditNote(entry, "Last timestamp is earlier than first timestamp.");
+                return ReplayAuditStatus.SUSPICIOUS;
+            }
+            if (entry.Level1RowCount < 10)
+            {
+                AppendReplayAuditNote(entry, "Very low L1 row count.");
+                return ReplayAuditStatus.SUSPICIOUS;
+            }
+
+            TimeZoneInfo easternTimeZone = GetEasternTimeZone();
+            DateTime firstEt = TimeZoneInfo.ConvertTime(entry.FirstTimestampEt.Value, easternTimeZone).DateTime;
+            DateTime lastEt = TimeZoneInfo.ConvertTime(entry.LastTimestampEt.Value, easternTimeZone).DateTime;
+            DateTime expectedDate = entry.Date.Value.Date;
+            if (firstEt.Date != expectedDate || lastEt.Date != expectedDate)
+            {
+                AppendReplayAuditNote(entry, string.Format("Timestamp date mismatch: starts {0:yyyy-MM-dd}, ends {1:yyyy-MM-dd}, file date {2:yyyy-MM-dd}.",
+                    firstEt,
+                    lastEt,
+                    expectedDate));
+                return ReplayAuditStatus.SUSPICIOUS;
+            }
+
+            switch (expectedDate.DayOfWeek)
+            {
+                case DayOfWeek.Saturday:
+                    AppendReplayAuditNote(entry, "Saturday replay files are informational; Saturday is not required for expected coverage.");
+                    return ReplayAuditStatus.OK;
+                case DayOfWeek.Sunday:
+                    if (firstEt.TimeOfDay < TimeSpan.FromHours(17))
+                    {
+                        AppendReplayAuditNote(entry, "Sunday replay starts before the expected Globex-open window.");
+                        return ReplayAuditStatus.SUSPICIOUS;
+                    }
+                    if (firstEt.TimeOfDay > TimeSpan.FromMinutes(18 * 60 + 10) || lastEt.TimeOfDay < TimeSpan.FromMinutes(23 * 60 + 50))
+                    {
+                        AppendReplayAuditNote(entry, "Sunday coverage should normally start around Globex open and run to about 23:59 ET.");
+                        return ReplayAuditStatus.PARTIAL;
+                    }
+                    return ReplayAuditStatus.OK;
+                default:
+                    if (firstEt.TimeOfDay > TimeSpan.FromMinutes(10) || lastEt.TimeOfDay < TimeSpan.FromMinutes(23 * 60 + 50))
+                    {
+                        AppendReplayAuditNote(entry, "Weekday coverage should normally run from about 00:00 ET to 23:59 ET.");
+                        return ReplayAuditStatus.PARTIAL;
+                    }
+                    return ReplayAuditStatus.OK;
+            }
+        }
+
+        private ReplayAuditReportPaths WriteReplayAuditReports(string nrdRoot, string outputDir, List<ReplayAuditEntry> entries, DateTime? selectedStartDate, DateTime? selectedEndDate, HashSet<string> selectedInstruments)
+        {
+            string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            string csvPath = Path.Combine(outputDir, "replay-audit-" + timestamp + ".csv");
+            string txtPath = Path.Combine(outputDir, "replay-audit-" + timestamp + ".txt");
+            WriteReplayAuditCsv(csvPath, entries);
+            WriteReplayAuditText(txtPath, nrdRoot, entries, selectedStartDate, selectedEndDate, selectedInstruments);
+            return new ReplayAuditReportPaths()
+            {
+                CsvPath = csvPath,
+                TxtPath = txtPath,
+            };
+        }
+
+        private void WriteReplayAuditCsv(string csvPath, List<ReplayAuditEntry> entries)
+        {
+            using (StreamWriter writer = new StreamWriter(csvPath, false))
+            {
+                writer.WriteLine("ContractFolder,BaseInstrument,Date,FileName,FileExists,FirstTimestampET,LastTimestampET,Status,Level1RowCount,FileBytes,Notes");
+                foreach (ReplayAuditEntry entry in entries)
+                {
+                    writer.WriteLine(string.Join(",",
+                        Csv(entry.ContractFolder),
+                        Csv(entry.BaseInstrument),
+                        Csv(entry.Date.HasValue ? entry.Date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : string.Empty),
+                        Csv(entry.FileName),
+                        Csv(entry.FileExists ? "true" : "false"),
+                        Csv(FormatEtCsvTimestamp(entry.FirstTimestampEt)),
+                        Csv(FormatEtCsvTimestamp(entry.LastTimestampEt)),
+                        Csv(entry.Status.ToString()),
+                        Csv(entry.Level1RowCount.ToString(CultureInfo.InvariantCulture)),
+                        Csv(entry.FileBytes.ToString(CultureInfo.InvariantCulture)),
+                        Csv(entry.Notes)));
+                }
+            }
+        }
+
+        private void WriteReplayAuditText(string txtPath, string nrdRoot, List<ReplayAuditEntry> entries, DateTime? selectedStartDate, DateTime? selectedEndDate, HashSet<string> selectedInstruments)
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("NRD replay coverage audit");
+            builder.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+            builder.AppendLine("Replay root: " + nrdRoot);
+            builder.AppendLine("Date range: " + FormatDateRange(selectedStartDate, selectedEndDate));
+            builder.AppendLine("Instrument filter: " + FormatInstrumentFilter(selectedInstruments));
+            builder.AppendLine();
+            foreach (ReplayAuditStatus status in Enum.GetValues(typeof(ReplayAuditStatus)).Cast<ReplayAuditStatus>())
+                builder.AppendLine(string.Format("{0}: {1}", status, entries.Count(entry => entry.Status == status)));
+            builder.AppendLine();
+            builder.AppendLine("Rows:");
+            foreach (ReplayAuditEntry entry in entries)
+                builder.AppendLine(FormatReplayAuditLogLine(entry));
+
+            File.WriteAllText(txtPath, builder.ToString());
+        }
+
+        private string FormatReplayAuditLogLine(ReplayAuditEntry entry)
+        {
+            string dateText = entry.Date.HasValue ? entry.Date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "(no-date)";
+            string contractText = string.IsNullOrWhiteSpace(entry.ContractFolder) ? "(unknown)" : entry.ContractFolder;
+            string line = string.Format("{0} {1} {2}", dateText, contractText, entry.Status);
+            if (!entry.FileExists)
+                line += " no replay file";
+            else if (entry.FirstTimestampEt.HasValue || entry.LastTimestampEt.HasValue)
+                line += string.Format(" starts {0}, ends {1}, rows {2}",
+                    FormatEtLogTime(entry.FirstTimestampEt),
+                    FormatEtLogTime(entry.LastTimestampEt),
+                    entry.Level1RowCount.ToString(CultureInfo.InvariantCulture));
+            else
+                line += " no L1 timestamps";
+
+            if (!string.IsNullOrWhiteSpace(entry.Notes))
+                line += " (" + entry.Notes + ")";
+            return line;
+        }
+
+        private static string Csv(string value)
+        {
+            return "\"" + (value ?? string.Empty).Replace("\"", "\"\"") + "\"";
+        }
+
+        private static string FormatDateRange(DateTime? selectedStartDate, DateTime? selectedEndDate)
+        {
+            if (selectedStartDate.HasValue && selectedEndDate.HasValue)
+                return string.Format("{0:yyyy-MM-dd} to {1:yyyy-MM-dd}", selectedStartDate.Value, selectedEndDate.Value);
+            if (selectedStartDate.HasValue)
+                return string.Format("{0:yyyy-MM-dd} to existing max date", selectedStartDate.Value);
+            if (selectedEndDate.HasValue)
+                return string.Format("existing min date to {0:yyyy-MM-dd}", selectedEndDate.Value);
+            return "existing file date range";
+        }
+
+        private static string FormatInstrumentFilter(HashSet<string> selectedInstruments)
+        {
+            if (selectedInstruments == null || selectedInstruments.Count == 0)
+                return "(all)";
+            return string.Join(", ", selectedInstruments.OrderBy(value => value, StringComparer.OrdinalIgnoreCase));
+        }
+
+        private static string FormatEtLogTime(DateTimeOffset? timestamp)
+        {
+            if (!timestamp.HasValue)
+                return "n/a";
+            DateTime et = TimeZoneInfo.ConvertTime(timestamp.Value, GetEasternTimeZone()).DateTime;
+            return et.ToString("HH:mm", CultureInfo.InvariantCulture) + " ET";
+        }
+
+        private static string FormatEtCsvTimestamp(DateTimeOffset? timestamp)
+        {
+            if (!timestamp.HasValue)
+                return string.Empty;
+            DateTime et = TimeZoneInfo.ConvertTime(timestamp.Value, GetEasternTimeZone()).DateTime;
+            return et.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + " ET";
+        }
+
+        private static void AppendReplayAuditNote(ReplayAuditEntry entry, string note)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(note))
+                return;
+            if (string.IsNullOrWhiteSpace(entry.Notes))
+                entry.Notes = note;
+            else if (entry.Notes.IndexOf(note, StringComparison.OrdinalIgnoreCase) < 0)
+                entry.Notes += " " + note;
+        }
+
+        private static bool IsExpectedReplayCoverageDate(DateTime date)
+        {
+            return date.DayOfWeek != DayOfWeek.Saturday;
+        }
+
+        private static string BuildReplayAuditKey(string name, DateTime date)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0}|{1:yyyyMMdd}", name ?? string.Empty, date.Date);
+        }
+
+        private static DateTime? TryParseReplayFileDate(string fileName)
+        {
+            string name = Path.GetFileNameWithoutExtension(fileName);
+            DateTime date;
+            if (name != null
+                && name.Length == 8
+                && DateTime.TryParseExact(name, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
+            {
+                return date.Date;
+            }
+
+            return null;
+        }
+
         private void StartHistoricalExport(string csvDir, IEnumerable<string> instrumentDirs, DateTime selectedStartDate, DateTime selectedEndDate, HashSet<string> selectedInstruments)
         {
             List<HistoricalDumpEntry> entries = BuildHistoricalEntries(csvDir, instrumentDirs, selectedStartDate, selectedEndDate, selectedInstruments);
@@ -563,7 +1193,7 @@ namespace NinjaTrader.Gui.NinjaScript
                     Convert.ToInt16(name.Substring(0, 4)),
                     Convert.ToInt16(name.Substring(4, 2)),
                     Convert.ToInt16(name.Substring(6, 2)));
-                DateTime replayDate = sourceDate.AddDays(1);
+                DateTime replayDate = sourceDate;
                 if (selectedStartDate.HasValue && replayDate.Date < selectedStartDate.Value.Date)
                     continue;
                 if (selectedEndDate.HasValue && replayDate.Date > selectedEndDate.Value.Date)
@@ -868,10 +1498,9 @@ namespace NinjaTrader.Gui.NinjaScript
                     continue;
 
                 Collection<Instrument> instruments = InstrumentList.GetInstruments(fullName);
-                if (instruments.Count != 1)
-                    continue;
-
-                string instrumentFilterName = GetInstrumentFilterName(instruments[0]);
+                string instrumentFilterName = instruments.Count == 1
+                    ? GetInstrumentFilterName(instruments[0])
+                    : GetInstrumentFilterName(fullName);
                 if (!string.IsNullOrWhiteSpace(instrumentFilterName))
                     availableInstruments.Add(instrumentFilterName);
             }
@@ -907,6 +1536,15 @@ namespace NinjaTrader.Gui.NinjaScript
                 || (!string.IsNullOrWhiteSpace(fullName) && selectedInstruments.Contains(fullName));
         }
 
+        private bool MatchesReplayFolderFilter(string fullName, string instrumentFilterName, HashSet<string> selectedInstruments)
+        {
+            if (selectedInstruments == null || selectedInstruments.Count == 0)
+                return true;
+
+            return (!string.IsNullOrWhiteSpace(instrumentFilterName) && selectedInstruments.Contains(instrumentFilterName))
+                || (!string.IsNullOrWhiteSpace(fullName) && selectedInstruments.Contains(fullName));
+        }
+
         private string GetInstrumentFilterName(Cbi.Instrument instrument)
         {
             if (instrument == null)
@@ -916,6 +1554,19 @@ namespace NinjaTrader.Gui.NinjaScript
                 return instrument.MasterInstrument.Name.Trim();
 
             return !string.IsNullOrWhiteSpace(instrument.FullName) ? instrument.FullName.Trim() : string.Empty;
+        }
+
+        private string GetInstrumentFilterName(string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName))
+                return string.Empty;
+
+            string trimmed = fullName.Trim();
+            int separatorIndex = trimmed.IndexOf(' ');
+            if (separatorIndex > 0)
+                return trimmed.Substring(0, separatorIndex).Trim();
+
+            return trimmed;
         }
 
         private void ConvertReplayNrd(DumpEntry entry)
@@ -942,8 +1593,9 @@ namespace NinjaTrader.Gui.NinjaScript
                 if (File.Exists(temporaryCsvFileName))
                     File.Delete(temporaryCsvFileName);
 
-                MarketReplay.DumpMarketDepth(entry.Instrument, entry.Date.AddDays(1), entry.Date.AddDays(1), temporaryCsvFileName);
-                int writtenRows = WriteReplayLevel1Csv(temporaryCsvFileName, entry.CsvFileName);
+                MarketReplay.DumpMarketDepth(entry.Instrument, entry.Date, entry.Date, temporaryCsvFileName);
+                ReplayCsvWriteResult writeResult = WriteReplayLevel1Csv(temporaryCsvFileName, entry.CsvFileName);
+                int writtenRows = writeResult.WrittenRows;
 
                 if (writtenRows < 0)
                 {
@@ -951,6 +1603,7 @@ namespace NinjaTrader.Gui.NinjaScript
                     return;
                 }
 
+                WarnIfReplayDateMismatch(entry, writeResult);
                 logout(string.Format("Filtered \"{0}\" to L1 ask/bid/trade rows ({1} rows)", entry.ToName, writtenRows));
             }
             finally
@@ -970,10 +1623,33 @@ namespace NinjaTrader.Gui.NinjaScript
             logout(string.Format("Conversion \"{0}\" to \"{1}\" complete", entry.FromName, entry.ToName));
         }
 
-        private int WriteReplayLevel1Csv(string sourceCsvFileName, string targetCsvFileName)
+        private void WarnIfReplayDateMismatch(DumpEntry entry, ReplayCsvWriteResult writeResult)
+        {
+            if (writeResult.FirstTimestampDate.HasValue && writeResult.FirstTimestampDate.Value.Date != entry.Date.Date)
+            {
+                logout(string.Format(
+                    "WARNING: First CSV timestamp date {0:yyyy-MM-dd} does not match target replay date {1:yyyy-MM-dd} for \"{2}\"",
+                    writeResult.FirstTimestampDate.Value,
+                    entry.Date,
+                    entry.ToName));
+            }
+
+            if (writeResult.LastTimestampDate.HasValue && writeResult.LastTimestampDate.Value.Date != entry.Date.Date)
+            {
+                logout(string.Format(
+                    "WARNING: Last CSV timestamp date {0:yyyy-MM-dd} does not match target replay date {1:yyyy-MM-dd} for \"{2}\"",
+                    writeResult.LastTimestampDate.Value,
+                    entry.Date,
+                    entry.ToName));
+            }
+        }
+
+        private ReplayCsvWriteResult WriteReplayLevel1Csv(string sourceCsvFileName, string targetCsvFileName)
         {
             int writtenRows = 0;
             bool canceledDuringWrite = false;
+            DateTime? firstTimestampDate = null;
+            DateTime? lastTimestampDate = null;
 
             using (StreamReader reader = new StreamReader(sourceCsvFileName))
             using (StreamWriter writer = new StreamWriter(targetCsvFileName, false))
@@ -992,6 +1668,14 @@ namespace NinjaTrader.Gui.NinjaScript
 
                     writer.WriteLine(line);
                     writtenRows++;
+
+                    DateTime? timestampDate = TryParseReplayTimestampDate(line);
+                    if (timestampDate.HasValue)
+                    {
+                        if (!firstTimestampDate.HasValue)
+                            firstTimestampDate = timestampDate.Value;
+                        lastTimestampDate = timestampDate.Value;
+                    }
                 }
             }
 
@@ -999,10 +1683,76 @@ namespace NinjaTrader.Gui.NinjaScript
             {
                 if (File.Exists(targetCsvFileName))
                     File.Delete(targetCsvFileName);
-                return -1;
+                return new ReplayCsvWriteResult()
+                {
+                    WrittenRows = -1,
+                };
             }
 
-            return writtenRows;
+            return new ReplayCsvWriteResult()
+            {
+                WrittenRows = writtenRows,
+                FirstTimestampDate = firstTimestampDate,
+                LastTimestampDate = lastTimestampDate,
+            };
+        }
+
+        private static DateTime? TryParseReplayTimestampDate(string line)
+        {
+            string[] parts = line.Split(';');
+            if (parts.Length < 3 || parts[2].Length < 8)
+                return null;
+
+            DateTime timestampDate;
+            if (DateTime.TryParseExact(
+                parts[2].Substring(0, 8),
+                "yyyyMMdd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out timestampDate))
+            {
+                return timestampDate.Date;
+            }
+
+            return null;
+        }
+
+        private static bool TryParseReplayTimestamp(string line, TimeZoneInfo replayTimeZone, out DateTimeOffset timestamp)
+        {
+            timestamp = DateTimeOffset.MinValue;
+            string[] parts = line.Split(';');
+            if (parts.Length < 4)
+                return false;
+
+            DateTime baseLocal;
+            if (!DateTime.TryParseExact(parts[2], "yyyyMMddHHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out baseLocal))
+                return false;
+
+            long offsetTicks;
+            if (!long.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out offsetTicks))
+                return false;
+
+            timestamp = new DateTimeOffset(baseLocal, replayTimeZone.GetUtcOffset(baseLocal)).AddTicks(offsetTicks);
+            return true;
+        }
+
+        private static TimeZoneInfo GetEasternTimeZone()
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            }
+            catch
+            {
+                try
+                {
+                    return TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+                }
+                catch
+                {
+                    return TimeZoneInfo.Local;
+                }
+            }
         }
 
         private static bool IsReplayLevel1AskBidOrTrade(string line)
@@ -1102,23 +1852,38 @@ namespace NinjaTrader.Gui.NinjaScript
 
             if (showByteProgress && totalFilesLength > 0)
             {
-                lProgress.Content = string.Format("{0} of {1} files converted ({2} of {3}){4}",
-                    (int)pbProgress.Value, filesCount, ToBytes(completeFilesLength), ToBytes(totalFilesLength), eta);
+                lProgress.Content = string.Format("{0} of {1} files {2} ({3} of {4}){5}",
+                    (int)pbProgress.Value, filesCount, GetProgressActionLabel(), ToBytes(completeFilesLength), ToBytes(totalFilesLength), eta);
             }
             else
             {
-                lProgress.Content = string.Format("{0} of {1} files converted{2}",
-                    (int)pbProgress.Value, filesCount, eta);
+                lProgress.Content = string.Format("{0} of {1} files {2}{3}",
+                    (int)pbProgress.Value, filesCount, GetProgressActionLabel(), eta);
             }
+        }
+
+        private string GetProgressActionLabel()
+        {
+            ExportMode exportMode = GetSelectedExportMode();
+            if (exportMode == ExportMode.AuditReplayCoverage)
+                return "audited";
+            if (exportMode == ExportMode.Historical)
+                return "exported";
+            return "converted";
         }
 
         private void run(int filesCount, bool useByteProgress)
         {
+            running = true;
+            canceling = false;
+            showByteProgress = useByteProgress;
+            completeFilesLength = 0;
+            if (!showByteProgress)
+                totalFilesLength = 0;
+            startTimestamp = DateTime.Now;
+
             Dispatcher.InvokeAsync(() =>
             {
-                running = true;
-                canceling = false;
-                showByteProgress = useByteProgress;
                 bConvert.IsEnabled = true;
                 bConvert.Content = "_Cancel";
                 tbCsvRootDir.IsReadOnly = true;
@@ -1137,10 +1902,6 @@ namespace NinjaTrader.Gui.NinjaScript
                 pbProgress.Minimum = 0;
                 pbProgress.Maximum = filesCount;
                 pbProgress.Value = 0;
-                completeFilesLength = 0;
-                if (!showByteProgress)
-                    totalFilesLength = 0;
-                startTimestamp = DateTime.Now;
             });
         }
 
@@ -1149,6 +1910,7 @@ namespace NinjaTrader.Gui.NinjaScript
             Dispatcher.InvokeAsync(() =>
             {
                 running = false;
+                canceling = false;
                 lProgress.Margin = new Thickness(0);
                 lProgress.Height = 0;
                 pbProgress.Margin = new Thickness(0);
@@ -1162,7 +1924,7 @@ namespace NinjaTrader.Gui.NinjaScript
                 dpEndDate.IsEnabled = true;
                 cbInstrumentFilter.IsEnabled = true;
                 bConvert.IsEnabled = true;
-                bConvert.Content = "_Convert";
+                bConvert.Content = GetSelectedExportMode() == ExportMode.AuditReplayCoverage ? "_Audit" : "_Convert";
             });
         }
 
@@ -1172,6 +1934,47 @@ namespace NinjaTrader.Gui.NinjaScript
             double exp = (int)(Math.Log(bytes) / Math.Log(1024));
             return string.Format("{0:F1} {1}iB", bytes / Math.Pow(1024, exp), "KMGTPE"[(int)exp - 1]);
         }
+    }
+
+    public class ReplayCsvWriteResult
+    {
+        public int WrittenRows { get; set; }
+        public DateTime? FirstTimestampDate { get; set; }
+        public DateTime? LastTimestampDate { get; set; }
+    }
+
+    public class ReplayContractFolder
+    {
+        public string DirectoryPath { get; set; }
+        public string ContractFolder { get; set; }
+        public string BaseInstrument { get; set; }
+        public Cbi.Instrument Instrument { get; set; }
+    }
+
+    public class ReplayAuditEntry
+    {
+        public string ContractFolder { get; set; }
+        public string BaseInstrument { get; set; }
+        public Cbi.Instrument Instrument { get; set; }
+        public DateTime? Date { get; set; }
+        public string FilePath { get; set; }
+        public string FileName { get; set; }
+        public bool FileExists { get; set; }
+        public long FileBytes { get; set; }
+        public DateTimeOffset? FirstTimestampEt { get; set; }
+        public DateTimeOffset? LastTimestampEt { get; set; }
+        public long Level1RowCount { get; set; }
+        public int InvalidTimestampRows { get; set; }
+        public bool IsDuplicate { get; set; }
+        public string DuplicateContractFolders { get; set; }
+        public ReplayAuditStatus Status { get; set; }
+        public string Notes { get; set; }
+    }
+
+    public class ReplayAuditReportPaths
+    {
+        public string CsvPath { get; set; }
+        public string TxtPath { get; set; }
     }
 
     public class DumpEntry
@@ -1198,7 +2001,17 @@ namespace NinjaTrader.Gui.NinjaScript
     public enum ExportMode
     {
         Replay,
+        AuditReplayCoverage,
         Historical,
+    }
+
+    public enum ReplayAuditStatus
+    {
+        OK,
+        PARTIAL,
+        MISSING,
+        DUPLICATE,
+        SUSPICIOUS,
     }
 
     public enum HistoricalSeriesKind
