@@ -566,6 +566,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 2;
                 EntryHandling = EntryHandling.UniqueEntries;
+                BarsRequiredToTrade = 250;
                 IsExitOnSessionCloseStrategy = true;
                 IsInstantiatedOnEachOptimizationIteration = false;
                 StartBehavior = StartBehavior.ImmediatelySubmitSynchronizeAccount;

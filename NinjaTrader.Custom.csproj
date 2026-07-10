@@ -393,6 +393,7 @@
     <Compile Include="Strategies\ADAMTestingProjectXSupport.cs" />
     <Compile Include="Strategies\AnalyzerBarsExporter.cs" />
     <Compile Include="Strategies\AnalyzerDuoStateExporter.cs" />
+    <Compile Include="Strategies\AutoEdgeLicensing.cs" />
     <Compile Include="Strategies\DiscordNotifier.cs" />
     <Compile Include="Strategies\DMoney.cs" />
     <Compile Include="Strategies\DR.cs" />
@@ -400,8 +401,6 @@
     <Compile Include="Strategies\DUO.cs" />
     <Compile Include="Strategies\DuoEMA.cs" />
     <Compile Include="Strategies\DUOrc.cs" />
-    <Compile Include="Strategies\DUOrcTesting.cs" />
-    <Compile Include="Strategies\DUOTesting.cs" />
     <Compile Include="Strategies\EMA.cs" />
     <Compile Include="Strategies\EMA2.cs" />
     <Compile Include="Strategies\EMACTesting.cs" />
@@ -442,6 +441,10 @@
     <Compile Include="obj\x64\Release\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
     <Compile Include="NinjaTrader.Vendor.cs" />
     <Compile Include="VendorLicensing.cs" />
+    <Compile Include="Strategies\AURA.cs" />
+    <Compile Include="Strategies\AURATesting.cs" />
+    <Compile Include="Strategies\AURAProjectXSupport.cs" />
+    <Compile Include="Strategies\AURATestingProjectXSupport.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">

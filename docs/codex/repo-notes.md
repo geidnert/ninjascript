@@ -38,11 +38,21 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
-- `Strategies/DUO.cs` and `Strategies/DUOTesting.cs` are the default reference
-  for shared bot modules: session/skip/news windows, transition safety,
-  heartbeat lifecycle, strategy-prefixed signals, entry confirmation,
-  `MaxAccountBalance`, TradersPost ticker override, and DUO-style ProjectX
-  transport/account/contract handling.
+- `Strategies/DUO.cs` is the default reference for shared bot modules:
+  session/skip/news windows, transition safety, heartbeat lifecycle,
+  strategy-prefixed signals, entry confirmation, `MaxAccountBalance`,
+  TradersPost ticker override, and DUO-style ProjectX transport/account/contract
+  handling.
+- DUO and DUOrc are maintained directly in `Strategies/DUO.cs` and
+  `Strategies/DUOrc.cs`; do not recreate separate DUO/DUOrc testing variants
+  unless the user explicitly asks.
+- 2026-07-09: Current DUOrc `State.SetDefaults` session defaults in
+  `Strategies/DUOrc.cs` are mirrored from Steve's
+  `/Volumes/Documents/NinjaTrader 8/bin/Custom/Strategies/DUOrcTesting-132.xml`.
+  When Steve sends new DUOrc defaults XML, sync both NT8 `Strategies/DUOrc.cs`
+  and Trader `src/Trader.Strategies.Duorc.Core/DuorcStrategyCore.cs` in the same
+  pass unless the user explicitly asks for only one side. The 132 XML includes
+  TP-percent trigger/move fields and no retired secondary-entry fields.
 - `Strategies/MICH.cs` and `Strategies/MICHTesting.cs` are the reference for
   dynamic stop/target ProjectX protective-order sync and flip-exit suppression
   when a bot actually has that exit model.
@@ -59,6 +69,9 @@ domains.
 - Analyzer utilities include `Strategies/AnalyzerBarsExporter.cs` and
   `Strategies/AnalyzerDuoStateExporter.cs`; they export Strategy Analyzer data
   under the user-data `db/analyzer-bars` path by default.
+- `AddOns/NRDToCSV.cs` converts replay `.nrd` files and now includes an
+  `Audit replay coverage` mode that writes timestamped `replay-audit-*.csv` and
+  `.txt` reports for missing, partial, duplicate, and suspicious replay days.
 - `Strategies/AutoEdgeLicensing.cs` contains the AutoEdge license gate. Treat
   server URL, status names, cache/grace behavior, and key storage as product
   contract unless explicitly asked to change licensing.
@@ -94,6 +107,9 @@ work:
   but were ignored by `.gitignore`.
 
 ## Things Not To Reintroduce
+- Do not recreate separate DUO/DUOrc testing variants for normal DUO/DUOrc
+  work. Active DUO/DUOrc changes belong in `Strategies/DUO.cs` and
+  `Strategies/DUOrc.cs`.
 - Do not rebuild public strategies by selectively porting methods from testing
   files. Use the full-copy testing-to-public workflow and restore the public
   contract afterward.

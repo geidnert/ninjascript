@@ -1,6 +1,6 @@
-# AGENTS.md
+# CLAUDE.md
 
-Project guidance for Codex. This repo is a NinjaTrader 8 `bin/Custom` tree
+Project guidance for Claude Code. This repo is a NinjaTrader 8 `bin/Custom` tree
 containing custom NinjaScript Strategies, AddOns, Indicators, etc.
 
 > History: this project was previously developed with Codex. Its conventions live
@@ -8,9 +8,6 @@ containing custom NinjaScript Strategies, AddOns, Indicators, etc.
 > is the legacy Codex instruction file — kept for reference, not authoritative here.
 
 ## Source-of-truth docs (read the relevant one before related work)
-- `docs/codex/repo-notes.md` - Codex handoff memory for repo layout, key
-  files, current gotchas, and documentation-maintenance expectations. Read this
-  before non-trivial repo work.
 - `docs/bot-common-parts-spec.md` — shared, non-strategy-specific modules: session/
   skip/news windows, transition cancel+flatten safety, timeframe/instrument
   validation, `MaxAccountBalance` guard, canonical infobox order, heartbeat
@@ -28,8 +25,6 @@ These are real, reusable procedures. When a task matches one, follow its `SKILL.
 - `skills/apply-nt-projectx-parity/` — apply or review ProjectX parity.
 - `skills/apply-nt-testing-to-public/` — rebuild a public strategy from its testing file.
 Each skill's `SKILL.md` lists its own load order and references (`references/*.md`).
-There is no `scripts/` directory in the current tree; reusable workflows live in
-`skills/`.
 
 ## Strategy conventions
 - Most strategies come in pairs: `XXX.cs` (public/closed) and `XXXTesting.cs`
@@ -60,6 +55,3 @@ There is no `scripts/` directory in the current tree; reusable workflows live in
 - Don't change TradersPost webhook timing unless explicitly asked.
 - Keep ProjectX settings hidden/internal in public bots unless asked to expose them.
 - `.bak-*` files and `.tmp/` are working artifacts, not part of the build.
-- If future work changes durable project knowledge (rules, workflows, file
-  locations, current gotchas, or invariants), update the relevant `docs/codex`
-  note or source-of-truth spec before finishing and mention that in the handoff.
