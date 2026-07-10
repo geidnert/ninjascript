@@ -261,6 +261,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int pendingEntryVarianceDelaySeconds;
         // TEMP: Remove this date block after the April 7, 2025 backtest isolation is no longer needed.
         private static readonly DateTime TemporaryBlockedTradingDate = new DateTime(2025, 4, 7);
+        private static readonly HashSet<DateTime> RolloverBlackoutTradingDates = new HashSet<DateTime>
+        {
+            new DateTime(2026, 9, 9),
+            new DateTime(2026, 9, 10),
+            new DateTime(2026, 9, 11),
+            new DateTime(2026, 9, 13),
+            new DateTime(2026, 9, 14),
+            new DateTime(2026, 9, 15),
+            new DateTime(2026, 9, 16),
+            new DateTime(2026, 9, 17),
+            new DateTime(2026, 12, 9),
+            new DateTime(2026, 12, 10),
+            new DateTime(2026, 12, 11),
+            new DateTime(2026, 12, 13),
+            new DateTime(2026, 12, 14),
+            new DateTime(2026, 12, 15),
+            new DateTime(2026, 12, 16),
+            new DateTime(2026, 12, 17),
+            new DateTime(2027, 3, 10),
+            new DateTime(2027, 3, 11),
+            new DateTime(2027, 3, 12),
+            new DateTime(2027, 3, 14),
+            new DateTime(2027, 3, 15),
+            new DateTime(2027, 3, 16),
+            new DateTime(2027, 3, 17),
+            new DateTime(2027, 3, 18),
+            new DateTime(2027, 6, 9),
+            new DateTime(2027, 6, 10),
+            new DateTime(2027, 6, 11),
+            new DateTime(2027, 6, 13),
+            new DateTime(2027, 6, 14),
+            new DateTime(2027, 6, 15),
+            new DateTime(2027, 6, 16),
+            new DateTime(2027, 6, 17)
+        };
         private static readonly SessionSlot[] ConfigurableSessionSlots = new[]
         {
             SessionSlot.Asia,
@@ -1078,6 +1113,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
             bool accountBlocked = IsAccountBalanceBlocked();
+            bool rolloverBlackoutNow = IsRolloverBlackoutTradingDate(Time[0]);
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double atrValue = GetCurrentAtrValue();
             UpdateAdxPeakTracker(adxValue);
@@ -1085,7 +1121,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
             bool adxThresholdPass = adxMinPass && adxMaxPass;
             bool atrMinPass = !inActiveSessionNow || activeMinimumAtrForEntry <= 0.0 || atrValue >= activeMinimumAtrForEntry;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !accountBlocked && adxThresholdPass && atrMinPass;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !accountBlocked && !rolloverBlackoutNow && adxThresholdPass && atrMinPass;
             double secondaryBiasReferencePrice = Close[0];
             double secondaryBiasEmaValue = GetSecondaryBiasEmaValue();
             bool biasAllowLong = IsSecondaryBiasDirectionAllowed(true, secondaryBiasReferencePrice);
@@ -1258,6 +1294,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         reasons.Add(string.Format("NewsSkip minutes={0}", NewsBlockMinutes));
                     if (accountBlocked)
                         reasons.Add(string.Format("AccountBlocked maxBalance={0:0.##}", MaxAccountBalance));
+                    if (rolloverBlackoutNow)
+                        reasons.Add(string.Format("RolloverBlackout date={0:yyyy-MM-dd}", Time[0].Date));
                     if (!adxMinPass)
                         reasons.Add(string.Format("AdxBelowMin adx={0:0.00} min={1:0.00}", adxValue, activeAdxThreshold));
                     if (!adxMaxPass)
@@ -3579,6 +3617,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return barTime.Date == TemporaryBlockedTradingDate;
         }
 
+        private bool IsRolloverBlackoutTradingDate(DateTime barTime)
+        {
+            return RolloverBlackoutTradingDates.Contains(barTime.Date);
+        }
+
         private bool TryGetForceCloseDateTime(DateTime referenceTime, out DateTime forceCloseDateTime)
         {
             forceCloseDateTime = Core.Globals.MinDate;
@@ -3842,6 +3885,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (IsTemporaryBlockedTradingDate(Time[0]))
             {
                 CancelPendingEntryVariance("temporary-date-block");
+                return;
+            }
+
+            if (IsRolloverBlackoutTradingDate(Time[0]))
+            {
+                CancelPendingEntryVariance("rollover-blackout");
                 return;
             }
 
@@ -4397,6 +4446,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool accountBlocked = IsAccountBalanceBlocked();
             bool forceCloseBlocked = IsForceCloseTimeReached(Time[0]);
             bool temporaryDateBlocked = IsTemporaryBlockedTradingDate(Time[0]);
+            bool rolloverBlackoutBlocked = IsRolloverBlackoutTradingDate(Time[0]);
             bool london3FlatBlocked = IsLondon3FlatByTimeReached(Time[0]);
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double atrValue = GetCurrentAtrValue();
@@ -4408,6 +4458,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 && !accountBlocked
                 && !forceCloseBlocked
                 && !temporaryDateBlocked
+                && !rolloverBlackoutBlocked
                 && !london3FlatBlocked
                 && adxMinPass
                 && adxMaxPass
@@ -6515,7 +6566,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (infoSession == SessionSlot.None || activeSession != infoSession)
                 return false;
 
-            if (IsForceCloseTimeReached(Time[0]) || IsTemporaryBlockedTradingDate(Time[0]) || TimeInNewsSkip(Time[0]))
+            if (IsForceCloseTimeReached(Time[0]) || IsTemporaryBlockedTradingDate(Time[0]) || IsRolloverBlackoutTradingDate(Time[0]) || TimeInNewsSkip(Time[0]))
                 return false;
 
             if (IsAccountBalanceInfoBlocked() || Position.MarketPosition != MarketPosition.Flat)
