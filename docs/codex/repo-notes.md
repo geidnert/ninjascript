@@ -53,12 +53,14 @@ domains.
   and Trader `src/Trader.Strategies.Duorc.Core/DuorcStrategyCore.cs` in the same
   pass unless the user explicitly asks for only one side. The 133 XML includes
   TP-percent trigger/move fields and no retired secondary-entry fields.
-- 2026-07-10: DUOrc has fixed rollover blackout dates for the next four
-  quarterly contract rollover windows: Sep/Dec 2026 and Mar/Jun 2027, using
-  the Steve-provided +/-4 calendar-day rule with Saturdays omitted. Keep this
-  aligned in both NT8 `Strategies/DUOrc.cs` and Trader DUOrc. The blackout
-  blocks new entries, delayed entry variance, and stop-out flip entries only;
-  it does not force-flatten an already-open position.
+- 2026-07-11: DUOrc has fixed rollover blackout dates for the Mar/Jun 2026
+  playback windows plus the next four quarterly contract rollover windows:
+  Sep/Dec 2026 and Mar/Jun 2027, using the Steve-provided +/-4 calendar-day
+  rule with Saturdays omitted. Mar 19, 2026 is also blocked because Steve later
+  confirmed that filled data should be excluded. Keep this aligned in both NT8
+  `Strategies/DUOrc.cs` and Trader DUOrc. The blackout blocks new entries,
+  delayed entry variance, and stop-out flip entries only; it does not
+  force-flatten an already-open position.
 - `Strategies/MICH.cs` and `Strategies/MICHTesting.cs` are the reference for
   dynamic stop/target ProjectX protective-order sync and flip-exit suppression
   when a bot actually has that exit model.

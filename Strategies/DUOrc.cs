@@ -263,6 +263,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private static readonly DateTime TemporaryBlockedTradingDate = new DateTime(2025, 4, 7);
         private static readonly HashSet<DateTime> RolloverBlackoutTradingDates = new HashSet<DateTime>
         {
+            new DateTime(2026, 3, 11),
+            new DateTime(2026, 3, 12),
+            new DateTime(2026, 3, 13),
+            new DateTime(2026, 3, 15),
+            new DateTime(2026, 3, 16),
+            new DateTime(2026, 3, 17),
+            new DateTime(2026, 3, 18),
+            new DateTime(2026, 3, 19),
+            new DateTime(2026, 6, 10),
+            new DateTime(2026, 6, 11),
+            new DateTime(2026, 6, 12),
+            new DateTime(2026, 6, 14),
+            new DateTime(2026, 6, 15),
+            new DateTime(2026, 6, 16),
+            new DateTime(2026, 6, 17),
+            new DateTime(2026, 6, 18),
             new DateTime(2026, 9, 9),
             new DateTime(2026, 9, 10),
             new DateTime(2026, 9, 11),
