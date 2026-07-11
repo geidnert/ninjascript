@@ -1970,7 +1970,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private List<(string label, string value, Brush labelBrush, Brush valueBrush)> BuildInfoLines()
         {
             var lines = new List<(string, string, Brush, Brush)>();
-            lines.Add(("HUGO Multi v1", string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add((string.Format("HUGO Multi v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(("Contracts:", Math.Max(1, ContractQuantity).ToString(CultureInfo.InvariantCulture), Brushes.LightGray, InfoValueBrush));
             if (!UseNewsSkip)
             {

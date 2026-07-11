@@ -3926,7 +3926,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             var lines = new List<Tuple<string, string, Brush, Brush>>();
             int infoSessionId = GetInfoSessionId();
-            lines.Add(InfoLine("AURA", string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
+            lines.Add(InfoLine(string.Format("AURA v{0}", GetAddOnVersion()), string.Empty, InfoHeaderTextBrush, Brushes.Transparent));
             lines.Add(InfoLine("Contracts:", BuildContractsInfoText(infoSessionId), Brushes.LightGray, InfoValueBrush));
 
             if (!UseNewsSkip)
