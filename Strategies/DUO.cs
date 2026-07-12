@@ -25,6 +25,7 @@ using NinjaTrader.NinjaScript.Indicators;
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
+    [TypeConverter("NinjaTrader.NinjaScript.Strategies.AutoEdge.DUOTypeConverter")]
     public class DUO : Strategy
     {
         private const string HeartbeatStrategyName = "DUO";
@@ -564,7 +565,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Name = GetVersionedStrategyName("DUO");
                 Calculate = Calculate.OnBarClose;
-                EntriesPerDirection = 2;
+                EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
                 BarsRequiredToTrade = 250;
                 IsExitOnSessionCloseStrategy = true;
@@ -572,147 +573,147 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 StartBehavior = StartBehavior.ImmediatelySubmitSynchronizeAccount;
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
 
-                AsiaSessionStart = new TimeSpan(18, 30, 0);
+                AsiaSessionStart = new TimeSpan(18, 40, 0);
                 AsiaSessionEnd = new TimeSpan(20, 0, 0);
                 AsiaEmaPeriod = 21;
                 AsiaContracts = 1;
-                AsiaFlipAdxThreshold = 13.1;
+                AsiaFlipAdxThreshold = 13;
                 AsiaAdxPeriod = 14;
-                AsiaAdxThreshold = 30.4;
-                AsiaAdxMaxThreshold = 54.6;
+                AsiaAdxThreshold = 30.1;
+                AsiaAdxMaxThreshold = 55.96;
                 AsiaAdxMinSlopePoints = 0.62;
                 AsiaAdxPeakDrawdownExitUnits = 8.65;
                 AsiaAdxAbsoluteExitLevel = 71.9;
                 AsiaStopPaddingPoints = 0.25;
-                AsiaExitCrossPoints = 1.75;
-                AsiaFlipEmaCrossPoints = 1;
+                AsiaExitCrossPoints = 1.5;
+                AsiaFlipEmaCrossPoints = 0.5;
                 AsiaMaxStopLossPoints = 80;
-                AsiaTakeProfitPoints = 115.5;
-                AsiaAtrMinimum = 13.82;
+                AsiaTakeProfitPoints = 116;
+                AsiaAtrMinimum = 14.16;
                 AsiaEnableFlipBreakEven = true;
-                AsiaFlipBreakEvenTriggerPoints = 6.25;
-                AsiaFlipTakeProfitPoints = 45.25;
+                AsiaFlipBreakEvenTriggerPoints = 6;
+                AsiaFlipTakeProfitPoints = 43.5;
                 AsiaTakeProfitPercentTriggerPercent = 61;
                 AsiaTakeProfitPercentStopMovePercent = 21;
-                AsiaRequireMinAdxForFlips = true;
+                AsiaRequireMinAdxForFlips = false;
                 AsiaEnableAdxDdRiskMode = true;
-                AsiaAdxDdRiskModeStopLossPoints = 1.5;
-                AsiaAdxDdRiskModeTakeProfitPoints = 74.75;
+                AsiaAdxDdRiskModeStopLossPoints = 2.5;
+                AsiaAdxDdRiskModeTakeProfitPoints = 77.75;
                 AsiaHorizontalExitBars = 43;
 
                 Asia2SessionStart = new TimeSpan(20, 0, 0);
                 Asia2SessionEnd = new TimeSpan(23, 25, 0);
                 Asia2EmaPeriod = 21;
                 Asia2Contracts = 1;
-                Asia2FlipAdxThreshold = 10.1;
+                Asia2FlipAdxThreshold = 9.7;
                 Asia2AdxPeriod = 14;
                 Asia2AdxThreshold = 28.3;
-                Asia2AdxMaxThreshold = 36.3;
-                Asia2AdxMinSlopePoints = 0.9;
+                Asia2AdxMaxThreshold = 37.76;
+                Asia2AdxMinSlopePoints = 0.93;
                 Asia2AdxPeakDrawdownExitUnits = 13.26;
-                Asia2AdxAbsoluteExitLevel = 62.9;
-                Asia2StopPaddingPoints = 38.25;
-                Asia2ExitCrossPoints = 6.25;
-                Asia2FlipEmaCrossPoints = 1;
-                Asia2MaxStopLossPoints = 210;
-                Asia2TakeProfitPoints = 95;
-                Asia2AtrMinimum = 3.31;
-                Asia2EnableFlipBreakEven = true;
-                Asia2FlipBreakEvenTriggerPoints = 21;
-                Asia2FlipTakeProfitPoints = 121;
+                Asia2AdxAbsoluteExitLevel = 62;
+                Asia2StopPaddingPoints = 40;
+                Asia2ExitCrossPoints = 6.5;
+                Asia2FlipEmaCrossPoints = 0.5;
+                Asia2MaxStopLossPoints = 206.75;
+                Asia2TakeProfitPoints = 95.5;
+                Asia2AtrMinimum = 3.25;
+                Asia2EnableFlipBreakEven = false;
+                Asia2FlipBreakEvenTriggerPoints = 20.75;
+                Asia2FlipTakeProfitPoints = 125.5;
                 Asia2TakeProfitPercentTriggerPercent = 68;
-                Asia2TakeProfitPercentStopMovePercent = 17;
-                Asia2RequireMinAdxForFlips = true;
+                Asia2TakeProfitPercentStopMovePercent = 7;
+                Asia2RequireMinAdxForFlips = false;
                 Asia2EnableAdxDdRiskMode = false;
-                Asia2AdxDdRiskModeStopLossPoints = 11.64;
-                Asia2AdxDdRiskModeTakeProfitPoints = 44.52;
+                Asia2AdxDdRiskModeStopLossPoints = 11.75;
+                Asia2AdxDdRiskModeTakeProfitPoints = 44.25;
                 Asia2HorizontalExitBars = 36;
 
                 Asia3SessionStart = new TimeSpan(0, 30, 0);
                 Asia3SessionEnd = new TimeSpan(2, 0, 0);
                 Asia3EmaPeriod = 21;
                 Asia3Contracts = 1;
-                Asia3FlipAdxThreshold = 13.1;
+                Asia3FlipAdxThreshold = 13;
                 Asia3AdxPeriod = 14;
-                Asia3AdxThreshold = 32.9;
-                Asia3AdxMaxThreshold = 56.65;
-                Asia3AdxMinSlopePoints = 0.85;
-                Asia3AdxPeakDrawdownExitUnits = 11.47;
-                Asia3AdxAbsoluteExitLevel = 62.9;
-                Asia3StopPaddingPoints = 3.25;
-                Asia3ExitCrossPoints = 1.25;
-                Asia3FlipEmaCrossPoints = 1;
+                Asia3AdxThreshold = 32.8;
+                Asia3AdxMaxThreshold = 55.24;
+                Asia3AdxMinSlopePoints = 0.82;
+                Asia3AdxPeakDrawdownExitUnits = 11.75;
+                Asia3AdxAbsoluteExitLevel = 64.1;
+                Asia3StopPaddingPoints = 4.25;
+                Asia3ExitCrossPoints = 0.5;
+                Asia3FlipEmaCrossPoints = 0.25;
                 Asia3MaxStopLossPoints = 149;
-                Asia3TakeProfitPoints = 107.75;
-                Asia3AtrMinimum = 4;
+                Asia3TakeProfitPoints = 107.25;
+                Asia3AtrMinimum = 3.84;
                 Asia3EnableFlipBreakEven = true;
                 Asia3FlipBreakEvenTriggerPoints = 0.25;
-                Asia3FlipTakeProfitPoints = 75.5;
+                Asia3FlipTakeProfitPoints = 73.5;
                 Asia3TakeProfitPercentTriggerPercent = 73;
                 Asia3TakeProfitPercentStopMovePercent = 50;
-                Asia3RequireMinAdxForFlips = true;
-                Asia3EnableAdxDdRiskMode = false;
-                Asia3AdxDdRiskModeStopLossPoints = 1.5;
-                Asia3AdxDdRiskModeTakeProfitPoints = 28.5;
-                Asia3HorizontalExitBars = 35;
+                Asia3RequireMinAdxForFlips = false;
+                Asia3EnableAdxDdRiskMode = true;
+                Asia3AdxDdRiskModeStopLossPoints = 0.5;
+                Asia3AdxDdRiskModeTakeProfitPoints = 27.75;
+                Asia3HorizontalExitBars = 36;
 
-                LondonSessionStart = new TimeSpan(1, 45, 0);
+                LondonSessionStart = new TimeSpan(2, 0, 0);
                 LondonSessionEnd = new TimeSpan(3, 0, 0);
                 AutoShiftLondon = true;
                 LondonEmaPeriod = 21;
                 LondonContracts = 1;
                 LondonFlipAdxThreshold = 27.6;
                 LondonAdxPeriod = 14;
-                LondonAdxThreshold = 17.8;
+                LondonAdxThreshold = 18.3;
                 LondonAdxMaxThreshold = 37.87;
-                LondonAdxMinSlopePoints = 0.94;
-                LondonAdxPeakDrawdownExitUnits = 13.79;
-                LondonAdxAbsoluteExitLevel = 50.6;
-                LondonStopPaddingPoints = 29.75;
+                LondonAdxMinSlopePoints = 0.91;
+                LondonAdxPeakDrawdownExitUnits = 13.45;
+                LondonAdxAbsoluteExitLevel = 48.6;
+                LondonStopPaddingPoints = 29.5;
                 LondonExitCrossPoints = 17.25;
-                LondonFlipEmaCrossPoints = 1;
-                LondonMaxStopLossPoints = 123;
+                LondonFlipEmaCrossPoints = 0.5;
+                LondonMaxStopLossPoints = 126;
                 LondonTakeProfitPoints = 109;
                 LondonAtrMinimum = 9.38;
-                LondonEnableFlipBreakEven = true;
-                LondonFlipBreakEvenTriggerPoints = 16.25;
-                LondonFlipTakeProfitPoints = 134;
+                LondonEnableFlipBreakEven = false;
+                LondonFlipBreakEvenTriggerPoints = 16.5;
+                LondonFlipTakeProfitPoints = 128.75;
                 LondonTakeProfitPercentTriggerPercent = 59;
-                LondonTakeProfitPercentStopMovePercent = 24;
+                LondonTakeProfitPercentStopMovePercent = 29;
                 LondonRequireMinAdxForFlips = true;
                 LondonEnableAdxDdRiskMode = true;
-                LondonAdxDdRiskModeStopLossPoints = 2;
-                LondonAdxDdRiskModeTakeProfitPoints = 55.25;
-                LondonHorizontalExitBars = 53;
+                LondonAdxDdRiskModeStopLossPoints = 1.75;
+                LondonAdxDdRiskModeTakeProfitPoints = 55.75;
+                LondonHorizontalExitBars = 55;
 
                 London2SessionStart = new TimeSpan(3, 0, 0);
                 London2SessionEnd = new TimeSpan(5, 0, 0);
                 AutoShiftLondon2 = true;
                 London2EmaPeriod = 21;
                 London2Contracts = 1;
-                London2FlipAdxThreshold = 13.1;
+                London2FlipAdxThreshold = 12.9;
                 London2AdxPeriod = 14;
                 London2AdxThreshold = 13.4;
-                London2AdxMaxThreshold = 22.78;
-                London2AdxMinSlopePoints = 0.94;
-                London2AdxPeakDrawdownExitUnits = 10.87;
-                London2AdxAbsoluteExitLevel = 52.2;
+                London2AdxMaxThreshold = 22.66;
+                London2AdxMinSlopePoints = 0.95;
+                London2AdxPeakDrawdownExitUnits = 10.76;
+                London2AdxAbsoluteExitLevel = 52;
                 London2StopPaddingPoints = 6;
-                London2ExitCrossPoints = 3;
-                London2FlipEmaCrossPoints = 6;
-                London2MaxStopLossPoints = 95;
+                London2ExitCrossPoints = 2.75;
+                London2FlipEmaCrossPoints = 5.75;
+                London2MaxStopLossPoints = 93.5;
                 London2TakeProfitPoints = 135;
                 London2AtrMinimum = 7.84;
                 London2EnableFlipBreakEven = true;
-                London2FlipBreakEvenTriggerPoints = 7;
+                London2FlipBreakEvenTriggerPoints = 7.25;
                 London2FlipTakeProfitPoints = 150.5;
                 London2TakeProfitPercentTriggerPercent = 52;
                 London2TakeProfitPercentStopMovePercent = 38;
-                London2RequireMinAdxForFlips = false;
+                London2RequireMinAdxForFlips = true;
                 London2EnableAdxDdRiskMode = true;
-                London2AdxDdRiskModeStopLossPoints = 0.25;
+                London2AdxDdRiskModeStopLossPoints = 0.75;
                 London2AdxDdRiskModeTakeProfitPoints = 43.75;
-                London2HorizontalExitBars = 38;
+                London2HorizontalExitBars = 39;
 
                 London3SessionStart = new TimeSpan(5, 45, 0);
                 London3SessionEnd = new TimeSpan(8, 0, 0);
@@ -720,29 +721,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AutoShiftLondon3 = true;
                 London3EmaPeriod = 21;
                 London3Contracts = 1;
-                London3FlipAdxThreshold = 6;
+                London3FlipAdxThreshold = 5.9;
                 London3AdxPeriod = 14;
                 London3AdxThreshold = 34;
                 London3AdxMaxThreshold = 42.9;
                 London3AdxMinSlopePoints = 1;
                 London3AdxPeakDrawdownExitUnits = 9.14;
                 London3AdxAbsoluteExitLevel = 48.5;
-                London3StopPaddingPoints = 14.25;
+                London3StopPaddingPoints = 13.75;
                 London3ExitCrossPoints = 7.5;
-                London3FlipEmaCrossPoints = 0.75;
+                London3FlipEmaCrossPoints = 0.25;
                 London3MaxStopLossPoints = 125;
                 London3TakeProfitPoints = 112.5;
-                London3AtrMinimum = 8;
+                London3AtrMinimum = 7.72;
                 London3EnableFlipBreakEven = false;
                 London3FlipBreakEvenTriggerPoints = 10.75;
-                London3FlipTakeProfitPoints = 82.75;
-                London3TakeProfitPercentTriggerPercent = 62;
+                London3FlipTakeProfitPoints = 82;
+                London3TakeProfitPercentTriggerPercent = 56;
                 London3TakeProfitPercentStopMovePercent = 12;
-                London3RequireMinAdxForFlips = true;
+                London3RequireMinAdxForFlips = false;
                 London3EnableAdxDdRiskMode = true;
-                London3AdxDdRiskModeStopLossPoints = 3.5;
-                London3AdxDdRiskModeTakeProfitPoints = 51.5;
-                London3HorizontalExitBars = 28;
+                London3AdxDdRiskModeStopLossPoints = 3;
+                London3AdxDdRiskModeTakeProfitPoints = 52;
+                London3HorizontalExitBars = 30;
 
                 NewYorkSessionStart = new TimeSpan(9, 40, 0);
                 NewYorkSessionEnd = new TimeSpan(10, 30, 0);
@@ -805,34 +806,34 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2HorizontalExitBars = 41;
 
                 NewYork3SessionStart = new TimeSpan(14, 15, 0);
-                NewYork3SessionEnd = new TimeSpan(15, 30, 0);
+                NewYork3SessionEnd = new TimeSpan(15, 0, 0);
                 NewYork3SkipStart = TimeSpan.Zero;
                 NewYork3SkipEnd = TimeSpan.Zero;
                 NewYork3EmaPeriod = 21;
-                NewYork3Contracts = 1;
-                NewYork3FlipAdxThreshold = 6;
+                NewYork3Contracts = 0;
+                NewYork3FlipAdxThreshold = 5.1;
                 NewYork3AdxPeriod = 14;
-                NewYork3AdxThreshold = 18.7;
-                NewYork3AdxMaxThreshold = 32.69;
-                NewYork3AdxMinSlopePoints = 1.48;
-                NewYork3AdxPeakDrawdownExitUnits = 4.01;
-                NewYork3AdxAbsoluteExitLevel = 47.8;
-                NewYork3StopPaddingPoints = 29.5;
-                NewYork3ExitCrossPoints = 8.5;
-                NewYork3FlipEmaCrossPoints = 1;
-                NewYork3MaxStopLossPoints = 94;
-                NewYork3TakeProfitPoints = 100;
-                NewYork3AtrMinimum = 0.1;
+                NewYork3AdxThreshold = 17;
+                NewYork3AdxMaxThreshold = 28.25;
+                NewYork3AdxMinSlopePoints = 1.32;
+                NewYork3AdxPeakDrawdownExitUnits = 3.67;
+                NewYork3AdxAbsoluteExitLevel = 43.4;
+                NewYork3StopPaddingPoints = 29.25;
+                NewYork3ExitCrossPoints = 7;
+                NewYork3FlipEmaCrossPoints = 0.75;
+                NewYork3MaxStopLossPoints = 90.75;
+                NewYork3TakeProfitPoints = 93;
+                NewYork3AtrMinimum = 0.87;
                 NewYork3EnableFlipBreakEven = true;
-                NewYork3FlipBreakEvenTriggerPoints = 7.75;
-                NewYork3FlipTakeProfitPoints = 73.5;
-                NewYork3TakeProfitPercentTriggerPercent = 64;
-                NewYork3TakeProfitPercentStopMovePercent = 28;
+                NewYork3FlipBreakEvenTriggerPoints = 7.25;
+                NewYork3FlipTakeProfitPoints = 68.25;
+                NewYork3TakeProfitPercentTriggerPercent = 46;
+                NewYork3TakeProfitPercentStopMovePercent = 0;
                 NewYork3RequireMinAdxForFlips = true;
                 NewYork3EnableAdxDdRiskMode = true;
-                NewYork3AdxDdRiskModeStopLossPoints = 5.75;
-                NewYork3AdxDdRiskModeTakeProfitPoints = 34.75;
-                NewYork3HorizontalExitBars = 19;
+                NewYork3AdxDdRiskModeStopLossPoints = 4.75;
+                NewYork3AdxDdRiskModeTakeProfitPoints = 32.75;
+                NewYork3HorizontalExitBars = 20;
 
                 CloseAtSessionEnd = false;
                 ForceCloseTime = "16:55:00";
@@ -10210,5 +10211,61 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "13. Debug", Order = int.MaxValue)]
         public bool DebugLogging { get; set; }
+    }
+
+    public class DUOTypeConverter : StrategyBaseConverter
+    {
+        public override bool GetPropertiesSupported(ITypeDescriptorContext context)
+        {
+            return true;
+        }
+
+        public override PropertyDescriptorCollection GetProperties(ITypeDescriptorContext context, object value, Attribute[] attributes)
+        {
+            PropertyDescriptorCollection properties = base.GetPropertiesSupported(context)
+                ? base.GetProperties(context, value, attributes)
+                : TypeDescriptor.GetProperties(value, attributes);
+
+            DUO strategy = value as DUO;
+            if (strategy == null || properties == null)
+                return properties;
+
+            HashSet<string> hiddenSessionGroups = new HashSet<string>();
+            if (strategy.AsiaContracts == 0)
+                hiddenSessionGroups.Add("04. Asia 1");
+            if (strategy.Asia2Contracts == 0)
+                hiddenSessionGroups.Add("05. Asia 2");
+            if (strategy.Asia3Contracts == 0)
+                hiddenSessionGroups.Add("06. Asia 3");
+            if (strategy.LondonContracts == 0)
+                hiddenSessionGroups.Add("07. Europe 1");
+            if (strategy.London2Contracts == 0)
+                hiddenSessionGroups.Add("08. Europe 2");
+            if (strategy.London3Contracts == 0)
+                hiddenSessionGroups.Add("09. Europe 3");
+            if (strategy.NewYorkContracts == 0)
+                hiddenSessionGroups.Add("10. America 1");
+            if (strategy.NewYork2Contracts == 0)
+                hiddenSessionGroups.Add("11. America 2");
+            if (strategy.NewYork3Contracts == 0)
+                hiddenSessionGroups.Add("12. America 3");
+
+            PropertyDescriptorCollection adjusted = new PropertyDescriptorCollection(null);
+            foreach (PropertyDescriptor property in properties)
+            {
+                DisplayAttribute display = property.Attributes[typeof(DisplayAttribute)] as DisplayAttribute;
+                bool hide = display != null && hiddenSessionGroups.Contains(display.GroupName);
+
+                adjusted.Add(hide
+                    ? new PropertyDescriptorExtended(
+                        property,
+                        _ => value,
+                        null,
+                        new Attribute[] { new BrowsableAttribute(false) })
+                    : property);
+            }
+
+            return adjusted;
+        }
     }
 }
