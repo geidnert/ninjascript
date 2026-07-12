@@ -46,12 +46,12 @@ domains.
 - DUO and DUOrc are maintained directly in `Strategies/DUO.cs` and
   `Strategies/DUOrc.cs`; do not recreate separate DUO/DUOrc testing variants
   unless the user explicitly asks.
-- 2026-07-10: Current DUOrc `State.SetDefaults` session defaults in
+- 2026-07-12: Current DUOrc `State.SetDefaults` session defaults in
   `Strategies/DUOrc.cs` are mirrored from Steve's
-  `/Volumes/Documents/NinjaTrader 8/bin/Custom/Strategies/DUOrcTesting-133.xml`.
+  `/Volumes/Documents/NinjaTrader 8/bin/Custom/Strategies/DUOrcTesting-142.xml`.
   When Steve sends new DUOrc defaults XML, sync both NT8 `Strategies/DUOrc.cs`
   and Trader `src/Trader.Strategies.Duorc.Core/DuorcStrategyCore.cs` in the same
-  pass unless the user explicitly asks for only one side. The 133 XML includes
+  pass unless the user explicitly asks for only one side. The 142 XML includes
   TP-percent trigger/move fields and no retired secondary-entry fields.
 - 2026-07-11: DUOrc has fixed rollover blackout dates for the Mar/Jun 2026
   playback windows plus the next four quarterly contract rollover windows:
