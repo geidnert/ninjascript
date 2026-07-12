@@ -25,6 +25,7 @@ using NinjaTrader.NinjaScript.Indicators;
 
 namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 {
+    [TypeConverter("NinjaTrader.NinjaScript.Strategies.AutoEdge.DUOrcTypeConverter")]
     public class DUOrc : Strategy
     {
         private const string HeartbeatStrategyName = "DUOrc";
@@ -565,6 +566,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
+                BarsRequiredToTrade = 250;
                 IsExitOnSessionCloseStrategy = true;
                 IsInstantiatedOnEachOptimizationIteration = false;
                 StartBehavior = StartBehavior.ImmediatelySubmitSynchronizeAccount;
@@ -10196,5 +10198,65 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Debug Logging", Description = "Print concise decision, order, and execution diagnostics to Output.", GroupName = "99. Debug", Order = 999)]
         public bool DebugLogging { get; set; }
+    }
+
+    public class DUOrcTypeConverter : StrategyBaseConverter
+    {
+        public override bool GetPropertiesSupported(ITypeDescriptorContext context)
+        {
+            return true;
+        }
+
+        public override PropertyDescriptorCollection GetProperties(ITypeDescriptorContext context, object value, Attribute[] attributes)
+        {
+            PropertyDescriptorCollection properties = base.GetPropertiesSupported(context)
+                ? base.GetProperties(context, value, attributes)
+                : TypeDescriptor.GetProperties(value, attributes);
+
+            DUOrc strategy = value as DUOrc;
+            if (strategy == null || properties == null)
+                return properties;
+
+            HashSet<string> hiddenSessionGroups = new HashSet<string>();
+            if (strategy.AsiaContracts == 0)
+                hiddenSessionGroups.Add("04. Asia 1");
+            if (strategy.Asia2Contracts == 0)
+                hiddenSessionGroups.Add("05. Asia 2");
+            if (strategy.Asia3Contracts == 0)
+                hiddenSessionGroups.Add("06. Asia 3");
+            if (strategy.LondonContracts == 0)
+                hiddenSessionGroups.Add("07. Europe 1");
+            if (strategy.London2Contracts == 0)
+                hiddenSessionGroups.Add("08. Europe 2");
+            if (strategy.London3Contracts == 0)
+                hiddenSessionGroups.Add("09. Europe 3");
+            if (strategy.NewYorkContracts == 0)
+                hiddenSessionGroups.Add("10. America 1");
+            if (strategy.NewYork2Contracts == 0)
+                hiddenSessionGroups.Add("11. America 2");
+            if (strategy.NewYork3Contracts == 0)
+                hiddenSessionGroups.Add("12. America 3");
+            if (strategy.NewYork4Contracts == 0)
+                hiddenSessionGroups.Add("13. America 4");
+            if (strategy.NewYork5Contracts == 0)
+                hiddenSessionGroups.Add("14. America 5");
+
+            PropertyDescriptorCollection adjusted = new PropertyDescriptorCollection(null);
+            foreach (PropertyDescriptor property in properties)
+            {
+                DisplayAttribute display = property.Attributes[typeof(DisplayAttribute)] as DisplayAttribute;
+                bool hide = display != null && hiddenSessionGroups.Contains(display.GroupName);
+
+                adjusted.Add(hide
+                    ? new PropertyDescriptorExtended(
+                        property,
+                        _ => value,
+                        null,
+                        new Attribute[] { new BrowsableAttribute(false) })
+                    : property);
+            }
+
+            return adjusted;
+        }
     }
 }
