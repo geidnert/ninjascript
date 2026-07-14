@@ -833,7 +833,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaSessionBrush = Brushes.DarkCyan;
                 LondonSessionBrush = Brushes.MediumSeaGreen;
                 NewYorkSessionBrush = Brushes.Gold;
-                SecondaryBiasEmaPeriod = 23;
+                SecondaryBiasEmaPeriod = 22;
                 ShowEmaOnChart = false;
                 ShowAdxOnChart = false;
                 ShowAdxThresholdLines = false;
@@ -1022,6 +1022,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 EnsureNewsDatesInitialized(GetNewsReferenceStrategyTime(), true, true);
                 UpdateInfo();
+                SyncTradeLinesToLivePositionAndOrders();
 
                 if (heartbeatReporter != null)
                     heartbeatReporter.Start();
@@ -2462,18 +2463,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void StartTradeLines(double entryPrice, double stopPrice, double takeProfitPrice, bool hasTakeProfit)
         {
+            StartTradeLines(entryPrice, stopPrice, takeProfitPrice, hasTakeProfit, Math.Max(0, CurrentBar - 1));
+        }
+
+        private void StartTradeLines(double entryPrice, double stopPrice, double takeProfitPrice, bool hasTakeProfit, int signalBar)
+        {
             if (tradeLinesActive)
                 FinalizeTradeLines();
 
             tradeLineTagPrefix = string.Format("DUOrc_TradeLine_{0}_{1}_", ++tradeLineTagCounter, CurrentBar);
             tradeLinesActive = true;
-            tradeLineSignalBar = Math.Max(0, CurrentBar - 1);
+            tradeLineSignalBar = Math.Max(0, Math.Min(CurrentBar, signalBar));
             tradeLineExitBar = -1;
             tradeLineEntryPrice = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
             tradeLineSlPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
             SetTradeLineTakeProfitState(takeProfitPrice, hasTakeProfit);
 
-            DrawTradeLinesAtBarsAgo(1, 0);
+            DrawTradeLinesAtBarsAgo(Math.Max(0, CurrentBar - tradeLineSignalBar), 0);
             RequestTradeLineRender();
         }
 
@@ -2598,7 +2604,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void SyncTradeLinesToLivePositionAndOrders()
         {
-            if (!tradeLinesActive || Position.MarketPosition == MarketPosition.Flat)
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            if (!tradeLinesActive && !TryRestoreTradeLinesForOpenPosition())
                 return;
 
             bool changed = false;
@@ -2624,7 +2633,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (IsOrderActive(activeProfitTargetOrder))
             {
                 double actualTargetPrice = GetWorkingOrderLimitPrice(activeProfitTargetOrder, 0.0);
-                if (actualTargetPrice > 0.0 && (!tradeLineHasTp || Math.Abs(actualTargetPrice - tradeLineTpPrice) > TickSize * 0.5 || changed))
+                bool missingExpectedTrigger = activeTakeProfitPercentTriggerPercent > 0.0 && !tradeLineHasTpTrigger;
+                if (actualTargetPrice > 0.0 && (!tradeLineHasTp || missingExpectedTrigger || Math.Abs(actualTargetPrice - tradeLineTpPrice) > TickSize * 0.5 || changed))
                 {
                     SetTradeLineTakeProfitState(actualTargetPrice, true);
                     changed = true;
@@ -2633,6 +2643,51 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (changed)
                 UpdateTradeLines();
+        }
+
+        private bool TryRestoreTradeLinesForOpenPosition()
+        {
+            if (tradeLinesActive || State != State.Realtime || CurrentBar < 0 || Position.MarketPosition == MarketPosition.Flat)
+                return false;
+
+            // NT8 startup reconciliation executions occur outside strategy callbacks, so rebuild from the virtual strategy position.
+            double entryPrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            if (entryPrice <= 0.0)
+                return false;
+
+            double fallbackStopPrice = currentStopPrice > 0.0 ? currentStopPrice : initialStopPrice;
+            double stopPrice = IsOrderActive(activeStopLossOrder)
+                ? GetWorkingOrderStopPrice(activeStopLossOrder, fallbackStopPrice)
+                : Instrument.MasterInstrument.RoundToTickSize(fallbackStopPrice);
+
+            double takeProfitPrice = IsOrderActive(activeProfitTargetOrder)
+                ? GetWorkingOrderLimitPrice(activeProfitTargetOrder, 0.0)
+                : 0.0;
+            if (takeProfitPrice <= 0.0)
+            {
+                double takeProfitPoints = GetActivePositionTakeProfitPoints();
+                if (takeProfitPoints > 0.0)
+                {
+                    takeProfitPrice = Position.MarketPosition == MarketPosition.Long
+                        ? entryPrice + takeProfitPoints
+                        : entryPrice - takeProfitPoints;
+                    takeProfitPrice = Instrument.MasterInstrument.RoundToTickSize(takeProfitPrice);
+                }
+            }
+
+            int signalBar = currentPositionEntryBar >= 0 && currentPositionEntryBar <= CurrentBar
+                ? currentPositionEntryBar
+                : CurrentBar;
+            StartTradeLines(entryPrice, stopPrice, takeProfitPrice, takeProfitPrice > 0.0, signalBar);
+            LogDebug(string.Format(
+                "Trade lines restored for realtime open position | side={0} entry={1:0.00} stop={2:0.00} target={3:0.00} trigger={4:0.00} startBar={5}",
+                Position.MarketPosition,
+                tradeLineEntryPrice,
+                tradeLineSlPrice,
+                tradeLineTpPrice,
+                tradeLineTpTriggerPrice,
+                tradeLineSignalBar));
+            return true;
         }
 
         private double GetWorkingOrderStopPrice(Order order, double fallbackStopPrice)
