@@ -264,6 +264,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string projectXResolvedInstrumentKey = string.Empty;
         private bool accountBalanceLimitReached;
         private int accountBalanceLimitReachedBar = -1;
+        private bool dailyProfitLimitReached;
+        private double dailyProfitStartBalance = double.NaN;
+        private DateTime dailyProfitDate = DateTime.MinValue;
         private int asiaTradesThisSession;
         private int londonTradesThisSession;
         private int newYorkTradesThisSession;
@@ -870,6 +873,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXAccountId = string.Empty;
                 ProjectXContractId = string.Empty;
                 MaxAccountBalance = 0;
+                MaxDailyProfit = 0;
                 RequireEntryConfirmation = false;
                 EntryVariance = true;
 
@@ -993,6 +997,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 projectXResolvedInstrumentKey = string.Empty;
                 accountBalanceLimitReached = false;
                 accountBalanceLimitReachedBar = -1;
+                dailyProfitLimitReached = false;
+                dailyProfitStartBalance = double.NaN;
+                dailyProfitDate = DateTime.MinValue;
                 asiaTradesThisSession = 0;
                 londonTradesThisSession = 0;
                 newYorkTradesThisSession = 0;
@@ -1114,7 +1121,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool inActiveSessionNow = activeSession != SessionSlot.None && TimeInSession(activeSession, Time[0]);
             bool inNySkipNow = IsNewYorkFamily(activeSession) && IsNewYorkSkipTime(activeSession, Time[0]);
-            bool accountBlocked = IsAccountBalanceBlocked();
+            bool accountBlocked = IsDailyProfitBlocked() || IsAccountBalanceBlocked();
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double atrValue = GetCurrentAtrValue();
             UpdateAdxPeakTracker(adxValue);
@@ -1482,7 +1489,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             reasons.Add("NewYorkSkip");
                     }
                     if (accountBlocked)
-                        reasons.Add(string.Format("AccountBlocked maxBalance={0:0.##}", MaxAccountBalance));
+                        reasons.Add(dailyProfitLimitReached
+                            ? string.Format("DailyProfitBlocked maxDailyProfit={0:0.##}", MaxDailyProfit)
+                            : string.Format("AccountBlocked maxBalance={0:0.##}", MaxAccountBalance));
                     if (!adxMinPass)
                         reasons.Add(string.Format("AdxBelowMin adx={0:0.00} min={1:0.00}", adxValue, activeAdxThreshold));
                     if (!adxMaxPass)
@@ -4219,7 +4228,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            if (IsAccountBalanceBlocked())
+            if (IsDailyProfitBlocked() || IsAccountBalanceBlocked())
             {
                 CancelPendingEntryVariance("account-blocked");
                 return;
@@ -6744,6 +6753,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsAccountBalanceInfoBlocked()
         {
+            if (dailyProfitLimitReached)
+                return true;
+
             if (MaxAccountBalance <= 0.0)
                 return false;
 
@@ -7052,6 +7064,53 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug(string.Format("Account balance target reached | netLiq={0:0.00} target={1:0.00} trading paused.", balance, MaxAccountBalance));
             }
 
+            return true;
+        }
+
+        private bool IsDailyProfitBlocked()
+        {
+            if (MaxDailyProfit <= 0.0)
+            {
+                dailyProfitLimitReached = false;
+                dailyProfitStartBalance = double.NaN;
+                dailyProfitDate = DateTime.MinValue;
+                return false;
+            }
+
+            DateTime currentDate = Time[0].Date;
+            if (dailyProfitDate != currentDate)
+            {
+                dailyProfitDate = currentDate;
+                dailyProfitLimitReached = false;
+                dailyProfitStartBalance = double.NaN;
+            }
+
+            if (dailyProfitLimitReached)
+                return true;
+
+            double balance;
+            if (!TryGetCurrentCashValue(out balance))
+                return false;
+
+            if (double.IsNaN(dailyProfitStartBalance))
+            {
+                dailyProfitStartBalance = balance;
+                return false;
+            }
+
+            double dailyProfit = balance - dailyProfitStartBalance;
+            if (dailyProfit < MaxDailyProfit)
+                return false;
+
+            dailyProfitLimitReached = true;
+            CancelWorkingEntryOrders();
+            if (Position.MarketPosition == MarketPosition.Long)
+                TrySubmitTerminalExit("MaxDailyProfit");
+            else if (Position.MarketPosition == MarketPosition.Short)
+                TrySubmitTerminalExit("MaxDailyProfit");
+
+            LogDebug(string.Format("Daily profit target reached | startNetLiq={0:0.00} netLiq={1:0.00} profit={2:0.00} target={3:0.00} trading paused.",
+                dailyProfitStartBalance, balance, dailyProfit, MaxDailyProfit));
             return true;
         }
 
@@ -10398,6 +10457,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue)]
         [Display(Name = "Max Account Balance", Description = "When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.", GroupName = "01. Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first bar's net liquidation for each calendar date. Reaching it blocks entries and flattens open positions. 0 disables.", GroupName = "01. Risk", Order = 1)]
+        public double MaxDailyProfit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry (including flips).", GroupName = "01. Risk", Order = 2)]

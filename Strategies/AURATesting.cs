@@ -291,6 +291,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int            lastInfoSessionId;
         private bool           wasInNewsSkipWindow;
         private bool           maxAccountLimitHit;
+        private bool           dailyProfitLimitHit;
+        private double         dailyProfitStartBalance = double.NaN;
+        private DateTime       dailyProfitDate = DateTime.MinValue;
         private bool           isConfiguredTimeframeValid = true;
         private bool           isConfiguredInstrumentValid = true;
         private bool           timeframePopupShown;
@@ -417,6 +420,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 SessionStartTime = DateTime.Parse("18:00", System.Globalization.CultureInfo.InvariantCulture);
                 RequireEntryConfirmation = false;
                 MaxAccountBalance = 0.0;
+                MaxDailyProfit = 0.0;
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
                 FlattenOnBlockedWindowTransition = false;
@@ -1025,7 +1029,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            if (IsAccountBalanceBlocked())
+            if (IsDailyProfitBlocked() || IsAccountBalanceBlocked())
             {
                 prevMarketPosition = Position.MarketPosition;
                 return;
@@ -3382,6 +3386,54 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return true;
         }
 
+        private bool IsDailyProfitBlocked()
+        {
+            if (MaxDailyProfit <= 0.0)
+            {
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+                dailyProfitDate = DateTime.MinValue;
+                return false;
+            }
+
+            DateTime currentDate = Time[0].Date;
+            if (dailyProfitDate != currentDate)
+            {
+                dailyProfitDate = currentDate;
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+            }
+
+            if (!dailyProfitLimitHit)
+            {
+                double balance;
+                if (!TryGetCurrentNetLiquidation(out balance))
+                    return false;
+
+                if (double.IsNaN(dailyProfitStartBalance))
+                {
+                    dailyProfitStartBalance = balance;
+                    return false;
+                }
+
+                double dailyProfit = balance - dailyProfitStartBalance;
+                if (dailyProfit < MaxDailyProfit)
+                    return false;
+
+                dailyProfitLimitHit = true;
+                Print(string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "Max daily profit reached | startNetLiq={0:0.00} netLiq={1:0.00} profit={2:0.00} target={3:0.00}",
+                    dailyProfitStartBalance,
+                    balance,
+                    dailyProfit,
+                    MaxDailyProfit));
+            }
+
+            FlattenAndCancel("MaxDailyProfit");
+            return true;
+        }
+
         private bool TryGetCurrentNetLiquidation(out double netLiquidation)
         {
             netLiquidation = 0.0;
@@ -4034,9 +4086,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty][Display(Name="AS Enable (Parent)",Order=5,GroupName="0. Global")] public bool AsEnable {get;set;}
         [NinjaScriptProperty][Display(Name="Require Entry Confirmation",Order=2,GroupName="0. Global")] public bool RequireEntryConfirmation {get;set;}
         [NinjaScriptProperty][Range(0.0,double.MaxValue)][Display(Name="Max Account Balance",Description="When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.",Order=6,GroupName="0. Global")] public double MaxAccountBalance {get;set;}
-        [NinjaScriptProperty][Display(Name="Use News Skip",Order=7,GroupName="0. Global")] public bool UseNewsSkip {get;set;}
-        [NinjaScriptProperty][Range(0,60)][Display(Name="News Block Minutes",Order=8,GroupName="0. Global")] public int NewsBlockMinutes {get;set;}
-        [NinjaScriptProperty][Display(Name="Flatten On Blocked Window",Description="If enabled, flatten when entering a no-new-trades or news-block window.",Order=9,GroupName="0. Global")] public bool FlattenOnBlockedWindowTransition {get;set;}
+        [NinjaScriptProperty][Range(0.0,double.MaxValue)][Display(Name="Max Daily Profit",Description="Maximum daily account profit in currency, measured from the first bar's net liquidation for each calendar date. Reaching it blocks entries and flattens open positions. 0 disables.",Order=7,GroupName="0. Global")] public double MaxDailyProfit {get;set;}
+        [NinjaScriptProperty][Display(Name="Use News Skip",Order=8,GroupName="0. Global")] public bool UseNewsSkip {get;set;}
+        [NinjaScriptProperty][Range(0,60)][Display(Name="News Block Minutes",Order=9,GroupName="0. Global")] public int NewsBlockMinutes {get;set;}
+        [NinjaScriptProperty][Display(Name="Flatten On Blocked Window",Description="If enabled, flatten when entering a no-new-trades or news-block window.",Order=10,GroupName="0. Global")] public bool FlattenOnBlockedWindowTransition {get;set;}
         [NinjaScriptProperty][Browsable(false)][Display(Name="Debug Logging",Order=10,GroupName="0. Global")] public bool DebugLogging {get;set;}
         [NinjaScriptProperty][Display(Name="Use Webhooks",Description="Enable outbound order webhooks.",Order=0,GroupName="12. Webhooks")] public bool UseWebhooks {get;set;}
         [NinjaScriptProperty][Display(Name="Webhook Provider",Description="Select webhook target: TradersPost or ProjectX.",Order=1,GroupName="12. Webhooks")] public WebhookProvider WebhookProviderType {get;set;}

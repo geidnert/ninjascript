@@ -145,6 +145,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool     timeframePopupShown;
         private bool     instrumentPopupShown;
         private bool     maxAccountLimitHit;
+        private bool     dailyProfitLimitHit;
+        private double   dailyProfitStartBalance = double.NaN;
+        private DateTime dailyProfitDate = DateTime.MinValue;
         private string   projectXSessionToken;
         private DateTime projectXTokenAcquiredUtc = Core.Globals.MinDate;
         private List<ProjectXAccountInfo> projectXAccounts;
@@ -342,6 +345,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseNewsSkip = false;
                 NewsBlockMinutes = 1;
                 MaxAccountBalance = 0.0;
+                MaxDailyProfit = 0.0;
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
                 WebhookProviderType = WebhookProvider.TradersPost;
@@ -647,7 +651,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             if (_forceFlatDone) return;
 
-            if (IsAccountBalanceBlocked())
+            if (IsDailyProfitBlocked() || IsAccountBalanceBlocked())
                 return;
 
             bool inSkipWindow = IsInSkipWindow(Time[0]);
@@ -2216,6 +2220,57 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ExitLong(BuildExitSignalName("MaxBalanceL"), GetOpenLongEntrySignal());
             else if (Position.MarketPosition == MarketPosition.Short)
                 ExitShort(BuildExitSignalName("MaxBalanceS"), GetOpenShortEntrySignal());
+
+            return true;
+        }
+
+        private bool IsDailyProfitBlocked()
+        {
+            if (MaxDailyProfit <= 0.0)
+            {
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+                dailyProfitDate = DateTime.MinValue;
+                return false;
+            }
+
+            DateTime currentDate = Time[0].Date;
+            if (dailyProfitDate != currentDate)
+            {
+                dailyProfitDate = currentDate;
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+            }
+
+            if (!dailyProfitLimitHit)
+            {
+                double balance;
+                if (!TryGetCurrentNetLiquidation(out balance))
+                    return false;
+
+                if (double.IsNaN(dailyProfitStartBalance))
+                {
+                    dailyProfitStartBalance = balance;
+                    return false;
+                }
+
+                double dailyProfit = balance - dailyProfitStartBalance;
+                if (dailyProfit < MaxDailyProfit)
+                    return false;
+
+                dailyProfitLimitHit = true;
+                LogDebug(string.Format(CultureInfo.InvariantCulture,
+                    "Max daily profit reached | startNetLiq={0:0.00} netLiq={1:0.00} profit={2:0.00} target={3:0.00}",
+                    dailyProfitStartBalance, balance, dailyProfit, MaxDailyProfit));
+            }
+
+            TryCancelOrder(_longLimitOrder);
+            TryCancelOrder(_shortLimitOrder);
+
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong(BuildExitSignalName("MaxDailyProfitL"), GetOpenLongEntrySignal());
+            else if (Position.MarketPosition == MarketPosition.Short)
+                ExitShort(BuildExitSignalName("MaxDailyProfitS"), GetOpenShortEntrySignal());
 
             return true;
         }
@@ -4534,6 +4589,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                  Description = "When net liquidation reaches or exceeds this value, entries are blocked and open positions are flattened. 0 disables.",
                  GroupName = "13. Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Daily Profit",
+                 Description = "Maximum daily account profit in currency, measured from the first bar's net liquidation for each calendar date. Reaching it blocks entries and flattens open positions. 0 disables.",
+                 GroupName = "13. Risk", Order = 1)]
+        public double MaxDailyProfit { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Webhook Provider",

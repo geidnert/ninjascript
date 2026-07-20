@@ -86,6 +86,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool maxProfitShortReached = false;
         private bool maxProfitTotalReached = false;
         private bool maxAccountLimitHit;
+        private bool dailyProfitLimitHit;
+        private double dailyProfitStartBalance = double.NaN;
+        private DateTime dailyProfitDate = DateTime.MinValue;
         private string webhookUrl = string.Empty;
         private string webhookTickerOverride = string.Empty;
         private bool debugLogging = false;
@@ -325,8 +328,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double MaxAccountBalance { get; set; }
 
         [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first bar's net liquidation for each calendar date. Reaching it blocks entries and flattens open positions. 0 disables.", Order = 14, GroupName = "1. Common Parameters")]
+        public double MaxDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
         [Range(1, 500)]
-        [Display(Name = "ATR Period", Description = "Period for ATR indicator used by ATRBased TP mode (applied on 30s bars).", Order = 14, GroupName = "1. Common Parameters")]
+        [Display(Name = "ATR Period", Description = "Period for ATR indicator used by ATRBased TP mode (applied on 30s bars).", Order = 15, GroupName = "1. Common Parameters")]
         public int AtrPeriod { get; set; }
 
         [NinjaScriptProperty]
@@ -1359,6 +1367,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewsBlockMinutes = 1;
                 RequireEntryConfirmation = false;
                 MaxAccountBalance = 0.0;
+                MaxDailyProfit = 0.0;
                 AtrPeriod = 55;
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
@@ -1655,6 +1664,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LogDebug("");
                 LogDebug(String.Format("========== SESSION RESET: {0} ==========", tradingDay.ToString("yyyy-MM-dd")));
                 ResetForNewSession(tradingDay);
+            }
+
+            if (ShouldDailyProfitExit())
+            {
+                ExitAllPositions("MaxDailyProfit");
+                return;
             }
 
             if (ShouldAccountBalanceExit())
@@ -2548,6 +2563,49 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             maxAccountLimitHit = true;
             CancelAllOrders();
             LogDebug(string.Format(CultureInfo.InvariantCulture, "Max account balance reached | netLiq={0:0.00} target={1:0.00}", balance, MaxAccountBalance));
+            return true;
+        }
+
+        private bool ShouldDailyProfitExit()
+        {
+            if (MaxDailyProfit <= 0.0)
+            {
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+                dailyProfitDate = DateTime.MinValue;
+                return false;
+            }
+
+            DateTime currentDate = Time[0].Date;
+            if (dailyProfitDate != currentDate)
+            {
+                dailyProfitDate = currentDate;
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+            }
+
+            if (dailyProfitLimitHit)
+                return true;
+
+            double balance;
+            if (!TryGetCurrentNetLiquidation(out balance))
+                return false;
+
+            if (double.IsNaN(dailyProfitStartBalance))
+            {
+                dailyProfitStartBalance = balance;
+                return false;
+            }
+
+            double dailyProfit = balance - dailyProfitStartBalance;
+            if (dailyProfit < MaxDailyProfit)
+                return false;
+
+            dailyProfitLimitHit = true;
+            CancelAllOrders();
+            LogDebug(string.Format(CultureInfo.InvariantCulture,
+                "Max daily profit reached | startNetLiq={0:0.00} netLiq={1:0.00} profit={2:0.00} target={3:0.00}",
+                dailyProfitStartBalance, balance, dailyProfit, MaxDailyProfit));
             return true;
         }
 

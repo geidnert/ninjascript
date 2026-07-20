@@ -186,6 +186,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ===== Session State =====
         private DateTime lastDate = DateTime.MinValue;
         private bool maxAccountLimitHit = false;
+        private bool dailyProfitLimitHit = false;
+        private double dailyProfitStartBalance = double.NaN;
+        private DateTime dailyProfitDate = DateTime.MinValue;
         private double startingBalance = 0;
         private bool isConfiguredTimeframeValid = true;
         private bool isConfiguredInstrumentValid = true;
@@ -309,6 +312,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // ===== A. General Settings =====
                 NumberOfContracts = 1;
                 MaxAccountBalance = 0;
+                MaxDailyProfit = 0;
                 RequireEntryConfirmation = false;
                 DebugMode = false;
                 AtrPeriod = 30;
@@ -686,6 +690,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (sessionProfitLimitHit || sessionLossLimitHit)
                 return;
             
+            if (ShouldDailyProfitExit())
+            {
+                ExitAllPositions("MaxDailyProfit");
+                return;
+            }
+
             if (ShouldAccountBalanceExit())
             {
                 ExitAllPositions("MaxBalance");
@@ -2211,6 +2221,75 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return maxAccountLimitHit;
+        }
+
+        private bool ShouldDailyProfitExit()
+        {
+            if (MaxDailyProfit <= 0.0)
+            {
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+                dailyProfitDate = DateTime.MinValue;
+                return false;
+            }
+
+            DateTime currentDate = Time[0].Date;
+            if (dailyProfitDate != currentDate)
+            {
+                dailyProfitDate = currentDate;
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+            }
+
+            if (dailyProfitLimitHit)
+                return true;
+
+            double balance;
+            if (!TryGetCurrentNetLiquidation(out balance))
+                return false;
+
+            if (double.IsNaN(dailyProfitStartBalance))
+            {
+                dailyProfitStartBalance = balance;
+                return false;
+            }
+
+            double dailyProfit = balance - dailyProfitStartBalance;
+            if (dailyProfit < MaxDailyProfit)
+                return false;
+
+            dailyProfitLimitHit = true;
+            CancelAllOrders();
+            if (DebugMode)
+                DebugPrint(string.Format(CultureInfo.InvariantCulture,
+                    "Max daily profit reached | startNetLiq={0:0.00} netLiq={1:0.00} profit={2:0.00} target={3:0.00}",
+                    dailyProfitStartBalance, balance, dailyProfit, MaxDailyProfit));
+            return true;
+        }
+
+        private bool TryGetCurrentNetLiquidation(out double netLiquidation)
+        {
+            netLiquidation = 0.0;
+            if (Account == null)
+                return false;
+
+            try
+            {
+                netLiquidation = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                if (netLiquidation > 0.0)
+                    return true;
+
+                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                double unrealized = Position.MarketPosition != MarketPosition.Flat
+                    ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                    : 0.0;
+                netLiquidation = realizedCash + unrealized;
+                return realizedCash > 0.0 || Position.MarketPosition != MarketPosition.Flat;
+            }
+            catch
+            {
+                return false;
+            }
         }
         
         private void ExitIfSessionEnded()
@@ -4493,14 +4572,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, double.MaxValue)]
         [Display(Name = "Max Account Balance", Order = 4, GroupName = "A. General")]
         public double MaxAccountBalance { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first bar's net liquidation for each calendar date. Reaching it blocks entries and flattens open positions. 0 disables.", Order = 5, GroupName = "A. General")]
+        public double MaxDailyProfit { get; set; }
         
         [NinjaScriptProperty]
-        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry.", Order = 5, GroupName = "A. General")]
+        [Display(Name = "Entry Confirmation", Description = "Show a Yes/No confirmation popup before each new long/short entry.", Order = 6, GroupName = "A. General")]
         public bool RequireEntryConfirmation { get; set; }
         
         
         [NinjaScriptProperty]
-        [Display(Name = "Debug Mode", Order = 6, GroupName = "A. General")]
+        [Display(Name = "Debug Mode", Order = 7, GroupName = "A. General")]
         public bool DebugMode { get; set; }
 
         [NinjaScriptProperty]

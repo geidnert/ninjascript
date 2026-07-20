@@ -120,6 +120,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // Max account balance
         private bool     maxAccountLimitHit;
+        private bool     dailyProfitLimitHit;
+        private double   dailyProfitStartBalance = double.NaN;
+        private DateTime dailyProfitDate = DateTime.MinValue;
 
         // Order-handling protection (timeframe / instrument validation)
         private bool     isConfiguredTimeframeValid  = true;
@@ -465,6 +468,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXAccountId           = string.Empty;
                 ProjectXContractId          = string.Empty;
                 MaxAccountBalance           = 0.0;
+                MaxDailyProfit              = 0.0;
                 // Skip time window
                 EnableSkipTime              = false;
                 SkipTimeStart               = "08:15";
@@ -1055,8 +1059,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            // ── Commercial: max account balance guard ────────────────────────
-            if (IsAccountBalanceBlocked())
+            // ── Commercial: account-level risk guards ────────────────────────
+            if (IsDailyProfitBlocked() || IsAccountBalanceBlocked())
                 return;
 
             CheckSessionReset();
@@ -1859,6 +1863,48 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; }
             if (Position.MarketPosition == MarketPosition.Long)  ExitLong("MaxAccountBalance");
             if (Position.MarketPosition == MarketPosition.Short) ExitShort("MaxAccountBalance");
+            return true;
+        }
+
+        private bool IsDailyProfitBlocked()
+        {
+            if (MaxDailyProfit <= 0.0)
+            {
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+                dailyProfitDate = DateTime.MinValue;
+                return false;
+            }
+
+            DateTime currentDate = Time[0].Date;
+            if (dailyProfitDate != currentDate)
+            {
+                dailyProfitDate = currentDate;
+                dailyProfitLimitHit = false;
+                dailyProfitStartBalance = double.NaN;
+            }
+
+            if (!dailyProfitLimitHit)
+            {
+                double balance;
+                if (!TryGetCurrentNetLiquidation(out balance)) return false;
+                if (double.IsNaN(dailyProfitStartBalance))
+                {
+                    dailyProfitStartBalance = balance;
+                    return false;
+                }
+
+                double dailyProfit = balance - dailyProfitStartBalance;
+                if (dailyProfit < MaxDailyProfit) return false;
+                dailyProfitLimitHit = true;
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} - Max daily profit reached | startNetLiq={1:0.00} netLiq={2:0.00} profit={3:0.00} target={4:0.00}",
+                    Time[0], dailyProfitStartBalance, balance, dailyProfit, MaxDailyProfit));
+            }
+
+            if (entryOrder != null) { CancelOrder(entryOrder); entryOrder = null; }
+            if (Position.MarketPosition == MarketPosition.Long)  ExitLong("MaxDailyProfit");
+            if (Position.MarketPosition == MarketPosition.Short) ExitShort("MaxDailyProfit");
             return true;
         }
 
@@ -4350,6 +4396,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty][Browsable(false)][Display(Name="Enable Global Max Trades Per Day",Order=5,GroupName="0. Common - Global Risk")] public bool EnableGlobalMaxTradesPerDay {get;set;}
         [NinjaScriptProperty][Browsable(false)][Range(1,int.MaxValue)][Display(Name="Global Max Trades Per Day",Order=6,GroupName="0. Common - Global Risk")] public int GlobalMaxTradesPerDay {get;set;}
         [NinjaScriptProperty][Range(0.0,double.MaxValue)][Display(Name="Max Account Balance",Description="Net liquidation ceiling. When reached, entries are blocked and open positions are flattened. 0 = disabled.",Order=7,GroupName="0. Common - Global Risk")] public double MaxAccountBalance {get;set;}
+        [NinjaScriptProperty][Range(0.0,double.MaxValue)][Display(Name="Max Daily Profit",Description="Maximum daily account profit in currency, measured from the first bar's net liquidation for each calendar date. Reaching it blocks entries and flattens open positions. 0 disables.",Order=8,GroupName="0. Common - Global Risk")] public double MaxDailyProfit {get;set;}
         [NinjaScriptProperty][Browsable(false)][Display(Name="Use Webhooks",Description="Master switch for outbound order webhooks (TradersPost / ProjectX).",Order=0,GroupName="0. Common - Webhooks")] public bool UseWebhooks {get;set;}
         [NinjaScriptProperty][Browsable(false)][Display(Name="Debug Logging",Order=99,GroupName="0. Common - Webhooks")] public bool DebugLogging {get;set;}
         #endregion
