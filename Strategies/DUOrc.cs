@@ -43,8 +43,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             public double StopPrice;
             public double TakeProfitPrice;
             public double TakeProfitTriggerPrice;
+            public double TakeProfitStopMovePrice;
             public bool HasTakeProfit;
             public bool HasTakeProfitTrigger;
+            public bool HasTakeProfitStopMove;
         }
 
         private enum SessionSlot
@@ -144,11 +146,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool tradeLinesActive;
         private bool tradeLineHasTp;
         private bool tradeLineHasTpTrigger;
+        private bool tradeLineHasTpStopMove;
         private int tradeLineSignalBar = -1;
         private int tradeLineExitBar = -1;
         private double tradeLineEntryPrice;
         private double tradeLineTpPrice;
         private double tradeLineTpTriggerPrice;
+        private double tradeLineTpStopMovePrice;
         private double tradeLineSlPrice;
         private readonly List<TradeLineSnapshot> historicalTradeLines = new List<TradeLineSnapshot>();
         private readonly object tradeLineSnapshotsSync = new object();
@@ -969,11 +973,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 tradeLinesActive = false;
                 tradeLineHasTp = false;
                 tradeLineHasTpTrigger = false;
+                tradeLineHasTpStopMove = false;
                 tradeLineSignalBar = -1;
                 tradeLineExitBar = -1;
                 tradeLineEntryPrice = 0.0;
                 tradeLineTpPrice = 0.0;
                 tradeLineTpTriggerPrice = 0.0;
+                tradeLineTpStopMovePrice = 0.0;
                 tradeLineSlPrice = 0.0;
                 entryVarianceRandom = new Random(unchecked(Environment.TickCount ^ GetHashCode()));
                 takeProfitStopTriggered = false;
@@ -1798,6 +1804,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         snapshot.TakeProfitPrice,
                         snapshot.HasTakeProfitTrigger,
                         snapshot.TakeProfitTriggerPrice,
+                        snapshot.HasTakeProfitStopMove,
+                        snapshot.TakeProfitStopMovePrice,
                         entryBrush,
                         stopBrush,
                         targetBrush);
@@ -1816,6 +1824,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         tradeLineTpPrice,
                         tradeLineHasTpTrigger,
                         tradeLineTpTriggerPrice,
+                        tradeLineHasTpStopMove,
+                        tradeLineTpStopMovePrice,
                         entryBrush,
                         stopBrush,
                         targetBrush);
@@ -2623,7 +2633,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     HasTakeProfit = tradeLineHasTp,
                     TakeProfitPrice = tradeLineTpPrice,
                     HasTakeProfitTrigger = tradeLineHasTpTrigger,
-                    TakeProfitTriggerPrice = tradeLineTpTriggerPrice
+                    TakeProfitTriggerPrice = tradeLineTpTriggerPrice,
+                    HasTakeProfitStopMove = tradeLineHasTpStopMove,
+                    TakeProfitStopMovePrice = tradeLineTpStopMovePrice
                 });
             }
             UpdateTradeLines();
@@ -2636,11 +2648,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             tradeLineHasTp = false;
             tradeLineHasTpTrigger = false;
+            tradeLineHasTpStopMove = false;
             tradeLineSignalBar = -1;
             tradeLineExitBar = -1;
             tradeLineEntryPrice = 0.0;
             tradeLineTpPrice = 0.0;
             tradeLineTpTriggerPrice = 0.0;
+            tradeLineTpStopMovePrice = 0.0;
             tradeLineSlPrice = 0.0;
         }
 
@@ -2873,6 +2887,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 : 0.0;
             tradeLineHasTpTrigger = false;
             tradeLineTpTriggerPrice = 0.0;
+            tradeLineHasTpStopMove = false;
+            tradeLineTpStopMovePrice = 0.0;
 
             if (!hasTakeProfit || activeTakeProfitPercentTriggerPercent <= 0.0)
                 return;
@@ -2884,6 +2900,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double triggerPrice = tradeLineEntryPrice + tpDistance * (activeTakeProfitPercentTriggerPercent / 100.0);
             tradeLineTpTriggerPrice = Instrument.MasterInstrument.RoundToTickSize(triggerPrice);
             tradeLineHasTpTrigger = true;
+
+            double stopMovePrice = tradeLineEntryPrice + tpDistance * (activeTakeProfitPercentStopMovePercent / 100.0);
+            tradeLineTpStopMovePrice = Instrument.MasterInstrument.RoundToTickSize(stopMovePrice);
+            tradeLineHasTpStopMove = tradeLineTpStopMovePrice > 0.0;
         }
 
         private void DrawTradeLinesAtBarsAgo(int startBarsAgo, int endBarsAgo)
@@ -2918,6 +2938,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     startBarsAgo, tradeLineTpTriggerPrice,
                     endBarsAgo, tradeLineTpTriggerPrice,
                     Brushes.LimeGreen, DashStyleHelper.Dot, 2);
+            }
+
+            if (tradeLineHasTpStopMove)
+            {
+                Draw.Line(this, tradeLineTagPrefix + "TPStopMove", false,
+                    startBarsAgo, tradeLineTpStopMovePrice,
+                    endBarsAgo, tradeLineTpStopMovePrice,
+                    Brushes.Red, DashStyleHelper.Dot, 2);
             }
         }
 
@@ -2966,6 +2994,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double takeProfitPrice,
             bool hasTakeProfitTrigger,
             double takeProfitTriggerPrice,
+            bool hasTakeProfitStopMove,
+            double takeProfitStopMovePrice,
             SharpDX.Direct2D1.Brush entryBrush,
             SharpDX.Direct2D1.Brush stopBrush,
             SharpDX.Direct2D1.Brush targetBrush)
@@ -2992,6 +3022,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (hasTakeProfitTrigger)
                 DrawPixelSnappedDottedHorizontalLine(chartScale, startX, endX, takeProfitTriggerPrice, targetBrush, 2f);
+
+            if (hasTakeProfitStopMove)
+                DrawPixelSnappedDottedHorizontalLine(chartScale, startX, endX, takeProfitStopMovePrice, stopBrush, 2f);
         }
 
         private void DrawPixelSnappedHorizontalLine(ChartScale chartScale, float startX, float endX, double price, SharpDX.Direct2D1.Brush brush, float width)
