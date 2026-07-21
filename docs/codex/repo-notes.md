@@ -43,6 +43,18 @@ domains.
   strategy-prefixed signals, entry confirmation, `MaxAccountBalance`,
   TradersPost ticker override, and DUO-style ProjectX transport/account/contract
   handling.
+- 2026-07-21: `Strategies/DUOlo.cs` is the separate DUO limit-order variant. It
+  is a full copy of the current DUO implementation with only the initial primary
+  entry lifecycle changed: the real order rests exactly on the active entry EMA,
+  follows that EMA at each completed five-minute bar, and is canceled whenever a
+  shadow DUO trade reaches any terminal exit. `Entry Variance` keeps DUO's live
+  random 1-10 second delay when enabled and submits immediately when disabled.
+  A real fill discards all shadow state and starts normal DUO management fresh
+  from the actual fill. DUOlo reuses DUO vendor license `337` and has its own
+  prefixed signals, drawing tags, converter, and heartbeat identity. ProjectX
+  entry limits are mirrored at submit time and amended through `/api/Order/modify`;
+  TradersPost timing is unchanged. Compile it through the explicit
+  `NinjaTrader.Custom.csproj` `Strategies\\DUOlo.cs` entry.
 - DUO and DUOrc are maintained directly in `Strategies/DUO.cs` and
   `Strategies/DUOrc.cs`; do not recreate separate DUO/DUOrc testing variants
   unless the user explicitly asks.

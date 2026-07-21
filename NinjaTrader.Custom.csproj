@@ -399,6 +399,7 @@
     <Compile Include="Strategies\DR.cs" />
     <Compile Include="Strategies\DRStrategy.cs" />
     <Compile Include="Strategies\DUO.cs" />
+    <Compile Include="Strategies\DUOlo.cs" />
     <Compile Include="Strategies\DuoEMA.cs" />
     <Compile Include="Strategies\DUOrc.cs" />
     <Compile Include="Strategies\EMA.cs" />
