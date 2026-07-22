@@ -186,6 +186,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DM activeAdx;
 
         private int activeEmaPeriod;
+        private bool activeEnableEmaSlopeFilter;
+        private double activeMinEmaSlopeNorm;
         private int activeContracts;
         private double activeEntryMinBodyPoints;
         private double activeEntryCloseBeyondEmaPoints;
@@ -608,6 +610,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia2SessionStart = new TimeSpan(18, 40, 0);
                 Asia2SessionEnd = TimeSpan.Zero;
                 Asia2EmaPeriod = 21;
+                Asia2EnableEmaSlopeFilter = false;
+                Asia2MinEmaSlopeNorm = 0.01;
                 Asia2Contracts = 1;
                 Asia2EntryMinBodyPoints = 0.75;
                 Asia2EntryCloseBeyondEmaPoints = 3;
@@ -632,6 +636,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Asia3SessionStart = TimeSpan.Zero;
                 Asia3SessionEnd = new TimeSpan(3, 0, 0);
                 Asia3EmaPeriod = 21;
+                Asia3EnableEmaSlopeFilter = true;
+                Asia3MinEmaSlopeNorm = 0.0096;
                 Asia3Contracts = 1;
                 Asia3EntryMinBodyPoints = 0.5;
                 Asia3EntryCloseBeyondEmaPoints = 0.25;
@@ -657,6 +663,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LondonSessionEnd = new TimeSpan(5, 35, 0);
                 AutoShiftLondon = true;
                 LondonEmaPeriod = 21;
+                LondonEnableEmaSlopeFilter = true;
+                LondonMinEmaSlopeNorm = 0.0097;
                 LondonContracts = 1;
                 LondonEntryMinBodyPoints = 0.5;
                 LondonEntryCloseBeyondEmaPoints = 0.75;
@@ -756,6 +764,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork2SessionStart = new TimeSpan(10, 0, 0);
                 NewYork2SessionEnd = new TimeSpan(11, 30, 0);
                 NewYork2EmaPeriod = 21;
+                NewYork2EnableEmaSlopeFilter = false;
+                NewYork2MinEmaSlopeNorm = 0.01;
                 NewYork2Contracts = 1;
                 NewYork2EntryMinBodyPoints = 0.25;
                 NewYork2EntryCloseBeyondEmaPoints = 0.5;
@@ -804,6 +814,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork4SessionStart = new TimeSpan(12, 0, 0);
                 NewYork4SessionEnd = new TimeSpan(13, 0, 0);
                 NewYork4EmaPeriod = 21;
+                NewYork4EnableEmaSlopeFilter = false;
+                NewYork4MinEmaSlopeNorm = 0.01;
                 NewYork4Contracts = 1;
                 NewYork4EntryMinBodyPoints = 1.75;
                 NewYork4EntryCloseBeyondEmaPoints = 0.5;
@@ -828,6 +840,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewYork5SessionStart = new TimeSpan(13, 35, 0);
                 NewYork5SessionEnd = new TimeSpan(15, 5, 0);
                 NewYork5EmaPeriod = 21;
+                NewYork5EnableEmaSlopeFilter = false;
+                NewYork5MinEmaSlopeNorm = 0.01;
                 NewYork5Contracts = 1;
                 NewYork5EntryMinBodyPoints = 0.5;
                 NewYork5EntryCloseBeyondEmaPoints = 0.5;
@@ -1152,12 +1166,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool rolloverBlackoutNow = IsRolloverBlackoutTradingDate(Time[0]);
             double adxValue = activeAdx != null ? activeAdx[0] : 0.0;
             double atrValue = GetCurrentAtrValue();
+            double emaSlopeNorm = GetCurrentEmaSlopeNorm();
+            bool emaSlopePass = EmaSlopeFilterPasses(emaSlopeNorm);
             UpdateAdxPeakTracker(adxValue);
             bool adxMinPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
             bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
             bool adxThresholdPass = adxMinPass && adxMaxPass;
             bool atrMinPass = !inActiveSessionNow || activeMinimumAtrForEntry <= 0.0 || atrValue >= activeMinimumAtrForEntry;
-            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !accountBlocked && !rolloverBlackoutNow && adxThresholdPass && atrMinPass;
+            bool canTradeNow = inActiveSessionNow && !inNewsSkipNow && !accountBlocked && !rolloverBlackoutNow && adxThresholdPass && atrMinPass && emaSlopePass;
             double secondaryBiasReferencePrice = Close[0];
             double secondaryBiasEmaValue = GetSecondaryBiasEmaValue();
             bool biasAllowLong = IsSecondaryBiasDirectionAllowed(true, secondaryBiasReferencePrice);
@@ -1342,6 +1358,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         reasons.Add(string.Format("AdxAboveMax adx={0:0.00} max={1:0.00}", adxValue, activeAdxMaxThreshold));
                     if (!atrMinPass)
                         reasons.Add(string.Format("AtrBelowMin atr={0:0.00} min={1:0.00}", atrValue, activeMinimumAtrForEntry));
+                    if (!emaSlopePass)
+                        reasons.Add(string.Format("EmaSlopeBelowMin norm={0:0.####} min={1:0.####}", emaSlopeNorm, activeMinEmaSlopeNorm));
                     if (reasons.Count == 0)
                         reasons.Add("UnknownGate");
 
@@ -2531,6 +2549,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return atrValue;
         }
 
+        private double GetCurrentEmaSlopeNorm()
+        {
+            if (activeEma == null || CurrentBar < Math.Max(14, activeEmaPeriod) || activeEmaPeriod <= 0)
+                return 0.0;
+
+            double trueRangeSum = 0.0;
+            for (int barsAgo = 0; barsAgo < 14; barsAgo++)
+            {
+                double currentRange = High[barsAgo] - Low[barsAgo];
+                double previousClose = Close[barsAgo + 1];
+                double highGap = Math.Abs(High[barsAgo] - previousClose);
+                double lowGap = Math.Abs(Low[barsAgo] - previousClose);
+                trueRangeSum += Math.Max(currentRange, Math.Max(highGap, lowGap));
+            }
+
+            double simpleAtr14 = trueRangeSum / 14.0;
+            if (simpleAtr14 <= 0.0 || double.IsNaN(simpleAtr14) || double.IsInfinity(simpleAtr14))
+                return 0.0;
+
+            double emaSlope = (activeEma[0] - activeEma[3]) / 3.0;
+            double normalizedSlope = emaSlope / simpleAtr14;
+            return double.IsNaN(normalizedSlope) || double.IsInfinity(normalizedSlope)
+                ? 0.0
+                : normalizedSlope;
+        }
+
+        private bool EmaSlopeFilterPasses(double emaSlopeNorm)
+        {
+            return !activeEnableEmaSlopeFilter || Math.Abs(emaSlopeNorm) >= activeMinEmaSlopeNorm;
+        }
+
         private double GetConfiguredEntryTakeProfitPoints()
         {
             return activeTakeProfitPoints;
@@ -3247,6 +3296,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaAsia;
                     activeAdx = adxAsia;
                     activeEmaPeriod = AsiaEmaPeriod;
+                    activeEnableEmaSlopeFilter = false;
+                    activeMinEmaSlopeNorm = 0.01;
                     activeAdxPeriod = AsiaAdxPeriod;
                     activeAdxThreshold = AsiaAdxThreshold;
                     activeAdxMaxThreshold = AsiaAdxMaxThreshold;
@@ -3275,6 +3326,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaAsia2;
                     activeAdx = adxAsia2;
                     activeEmaPeriod = Asia2EmaPeriod;
+                    activeEnableEmaSlopeFilter = Asia2EnableEmaSlopeFilter;
+                    activeMinEmaSlopeNorm = Asia2MinEmaSlopeNorm;
                     activeAdxPeriod = Asia2AdxPeriod;
                     activeAdxThreshold = Asia2AdxThreshold;
                     activeAdxMaxThreshold = Asia2AdxMaxThreshold;
@@ -3303,6 +3356,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaAsia3;
                     activeAdx = adxAsia3;
                     activeEmaPeriod = Asia3EmaPeriod;
+                    activeEnableEmaSlopeFilter = Asia3EnableEmaSlopeFilter;
+                    activeMinEmaSlopeNorm = Asia3MinEmaSlopeNorm;
                     activeAdxPeriod = Asia3AdxPeriod;
                     activeAdxThreshold = Asia3AdxThreshold;
                     activeAdxMaxThreshold = Asia3AdxMaxThreshold;
@@ -3331,6 +3386,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaLondon;
                     activeAdx = adxLondon;
                     activeEmaPeriod = LondonEmaPeriod;
+                    activeEnableEmaSlopeFilter = LondonEnableEmaSlopeFilter;
+                    activeMinEmaSlopeNorm = LondonMinEmaSlopeNorm;
                     activeAdxPeriod = LondonAdxPeriod;
                     activeAdxThreshold = LondonAdxThreshold;
                     activeAdxMaxThreshold = LondonAdxMaxThreshold;
@@ -3359,6 +3416,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaLondon2;
                     activeAdx = adxLondon2;
                     activeEmaPeriod = London2EmaPeriod;
+                    activeEnableEmaSlopeFilter = false;
+                    activeMinEmaSlopeNorm = 0.01;
                     activeAdxPeriod = London2AdxPeriod;
                     activeAdxThreshold = London2AdxThreshold;
                     activeAdxMaxThreshold = London2AdxMaxThreshold;
@@ -3387,6 +3446,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaLondon3;
                     activeAdx = adxLondon3;
                     activeEmaPeriod = London3EmaPeriod;
+                    activeEnableEmaSlopeFilter = false;
+                    activeMinEmaSlopeNorm = 0.01;
                     activeAdxPeriod = London3AdxPeriod;
                     activeAdxThreshold = London3AdxThreshold;
                     activeAdxMaxThreshold = London3AdxMaxThreshold;
@@ -3415,6 +3476,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaNewYork;
                     activeAdx = adxNewYork;
                     activeEmaPeriod = NewYorkEmaPeriod;
+                    activeEnableEmaSlopeFilter = false;
+                    activeMinEmaSlopeNorm = 0.01;
                     activeAdxPeriod = NewYorkAdxPeriod;
                     activeAdxThreshold = NewYorkAdxThreshold;
                     activeAdxMaxThreshold = NewYorkAdxMaxThreshold;
@@ -3443,6 +3506,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaNewYork2;
                     activeAdx = adxNewYork2;
                     activeEmaPeriod = NewYork2EmaPeriod;
+                    activeEnableEmaSlopeFilter = NewYork2EnableEmaSlopeFilter;
+                    activeMinEmaSlopeNorm = NewYork2MinEmaSlopeNorm;
                     activeAdxPeriod = NewYork2AdxPeriod;
                     activeAdxThreshold = NewYork2AdxThreshold;
                     activeAdxMaxThreshold = NewYork2AdxMaxThreshold;
@@ -3471,6 +3536,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaNewYork3;
                     activeAdx = adxNewYork3;
                     activeEmaPeriod = NewYork3EmaPeriod;
+                    activeEnableEmaSlopeFilter = false;
+                    activeMinEmaSlopeNorm = 0.01;
                     activeAdxPeriod = NewYork3AdxPeriod;
                     activeAdxThreshold = NewYork3AdxThreshold;
                     activeAdxMaxThreshold = NewYork3AdxMaxThreshold;
@@ -3499,6 +3566,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaNewYork4;
                     activeAdx = adxNewYork4;
                     activeEmaPeriod = NewYork4EmaPeriod;
+                    activeEnableEmaSlopeFilter = NewYork4EnableEmaSlopeFilter;
+                    activeMinEmaSlopeNorm = NewYork4MinEmaSlopeNorm;
                     activeAdxPeriod = NewYork4AdxPeriod;
                     activeAdxThreshold = NewYork4AdxThreshold;
                     activeAdxMaxThreshold = NewYork4AdxMaxThreshold;
@@ -3527,6 +3596,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = emaNewYork5;
                     activeAdx = adxNewYork5;
                     activeEmaPeriod = NewYork5EmaPeriod;
+                    activeEnableEmaSlopeFilter = NewYork5EnableEmaSlopeFilter;
+                    activeMinEmaSlopeNorm = NewYork5MinEmaSlopeNorm;
                     activeAdxPeriod = NewYork5AdxPeriod;
                     activeAdxThreshold = NewYork5AdxThreshold;
                     activeAdxMaxThreshold = NewYork5AdxMaxThreshold;
@@ -3555,6 +3626,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     activeEma = null;
                     activeAdx = null;
                     activeEmaPeriod = 0;
+                    activeEnableEmaSlopeFilter = false;
+                    activeMinEmaSlopeNorm = 0.01;
                     activeAdxPeriod = 0;
                     activeAdxThreshold = 0.0;
                     activeAdxMaxThreshold = 0.0;
@@ -4667,6 +4740,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool adxMinPass = !inActiveSessionNow || activeAdxThreshold <= 0.0 || adxValue >= activeAdxThreshold;
             bool adxMaxPass = !inActiveSessionNow || activeAdxMaxThreshold <= 0.0 || adxValue <= activeAdxMaxThreshold;
             bool atrMinPass = !inActiveSessionNow || activeMinimumAtrForEntry <= 0.0 || atrValue >= activeMinimumAtrForEntry;
+            bool emaSlopePass = EmaSlopeFilterPasses(GetCurrentEmaSlopeNorm());
             bool canTradeNow = inActiveSessionNow
                 && !inNewsSkipNow
                 && !accountBlocked
@@ -4676,7 +4750,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 && !london3FlatBlocked
                 && adxMinPass
                 && adxMaxPass
-                && atrMinPass;
+                && atrMinPass
+                && emaSlopePass;
 
             return TrySubmitStopOutFlipEntry(
                 flipToLong,
@@ -6799,6 +6874,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
 
             if (activeMinimumAtrForEntry > 0.0 && atrValue < activeMinimumAtrForEntry)
+                return false;
+
+            if (!EmaSlopeFilterPasses(GetCurrentEmaSlopeNorm()))
                 return false;
 
             return true;
@@ -10510,6 +10588,72 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Entry Variance", Description = "If enabled, delay qualifying new realtime market entries by a random 1-10 seconds after the 5-minute close.", GroupName = "01. Risk", Order = 3)]
         public bool EntryVariance { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Enable EMA Slope Filter", Description = "Require normalized 3-bar EMA slope magnitude for Asia 2 entries and flips.", GroupName = "05. Asia 2", Order = 8)]
+        public bool Asia2EnableEmaSlopeFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, 0.10)]
+        [Display(Name = "Minimum Normalized EMA Slope", Description = "Minimum absolute EMA slope per bar divided by the simple 14-bar average true range.", GroupName = "05. Asia 2", Order = 9)]
+        public double Asia2MinEmaSlopeNorm { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Enable EMA Slope Filter", Description = "Require normalized 3-bar EMA slope magnitude for Asia 3 entries and flips.", GroupName = "06. Asia 3", Order = 8)]
+        public bool Asia3EnableEmaSlopeFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, 0.10)]
+        [Display(Name = "Minimum Normalized EMA Slope", Description = "Minimum absolute EMA slope per bar divided by the simple 14-bar average true range.", GroupName = "06. Asia 3", Order = 9)]
+        public double Asia3MinEmaSlopeNorm { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Enable EMA Slope Filter", Description = "Require normalized 3-bar EMA slope magnitude for Europe 1 entries and flips.", GroupName = "07. Europe 1", Order = 8)]
+        public bool LondonEnableEmaSlopeFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, 0.10)]
+        [Display(Name = "Minimum Normalized EMA Slope", Description = "Minimum absolute EMA slope per bar divided by the simple 14-bar average true range.", GroupName = "07. Europe 1", Order = 9)]
+        public double LondonMinEmaSlopeNorm { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Enable EMA Slope Filter", Description = "Require normalized 3-bar EMA slope magnitude for America 2 entries and flips.", GroupName = "11. America 2", Order = 8)]
+        public bool NewYork2EnableEmaSlopeFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, 0.10)]
+        [Display(Name = "Minimum Normalized EMA Slope", Description = "Minimum absolute EMA slope per bar divided by the simple 14-bar average true range.", GroupName = "11. America 2", Order = 9)]
+        public double NewYork2MinEmaSlopeNorm { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Enable EMA Slope Filter", Description = "Require normalized 3-bar EMA slope magnitude for America 4 entries and flips.", GroupName = "13. America 4", Order = 8)]
+        public bool NewYork4EnableEmaSlopeFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, 0.10)]
+        [Display(Name = "Minimum Normalized EMA Slope", Description = "Minimum absolute EMA slope per bar divided by the simple 14-bar average true range.", GroupName = "13. America 4", Order = 9)]
+        public double NewYork4MinEmaSlopeNorm { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Enable EMA Slope Filter", Description = "Require normalized 3-bar EMA slope magnitude for America 5 entries and flips.", GroupName = "14. America 5", Order = 8)]
+        public bool NewYork5EnableEmaSlopeFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Range(0.0, 0.10)]
+        [Display(Name = "Minimum Normalized EMA Slope", Description = "Minimum absolute EMA slope per bar divided by the simple 14-bar average true range.", GroupName = "14. America 5", Order = 9)]
+        public double NewYork5MinEmaSlopeNorm { get; set; }
 
 
         [NinjaScriptProperty]
