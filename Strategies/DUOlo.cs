@@ -43,6 +43,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private sealed class DuoLoGhostState
         {
             public bool IsLong;
+            public SessionSlot Session;
             public int Quantity;
             public string SignalName = string.Empty;
             public double EntryPrice;
@@ -1188,10 +1189,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool allowLong = biasAllowLong;
             bool allowShort = biasAllowShort;
 
-            if (!inActiveSessionNow)
+            if (!inActiveSessionNow && duoLoGhost == null)
                 CancelWorkingEntryOrders();
 
-            if (inNySkipNow)
+            if (inNySkipNow && duoLoGhost == null)
                 CancelWorkingEntryOrders();
 
             if (activeEma == null || CurrentBar < activeEmaPeriod)
@@ -1505,6 +1506,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return;
 
                 RefreshDuoLoWorkingLimit(emaValue);
+                return;
             }
 
             if (DebugLogging && Position.MarketPosition == MarketPosition.Flat)
@@ -3365,15 +3367,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void UpdateActiveSession(DateTime time)
         {
             SessionSlot desired = DetermineSessionForTime(time);
-            bool inPosition = Position.MarketPosition != MarketPosition.Flat;
+            bool inPosition = Position.MarketPosition != MarketPosition.Flat || duoLoGhost != null;
 
             if (inPosition)
             {
                 if (lockedTradeSession == SessionSlot.None)
                 {
-                    SessionSlot inferredLock = activeSession != SessionSlot.None
-                        ? activeSession
-                        : desired;
+                    SessionSlot inferredLock = duoLoGhost != null && duoLoGhost.Session != SessionSlot.None
+                        ? duoLoGhost.Session
+                        : activeSession != SessionSlot.None
+                            ? activeSession
+                            : desired;
                     if (inferredLock != SessionSlot.None)
                     {
                         lockedTradeSession = inferredLock;
@@ -4083,18 +4087,34 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (inPrev && !inNow && !GetSessionClosed(slot))
             {
-                if (CloseAtSessionEnd)
+                if (duoLoGhost != null)
                 {
-                    if (Position.MarketPosition == MarketPosition.Long)
-                        TrySubmitTerminalExit("SessionEnd", false);
-                    else if (Position.MarketPosition == MarketPosition.Short)
-                        TrySubmitTerminalExit("SessionEnd", false);
+                    if (CloseAtSessionEnd)
+                    {
+                        CompleteDuoLoGhostAttempt("SessionEnd");
+                        LogDebug(string.Format("{0} session end: ghost flatten/cancel. closeAtSessionEnd=True", FormatSessionLabel(slot)));
+                    }
+                    else
+                    {
+                        LogDebug(string.Format("{0} session end: active DUOlo ghost held. closeAtSessionEnd=False", FormatSessionLabel(slot)));
+                    }
+                }
+                else
+                {
+                    if (CloseAtSessionEnd)
+                    {
+                        if (Position.MarketPosition == MarketPosition.Long)
+                            TrySubmitTerminalExit("SessionEnd", false);
+                        else if (Position.MarketPosition == MarketPosition.Short)
+                            TrySubmitTerminalExit("SessionEnd", false);
+                    }
+
+                    CancelWorkingEntryOrders();
+                    string sessionEndAction = CloseAtSessionEnd ? "flatten/cancel" : "cancel-only";
+                    LogDebug(string.Format("{0} session end: {1}. closeAtSessionEnd={2}", FormatSessionLabel(slot), sessionEndAction, CloseAtSessionEnd));
                 }
 
-                CancelWorkingEntryOrders();
                 SetSessionClosed(slot, true);
-                string sessionEndAction = CloseAtSessionEnd ? "flatten/cancel" : "cancel-only";
-                LogDebug(string.Format("{0} session end: {1}. closeAtSessionEnd={2}", FormatSessionLabel(slot), sessionEndAction, CloseAtSessionEnd));
             }
         }
 
@@ -4148,7 +4168,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsLondon3FlatByTimeReached(DateTime barTime)
         {
-            if (Position.MarketPosition == MarketPosition.Flat)
+            if (Position.MarketPosition == MarketPosition.Flat && duoLoGhost == null)
                 return false;
 
             if (lockedTradeSession != SessionSlot.London3)
@@ -4564,6 +4584,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             duoLoGhost = new DuoLoGhostState
             {
                 IsLong = isLong,
+                Session = activeSession,
                 Quantity = Math.Max(1, quantity),
                 SignalName = string.IsNullOrWhiteSpace(signalName)
                     ? (isLong ? LongEntrySignal : ShortEntrySignal)
@@ -4576,10 +4597,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AdxPeakSeeded = true,
                 EntryBar = CurrentBar
             };
+            if (activeSession != SessionSlot.None)
+                lockedTradeSession = activeSession;
 
             LogDebug(string.Format(
-                "DUOlo ghost started | side={0} entry={1:0.00} stop={2:0.00} tpPts={3:0.00} adx={4:0.00} bar={5}",
+                "DUOlo ghost started | side={0} session={1} entry={2:0.00} stop={3:0.00} tpPts={4:0.00} adx={5:0.00} bar={6}",
                 isLong ? "Long" : "Short",
+                FormatSessionLabel(activeSession),
                 roundedEntry,
                 roundedStop,
                 takeProfitPoints,
@@ -5002,6 +5026,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void ResetDuoLoGhostState()
         {
             duoLoGhost = null;
+            if (Position.MarketPosition == MarketPosition.Flat)
+                lockedTradeSession = SessionSlot.None;
         }
 
         private void CancelWorkingEntryOrders()
