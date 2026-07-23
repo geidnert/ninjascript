@@ -346,6 +346,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int pendingEntryVarianceSignalBar = -1;
         private int pendingEntryVarianceDelaySeconds;
         private DuoLoGhostState duoLoGhost;
+        private double duoLoManagementEntryPrice;
         // TEMP: Remove this date block after the April 7, 2025 backtest isolation is no longer needed.
         private static readonly DateTime TemporaryBlockedTradingDate = new DateTime(2025, 4, 7);
         private static readonly SessionSlot[] ConfigurableSessionSlots = new[]
@@ -1261,12 +1262,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 double activePositionTakeProfitPoints = GetActivePositionTakeProfitPoints();
-                if (activePositionTakeProfitPoints > 0.0 && Close[0] >= Position.AveragePrice + activePositionTakeProfitPoints)
+                double managedEntryPrice = GetManagedEntryReferencePrice();
+                if (activePositionTakeProfitPoints > 0.0 && Close[0] >= managedEntryPrice + activePositionTakeProfitPoints)
                 {
                     if (TrySubmitTerminalExit("TakeProfitExit"))
                     {
                         LogDebug(string.Format("Exit LONG | reason=TakeProfit close={0:0.00} avg={1:0.00} tpPts={2:0.00} source={3}",
-                            Close[0], Position.AveragePrice, activePositionTakeProfitPoints, adxDdRiskModeApplied && activeAdxDdRiskModeTakeProfitPoints > 0.0 ? "AdxDdRiskMode" : "Session"));
+                            Close[0], managedEntryPrice, activePositionTakeProfitPoints, adxDdRiskModeApplied && activeAdxDdRiskModeTakeProfitPoints > 0.0 ? "AdxDdRiskMode" : "Session"));
                     }
                     return;
                 }
@@ -1396,12 +1398,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 double activePositionTakeProfitPoints = GetActivePositionTakeProfitPoints();
-                if (activePositionTakeProfitPoints > 0.0 && Close[0] <= Position.AveragePrice - activePositionTakeProfitPoints)
+                double managedEntryPrice = GetManagedEntryReferencePrice();
+                if (activePositionTakeProfitPoints > 0.0 && Close[0] <= managedEntryPrice - activePositionTakeProfitPoints)
                 {
                     if (TrySubmitTerminalExit("TakeProfitExit"))
                     {
                         LogDebug(string.Format("Exit SHORT | reason=TakeProfit close={0:0.00} avg={1:0.00} tpPts={2:0.00} source={3}",
-                            Close[0], Position.AveragePrice, activePositionTakeProfitPoints, adxDdRiskModeApplied && activeAdxDdRiskModeTakeProfitPoints > 0.0 ? "AdxDdRiskMode" : "Session"));
+                            Close[0], managedEntryPrice, activePositionTakeProfitPoints, adxDdRiskModeApplied && activeAdxDdRiskModeTakeProfitPoints > 0.0 ? "AdxDdRiskMode" : "Session"));
                     }
                     return;
                 }
@@ -1866,37 +1869,81 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (IsEntryOrderName(orderName))
             {
-                DiscardDuoLoGhostAfterFill();
+                DuoLoGhostState filledGhost = duoLoGhost;
+                bool inheritDuoLoGhost = filledGhost != null
+                    && !pendingLongEntryIsFlip
+                    && !pendingShortEntryIsFlip;
                 currentPositionEntrySignal = orderName;
                 currentPositionIsFlipEntry = IsLongEntryOrderName(orderName) ? pendingLongEntryIsFlip : pendingShortEntryIsFlip;
 
                 pendingLongEntryIsFlip = false;
                 pendingShortEntryIsFlip = false;
 
-                double filledStopPrice = marketPosition == MarketPosition.Long
-                    ? pendingLongStopForWebhook
-                    : marketPosition == MarketPosition.Short
-                        ? pendingShortStopForWebhook
-                        : 0.0;
-                filledStopPrice = Instrument.MasterInstrument.RoundToTickSize(filledStopPrice);
-                if (filledStopPrice <= 0.0 && tradeLineSlPrice > 0.0)
-                    filledStopPrice = Instrument.MasterInstrument.RoundToTickSize(tradeLineSlPrice);
-                filledStopPrice = BuildFilledStopPrice(marketPosition, fillPrice, filledStopPrice);
                 activeStopLossOrder = null;
                 activeProfitTargetOrder = null;
                 activeExitOrder = null;
-                flipBreakEvenActivated = false;
-                takeProfitStopTriggered = false;
-                initialStopPrice = filledStopPrice;
-                currentStopPrice = initialStopPrice;
-                ResetTakeProfitPostTriggerTrail();
-                ReanchorTradeLinesToEntryFill(marketPosition, fillPrice, currentPositionIsFlipEntry, initialStopPrice);
-                adxDdRiskModeApplied = false;
-                currentPositionEntryBar = CurrentBar;
 
-                SessionSlot entrySession = activeSession != SessionSlot.None
-                    ? activeSession
-                    : DetermineSessionForTime(time);
+                double filledStopPrice;
+                SessionSlot entrySession;
+                if (inheritDuoLoGhost)
+                {
+                    filledStopPrice = Instrument.MasterInstrument.RoundToTickSize(filledGhost.StopPrice);
+                    double filledTargetPrice = GetDuoLoGhostTargetPrice();
+                    SetStopLoss(orderName, CalculationMode.Price, filledStopPrice, false);
+                    if (filledTargetPrice > 0.0)
+                        SetProfitTarget(orderName, CalculationMode.Price, filledTargetPrice);
+
+                    duoLoManagementEntryPrice = filledGhost.EntryPrice;
+                    flipBreakEvenActivated = false;
+                    takeProfitStopTriggered = filledGhost.TakeProfitStopTriggered;
+                    initialStopPrice = filledGhost.InitialStopPrice;
+                    currentStopPrice = filledStopPrice;
+                    takeProfitPostTriggerTrailDistancePoints = filledGhost.TakeProfitPostTriggerTrailDistancePoints;
+                    takeProfitPostTriggerTrailActivatedAt = filledGhost.TakeProfitPostTriggerTrailActivatedAt;
+                    adxDdRiskModeApplied = filledGhost.AdxDdRiskModeApplied;
+                    currentPositionEntryBar = filledGhost.EntryBar;
+                    trackedAdxPeakPosition = marketPosition;
+                    currentTradePeakAdx = filledGhost.PeakAdx;
+                    entrySession = filledGhost.Session;
+                    tradeLineEntryPrice = fillPrice;
+                    tradeLineSlPrice = filledStopPrice;
+                    SetTradeLineTakeProfitState(filledTargetPrice, filledTargetPrice > 0.0);
+                    UpdateTradeLines();
+                    LogDebug(string.Format(
+                        "DUOlo real fill inherited ghost protection | fill={0:0.00} reference={1:0.00} stop={2:0.00} target={3:0.00}",
+                        fillPrice,
+                        duoLoManagementEntryPrice,
+                        filledStopPrice,
+                        filledTargetPrice));
+                    ResetPendingEntryVariance();
+                    duoLoGhost = null;
+                }
+                else
+                {
+                    DiscardDuoLoGhostAfterFill();
+                    duoLoManagementEntryPrice = 0.0;
+                    filledStopPrice = marketPosition == MarketPosition.Long
+                        ? pendingLongStopForWebhook
+                        : marketPosition == MarketPosition.Short
+                            ? pendingShortStopForWebhook
+                            : 0.0;
+                    filledStopPrice = Instrument.MasterInstrument.RoundToTickSize(filledStopPrice);
+                    if (filledStopPrice <= 0.0 && tradeLineSlPrice > 0.0)
+                        filledStopPrice = Instrument.MasterInstrument.RoundToTickSize(tradeLineSlPrice);
+                    filledStopPrice = BuildFilledStopPrice(marketPosition, fillPrice, filledStopPrice);
+                    flipBreakEvenActivated = false;
+                    takeProfitStopTriggered = false;
+                    initialStopPrice = filledStopPrice;
+                    currentStopPrice = initialStopPrice;
+                    ResetTakeProfitPostTriggerTrail();
+                    ReanchorTradeLinesToEntryFill(marketPosition, fillPrice, currentPositionIsFlipEntry, initialStopPrice);
+                    adxDdRiskModeApplied = false;
+                    currentPositionEntryBar = CurrentBar;
+                    entrySession = activeSession != SessionSlot.None
+                        ? activeSession
+                        : DetermineSessionForTime(time);
+                }
+
                 if (entrySession != SessionSlot.None)
                 {
                     lockedTradeSession = entrySession;
@@ -2078,6 +2125,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void ResetPositionTrackingState()
         {
             currentPositionEntrySignal = string.Empty;
+            duoLoManagementEntryPrice = 0.0;
             currentPositionIsFlipEntry = false;
             flipBreakEvenActivated = false;
             takeProfitStopTriggered = false;
@@ -2440,7 +2488,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!currentPositionIsFlipEntry || Position.MarketPosition == MarketPosition.Flat)
                 return;
 
-            double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            double averagePrice = GetManagedEntryReferencePrice();
             double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
             string entrySignal = Position.MarketPosition == MarketPosition.Long
                 ? GetOpenLongEntrySignal()
@@ -2495,7 +2543,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (activeTakeProfitPercentTriggerPercent <= 0.0 || activePositionTakeProfitPoints <= 0.0)
                 return;
 
-            double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            double averagePrice = GetManagedEntryReferencePrice();
             double closePrice = Instrument.MasterInstrument.RoundToTickSize(validationPrice);
             touchPrice = Instrument.MasterInstrument.RoundToTickSize(touchPrice);
             string entrySignal = Position.MarketPosition == MarketPosition.Long
@@ -2768,6 +2816,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return GetConfiguredEntryTakeProfitPoints(currentPositionIsFlipEntry);
         }
 
+        private double GetManagedEntryReferencePrice()
+        {
+            double referencePrice = duoLoManagementEntryPrice > 0.0
+                ? duoLoManagementEntryPrice
+                : Position.AveragePrice;
+            return Instrument.MasterInstrument.RoundToTickSize(referencePrice);
+        }
+
         private bool TryApplyAdxDdRiskMode(double adxValue, double adxDrawdown)
         {
             if (adxDdRiskModeApplied || Position.MarketPosition == MarketPosition.Flat)
@@ -2776,7 +2832,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string entrySignal = Position.MarketPosition == MarketPosition.Long
                 ? GetOpenLongEntrySignal()
                 : GetOpenShortEntrySignal();
-            double averagePrice = Instrument.MasterInstrument.RoundToTickSize(Position.AveragePrice);
+            double averagePrice = GetManagedEntryReferencePrice();
             double closePrice = Instrument.MasterInstrument.RoundToTickSize(Close[0]);
             double tickSize = TickSize;
 
@@ -3022,6 +3078,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool isLongEntry = IsLongEntryOrderName(order.Name);
             bool isFlipEntry = isLongEntry ? pendingLongEntryIsFlip : pendingShortEntryIsFlip;
+            if (duoLoGhost != null && !isFlipEntry && duoLoGhost.IsLong == isLongEntry)
+            {
+                tradeLineEntryPrice = actualFillPrice;
+                tradeLineSlPrice = Instrument.MasterInstrument.RoundToTickSize(duoLoGhost.StopPrice);
+                double inheritedTargetPrice = GetDuoLoGhostTargetPrice();
+                SetTradeLineTakeProfitState(inheritedTargetPrice, inheritedTargetPrice > 0.0);
+                UpdateTradeLines();
+                return;
+            }
+
             double plannedStopPrice = isLongEntry ? pendingLongStopForWebhook : pendingShortStopForWebhook;
             double actualStopPrice = BuildFilledStopPrice(
                 isLongEntry ? MarketPosition.Long : MarketPosition.Short,
@@ -4498,27 +4564,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 entryPrice = Instrument.MasterInstrument.RoundToTickSize(activeEma[0]);
-                stopPrice = isLong
-                    ? BuildLongEntryStopPrice(entryPrice, activeEma[0], Time[0])
-                    : BuildShortEntryStopPrice(entryPrice, activeEma[0], Time[0]);
-                if (!IsWithinMaxStopLossPoints(GetPlannedStopLossPoints(entryPrice, stopPrice)))
+                if (duoLoGhost == null || duoLoGhost.IsLong != isLong)
                 {
-                    CompleteDuoLoGhostAttempt("MaxStopAtLimitSubmit");
+                    CompleteDuoLoGhostAttempt("MissingGhostAtLimitSubmit");
                     return;
                 }
+
+                stopPrice = Instrument.MasterInstrument.RoundToTickSize(duoLoGhost.StopPrice);
             }
 
             string resolvedSignalName = string.IsNullOrWhiteSpace(signalName)
                 ? (isLong ? LongEntrySignal : ShortEntrySignal)
                 : signalName;
-            double takeProfitPrice = GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, isLong);
+            double takeProfitPrice = duoLoGhost != null
+                ? GetDuoLoGhostTargetPrice()
+                : GetWebhookTakeProfitPrice(entryPrice, takeProfitPoints, isLong);
 
             if (isLong)
             {
                 pendingLongStopForWebhook = stopPrice;
                 pendingLongEntryIsFlip = false;
-                SetStopLossByDistanceTicks(resolvedSignalName, entryPrice, stopPrice);
-                SetProfitTargetByDistanceTicks(resolvedSignalName, takeProfitPoints);
+                SetStopLoss(resolvedSignalName, CalculationMode.Price, stopPrice, false);
+                if (takeProfitPrice > 0.0)
+                    SetProfitTarget(resolvedSignalName, CalculationMode.Price, takeProfitPrice);
                 SendWebhook("buy", entryPrice, takeProfitPrice, stopPrice, isMarketEntry, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice + takeProfitPoints : 0.0, takeProfitPoints > 0.0);
                 UpdateDuoLoGhostTradeLines();
@@ -4528,8 +4596,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 pendingShortStopForWebhook = stopPrice;
                 pendingShortEntryIsFlip = false;
-                SetStopLossByDistanceTicks(resolvedSignalName, entryPrice, stopPrice);
-                SetProfitTargetByDistanceTicks(resolvedSignalName, takeProfitPoints);
+                SetStopLoss(resolvedSignalName, CalculationMode.Price, stopPrice, false);
+                if (takeProfitPrice > 0.0)
+                    SetProfitTarget(resolvedSignalName, CalculationMode.Price, takeProfitPrice);
                 SendWebhook("sell", entryPrice, takeProfitPrice, stopPrice, isMarketEntry, quantity);
                 StartTradeLines(entryPrice, stopPrice, takeProfitPoints > 0.0 ? entryPrice - takeProfitPoints : 0.0, takeProfitPoints > 0.0);
                 UpdateDuoLoGhostTradeLines();
@@ -4597,6 +4666,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AdxPeakSeeded = true,
                 EntryBar = CurrentBar
             };
+            duoLoManagementEntryPrice = roundedEntry;
             if (activeSession != SessionSlot.None)
                 lockedTradeSession = activeSession;
 
@@ -4800,6 +4870,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             duoLoGhost.AdxDdRiskModeApplied = true;
+            SyncDuoLoWorkingProtection();
             LogDebug(string.Format(
                 "DUOlo ghost ADX DD risk mode | side={0} adx={1:0.00} peak={2:0.00} drawdown={3:0.00} stop={4:0.00} tpPts={5:0.00}",
                 duoLoGhost.IsLong ? "Long" : "Short",
@@ -4858,6 +4929,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             duoLoGhost.StopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
             UpdateTradeLineStopPrice(duoLoGhost.StopPrice);
+            SyncDuoLoWorkingProtection();
             return true;
         }
 
@@ -4885,28 +4957,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (Math.Abs(limitPrice - previousLimitPrice) < TickSize * 0.5)
                 return;
 
-            double stopPrice = duoLoGhost.IsLong
-                ? BuildLongEntryStopPrice(limitPrice, emaValue, Time[0])
-                : BuildShortEntryStopPrice(limitPrice, emaValue, Time[0]);
-            if (!IsWithinMaxStopLossPoints(GetPlannedStopLossPoints(limitPrice, stopPrice)))
-            {
-                CompleteDuoLoGhostAttempt("MaxStopAtLimitRefresh");
-                return;
-            }
-
-            double realTakeProfitPoints = activeTakeProfitPoints;
+            double stopPrice = Instrument.MasterInstrument.RoundToTickSize(duoLoGhost.StopPrice);
+            double targetPrice = GetDuoLoGhostTargetPrice();
+            double realTakeProfitPoints = duoLoGhost.TakeProfitPoints;
             if (duoLoGhost.IsLong)
             {
                 pendingLongStopForWebhook = stopPrice;
-                SetStopLossByDistanceTicks(duoLoGhost.SignalName, limitPrice, stopPrice);
-                SetProfitTargetByDistanceTicks(duoLoGhost.SignalName, realTakeProfitPoints);
+                SetStopLoss(duoLoGhost.SignalName, CalculationMode.Price, stopPrice, false);
+                if (targetPrice > 0.0)
+                    SetProfitTarget(duoLoGhost.SignalName, CalculationMode.Price, targetPrice);
                 SubmitLongEntryOrder(duoLoGhost.Quantity, limitPrice, false, duoLoGhost.SignalName);
             }
             else
             {
                 pendingShortStopForWebhook = stopPrice;
-                SetStopLossByDistanceTicks(duoLoGhost.SignalName, limitPrice, stopPrice);
-                SetProfitTargetByDistanceTicks(duoLoGhost.SignalName, realTakeProfitPoints);
+                SetStopLoss(duoLoGhost.SignalName, CalculationMode.Price, stopPrice, false);
+                if (targetPrice > 0.0)
+                    SetProfitTarget(duoLoGhost.SignalName, CalculationMode.Price, targetPrice);
                 SubmitShortEntryOrder(duoLoGhost.Quantity, limitPrice, false, duoLoGhost.SignalName);
             }
 
@@ -4918,6 +4985,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 previousLimitPrice,
                 limitPrice,
                 stopPrice));
+        }
+
+        private void SyncDuoLoWorkingProtection()
+        {
+            if (duoLoGhost == null)
+                return;
+
+            Order entryOrder = duoLoGhost.IsLong ? longEntryOrder : shortEntryOrder;
+            if (!IsOrderActive(entryOrder))
+                return;
+
+            double stopPrice = Instrument.MasterInstrument.RoundToTickSize(duoLoGhost.StopPrice);
+            double targetPrice = GetDuoLoGhostTargetPrice();
+            SetStopLoss(duoLoGhost.SignalName, CalculationMode.Price, stopPrice, false);
+            if (targetPrice > 0.0)
+                SetProfitTarget(duoLoGhost.SignalName, CalculationMode.Price, targetPrice);
+
+            if (duoLoGhost.IsLong)
+                pendingLongStopForWebhook = stopPrice;
+            else
+                pendingShortStopForWebhook = stopPrice;
         }
 
         private void UpdateDuoLoGhostTradeLines()
@@ -5027,7 +5115,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             duoLoGhost = null;
             if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                duoLoManagementEntryPrice = 0.0;
                 lockedTradeSession = SessionSlot.None;
+            }
         }
 
         private void CancelWorkingEntryOrders()
