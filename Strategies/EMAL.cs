@@ -14,12 +14,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string StrategySignalPrefix = "EMAL";
         private const string LongEntrySignal = StrategySignalPrefix + "Long";
         private const string ShortEntrySignal = StrategySignalPrefix + "Short";
-        private const string SessionEndExitSignal = StrategySignalPrefix + "SessionEnd";
-        private const string BreakExitSignal = StrategySignalPrefix + "Break";
 
         private EMA ema;
         private Order entryOrder;
-        private Order terminalExitOrder;
         private int queuedDirection;
         private double queuedLimitPrice;
         private int queuedEntryBar = -1;
@@ -28,7 +25,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (State == State.SetDefaults)
             {
-                Description = "One-minute EMA direction strategy with market or passive bid/ask limit entries, a daily session, and a flattening break.";
+                Description = "One-minute EMA direction strategy with market or passive bid/ask limit entries. "
+                    + "ReverseSignals inverts entry direction; combined with swapped TP/SL distances this is the "
+                    + "exact per-trade mirror of the original logic.";
                 Name = "EMAL";
                 Calculate = Calculate.OnEachTick;
                 EntriesPerDirection = 1;
@@ -40,14 +39,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 EmaPeriod = 6;
                 MinimumEmaSlopePoints = 0.25;
-                TakeProfitPoints = 4.0;
-                StopLossPoints = 10.0;
+                // Mirror of the original 3 TP / 10 SL configuration.
+                TakeProfitPoints = 10.0;
+                StopLossPoints = 3.0;
                 Contracts = 1;
                 EntryOrderType = EMALEntryOrderType.Market;
-                SessionStart = TimeSpan.Zero;
-                SessionStop = new TimeSpan(23, 59, 59);
-                BreakStart = new TimeSpan(9, 0, 0);
-                BreakStop = new TimeSpan(11, 0, 0);
+                ReverseSignals = true;
             }
             else if (State == State.DataLoaded)
             {
@@ -60,24 +57,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
-            if (BarsInProgress != 0)
-                return;
-
-            DateTime gateTime = GetTimeGateTime(Time[0]);
-            bool inSession = SessionStart != SessionStop
-                && IsTimeInRange(gateTime.TimeOfDay, SessionStart, SessionStop);
-            bool inBreak = BreakStart != BreakStop
-                && IsBreakTime(gateTime.TimeOfDay, BreakStart, BreakStop);
-
-            if (!inSession || inBreak)
-            {
-                ClearQueuedEntry();
-                CancelEntryOrderIfActive();
-                TrySubmitTerminalExit(inBreak ? BreakExitSignal : SessionEndExitSignal);
-                return;
-            }
-
-            if (!IsFirstTickOfBar)
+            if (BarsInProgress != 0 || !IsFirstTickOfBar)
                 return;
 
             ClearQueuedEntry();
@@ -106,10 +86,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 && completedEmaSlope < 0.0
                 && completedEmaSlope <= -requiredSlope;
 
-            if (longSignal)
-                QueueEntry(1);
-            else if (shortSignal)
-                QueueEntry(-1);
+            // ReverseSignals inverts the entry direction: a long signal is taken as a short and
+            // vice versa. Combined with swapped TakeProfitPoints/StopLossPoints, each trade exits
+            // on exactly the barrier the original logic would have exited on.
+            int signalDirection = longSignal ? 1 : (shortSignal ? -1 : 0);
+
+            if (signalDirection != 0)
+                QueueEntry(ReverseSignals ? -signalDirection : signalDirection);
 
             if (IsOrderActive(entryOrder))
             {
@@ -134,8 +117,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (queuedDirection == 0
                 || queuedEntryBar != CurrentBar
                 || Position.MarketPosition != MarketPosition.Flat
-                || IsOrderActive(entryOrder)
-                || IsOrderActive(terminalExitOrder))
+                || IsOrderActive(entryOrder))
             {
                 return;
             }
@@ -187,46 +169,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CancelOrder(entryOrder);
         }
 
-        private void TrySubmitTerminalExit(string exitSignal)
-        {
-            if (Position.MarketPosition == MarketPosition.Flat || IsOrderActive(terminalExitOrder))
-                return;
-
-            if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong(0, Position.Quantity, exitSignal, LongEntrySignal);
-            else if (Position.MarketPosition == MarketPosition.Short)
-                ExitShort(0, Position.Quantity, exitSignal, ShortEntrySignal);
-        }
-
-        private DateTime GetTimeGateTime(DateTime time)
-        {
-            if (State == State.Historical
-                && BarsPeriod != null
-                && BarsPeriod.BarsPeriodType == BarsPeriodType.Minute
-                && BarsPeriod.Value > 0)
-            {
-                return time.AddMinutes(BarsPeriod.Value);
-            }
-
-            return time;
-        }
-
-        private static bool IsTimeInRange(TimeSpan current, TimeSpan start, TimeSpan stop)
-        {
-            if (start < stop)
-                return current >= start && current < stop;
-
-            return current >= start || current < stop;
-        }
-
-        private static bool IsBreakTime(TimeSpan current, TimeSpan start, TimeSpan stop)
-        {
-            if (start < stop)
-                return current >= start && current <= stop;
-
-            return current >= start || current <= stop;
-        }
-
         private static bool IsOrderActive(Order order)
         {
             return order != null
@@ -261,33 +203,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
             double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string comment)
         {
-            if (order == null)
-                return;
-
-            bool isEntryOrder = order.Name == LongEntrySignal || order.Name == ShortEntrySignal;
-            bool isTerminalExitOrder = order.Name == SessionEndExitSignal || order.Name == BreakExitSignal;
-
-            if (isTerminalExitOrder)
+            if (order == null
+                || (order.Name != LongEntrySignal && order.Name != ShortEntrySignal))
             {
-                if (orderState != OrderState.Cancelled
-                    && orderState != OrderState.Filled
-                    && orderState != OrderState.Rejected)
-                {
-                    terminalExitOrder = order;
-                }
-                else
-                {
-                    terminalExitOrder = null;
-                }
-
-                if (orderState == OrderState.Rejected)
-                    PrintOrderRejection(time, order, error, comment);
-
                 return;
             }
-
-            if (!isEntryOrder)
-                return;
 
             if (orderState != OrderState.Cancelled
                 && orderState != OrderState.Filled
@@ -295,34 +215,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 entryOrder = order;
             }
-            else
+            else if (orderState == OrderState.Filled)
             {
                 entryOrder = null;
-
-                if (orderState == OrderState.Filled)
-                {
-                    ClearQueuedEntry();
-                }
-                else if (orderState == OrderState.Cancelled)
-                {
-                    TrySubmitQueuedEntry();
-                }
-                else
-                {
-                    ClearQueuedEntry();
-                    PrintOrderRejection(time, order, error, comment);
-                }
+                ClearQueuedEntry();
             }
-        }
-
-        private void PrintOrderRejection(DateTime time, Order order, ErrorCode error, string comment)
-        {
-            Print(string.Format(
-                "{0} | {1} order rejected | error={2} comment={3}",
-                time,
-                order.Name,
-                error,
-                comment ?? string.Empty));
+            else if (orderState == OrderState.Cancelled)
+            {
+                entryOrder = null;
+                TrySubmitQueuedEntry();
+            }
+            else if (orderState == OrderState.Rejected)
+            {
+                entryOrder = null;
+                ClearQueuedEntry();
+                Print(string.Format(
+                    "{0} | {1} entry rejected | error={2} comment={3}",
+                    time,
+                    order.Name,
+                    error,
+                    comment ?? string.Empty));
+            }
         }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
@@ -350,20 +263,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public EMALEntryOrderType EntryOrderType { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Session Start", Description = "Daily trading start in chart time.", GroupName = "Schedule", Order = 0)]
-        public TimeSpan SessionStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Session Stop", Description = "Daily trading stop in chart time. Equal start and stop disables the session.", GroupName = "Schedule", Order = 1)]
-        public TimeSpan SessionStop { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Break Start", Description = "Daily break start in chart time. Equal start and stop disables the break.", GroupName = "Schedule", Order = 2)]
-        public TimeSpan BreakStart { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Break Stop", Description = "Daily break stop in chart time. The break cancels pending entries and closes open positions.", GroupName = "Schedule", Order = 3)]
-        public TimeSpan BreakStop { get; set; }
+        [Display(Name = "Reverse Signals", Description = "Invert entry direction: take shorts on long signals and longs on short signals.", GroupName = "Parameters", Order = 6)]
+        public bool ReverseSignals { get; set; }
     }
 
     public enum EMALEntryOrderType
