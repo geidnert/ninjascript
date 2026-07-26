@@ -46,6 +46,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int desiredProtectionQuantity;
         private bool terminalExitPending;
 
+        // Account-level profit guard. Once net liquidation reaches the configured
+        // ceiling, the latch remains set for the lifetime of this strategy instance.
+        private bool maxAccountBalanceLimitReached;
+
         // Tick clock. Time[0] returns the in-progress bar's close stamp, so it cannot be
         // used for elapsed-seconds math. OnMarketData supplies the real tick timestamp.
         private DateTime lastTickTime = DateTime.MinValue;
@@ -83,6 +87,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 StopLossPoints = 13.0;
                 Contracts = 1;
                 EntryOrderType = EMALEntryOrderType.Limit;
+                MaxAccountBalance = 0.0;
 
                 // Dynamic take-profit, OFF by default. A multiplier of 0 disables scaling and
                 // falls back to the fixed TakeProfitPoints, so defaults reproduce the original
@@ -118,6 +123,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (State == State.DataLoaded)
             {
                 ValidateChart();
+                maxAccountBalanceLimitReached = false;
 
                 ema = EMA(EmaPeriod);
                 atr = ATR(AtrPeriod);
@@ -294,7 +300,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnBarUpdate()
         {
-            if (BarsInProgress != 0 || !IsFirstTickOfBar)
+            if (BarsInProgress != 0)
+                return;
+
+            // Evaluate on every tick so unrealized profit can flatten an open position
+            // immediately instead of waiting for the next one-minute bar.
+            if (IsAccountBalanceBlocked())
+                return;
+
+            if (!IsFirstTickOfBar)
                 return;
 
             ClearQueuedEntry();
@@ -396,6 +410,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void TrySubmitQueuedEntry()
         {
+            // OnOrderUpdate can re-enter this method after an asynchronous cancellation.
+            // Recheck the account latch here so no queued entry can escape the main gate.
+            if (IsAccountBalanceBlocked())
+            {
+                ClearQueuedEntry();
+                return;
+            }
+
             if (queuedDirection == 0
                 || queuedEntryBar != CurrentBar
                 || Position.MarketPosition != MarketPosition.Flat
@@ -906,6 +928,69 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             CancelOrder(entryOrder);
         }
 
+        private bool IsAccountBalanceBlocked()
+        {
+            if (MaxAccountBalance <= 0.0)
+                return false;
+
+            if (maxAccountBalanceLimitReached)
+                return true;
+
+            double netLiquidation;
+            if (!TryGetCurrentNetLiquidation(out netLiquidation)
+                || netLiquidation < MaxAccountBalance)
+            {
+                return false;
+            }
+
+            maxAccountBalanceLimitReached = true;
+            ClearQueuedEntry();
+            CancelRemainingEntryAfterExit();
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+                TrySubmitTerminalExit("MaxAccountBalance", protectedEntrySignal);
+
+            Print(string.Format(
+                "{0} | max account balance reached | netLiq={1:F2} target={2:F2} | trading stopped",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                netLiquidation,
+                MaxAccountBalance));
+
+            return true;
+        }
+
+        private bool TryGetCurrentNetLiquidation(out double netLiquidation)
+        {
+            netLiquidation = 0.0;
+            if (Account == null)
+                return false;
+
+            try
+            {
+                netLiquidation = Account.Get(AccountItem.NetLiquidation, Currency.UsDollar);
+                if (netLiquidation > 0.0
+                    && !double.IsNaN(netLiquidation)
+                    && !double.IsInfinity(netLiquidation))
+                {
+                    return true;
+                }
+
+                double realizedCash = Account.Get(AccountItem.CashValue, Currency.UsDollar);
+                double unrealized = Position.MarketPosition != MarketPosition.Flat
+                    ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                    : 0.0;
+
+                netLiquidation = realizedCash + unrealized;
+                return (realizedCash > 0.0 || Position.MarketPosition != MarketPosition.Flat)
+                    && !double.IsNaN(netLiquidation)
+                    && !double.IsInfinity(netLiquidation);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool IsTerminalExitOrderName(string orderName)
         {
             return !string.IsNullOrEmpty(orderName)
@@ -924,6 +1009,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             profitTargetOrder = null;
             terminalExitPending = false;
         }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "Risk", Order = 0)]
+        public double MaxAccountBalance { get; set; }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
         [Display(Name = "EMA Period", Description = "EMA period evaluated on the one-minute chart.", GroupName = "Parameters", Order = 0)]
