@@ -14,10 +14,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string StrategySignalPrefix = "EMAL";
         private const string LongEntrySignal = StrategySignalPrefix + "Long";
         private const string ShortEntrySignal = StrategySignalPrefix + "Short";
+        private const string StopExitSignal = StrategySignalPrefix + "Stop";
+        private const string TargetExitSignal = StrategySignalPrefix + "Target";
+        private const string TerminalExitSignalPrefix = StrategySignalPrefix + "Exit";
 
         private EMA ema;
         private ATR atr;
         private Order entryOrder;
+        private Order protectiveStopOrder;
+        private Order profitTargetOrder;
         private int queuedDirection;
         private double queuedLimitPrice;
         private double queuedTakeProfitPoints;
@@ -29,6 +34,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeEntryReferencePrice;
         private DateTime activeEntrySubmitTime = DateTime.MinValue;
         private bool entryCancelPending;
+
+        // Execution-driven protection. Set() methods submit immediately on an entry fill
+        // without allowing a gap-through validity check. These fields let us submit the
+        // managed OCO exits from OnExecutionUpdate after checking the current market.
+        private string protectedEntrySignal = string.Empty;
+        private double activeTakeProfitPoints;
+        private double entryFillValue;
+        private int entryFilledQuantity;
+        private double desiredProtectionTargetPrice;
+        private int desiredProtectionQuantity;
+        private bool terminalExitPending;
 
         // Tick clock. Time[0] returns the in-progress bar's close stamp, so it cannot be
         // used for elapsed-seconds math. OnMarketData supplies the real tick timestamp.
@@ -58,6 +74,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 IsExitOnSessionCloseStrategy = false;
                 IsInstantiatedOnEachOptimizationIteration = false;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
+                RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
 
                 EmaPeriod = 6;
@@ -108,7 +125,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.Realtime)
             {
-                TransitionEntryOrderReferenceToRealtime();
+                TransitionTrackedOrderReferencesToRealtime();
             }
             else if (State == State.Terminated)
             {
@@ -401,8 +418,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             string entrySignal = direction > 0 ? LongEntrySignal : ShortEntrySignal;
 
-            SetProfitTarget(entrySignal, CalculationMode.Ticks, PointsToTicks(takeProfit));
-            SetStopLoss(entrySignal, CalculationMode.Ticks, PointsToTicks(StopLossPoints), false);
+            BeginProtectionTracking(entrySignal, takeProfit);
 
             Print(string.Format(
                 "{0} | {1} {2} | mode={3} | target={4:F2} pts stop={5:F2} pts | atr={6:F2}",
@@ -440,13 +456,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Instrument.MasterInstrument.RoundToTickSize(price);
         }
 
-        private int PointsToTicks(double points)
-        {
-            return Math.Max(1, (int)Math.Round(
-                Math.Abs(points) / TickSize,
-                MidpointRounding.AwayFromZero));
-        }
-
         private void CancelEntryOrderIfActive()
         {
             if (!IsOrderActive(entryOrder)
@@ -469,16 +478,39 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             entryCancelPending = false;
         }
 
-        private void TransitionEntryOrderReferenceToRealtime()
+        private void BeginProtectionTracking(string entrySignal, double takeProfitPoints)
         {
-            if (State != State.Realtime
-                || entryOrder == null
-                || !entryOrder.IsBacktestOrder)
-            {
-                return;
-            }
+            protectedEntrySignal = entrySignal ?? string.Empty;
+            activeTakeProfitPoints = Math.Max(TickSize, takeProfitPoints);
+            entryFillValue = 0.0;
+            entryFilledQuantity = 0;
+            desiredProtectionTargetPrice = 0.0;
+            desiredProtectionQuantity = 0;
+            protectiveStopOrder = null;
+            profitTargetOrder = null;
+            terminalExitPending = false;
+        }
 
-            entryOrder = GetRealtimeOrder(entryOrder);
+        private void TransitionTrackedOrderReferencesToRealtime()
+        {
+            if (State != State.Realtime)
+                return;
+
+            entryOrder = TransitionOrderReferenceToRealtime(entryOrder);
+            protectiveStopOrder = TransitionOrderReferenceToRealtime(protectiveStopOrder);
+            profitTargetOrder = TransitionOrderReferenceToRealtime(profitTargetOrder);
+        }
+
+        private Order TransitionOrderReferenceToRealtime(Order order)
+        {
+            if (order == null || !order.IsBacktestOrder)
+                return order;
+
+            // A historical order only remains actionable when NinjaTrader created a
+            // corresponding real-time order. GetRealtimeOrder returns null when it did
+            // not. Keeping the old backtest reference in that case makes IsOrderActive()
+            // stay true forever and blocks every new real-time entry.
+            return GetRealtimeOrder(order);
         }
 
         private bool IsHistoricalOrderAwaitingRealtimeTransition(Order order)
@@ -526,13 +558,57 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             // NT8 renews working historical orders when the strategy enters realtime.
             // Convert the stored reference before any realtime cancel can use it.
-            TransitionEntryOrderReferenceToRealtime();
+            TransitionTrackedOrderReferencesToRealtime();
 
-            if (order == null
-                || (order.Name != LongEntrySignal && order.Name != ShortEntrySignal))
+            if (order == null)
+                return;
+
+            string orderName = order.Name ?? string.Empty;
+
+            if (orderName == StopExitSignal || orderName == TargetExitSignal)
             {
+                TrackProtectiveOrder(order, orderState);
+
+                if (orderState == OrderState.Rejected)
+                {
+                    Print(string.Format(
+                        "{0} | {1} rejected | error={2} comment={3} | flattening position",
+                        time,
+                        orderName,
+                        error,
+                        comment ?? string.Empty));
+
+                    string entrySignal = string.IsNullOrEmpty(order.FromEntrySignal)
+                        ? protectedEntrySignal
+                        : order.FromEntrySignal;
+                    TrySubmitTerminalExit("ProtectiveReject", entrySignal);
+                }
+                else if (orderName == StopExitSignal
+                    && (orderState == OrderState.Accepted || orderState == OrderState.Working))
+                {
+                    SubmitOrUpdateProfitTarget();
+                }
+
                 return;
             }
+
+            if (IsTerminalExitOrderName(orderName))
+            {
+                if (orderState == OrderState.Rejected)
+                {
+                    Print(string.Format(
+                        "{0} | CRITICAL: terminal exit {1} rejected | error={2} comment={3}",
+                        time,
+                        orderName,
+                        error,
+                        comment ?? string.Empty));
+                }
+
+                return;
+            }
+
+            if (orderName != LongEntrySignal && orderName != ShortEntrySignal)
+                return;
 
             if (orderState != OrderState.Cancelled
                 && orderState != OrderState.Filled
@@ -565,6 +641,288 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     error,
                     comment ?? string.Empty));
             }
+        }
+
+        protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
+            MarketPosition marketPosition, string orderId, DateTime time)
+        {
+            if (execution == null)
+                return;
+
+            string orderName = execution.Name ?? string.Empty;
+
+            if (orderName == LongEntrySignal || orderName == ShortEntrySignal)
+            {
+                int executionQuantity = Math.Abs(quantity);
+                if (executionQuantity <= 0)
+                    return;
+
+                if (!string.Equals(protectedEntrySignal, orderName, StringComparison.Ordinal))
+                    BeginProtectionTracking(orderName, TakeProfitPoints);
+
+                entryFillValue += price * executionQuantity;
+                entryFilledQuantity += executionQuantity;
+
+                double averageEntryPrice = entryFillValue / entryFilledQuantity;
+                SubmitOrUpdateProtection(
+                    orderName == LongEntrySignal ? MarketPosition.Long : MarketPosition.Short,
+                    averageEntryPrice,
+                    entryFilledQuantity,
+                    time);
+                return;
+            }
+
+            if (orderName == StopExitSignal
+                || orderName == TargetExitSignal
+                || IsTerminalExitOrderName(orderName))
+            {
+                CancelRemainingEntryAfterExit();
+
+                if (Position.MarketPosition == MarketPosition.Flat)
+                    ResetProtectionTracking();
+            }
+        }
+
+        private void SubmitOrUpdateProtection(MarketPosition positionDirection, double averageEntryPrice,
+            int protectedQuantity, DateTime time)
+        {
+            if (terminalExitPending
+                || positionDirection == MarketPosition.Flat
+                || protectedQuantity <= 0)
+            {
+                return;
+            }
+
+            double stopDistance = Math.Max(TickSize, StopLossPoints);
+            double targetDistance = Math.Max(TickSize, activeTakeProfitPoints);
+            double stopPrice = positionDirection == MarketPosition.Long
+                ? averageEntryPrice - stopDistance
+                : averageEntryPrice + stopDistance;
+            double targetPrice = positionDirection == MarketPosition.Long
+                ? averageEntryPrice + targetDistance
+                : averageEntryPrice - targetDistance;
+
+            stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
+            targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
+            desiredProtectionTargetPrice = targetPrice;
+            desiredProtectionQuantity = protectedQuantity;
+
+            if (State == State.Realtime)
+            {
+                double marketPrice = GetProtectiveReferencePrice(positionDirection);
+
+                if (marketPrice > 0.0)
+                {
+                    bool stopAlreadyBreached = positionDirection == MarketPosition.Long
+                        ? stopPrice >= marketPrice
+                        : stopPrice <= marketPrice;
+                    bool targetAlreadyReached = positionDirection == MarketPosition.Long
+                        ? targetPrice <= marketPrice
+                        : targetPrice >= marketPrice;
+
+                    if (stopAlreadyBreached)
+                    {
+                        Print(string.Format(
+                            "{0} | {1} stop gap-through | fill={2:F2} stop={3:F2} market={4:F2} | flattening",
+                            time,
+                            positionDirection,
+                            averageEntryPrice,
+                            stopPrice,
+                            marketPrice));
+                        TrySubmitTerminalExit("GapStop", protectedEntrySignal);
+                        return;
+                    }
+
+                    if (targetAlreadyReached)
+                    {
+                        Print(string.Format(
+                            "{0} | {1} target crossed before protection | fill={2:F2} target={3:F2} market={4:F2} | flattening",
+                            time,
+                            positionDirection,
+                            averageEntryPrice,
+                            targetPrice,
+                            marketPrice));
+                        TrySubmitTerminalExit("GapTarget", protectedEntrySignal);
+                        return;
+                    }
+                }
+            }
+
+            if (IsOrderActive(protectiveStopOrder))
+            {
+                ChangeOrder(protectiveStopOrder, protectedQuantity, 0.0, stopPrice);
+            }
+            else
+            {
+                protectiveStopOrder = positionDirection == MarketPosition.Long
+                    ? ExitLongStopMarket(0, true, protectedQuantity, stopPrice, StopExitSignal, protectedEntrySignal)
+                    : ExitShortStopMarket(0, true, protectedQuantity, stopPrice, StopExitSignal, protectedEntrySignal);
+            }
+
+            // A rejection can callback synchronously from the submission above. Do not submit
+            // its OCO sibling with an ID NinjaTrader has already retired.
+            if (terminalExitPending
+                || Position.MarketPosition == MarketPosition.Flat)
+            {
+                return;
+            }
+
+            if (protectiveStopOrder == null
+                || protectiveStopOrder.OrderState == OrderState.Rejected)
+            {
+                TrySubmitTerminalExit("MissingStop", protectedEntrySignal);
+                return;
+            }
+
+            // A market move can trigger the newly accepted stop before this method returns.
+            // In that case the position is already being closed and no target is needed.
+            if (!IsOrderActive(protectiveStopOrder))
+                return;
+        }
+
+        private void SubmitOrUpdateProfitTarget()
+        {
+            if (terminalExitPending
+                || Position.MarketPosition == MarketPosition.Flat
+                || !IsOrderActive(protectiveStopOrder)
+                || desiredProtectionQuantity <= 0
+                || desiredProtectionTargetPrice <= 0.0)
+            {
+                return;
+            }
+
+            if (IsOrderActive(profitTargetOrder))
+            {
+                bool quantityMatches = profitTargetOrder.Quantity == desiredProtectionQuantity;
+                bool priceMatches = Math.Abs(
+                    profitTargetOrder.LimitPrice - desiredProtectionTargetPrice) < TickSize / 2.0;
+
+                if (quantityMatches && priceMatches)
+                    return;
+
+                ChangeOrder(
+                    profitTargetOrder,
+                    desiredProtectionQuantity,
+                    desiredProtectionTargetPrice,
+                    0.0);
+            }
+            else
+            {
+                profitTargetOrder = Position.MarketPosition == MarketPosition.Long
+                    ? ExitLongLimit(
+                        0,
+                        true,
+                        desiredProtectionQuantity,
+                        desiredProtectionTargetPrice,
+                        TargetExitSignal,
+                        protectedEntrySignal)
+                    : ExitShortLimit(
+                        0,
+                        true,
+                        desiredProtectionQuantity,
+                        desiredProtectionTargetPrice,
+                        TargetExitSignal,
+                        protectedEntrySignal);
+            }
+
+            if (!terminalExitPending
+                && Position.MarketPosition != MarketPosition.Flat
+                && (profitTargetOrder == null || profitTargetOrder.OrderState == OrderState.Rejected))
+            {
+                TrySubmitTerminalExit("MissingTarget", protectedEntrySignal);
+            }
+        }
+
+        private double GetProtectiveReferencePrice(MarketPosition positionDirection)
+        {
+            double marketPrice = positionDirection == MarketPosition.Long
+                ? GetCurrentBid()
+                : GetCurrentAsk();
+
+            if (marketPrice <= 0.0 || double.IsNaN(marketPrice) || double.IsInfinity(marketPrice))
+                marketPrice = lastTickPrice;
+
+            if ((marketPrice <= 0.0 || double.IsNaN(marketPrice) || double.IsInfinity(marketPrice))
+                && CurrentBar >= 0)
+            {
+                marketPrice = Close[0];
+            }
+
+            return marketPrice;
+        }
+
+        private void TrackProtectiveOrder(Order order, OrderState orderState)
+        {
+            bool terminalState = orderState == OrderState.Cancelled
+                || orderState == OrderState.Filled
+                || orderState == OrderState.Rejected;
+
+            if (order.Name == StopExitSignal)
+                protectiveStopOrder = terminalState ? null : order;
+            else if (order.Name == TargetExitSignal)
+                profitTargetOrder = terminalState ? null : order;
+        }
+
+        private void TrySubmitTerminalExit(string reason, string entrySignal)
+        {
+            if (terminalExitPending)
+                return;
+
+            MarketPosition positionDirection = Position.MarketPosition;
+            if (positionDirection == MarketPosition.Flat)
+                return;
+
+            terminalExitPending = true;
+            CancelRemainingEntryAfterExit();
+
+            string exitSignal = TerminalExitSignalPrefix + reason;
+            string fromEntrySignal = string.IsNullOrEmpty(entrySignal)
+                ? protectedEntrySignal
+                : entrySignal;
+
+            Print(string.Format(
+                "{0} | emergency market exit | reason={1} side={2} entry={3}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                reason,
+                positionDirection,
+                fromEntrySignal));
+
+            if (positionDirection == MarketPosition.Long)
+                ExitLong(exitSignal, fromEntrySignal);
+            else
+                ExitShort(exitSignal, fromEntrySignal);
+        }
+
+        private void CancelRemainingEntryAfterExit()
+        {
+            if (!IsOrderActive(entryOrder)
+                || entryCancelPending
+                || IsHistoricalOrderAwaitingRealtimeTransition(entryOrder))
+            {
+                return;
+            }
+
+            entryCancelPending = true;
+            CancelOrder(entryOrder);
+        }
+
+        private static bool IsTerminalExitOrderName(string orderName)
+        {
+            return !string.IsNullOrEmpty(orderName)
+                && orderName.StartsWith(TerminalExitSignalPrefix, StringComparison.Ordinal);
+        }
+
+        private void ResetProtectionTracking()
+        {
+            protectedEntrySignal = string.Empty;
+            activeTakeProfitPoints = 0.0;
+            entryFillValue = 0.0;
+            entryFilledQuantity = 0;
+            desiredProtectionTargetPrice = 0.0;
+            desiredProtectionQuantity = 0;
+            protectiveStopOrder = null;
+            profitTargetOrder = null;
+            terminalExitPending = false;
         }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
