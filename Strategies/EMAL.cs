@@ -1,10 +1,18 @@
 #region Using declarations
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
 using NinjaTrader.Cbi;
 using NinjaTrader.Data;
+using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.Indicators;
 #endregion
@@ -21,6 +29,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string TerminalExitSignalPrefix = StrategySignalPrefix + "Exit";
         private const string NewsExitSignal = StrategySignalPrefix + "NewsFlat";
 
+        // ---- chart info panel (WPF overlay on ChartControl's parent, not SharpDX) ----
+        private const string InfoFooter = "AutoEdge Systems™";
+        private Border infoBoxContainer;
+        private StackPanel infoBoxRowsPanel;
+
+        private static readonly Brush InfoHeaderFooterGradientBrush = CreateFrozenVerticalGradientBrush(
+            Color.FromArgb(240, 0x2A, 0x2F, 0x45),
+            Color.FromArgb(240, 0x1E, 0x23, 0x36),
+            Color.FromArgb(240, 0x14, 0x18, 0x28));
+        private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
+        private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
+        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(255, 0x00, 0xFF, 0x00);
+        private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
+        private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
+
+        private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            try { if (brush.CanFreeze) brush.Freeze(); }
+            catch { }
+            return brush;
+        }
+
+        private static Brush CreateFrozenVerticalGradientBrush(Color top, Color mid, Color bottom)
+        {
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new Point(0.5, 0.0),
+                EndPoint = new Point(0.5, 1.0)
+            };
+            brush.GradientStops.Add(new GradientStop(top, 0.0));
+            brush.GradientStops.Add(new GradientStop(mid, 0.5));
+            brush.GradientStops.Add(new GradientStop(bottom, 1.0));
+            try { if (brush.CanFreeze) brush.Freeze(); }
+            catch { }
+            return brush;
+        }
+
         private EMA ema;
         private ATR atr;
         private Order entryOrder;
@@ -28,6 +74,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private Order profitTargetOrder;
         private int queuedDirection;
         private double queuedLimitPrice;
+        private double queuedBracketReference;
         private double queuedTakeProfitPoints;
         private double queuedStopLossPoints;
         private double queuedSignalPrice;
@@ -46,6 +93,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string protectedEntrySignal = string.Empty;
         private double activeTakeProfitPoints;
         private double activeStopLossPoints;
+        private double activeBracketReference;
         private double entryFillValue;
         private int entryFilledQuantity;
         private double desiredProtectionTargetPrice;
@@ -55,6 +103,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // Account-level profit guard. Once net liquidation reaches the configured
         // ceiling, the latch remains set for the lifetime of this strategy instance.
         private bool maxAccountBalanceLimitReached;
+
+        // Daily profit cap, measured in POINTS of realised P&L. Tracked independently of the
+        // feature log so it works whether logging is on or off. The "day" is the CME trading
+        // day, 18:00 ET to 17:00 ET, matching the session model used everywhere else.
+        private DateTime currentTradingDay = DateTime.MinValue;
+        private double dailyRealizedPoints;
+        private bool dailyProfitLimitReached;
+        private bool dailyLossLimitReached;
+        private double openEntryPrice;
+        private int openEntryDirection;
+        private double openExitValue;
+        private int openExitQuantity;
+
+        // Set by ValidateChart when the strategy is on the wrong series or instrument.
+        private bool configurationBlocked;
 
         // Tick clock. Time[0] returns the in-progress bar's close stamp, so it cannot be
         // used for elapsed-seconds math. OnMarketData supplies the real tick timestamp.
@@ -81,21 +144,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime pendingSubmitTime;
         private double pendingSignalPrice;
         private double pendingFillPrice;
+        private double tradeMaePoints;
+        private double tradeMfePoints;
         private int pendingDirection;
         private int pendingEntryBar;
         private int loggedRowCount;
 
         // Session boundaries in minutes-of-day, New York time. Asia wraps midnight.
-        // 17:00-18:00 is the CME maintenance halt and belongs to no session.
+        // 17:00-18:30 is the maintenance/session-gate halt and belongs to no session.
         // NY-anchored boundaries. Globex reopen and the US cash session never drift, because
         // CME (Chicago) and New York share the same DST dates.
-        private const int AsiaStartMinute = 18 * 60;    // 18:00 ET, Globex reopen
+        private const int AsiaStartMinute = 18 * 60 + 30;   // 18:30 ET
         private const int UsStartMinute = 9 * 60 + 30;  // 09:30 ET, cash open
         private const int UsEndMinute = 17 * 60;        // 17:00 ET, cash close
 
         // London-anchored boundary. Europe begins at 08:00 London, which tracks UK DST and so
         // lands on 03:00 ET most of the year and 04:00 ET during the ~4 misaligned weeks.
-        // Inside the overnight band (NY 18:00 -> 09:30) London time only ever spans roughly
+        // Inside the overnight band (NY 18:30 -> 09:30) London time only ever spans roughly
         // 22:00 -> 14:30, so the range [08:00, 15:00) uniquely identifies the European portion.
         private const int LondonOpenMinute = 8 * 60;    // 08:00 London
         private const int LondonBandEndMinute = 15 * 60;
@@ -110,13 +175,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private const string FeatureHeader =
             "EntryTimeET,EntryTimeUTC,EntryTimeLondon,EntryTimeTokyo,DayOfWeek,HHmm,HHmmLondon,HHmmTokyo,"
-            + "Session,Direction,SignalPrice,Ema,Slope,SlopePrev,SlopeAccel,ReqSlope,SlopeOverAtr,"
+            + "Session,Direction,EntryMode,LimitRef,SignalPrice,Ema,Slope,SlopePrev,SlopeAccel,ReqSlope,SlopeOverAtr,LimitOffset,"
             + "DistToEma,Atr,TpPoints,SlPoints,TpOverAtr,"
             + "Bar1Open,Bar1High,Bar1Low,Bar1Close,Bar1Volume,"
             + "Bar2Open,Bar2High,Bar2Low,Bar2Close,Bar2Volume,"
             + "Bar3Open,Bar3High,Bar3Low,Bar3Close,Bar3Volume,"
             + "AvgVolume20,FillPrice,FillDelaySec,"
-            + "ExitTime,ExitPrice,ExitReason,ProfitPoints,IsWin,BarsHeld";
+            + "ExitTime,ExitPrice,ExitReason,ProfitPoints,IsWin,BarsHeld,MaePoints,MfePoints";
 
         protected override void OnStateChange()
         {
@@ -141,7 +206,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Contracts = 1;
                 EntryOrderType = EMALEntryOrderType.Limit;
                 LimitPriceReference = EMALLimitPriceReference.BidAsk;
+
+                // Entry offset, OFF by default (0 = no offset, current behaviour).
+                // Start in Global mode: one number, measurable. PerSession spends three
+                // parameters on an effect that has not yet been measured even once.
+                BracketAnchor = EMALBracketAnchor.Fill;
+                LimitOffsetMode = EMALLimitOffsetMode.Global;
+                LimitOffsetPoints = 0.0;
+                AsiaLimitOffset = 0.0;
+                EuropeLimitOffset = 0.0;
+                UsLimitOffset = 0.0;
                 MaxAccountBalance = 0.0;
+
+                // Daily caps in POINTS of realised P&L. 0 = disabled.
+                MaxDailyProfitPoints = 0.0;
+                MaxDailyLossPoints = 0.0;
 
                 // Dynamic take-profit, OFF by default. A multiplier of 0 disables scaling and
                 // falls back to the fixed TakeProfitPoints, so defaults reproduce the original
@@ -184,21 +263,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EuropeMinimumSlope = 0.75;
                 UsMinimumSlope = 0.75;
 
-                // Sunday entry windows, 18:05 - 24:00 New York time in 30-minute blocks.
-                // OFF by default so the full Sunday-open-to-Friday-close run is unrestricted.
-                RestrictToSundayWindows = false;
-                Sunday1800 = true;
-                Sunday1830 = true;
-                Sunday1900 = true;
-                Sunday1930 = true;
-                Sunday2000 = true;
-                Sunday2030 = true;
-                Sunday2100 = true;
-                Sunday2130 = true;
-                Sunday2200 = true;
-                Sunday2230 = true;
-                Sunday2300 = true;
-                Sunday2330 = true;
 
                 // Blackout around the 08:30 US data release. HHmm, inclusive both ends.
                 BlockNewsWindow = true;
@@ -206,6 +270,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewsBlockStartTime = 828;
                 NewsBlockEndTime = 832;
 
+                ShowInfoPanel = true;
                 EnableFeatureLog = true;
                 FeatureLogPath = @"C:\Users\Administrator\Documents\EMAL_features.csv";
             }
@@ -228,6 +293,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 PrintFillRateSummary();
                 CloseFeatureLog();
+                DisposeInfoBoxOverlay();
             }
         }
 
@@ -329,7 +395,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime ny = ConvertToZone(platformTime, easternZone);
             int nyMinute = ny.Hour * 60 + ny.Minute;
 
-            // 17:00-18:00 ET is the CME maintenance halt.
+            // 17:00-18:30 ET is the maintenance/session-gate halt.
             if (nyMinute >= UsEndMinute && nyMinute < AsiaStartMinute)
                 return -1;
 
@@ -515,6 +581,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 (barOpenTokyo.Hour * 100 + barOpenTokyo.Minute).ToString(CultureInfo.InvariantCulture),
                 SessionName(GetSessionIndex(barOpenRaw)),
                 direction.ToString(CultureInfo.InvariantCulture),
+
+                // Stamped per row so a log file that has accumulated more than one run stays
+                // trivially separable. Reconstructing that split from fill signatures is slow
+                // and lossy on the unpaired rows.
+                EntryOrderType.ToString(),
+                EntryOrderType == EMALEntryOrderType.Limit
+                    ? LimitPriceReference.ToString()
+                    : "n/a",
+
                 N(signalPrice),
                 N(ema[1]),
                 N(slope),
@@ -522,6 +597,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 N(slope - slopePrev),
                 N(GetRequiredSlope(barOpenRaw)),
                 N(atrValue > 0.0 ? Math.Abs(slope) / atrValue : 0.0),
+                N(EntryOrderType == EMALEntryOrderType.Limit ? GetLimitOffsetPoints() : 0.0),
                 N((signalPrice - ema[1]) * direction),
                 N(atrValue),
                 N(takeProfit),
@@ -546,6 +622,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Kept as a field: Position.AveragePrice is already reset by the time the exit fires.
             pendingFillPrice = fillPrice;
             pendingEntryBar = CurrentBar;
+
+            // Excursion tracking starts at the fill and runs until the exit. Both are stored
+            // as positive point distances, matching NinjaTrader's MAE/MFE convention.
+            tradeMaePoints = 0.0;
+            tradeMfePoints = 0.0;
 
             pendingFillFeatures = string.Join(",", new string[]
             {
@@ -574,7 +655,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 exitReason ?? string.Empty,
                 N(profitPoints),
                 profitPoints > 0.0 ? "1" : "0",
-                (CurrentBar - pendingEntryBar).ToString(CultureInfo.InvariantCulture)
+                (CurrentBar - pendingEntryBar).ToString(CultureInfo.InvariantCulture),
+                N(tradeMaePoints),
+                N(tradeMfePoints)
             }));
 
             pendingEntryFeatures = null;
@@ -592,12 +675,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("  entry type          : {0}", EntryOrderType));
             Print(string.Format("  per-session         : {0}   slope mode: {1}",
                 UsePerSessionSettings, SlopeThresholdMode));
-            Print(string.Format("      Asia   18-03    : {0}  slope {1}", AsiaEnabled, AsiaMinimumSlope));
+            Print(string.Format("      Asia   1830-03  : {0}  slope {1}", AsiaEnabled, AsiaMinimumSlope));
             Print(string.Format("      Europe 03-0930  : {0}  slope {1}", EuropeEnabled, EuropeMinimumSlope));
             Print(string.Format("      US     0930-17  : {0}  slope {1}", UsEnabled, UsMinimumSlope));
-            Print(string.Format("  sunday filter       : {0}  (bars blocked: {1})",
-                RestrictToSundayWindows, blockedBarCount));
-            Print(string.Format("  enabled blocks      : {0}", EnabledBlocksSummary()));
+            Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  news blackout       : {0}  {1:0000}-{2:0000}  (bars blocked: {3})",
                 BlockNewsWindow, NewsBlockStartTime, NewsBlockEndTime, newsBlockedBarCount));
             Print(string.Format("  news flatten        : {0}  (positions closed: {1})",
@@ -629,7 +710,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lastTickTime = e.Time;
             lastTickPrice = e.Price;
 
+            TrackExcursion();
             EvaluateEntryCancellation();
+        }
+
+        // Runs on every Last tick while a filled position is open. MAE/MFE are measured from
+        // the actual fill price, so they answer "how far did price move before this resolved" -
+        // which is the input to sizing a Limit Offset.
+        private void TrackExcursion()
+        {
+            if (!EnableFeatureLog
+                || pendingFillFeatures == null
+                || pendingDirection == 0
+                || pendingFillPrice <= 0.0)
+            {
+                return;
+            }
+
+            double excursion = (lastTickPrice - pendingFillPrice) * pendingDirection;
+
+            if (-excursion > tradeMaePoints)
+                tradeMaePoints = -excursion;
+
+            if (excursion > tradeMfePoints)
+                tradeMfePoints = excursion;
         }
 
         private void EvaluateEntryCancellation()
@@ -679,25 +783,195 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 (lastTickTime - activeEntrySubmitTime).TotalSeconds));
         }
 
-        // Grid origin for the 30-minute blocks. The first block is clipped by
-        // SundayWindowStart, so 18:00-18:30 is really 18:05-18:30.
-        private static readonly TimeSpan SundayGridOrigin = new TimeSpan(18, 0, 0);
-        private static readonly TimeSpan SundayWindowStart = new TimeSpan(18, 5, 0);
+        // ---------------- chart info panel ----------------
+
+        // Mirrors IsEntryWindowOpen's decision so the panel reports the same verdict the
+        // strategy acts on, rather than a second implementation that could drift.
+        private string GetTradeGateState()
+        {
+            if (configurationBlocked)
+                return "disabled";
+
+            DateTime raw = GetBarOpenRaw();
+
+            if (IsNewsBlackout(ConvertToEastern(raw)))
+                return "news blackout";
+
+            if (UsePerSessionSettings)
+            {
+                int s = GetSessionIndex(raw);
+
+                if (s < 0 || !IsSessionEnabled(s))
+                    return "session gate";
+            }
+
+            if (dailyProfitLimitReached) return "daily profit cap";
+            if (dailyLossLimitReached) return "daily loss cap";
+            if (maxAccountBalanceLimitReached) return "balance cap";
+
+            return "allow";
+        }
+
+        private List<KeyValuePair<string, string>> BuildInfoLines()
+        {
+            DateTime raw = GetBarOpenRaw();
+            int session = GetSessionIndex(raw);
+            string instrument = Instrument != null && Instrument.MasterInstrument != null
+                ? Instrument.FullName
+                : "-";
+
+            return new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>(
+                    string.Format("EMAL v{0}", GetAddOnVersion()),
+                    string.Empty),
+                new KeyValuePair<string, string>("Contracts:", Contracts.ToString(CultureInfo.InvariantCulture)),
+                new KeyValuePair<string, string>("Contract:", instrument),
+                new KeyValuePair<string, string>("Slope:", GetRequiredSlope(raw).ToString("0.##", CultureInfo.InvariantCulture)),
+                new KeyValuePair<string, string>("EMA:", EmaPeriod.ToString(CultureInfo.InvariantCulture)),
+                new KeyValuePair<string, string>("TP:", TakeProfitPoints.ToString("0.##", CultureInfo.InvariantCulture)),
+                new KeyValuePair<string, string>("SL:", StopLossPoints.ToString("0.##", CultureInfo.InvariantCulture)),
+                new KeyValuePair<string, string>("Trade:", GetTradeGateState()),
+                new KeyValuePair<string, string>("Session:", SessionName(session)),
+                new KeyValuePair<string, string>(InfoFooter, string.Empty)
+            };
+        }
+
+        private void UpdateInfoText()
+        {
+            if (!ShowInfoPanel || ChartControl == null || ChartControl.Dispatcher == null)
+                return;
+
+            if (State != State.Realtime && State != State.Historical)
+                return;
+
+            var lines = BuildInfoLines();
+            ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines));
+        }
+
+        private void RenderInfoBoxOverlay(List<KeyValuePair<string, string>> lines)
+        {
+            if (!EnsureInfoBoxOverlay() || infoBoxRowsPanel == null)
+                return;
+
+            infoBoxRowsPanel.Children.Clear();
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                bool edge = i == 0 || i == lines.Count - 1;
+
+                var text = new TextBlock
+                {
+                    FontFamily = new FontFamily("Segoe UI"),
+                    FontSize = edge ? 15 : 14,
+                    FontWeight = edge ? FontWeights.SemiBold : FontWeights.Normal,
+                    TextAlignment = edge ? TextAlignment.Center : TextAlignment.Left,
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
+
+                text.Inlines.Add(new Run(lines[i].Key)
+                {
+                    Foreground = edge ? InfoHeaderTextBrush : InfoLabelBrush
+                });
+
+                if (!string.IsNullOrEmpty(lines[i].Value))
+                {
+                    text.Inlines.Add(new Run(" ") { Foreground = InfoLabelBrush });
+                    text.Inlines.Add(new Run(lines[i].Value) { Foreground = InfoValueBrush });
+                }
+
+                infoBoxRowsPanel.Children.Add(new Border
+                {
+                    Background = edge
+                        ? InfoHeaderFooterGradientBrush
+                        : (i % 2 == 0 ? InfoBodyEvenBrush : InfoBodyOddBrush),
+                    Padding = new Thickness(6, 2, 6, 2),
+                    Child = text
+                });
+            }
+        }
+
+        private bool EnsureInfoBoxOverlay()
+        {
+            if (ChartControl == null)
+                return false;
+
+            if (infoBoxContainer != null && infoBoxRowsPanel != null)
+                return true;
+
+            var host = ChartControl.Parent as System.Windows.Controls.Panel;
+
+            if (host == null)
+                return false;
+
+            infoBoxRowsPanel = new StackPanel { Orientation = Orientation.Vertical };
+
+            infoBoxContainer = new Border
+            {
+                Child = infoBoxRowsPanel,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(5, 8, 8, 37),
+                Background = Brushes.Transparent
+            };
+
+            host.Children.Add(infoBoxContainer);
+            System.Windows.Controls.Panel.SetZIndex(infoBoxContainer, int.MaxValue);
+            return true;
+        }
+
+        private void DisposeInfoBoxOverlay()
+        {
+            try
+            {
+                if (ChartControl == null || ChartControl.Dispatcher == null)
+                {
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                    return;
+                }
+
+                ChartControl.Dispatcher.InvokeAsync(() =>
+                {
+                    if (infoBoxContainer != null)
+                    {
+                        var parent = infoBoxContainer.Parent as System.Windows.Controls.Panel;
+
+                        if (parent != null)
+                            parent.Children.Remove(infoBoxContainer);
+                    }
+
+                    infoBoxRowsPanel = null;
+                    infoBoxContainer = null;
+                });
+            }
+            catch
+            {
+                infoBoxRowsPanel = null;
+                infoBoxContainer = null;
+            }
+        }
+
+        private string GetAddOnVersion()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            Version version = assembly.GetName().Version;
+            return version != null ? version.ToString() : "0.0.0.0";
+        }
 
         private bool IsEntryWindowOpen()
         {
             DateTime barOpenRaw = GetBarOpenRaw();
             DateTime barOpen = ConvertToEastern(barOpenRaw);
 
-            // News blackout is checked first and applies on every day, independent of the
-            // Sunday filter.
+            // News blackout applies on every day, independent of the session gate.
             if (IsNewsBlackout(barOpen))
             {
                 newsBlockedBarCount++;
                 return false;
             }
 
-            // Session gate. Independent of the Sunday filter; both must pass.
             if (UsePerSessionSettings)
             {
                 int session = GetSessionIndex(barOpenRaw);
@@ -706,13 +980,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return false;
             }
 
-            if (!RestrictToSundayWindows)
-                return true;
-
-            if (barOpen.DayOfWeek != DayOfWeek.Sunday)
-                return false;
-
-            return IsHalfHourEnabled(barOpen.TimeOfDay);
+            return true;
         }
 
         private void FlattenForNews()
@@ -750,67 +1018,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return barTime >= start && barTime <= end;
         }
 
-        // Maps a time of day onto one of the twelve 30-minute blocks between 18:00 and 24:00.
-        // Blocks are half-open: [start, start+30min), so 18:30 belongs to the 18:30 block.
-        private bool IsHalfHourEnabled(TimeSpan timeOfDay)
-        {
-            // Nothing before 18:05, even though the block grid is anchored at 18:00.
-            if (timeOfDay < SundayWindowStart)
-                return false;
 
-            int block = (int)((timeOfDay - SundayGridOrigin).TotalMinutes / 30.0);
-
-            switch (block)
-            {
-                case 0: return Sunday1800;
-                case 1: return Sunday1830;
-                case 2: return Sunday1900;
-                case 3: return Sunday1930;
-                case 4: return Sunday2000;
-                case 5: return Sunday2030;
-                case 6: return Sunday2100;
-                case 7: return Sunday2130;
-                case 8: return Sunday2200;
-                case 9: return Sunday2230;
-                case 10: return Sunday2300;
-                case 11: return Sunday2330;
-                default: return false;
-            }
-        }
-
-        private string EnabledBlocksSummary()
-        {
-            string[] labels =
-            {
-                "18:05", "18:30", "19:00", "19:30", "20:00", "20:30",
-                "21:00", "21:30", "22:00", "22:30", "23:00", "23:30"
-            };
-
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-
-            for (int i = 0; i < labels.Length; i++)
-            {
-                // Probe inside each block; block 0 must be probed at 18:05, not 18:00.
-                TimeSpan probe = SundayGridOrigin + TimeSpan.FromMinutes(30 * i);
-
-                if (probe < SundayWindowStart)
-                    probe = SundayWindowStart;
-
-                if (!IsHalfHourEnabled(probe))
-                    continue;
-
-                if (sb.Length > 0)
-                    sb.Append(", ");
-
-                sb.Append(labels[i]);
-            }
-
-            return sb.Length == 0 ? "(none)" : sb.ToString();
-        }
 
         protected override void OnBarUpdate()
         {
             if (BarsInProgress != 0)
+                return;
+
+            // Wrong chart period or instrument: stay loaded, submit nothing.
+            if (configurationBlocked)
                 return;
 
             // Evaluate on every tick so unrealized profit can flatten an open position
@@ -822,6 +1038,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             ClearQueuedEntry();
+
+            // Roll the daily accumulator before any gate reads it.
+            RollTradingDayIfNeeded();
+
+            UpdateInfoText();
+
+            if (IsDailyProfitBlocked() || IsDailyLossBlocked())
+                return;
 
             // Force-flat for the news blackout. This is the ONLY place the strategy closes a
             // position itself; every other exit is left to the stop and target. Runs before the
@@ -965,7 +1189,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             // OnOrderUpdate can re-enter this method after an asynchronous cancellation.
             // Recheck the account latch here so no queued entry can escape the main gate.
-            if (IsAccountBalanceBlocked())
+            if (configurationBlocked
+                || IsAccountBalanceBlocked()
+                || IsDailyProfitBlocked()
+                || IsDailyLossBlocked())
             {
                 ClearQueuedEntry();
                 return;
@@ -984,6 +1211,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double takeProfit = queuedTakeProfitPoints;
             double stopLoss = queuedStopLossPoints > 0.0 ? queuedStopLossPoints : StopLossPoints;
             double signalPrice = queuedSignalPrice;
+            double bracketReference = queuedBracketReference;
             ClearQueuedEntry();
 
             // Context the cancellation rules need while the order is live.
@@ -994,7 +1222,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             string entrySignal = direction > 0 ? LongEntrySignal : ShortEntrySignal;
 
-            BeginProtectionTracking(entrySignal, takeProfit, stopLoss);
+            BeginProtectionTracking(entrySignal, takeProfit, stopLoss, bracketReference);
 
             CaptureEntryFeatures(direction, signalPrice, takeProfit, stopLoss);
 
@@ -1052,7 +1280,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (price <= 0.0 || double.IsNaN(price))
                 price = Close[0];
 
+            // The UNOFFSET reference. When BracketAnchor is Reference the stop and target are
+            // measured from here rather than from the fill, so an offset entry keeps the exact
+            // barrier prices the un-offset trade would have had - and therefore the same outcome.
+            queuedBracketReference = Instrument.MasterInstrument.RoundToTickSize(price);
+
+            // Offset is applied in the FAVOURABLE direction: below the reference for longs,
+            // above it for shorts. Positive = more passive (better price, lower fill rate).
+            // Negative chases into the move (worse price, higher fill rate).
+            price -= GetLimitOffsetPoints() * direction;
+
             return Instrument.MasterInstrument.RoundToTickSize(price);
+        }
+
+        private double GetLimitOffsetPoints()
+        {
+            if (LimitOffsetMode != EMALLimitOffsetMode.PerSession)
+                return LimitOffsetPoints;
+
+            switch (GetSessionIndex(GetBarOpenRaw()))
+            {
+                case 0: return AsiaLimitOffset;
+                case 1: return EuropeLimitOffset;
+                case 2: return UsLimitOffset;
+                default: return LimitOffsetPoints;
+            }
         }
 
         private void CancelEntryOrderIfActive()
@@ -1077,13 +1329,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             entryCancelPending = false;
         }
 
-        private void BeginProtectionTracking(string entrySignal, double takeProfitPoints, double stopLossPoints)
+        private void BeginProtectionTracking(string entrySignal, double takeProfitPoints, double stopLossPoints,
+            double bracketReference)
         {
             protectedEntrySignal = entrySignal ?? string.Empty;
             activeTakeProfitPoints = Math.Max(TickSize, takeProfitPoints);
             activeStopLossPoints = Math.Max(TickSize, stopLossPoints);
+            activeBracketReference = bracketReference;
             entryFillValue = 0.0;
             entryFilledQuantity = 0;
+            openExitValue = 0.0;
+            openExitQuantity = 0;
             desiredProtectionTargetPrice = 0.0;
             desiredProtectionQuantity = 0;
             protectiveStopOrder = null;
@@ -1131,16 +1387,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             queuedDirection = 0;
             queuedLimitPrice = 0.0;
+            queuedBracketReference = 0.0;
             queuedTakeProfitPoints = 0.0;
             queuedStopLossPoints = 0.0;
             queuedSignalPrice = 0.0;
             queuedEntryBar = -1;
         }
 
+        // Refuses to trade rather than throwing. An unhandled exception disables the strategy
+        // with a message that is easy to miss; this leaves it loaded, logs the reason plainly,
+        // and latches configurationBlocked so no entry can ever be submitted.
         private void ValidateChart()
         {
+            configurationBlocked = false;
+
             if (BarsPeriod.BarsPeriodType != BarsPeriodType.Minute || BarsPeriod.Value != 1)
-                throw new InvalidOperationException("EMAL must be applied to a 1-minute chart.");
+            {
+                configurationBlocked = true;
+                Print("EMAL DISABLED: requires a 1-minute chart. Current series is "
+                    + BarsPeriod.Value + " " + BarsPeriod.BarsPeriodType
+                    + ". No orders will be submitted.");
+            }
 
             string instrumentName = Instrument == null || Instrument.MasterInstrument == null
                 ? string.Empty
@@ -1149,7 +1416,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!string.Equals(instrumentName, "NQ", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(instrumentName, "MNQ", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("EMAL supports NQ and MNQ only.");
+                configurationBlocked = true;
+                Print("EMAL DISABLED: supports NQ and MNQ only. Current instrument is '"
+                    + instrumentName + "'. No orders will be submitted.");
             }
         }
 
@@ -1236,6 +1505,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 entryOrder = null;
                 filledCount++;
+
+                // Tracked outside the feature-log gate: the daily cap must work with
+                // logging off.
+                openEntryPrice = averageFillPrice;
+                openEntryDirection = order.Name == LongEntrySignal ? 1 : -1;
+
                 CaptureFillFeatures(averageFillPrice, time);
                 ClearActiveEntryContext();
                 ClearQueuedEntry();
@@ -1275,10 +1550,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return;
 
                 if (!string.Equals(protectedEntrySignal, orderName, StringComparison.Ordinal))
-                    BeginProtectionTracking(orderName, TakeProfitPoints, StopLossPoints);
+                    BeginProtectionTracking(orderName, TakeProfitPoints, StopLossPoints, 0.0);
 
                 entryFillValue += price * executionQuantity;
                 entryFilledQuantity += executionQuantity;
+                openEntryPrice = entryFillValue / entryFilledQuantity;
+                openEntryDirection = orderName == LongEntrySignal ? 1 : -1;
 
                 if (maxAccountBalanceLimitReached)
                 {
@@ -1302,6 +1579,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 bool positionIsFlat = marketPosition == MarketPosition.Flat
                     || Position.MarketPosition == MarketPosition.Flat;
+
+                RecordRealizedPoints(price, quantity, positionIsFlat);
 
                 if (EnableFeatureLog && positionIsFlat)
                     CaptureExitAndWrite(price, time, orderName);
@@ -1328,12 +1607,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double stopDistance = Math.Max(TickSize,
                 activeStopLossPoints > 0.0 ? activeStopLossPoints : StopLossPoints);
             double targetDistance = Math.Max(TickSize, activeTakeProfitPoints);
+
+            // Fill      - barriers measured from the actual fill (original behaviour).
+            // Reference - barriers measured from the UNOFFSET limit price, so an offset entry
+            //             lands on exactly the barrier prices the un-offset trade would have
+            //             had. The trade resolves identically and the offset is pure gain.
+            //             Falls back to the fill if no reference was captured (market entries).
+            double anchor = BracketAnchor == EMALBracketAnchor.Reference && activeBracketReference > 0.0
+                ? activeBracketReference
+                : averageEntryPrice;
+
             double stopPrice = positionDirection == MarketPosition.Long
-                ? averageEntryPrice - stopDistance
-                : averageEntryPrice + stopDistance;
+                ? anchor - stopDistance
+                : anchor + stopDistance;
             double targetPrice = positionDirection == MarketPosition.Long
-                ? averageEntryPrice + targetDistance
-                : averageEntryPrice - targetDistance;
+                ? anchor + targetDistance
+                : anchor - targetDistance;
 
             stopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
             targetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
@@ -1539,6 +1828,121 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             CancelOrder(entryOrder);
         }
 
+        // CME trading day: 18:00 ET starts the NEXT day's session, so anything at or after
+        // 18:00 belongs to tomorrow. Keeps an overnight session in one bucket.
+        private DateTime GetTradingDay(DateTime easternTime)
+        {
+            return easternTime.Hour >= 18
+                ? easternTime.Date.AddDays(1)
+                : easternTime.Date;
+        }
+
+        private void RollTradingDayIfNeeded()
+        {
+            DateTime day = GetTradingDay(ConvertToEastern(GetBarOpenRaw()));
+
+            if (day == currentTradingDay)
+                return;
+
+            if (currentTradingDay != DateTime.MinValue
+                && (MaxDailyProfitPoints > 0.0 || MaxDailyLossPoints > 0.0))
+            {
+                Print(string.Format("{0:yyyy-MM-dd} | day closed | realised {1:F2} pts | profit cap {2} | loss cap {3}",
+                    currentTradingDay, dailyRealizedPoints,
+                    dailyProfitLimitReached ? "HIT" : "-",
+                    dailyLossLimitReached ? "HIT" : "-"));
+            }
+
+            currentTradingDay = day;
+            dailyRealizedPoints = 0.0;
+            dailyProfitLimitReached = false;
+            dailyLossLimitReached = false;
+        }
+
+        // Daily loss cap. MaxDailyLossPoints is entered as a POSITIVE number of points.
+        // Blocks new entries only; an open position is left to its stop and target.
+        private bool IsDailyLossBlocked()
+        {
+            if (MaxDailyLossPoints <= 0.0)
+                return false;
+
+            if (dailyLossLimitReached)
+                return true;
+
+            if (dailyRealizedPoints > -Math.Abs(MaxDailyLossPoints))
+                return false;
+
+            dailyLossLimitReached = true;
+            ClearQueuedEntry();
+            CancelEntryOrderIfActive();
+
+            Print(string.Format(
+                "{0:yyyy-MM-dd} | DAILY LOSS LIMIT | realised {1:F2} pts <= -{2:F2} | no new entries today",
+                currentTradingDay, dailyRealizedPoints, Math.Abs(MaxDailyLossPoints)));
+
+            return true;
+        }
+
+        // Blocks NEW entries only. An open position is left to its stop and target, exactly
+        // like the session filter.
+        private bool IsDailyProfitBlocked()
+        {
+            if (MaxDailyProfitPoints <= 0.0)
+                return false;
+
+            if (dailyProfitLimitReached)
+                return true;
+
+            if (dailyRealizedPoints < MaxDailyProfitPoints)
+                return false;
+
+            dailyProfitLimitReached = true;
+            ClearQueuedEntry();
+            CancelEntryOrderIfActive();
+
+            Print(string.Format(
+                "{0:yyyy-MM-dd} | DAILY PROFIT LIMIT | realised {1:F2} pts >= {2:F2} | no new entries today",
+                currentTradingDay, dailyRealizedPoints, MaxDailyProfitPoints));
+
+            return true;
+        }
+
+        private void RecordRealizedPoints(double exitPrice, int exitQuantity, bool positionIsFlat)
+        {
+            if (openEntryDirection == 0 || openEntryPrice <= 0.0)
+            {
+                if (positionIsFlat)
+                {
+                    openExitValue = 0.0;
+                    openExitQuantity = 0;
+                }
+
+                return;
+            }
+
+            int filledQuantity = Math.Abs(exitQuantity);
+
+            if (filledQuantity > 0)
+            {
+                openExitValue += exitPrice * filledQuantity;
+                openExitQuantity += filledQuantity;
+            }
+
+            if (!positionIsFlat)
+                return;
+
+            if (openExitQuantity > 0)
+            {
+                double averageExitPrice = openExitValue / openExitQuantity;
+                dailyRealizedPoints += (averageExitPrice - openEntryPrice) * openEntryDirection;
+            }
+
+            openEntryDirection = 0;
+            openEntryPrice = 0.0;
+            openExitValue = 0.0;
+            openExitQuantity = 0;
+        }
+
         private bool IsAccountBalanceBlocked()
         {
             if (MaxAccountBalance <= 0.0)
@@ -1613,6 +2017,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             protectedEntrySignal = string.Empty;
             activeTakeProfitPoints = 0.0;
             activeStopLossPoints = 0.0;
+            activeBracketReference = 0.0;
             entryFillValue = 0.0;
             entryFilledQuantity = 0;
             desiredProtectionTargetPrice = 0.0;
@@ -1625,6 +2030,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Max Daily Profit (points)", Description = "Once realised profit for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET (CME trading day). 0 disables.", GroupName = "Risk", Order = 1)]
+        public double MaxDailyProfitPoints { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Max Daily Loss (points)", Description = "Enter as a POSITIVE number. Once realised loss for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET. 0 disables.", GroupName = "Risk", Order = 2)]
+        public double MaxDailyLossPoints { get; set; }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
         [Display(Name = "EMA Period", Description = "EMA period evaluated on the one-minute chart.", GroupName = "Parameters", Order = 0)]
@@ -1653,6 +2066,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [NinjaScriptProperty]
         [Display(Name = "Limit Price Reference", Description = "Where a limit entry is placed. BidAsk = passive, bid for longs and ask for shorts. Open = this bar's open. Close = previous bar's close. Ignored when Entry Order Type is Market.", GroupName = "Parameters", Order = 6)]
         public EMALLimitPriceReference LimitPriceReference { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bracket Anchor", Description = "Fill: stop and target are measured from the actual fill (original behaviour). Reference: measured from the UNOFFSET limit price, so an offset entry keeps the exact barrier prices the un-offset trade would have had - identical outcome, offset is pure gain. Only matters when Limit Offset is non-zero.", GroupName = "Limit Offset", Order = 0)]
+        public EMALBracketAnchor BracketAnchor { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Limit Offset Mode", Description = "Global uses one offset everywhere. PerSession uses the three session values below. Start with Global.", GroupName = "Limit Offset", Order = 1)]
+        public EMALLimitOffsetMode LimitOffsetMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Limit Offset (points)", Description = "Shifts the limit entry in your favour: below the reference for longs, above for shorts. Positive = more passive, better price, fewer fills. Negative chases the move. 0 = off.", GroupName = "Limit Offset", Order = 2)]
+        public double LimitOffsetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Asia Limit Offset", Description = "Used only when Limit Offset Mode is PerSession.", GroupName = "Limit Offset", Order = 3)]
+        public double AsiaLimitOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Europe Limit Offset", Description = "Used only when Limit Offset Mode is PerSession.", GroupName = "Limit Offset", Order = 4)]
+        public double EuropeLimitOffset { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "US Limit Offset", Description = "Used only when Limit Offset Mode is PerSession.", GroupName = "Limit Offset", Order = 5)]
+        public double UsLimitOffset { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Take Profit Mode", Description = "Fixed uses Take Profit (points). Atr and Slope scale the target; each is disabled when its multiplier is 0.", GroupName = "Take Profit Scaling", Order = 0)]
@@ -1707,7 +2144,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double CancelIfMovedPoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Per-Session Settings", Description = "Enable the three-session split (Asia 18:00-03:00, Europe 03:00-09:30, US 09:30-17:00). When off, the global Minimum EMA Slope applies to every hour.", GroupName = "Sessions", Order = 0)]
+        [Display(Name = "Use Per-Session Settings", Description = "Enable the three-session split (Asia 18:30-03:00, Europe 03:00-09:30, US 09:30-17:00). When off, the global Minimum EMA Slope applies to every hour.", GroupName = "Sessions", Order = 0)]
         public bool UsePerSessionSettings { get; set; }
 
         [NinjaScriptProperty]
@@ -1723,7 +2160,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double MaximumSlopePoints { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 18:00-03:00 Enabled", GroupName = "Sessions", Order = 1)]
+        [Display(Name = "Asia 18:30-03:00 Enabled", GroupName = "Sessions", Order = 1)]
         public bool AsiaEnabled { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -1746,60 +2183,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "US Min Slope", Description = "Slope threshold for the US cash session.", GroupName = "Sessions", Order = 6)]
         public double UsMinimumSlope { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Restrict To Sunday Windows", Description = "Master switch. When on, new entries are allowed only on Sunday, from 18:05, and only inside the enabled blocks below. Exits are never affected.", GroupName = "Sunday Entry Windows", Order = 0)]
-        public bool RestrictToSundayWindows { get; set; }
+
+
+
+
+
+
+
+
+
+
+
+
 
         [NinjaScriptProperty]
-        [Display(Name = "18:05 - 18:30", GroupName = "Sunday Entry Windows", Order = 1)]
-        public bool Sunday1800 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "18:30 - 19:00", GroupName = "Sunday Entry Windows", Order = 2)]
-        public bool Sunday1830 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "19:00 - 19:30", GroupName = "Sunday Entry Windows", Order = 3)]
-        public bool Sunday1900 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "19:30 - 20:00", GroupName = "Sunday Entry Windows", Order = 4)]
-        public bool Sunday1930 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "20:00 - 20:30", GroupName = "Sunday Entry Windows", Order = 5)]
-        public bool Sunday2000 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "20:30 - 21:00", GroupName = "Sunday Entry Windows", Order = 6)]
-        public bool Sunday2030 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "21:00 - 21:30", GroupName = "Sunday Entry Windows", Order = 7)]
-        public bool Sunday2100 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "21:30 - 22:00", GroupName = "Sunday Entry Windows", Order = 8)]
-        public bool Sunday2130 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "22:00 - 22:30", GroupName = "Sunday Entry Windows", Order = 9)]
-        public bool Sunday2200 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "22:30 - 23:00", GroupName = "Sunday Entry Windows", Order = 10)]
-        public bool Sunday2230 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "23:00 - 23:30", GroupName = "Sunday Entry Windows", Order = 11)]
-        public bool Sunday2300 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "23:30 - 24:00", GroupName = "Sunday Entry Windows", Order = 12)]
-        public bool Sunday2330 { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Block News Window", Description = "Block new entries across a fixed daily time range, applied on every day regardless of the Sunday filter.", GroupName = "News Blackout", Order = 0)]
+        [Display(Name = "Block News Window", Description = "Block new entries across a fixed daily time range, applied every day independently of the session gate.", GroupName = "News Blackout", Order = 0)]
         public bool BlockNewsWindow { get; set; }
 
         [NinjaScriptProperty]
@@ -1813,6 +2211,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, 2359), NinjaScriptProperty]
         [Display(Name = "News Block End (HHmm)", Description = "End of the blackout as HHmm. 832 = 08:32. Inclusive, so the 08:32 bar is also blocked.", GroupName = "News Blackout", Order = 3)]
         public int NewsBlockEndTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show Info Panel", Description = "Draw the strategy status panel in the lower-left of the chart.", GroupName = "Logging", Order = 2)]
+        public bool ShowInfoPanel { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Logging", Description = "Write one CSV row per completed trade containing the entry context: slope, ATR, TP/ATR, the previous three bars OHLCV, fill delay and outcome. Turn off to disable all file writing.", GroupName = "Logging", Order = 0)]
@@ -1846,6 +2248,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         Fixed,
         Atr,
         TpMultiple
+    }
+
+    public enum EMALBracketAnchor
+    {
+        Fill,
+        Reference
+    }
+
+    public enum EMALLimitOffsetMode
+    {
+        Global,
+        PerSession
     }
 
     public enum EMALLimitPriceReference
