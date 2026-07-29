@@ -134,6 +134,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int cancelBarEndCount;
         private int blockedBarCount;
         private int newsBlockedBarCount;
+        private int bucketBlockedBarCount;
+
+        // Time stop ("horizontal filter"). Fill time is tracked outside the feature-log gate
+        // so the rule works with logging off.
+        private DateTime openEntryTime = DateTime.MinValue;
+        private int timeStopCount;
         private int newsFlattenCount;
 
         // Feature logging. The entry-side fragment is built when the order is submitted, the
@@ -219,26 +225,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxAccountBalance = 0.0;
 
                 // Daily caps in POINTS of realised P&L. 0 = disabled.
+                // BOTH TESTED AND REJECTED on 78 sessions - days that go down recover
+                // (down 80 pts -> rest of day averages +267) and days that go up keep going
+                // (up 300 pts -> rest of day averages +134). Leave at 0.
                 MaxDailyProfitPoints = 0.0;
                 MaxDailyLossPoints = 0.0;
 
-                // Dynamic take-profit, OFF by default. A multiplier of 0 disables scaling and
-                // falls back to the fixed TakeProfitPoints, so defaults reproduce the original
-                // behaviour exactly regardless of TakeProfitMode.
-                TakeProfitMode = EMALTakeProfitMode.Fixed;
-                AtrPeriod = 14;
-                AtrTakeProfitMultiplier = 0.0;
-                SlopeTakeProfitMultiplier = 0.0;
-                MinimumTakeProfitPoints = 1.0;
-                MaximumTakeProfitPoints = 30.0;
+                // Time stop / horizontal filter. 0 = disabled.
+                TimeStopSeconds = 0.0;
+                TimeStopOnlyWhenLosing = true;
+                TimeStopLossPoints = 0.0;
 
-                // Adaptive stop, OFF by default. Multiplier 0 disables scaling and falls back
-                // to the fixed StopLossPoints, so defaults reproduce current behaviour.
-                StopLossMode = EMALStopLossMode.Fixed;
-                StopAtrMultiplier = 0.0;
-                StopTpMultiplier = 0.0;
-                MinimumStopLossPoints = 2.0;
-                MaximumStopLossPoints = 60.0;
+                // ATR is retained for the feature log only; all TP/slope scaling removed in v14.
+                AtrPeriod = 14;
+
 
                 // Limit-entry cancellation, OFF by default (0 = disabled). With both off the
                 // only rule is the original one: cancel at the open of the next bar.
@@ -253,11 +253,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 AsiaEnabled = true;
                 EuropeEnabled = true;
                 UsEnabled = true;
-                // Points reproduces current behaviour exactly. AtrRatio reinterprets the same
-                // three slope values as multiples of ATR instead of absolute points.
-                SlopeThresholdMode = EMALSlopeThresholdMode.Points;
-                MinimumSlopePoints = 0.10;
-                MaximumSlopePoints = 25.0;
 
                 AsiaMinimumSlope = 0.75;
                 EuropeMinimumSlope = 0.75;
@@ -270,6 +265,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewsBlockStartTime = 828;
                 NewsBlockEndTime = 832;
 
+                UseBucketFilter = true;
                 ShowInfoPanel = true;
                 EnableFeatureLog = true;
                 FeatureLogPath = @"C:\Users\Administrator\Documents\EMAL_features.csv";
@@ -451,37 +447,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        // The entry gate, in whichever units SlopeThresholdMode selects.
-        //
-        // Points  - the configured value is an absolute points-per-minute threshold. When
-        //           volatility rises, EMA slope rises with it, so a fixed threshold becomes
-        //           easier to clear and trade count inflates in exactly the regimes where the
-        //           marginal setups are weakest.
-        // AtrRatio- the configured value is a RATIO of ATR. The effective points threshold
-        //           scales with volatility, holding selectivity roughly constant across
-        //           regimes and stabilising trade count.
-        //
-        // Measured on the Apr-Jul 2026 sample: Test-half volatility ran 1.34x Train, and the
-        // fixed gate admitted 47% more trades per day (287 -> 421) at 39% lower gross per
-        // trade. slope/ATR is the direct fix for that mechanism.
+        // The entry gate. AtrRatio scaling was tested and REJECTED (brief v2.3 3.4): at matched
+        // selectivity Points won on both expectancy and drawdown. Mode removed in v14.
         private double GetRequiredSlope(DateTime platformTime)
         {
-            double configured = GetConfiguredSlope(platformTime);
-
-            if (SlopeThresholdMode != EMALSlopeThresholdMode.AtrRatio)
-                return configured;
-
-            double atrValue = atr[1];
-
-            // A non-positive or unformed ATR would disable the gate entirely; fall back.
-            if (atrValue <= 0.0 || double.IsNaN(atrValue))
-                return configured;
-
-            double points = configured * atrValue;
-            double floor = Math.Min(MinimumSlopePoints, MaximumSlopePoints);
-            double ceiling = Math.Max(MinimumSlopePoints, MaximumSlopePoints);
-
-            return Math.Min(ceiling, Math.Max(floor, points));
+            return GetConfiguredSlope(platformTime);
         }
 
         private static string N(double v)
@@ -673,12 +643,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             Print("================ EMAL fill rate ================");
             Print(string.Format("  entry type          : {0}", EntryOrderType));
-            Print(string.Format("  per-session         : {0}   slope mode: {1}",
-                UsePerSessionSettings, SlopeThresholdMode));
+            Print(string.Format("  per-session         : {0}", UsePerSessionSettings));
             Print(string.Format("      Asia   1830-03  : {0}  slope {1}", AsiaEnabled, AsiaMinimumSlope));
             Print(string.Format("      Europe 03-0930  : {0}  slope {1}", EuropeEnabled, EuropeMinimumSlope));
             Print(string.Format("      US     0930-17  : {0}  slope {1}", UsEnabled, UsMinimumSlope));
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
+            Print(string.Format("  bucket filter       : {0}  (bars blocked: {1})",
+                UseBucketFilter, bucketBlockedBarCount));
+            Print(string.Format("  time stop           : {0}s  onlyWhenLosing={1} thresh={2}  (fired: {3})",
+                TimeStopSeconds, TimeStopOnlyWhenLosing, TimeStopLossPoints, timeStopCount));
             Print(string.Format("  news blackout       : {0}  {1:0000}-{2:0000}  (bars blocked: {3})",
                 BlockNewsWindow, NewsBlockStartTime, NewsBlockEndTime, newsBlockedBarCount));
             Print(string.Format("  news flatten        : {0}  (positions closed: {1})",
@@ -711,6 +684,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lastTickPrice = e.Price;
 
             TrackExcursion();
+            EvaluateTimeStop();
             EvaluateEntryCancellation();
         }
 
@@ -960,6 +934,52 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return version != null ? version.ToString() : "0.0.0.0";
         }
 
+        // Allowed 30-minute entry buckets, indexed from 00:00 ET in 30-minute steps
+        // (0 = 00:00, 1 = 00:30, ... 47 = 23:30). Hardcoded by design - this is a
+        // research result, not a user setting.
+        //
+        // Derived from 78 sessions of NinjaTrader playback, Apr 26 - Jul 24 2026
+        // (28,325 trades), keeping buckets whose trade-level t-statistic exceeds 0.5.
+        // Keeps 33 of 46 populated buckets and 72% of trades.
+        //
+        // Blocked: 02:30 03:00 03:30 04:00 04:30 05:30 06:00 07:30 14:30 16:30 18:00
+        //          22:00 23:00
+        // Eight of the thirteen fall in 02:30-06:00, the thin-liquidity overnight
+        // stretch that has been the weakest region in every cut of the data.
+        //
+        // Out-of-sample evidence (interleaved split): 85% of profit retained, max
+        // intraday drawdown halved, net/maxIDD 12.9 -> 21.9. The sequential split
+        // showed a larger profit cost, so this is a RISK-REDUCTION setting, not a
+        // profit-maximising one. See EMAL_Analysis_Plan.md 0c.
+        private static readonly bool[] AllowedBuckets = BuildAllowedBuckets(new[]
+        {
+            0, 1, 2, 3, 4, 10, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 30, 31, 32, 37, 38, 39, 40, 41, 42, 43, 45, 47
+        });
+
+        private static bool[] BuildAllowedBuckets(int[] allowed)
+        {
+            var map = new bool[48];
+
+            for (int i = 0; i < allowed.Length; i++)
+            {
+                if (allowed[i] >= 0 && allowed[i] < 48)
+                    map[allowed[i]] = true;
+            }
+
+            return map;
+        }
+
+        private bool IsBucketAllowed(DateTime easternTime)
+        {
+            if (!UseBucketFilter)
+                return true;
+
+            int bucket = (easternTime.Hour * 60 + easternTime.Minute) / 30;
+
+            return bucket >= 0 && bucket < AllowedBuckets.Length && AllowedBuckets[bucket];
+        }
+
         private bool IsEntryWindowOpen()
         {
             DateTime barOpenRaw = GetBarOpenRaw();
@@ -980,7 +1000,60 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return false;
             }
 
+            if (!IsBucketAllowed(barOpen))
+            {
+                bucketBlockedBarCount++;
+                return false;
+            }
+
             return true;
+        }
+
+        // Time stop / "horizontal filter".
+        //
+        // A trade that has not resolved quickly is disproportionately heading for the stop.
+        // Measured on 78 sessions of playback, among trades still open at N seconds the
+        // eventual win rate falls well below the 81.8% breakeven:
+        //     10s -> 74.6%   15s -> 72.0%   30s -> 67.6%   60s -> 63.4%
+        // Winners resolve in a median 10s; losers take 84s.
+        //
+        // Fires only when the trade is UNDERWATER by at least TimeStopLossPoints. Trades that
+        // are grinding toward target are left alone: among winners still open at 60s, mean
+        // adverse excursion was 9.32 pts, so a bare sign test would cut many eventual winners.
+        //
+        // Runs on every Last tick. Exits at market through the normal terminal-exit path so
+        // the protective bracket is cancelled with it.
+        private void EvaluateTimeStop()
+        {
+            if (TimeStopSeconds <= 0.0
+                || terminalExitPending
+                || openEntryDirection == 0
+                || openEntryPrice <= 0.0
+                || openEntryTime == DateTime.MinValue
+                || lastTickTime == DateTime.MinValue
+                || Position.MarketPosition == MarketPosition.Flat)
+            {
+                return;
+            }
+
+            double heldSeconds = (lastTickTime - openEntryTime).TotalSeconds;
+
+            if (heldSeconds < TimeStopSeconds)
+                return;
+
+            double unrealized = (lastTickPrice - openEntryPrice) * openEntryDirection;
+
+            if (TimeStopOnlyWhenLosing && unrealized > -Math.Abs(TimeStopLossPoints))
+                return;
+
+            timeStopCount++;
+
+            Print(string.Format(
+                "{0} | TIME STOP | held {1:F1}s unrealized {2:F2} pts | {3}",
+                lastTickTime, heldSeconds, unrealized,
+                openEntryDirection > 0 ? "LONG" : "SHORT"));
+
+            TrySubmitTerminalExit("TimeStop", protectedEntrySignal);
         }
 
         private void FlattenForNews()
@@ -1107,10 +1180,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             queuedEntryBar = CurrentBar;
             signalCount++;
 
-            // Snapshot the target at signal time so a requeued entry cannot pick up a
-            // different ATR/slope reading than the bar that generated the signal.
-            queuedTakeProfitPoints = ComputeTakeProfitPoints(completedEmaSlope);
-            queuedStopLossPoints = ComputeStopLossPoints(queuedTakeProfitPoints);
+            // All bracket scaling (TP Atr/Slope 3.6, SL Atr 3.7) was tested and REJECTED:
+            // varying the bracket per-trade destroys edge. Fixed distances only. The snapshot
+            // plumbing is retained so an open trade keeps the values it entered with.
+            queuedTakeProfitPoints = TakeProfitPoints;
+            queuedStopLossPoints = StopLossPoints;
 
             // Reference for the "price ran without us" rule: where price was when the
             // signal fired, not where the limit was placed.
@@ -1118,71 +1192,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (EntryOrderType == EMALEntryOrderType.Limit)
                 queuedLimitPrice = GetPassiveLimitPrice(direction);
-        }
-
-        private double ComputeTakeProfitPoints(double completedEmaSlope)
-        {
-            double points;
-
-            switch (TakeProfitMode)
-            {
-                // A multiplier of zero (or less) means "disabled" -> use the fixed distance.
-                case EMALTakeProfitMode.Atr:
-                    if (AtrTakeProfitMultiplier <= 0.0)
-                        return TakeProfitPoints;
-                    points = AtrTakeProfitMultiplier * atr[1];
-                    break;
-
-                case EMALTakeProfitMode.Slope:
-                    if (SlopeTakeProfitMultiplier <= 0.0)
-                        return TakeProfitPoints;
-                    points = SlopeTakeProfitMultiplier * Math.Abs(completedEmaSlope);
-                    break;
-
-                default:
-                    return TakeProfitPoints;
-            }
-
-            // Clamp so an extreme ATR/slope reading cannot produce an absurd target.
-            double floor = Math.Min(MinimumTakeProfitPoints, MaximumTakeProfitPoints);
-            double ceiling = Math.Max(MinimumTakeProfitPoints, MaximumTakeProfitPoints);
-
-            return Math.Min(ceiling, Math.Max(floor, points));
-        }
-
-        // Adaptive stop distance. Same convention as the take-profit modes: a multiplier of
-        // zero disables scaling and falls back to the fixed StopLossPoints, so the defaults
-        // reproduce current behaviour regardless of which mode is selected.
-        //
-        // TpMultiple is the mode that pins risk:reward, and therefore the breakeven win rate,
-        // permanently. If the target is already ATR-scaled the stop inherits that adaptation
-        // rather than scaling the same quantity twice.
-        private double ComputeStopLossPoints(double takeProfitPoints)
-        {
-            double points;
-
-            switch (StopLossMode)
-            {
-                case EMALStopLossMode.Atr:
-                    if (StopAtrMultiplier <= 0.0)
-                        return StopLossPoints;
-                    points = StopAtrMultiplier * atr[1];
-                    break;
-
-                case EMALStopLossMode.TpMultiple:
-                    if (StopTpMultiplier <= 0.0)
-                        return StopLossPoints;
-                    points = StopTpMultiplier * takeProfitPoints;
-                    break;
-
-                default:
-                    return StopLossPoints;
-            }
-
-            double floor = Math.Min(MinimumStopLossPoints, MaximumStopLossPoints);
-            double ceiling = Math.Max(MinimumStopLossPoints, MaximumStopLossPoints);
-
-            return Math.Min(ceiling, Math.Max(floor, points));
         }
 
         private void TrySubmitQueuedEntry()
@@ -1227,14 +1236,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             CaptureEntryFeatures(direction, signalPrice, takeProfit, stopLoss);
 
             Print(string.Format(
-                "{0} | {1} {2}{3} | mode={4} | target={5:F2} pts stop={6:F2} pts | atr={7:F2}",
+                "{0} | {1} {2}{3} | target={4:F2} pts stop={5:F2} pts | atr={6:F2}",
                 Time[0],
                 direction > 0 ? "LONG" : "SHORT",
                 EntryOrderType,
                 EntryOrderType == EMALEntryOrderType.Limit
                     ? string.Format("@{0}={1:F2}", LimitPriceReference, limitPrice)
                     : string.Empty,
-                TakeProfitMode,
                 takeProfit,
                 StopLossPoints,
                 atr[1]));
@@ -1556,6 +1564,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 entryFilledQuantity += executionQuantity;
                 openEntryPrice = entryFillValue / entryFilledQuantity;
                 openEntryDirection = orderName == LongEntrySignal ? 1 : -1;
+
+                // First fill starts the time-stop clock; later partials do not restart it.
+                if (openEntryTime == DateTime.MinValue)
+                    openEntryTime = time;
 
                 if (maxAccountBalanceLimitReached)
                 {
@@ -1939,6 +1951,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             openEntryDirection = 0;
             openEntryPrice = 0.0;
+            openEntryTime = DateTime.MinValue;
             openExitValue = 0.0;
             openExitQuantity = 0;
         }
@@ -2039,6 +2052,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Max Daily Loss (points)", Description = "Enter as a POSITIVE number. Once realised loss for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET. 0 disables.", GroupName = "Risk", Order = 2)]
         public double MaxDailyLossPoints { get; set; }
 
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Time Stop (seconds)", Description = "Close a trade that has been open this long without resolving. Winners resolve in a median 10s; a trade still open at 15s wins only 72% against an 81.8% breakeven. 0 disables.", GroupName = "Time Stop", Order = 0)]
+        public double TimeStopSeconds { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Only When Losing", Description = "Fire the time stop only when the trade is underwater. Leave ON: trades grinding toward target are left alone.", GroupName = "Time Stop", Order = 1)]
+        public bool TimeStopOnlyWhenLosing { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Time Stop Loss (points)", Description = "How far underwater before the time stop fires. 0 = any loss at all. Worth raising: among winners still open at 60s, mean adverse excursion was 9.32 points, so a bare sign test cuts eventual winners.", GroupName = "Time Stop", Order = 2)]
+        public double TimeStopLossPoints { get; set; }
+
         [Range(1, int.MaxValue), NinjaScriptProperty]
         [Display(Name = "EMA Period", Description = "EMA period evaluated on the one-minute chart.", GroupName = "Parameters", Order = 0)]
         public int EmaPeriod { get; set; }
@@ -2091,49 +2116,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "US Limit Offset", Description = "Used only when Limit Offset Mode is PerSession.", GroupName = "Limit Offset", Order = 5)]
         public double UsLimitOffset { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Take Profit Mode", Description = "Fixed uses Take Profit (points). Atr and Slope scale the target; each is disabled when its multiplier is 0.", GroupName = "Take Profit Scaling", Order = 0)]
-        public EMALTakeProfitMode TakeProfitMode { get; set; }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "ATR Period", Description = "ATR period used when Take Profit Mode is Atr.", GroupName = "Take Profit Scaling", Order = 1)]
+        [Display(Name = "ATR Period", Description = "ATR period used when Take Profit Mode is Atr.", GroupName = "Parameters", Order = 7)]
         public int AtrPeriod { get; set; }
 
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "ATR TP Multiplier", Description = "Target = multiplier x ATR. 0 disables scaling and uses the fixed Take Profit instead.", GroupName = "Take Profit Scaling", Order = 2)]
-        public double AtrTakeProfitMultiplier { get; set; }
 
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Slope TP Multiplier", Description = "Target = multiplier x |EMA slope|. 0 disables scaling and uses the fixed Take Profit instead.", GroupName = "Take Profit Scaling", Order = 3)]
-        public double SlopeTakeProfitMultiplier { get; set; }
 
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Min Take Profit (points)", Description = "Floor applied to a scaled target.", GroupName = "Take Profit Scaling", Order = 4)]
-        public double MinimumTakeProfitPoints { get; set; }
 
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Max Take Profit (points)", Description = "Ceiling applied to a scaled target.", GroupName = "Take Profit Scaling", Order = 5)]
-        public double MaximumTakeProfitPoints { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Stop Loss Mode", Description = "Fixed uses Stop Loss (points). Atr scales by ATR. TpMultiple sets the stop as a multiple of the actual take profit, which pins risk:reward and therefore the breakeven win rate. Each is disabled when its multiplier is 0.", GroupName = "Stop Loss Scaling", Order = 0)]
-        public EMALStopLossMode StopLossMode { get; set; }
 
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Stop ATR Multiplier", Description = "Stop = multiplier x ATR. 0 disables scaling and uses the fixed Stop Loss instead.", GroupName = "Stop Loss Scaling", Order = 1)]
-        public double StopAtrMultiplier { get; set; }
 
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Stop TP Multiplier", Description = "Stop = multiplier x the actual take profit. Breakeven win rate becomes k/(1+k), independent of volatility. 0 disables scaling.", GroupName = "Stop Loss Scaling", Order = 2)]
-        public double StopTpMultiplier { get; set; }
 
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Min Stop Loss (points)", Description = "Floor applied to a scaled stop. A guardrail, not a tuning knob.", GroupName = "Stop Loss Scaling", Order = 3)]
-        public double MinimumStopLossPoints { get; set; }
 
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Max Stop Loss (points)", Description = "Ceiling applied to a scaled stop, so an ATR spike cannot produce an absurd risk. A guardrail, not a tuning knob.", GroupName = "Stop Loss Scaling", Order = 4)]
-        public double MaximumStopLossPoints { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Display(Name = "Limit Timeout (seconds)", Description = "Cancel an unfilled limit entry after this many seconds. 0 disables; the order then lives until the next bar opens.", GroupName = "Limit Entry Cancellation", Order = 0)]
@@ -2148,16 +2143,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool UsePerSessionSettings { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Slope Threshold Mode", Description = "Points: slope values are absolute points/minute (current behaviour). AtrRatio: the same values become multiples of ATR, so the gate tightens automatically when volatility rises and trade count stays stable across regimes.", GroupName = "Sessions", Order = 7)]
-        public EMALSlopeThresholdMode SlopeThresholdMode { get; set; }
+        [Display(Name = "Use Bucket Filter", Description = "Restrict entries to the 33 approved 30-minute windows derived from 78 sessions of playback. The window list is hardcoded and not user-editable. Risk-reduction setting: it lowers drawdown and also lowers gross profit.", GroupName = "Sessions", Order = 10)]
+        public bool UseBucketFilter { get; set; }
 
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Min Slope (points)", Description = "Floor on the effective points threshold when Slope Threshold Mode is AtrRatio. Guardrail only.", GroupName = "Sessions", Order = 8)]
-        public double MinimumSlopePoints { get; set; }
 
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Max Slope (points)", Description = "Ceiling on the effective points threshold when Slope Threshold Mode is AtrRatio, so an ATR spike cannot switch the strategy off entirely. Guardrail only.", GroupName = "Sessions", Order = 9)]
-        public double MaximumSlopePoints { get; set; }
+
 
         [NinjaScriptProperty]
         [Display(Name = "Asia 18:30-03:00 Enabled", GroupName = "Sessions", Order = 1)]
@@ -2230,25 +2220,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         Limit
     }
 
-    public enum EMALTakeProfitMode
-    {
-        Fixed,
-        Atr,
-        Slope
-    }
 
-    public enum EMALSlopeThresholdMode
-    {
-        Points,
-        AtrRatio
-    }
 
-    public enum EMALStopLossMode
-    {
-        Fixed,
-        Atr,
-        TpMultiple
-    }
 
     public enum EMALBracketAnchor
     {
