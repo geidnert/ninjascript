@@ -391,6 +391,8 @@
     <Compile Include="Strategies\ADAMProjectXSupport.cs" />
     <Compile Include="Strategies\ADAMTesting.cs" />
     <Compile Include="Strategies\ADAMTestingProjectXSupport.cs" />
+    <Compile Include="Strategies\EMAL.cs" />
+    <Compile Include="Strategies\PULL.cs" />
     <Compile Include="Strategies\AnalyzerBarsExporter.cs" />
     <Compile Include="Strategies\AnalyzerDuoStateExporter.cs" />
     <Compile Include="Strategies\AutoEdgeLicensing.cs" />
