@@ -142,6 +142,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int parityBlockedBarCount;
         private int rolloverBlockedBarCount;
         private int minuteFilterBlockedBarCount;
+        private int us0920EarlyShapeBlockedBarCount;
         private DateTime rolloverStart = DateTime.MinValue;
         private bool rolloverStartValid;
 
@@ -206,6 +207,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const int Us0955EndMinute = 10 * 60 + 30;  // 10:30 ET
         private const int UsStartMinute = 10 * 60 + 30; // 10:30 ET, US proper begins
         private const int UsEndMinute = 17 * 60;        // 17:00 ET, cash close
+
+        // M1-only shaping of the US 09:20-09:50 window (Steve, 2026-08-01), from the per-minute
+        // scan of NT8 Playback ground truth (results/EMAL-5m-position-scan-apr24-jul24.md and the
+        // in-chat 09:20-09:39 per-minute breakdown): 09:28 held up as strong on BOTH date halves
+        // at reasonable sample size. (09:29 was also excluded here same-day, then Steve reversed
+        // that - 09:29 trades normally again; see EMAL-18-changelog.txt section 6.) Does NOT
+        // change the window's real boundaries (Us0920StartMinute/EndMinute above, used by
+        // GetSessionIndex and by M5/M15) - this only gates entries within IsEntryWindowOpen(),
+        // M1 only, and only when EnableMinuteFilter is off (see IsUs0920EarlyShapeAllowed()).
+        private const int Us0920EffectiveStartMinuteM1 = 9 * 60 + 28; // 09:28 ET
 
         // London-anchored boundary. Europe begins at 08:00 London, which tracks UK DST and so
         // lands on 03:00 ET most of the year and 04:00 ET during the ~4 misaligned weeks.
@@ -840,6 +851,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("  minute filter       : {0}  1a={1} 1b={2} 1c={3} 1d={4} 1e={5}  (bars blocked: {6})",
                 EnableMinuteFilter, TradeMinute1a, TradeMinute1b, TradeMinute1c, TradeMinute1d, TradeMinute1e,
                 minuteFilterBlockedBarCount));
+            Print(string.Format("  0920 M1 early shape : active={0}  start=09:28  (bars blocked: {1})",
+                !EnableMinuteFilter && TimeFrame == EMALTimeFrame.M1, us0920EarlyShapeBlockedBarCount));
             Print(string.Format("  time frame / parity : {0} / {1}  (bars blocked: {2})",
                 TimeFrame, TradeParity, parityBlockedBarCount));
             Print(string.Format("  time stop           : {0}s  onlyWhenLosing={1} thresh={2}  (fired: {3})",
@@ -1077,10 +1090,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (IsNewsBlackout(ConvertToEastern(raw)))
                 return "news blackout";
 
+            int s = GetSessionIndex(raw);
+
             if (UsePerSessionSettings)
             {
-                int s = GetSessionIndex(raw);
-
                 if (s < 0 || !IsSessionEnabled(s))
                     return "session gate";
             }
@@ -1094,6 +1107,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Mirror IsEntryWindowOpen's minute-of-5 filter (Steve, 2026-08-01).
             if (!IsMinuteAllowed(ConvertToEastern(raw)))
                 return "minute block (" + MinutePositionLabel(ConvertToEastern(raw)) + ")";
+
+            // Mirror IsEntryWindowOpen's US 09:20 M1 early-shape gate (Steve, 2026-08-01).
+            if (!IsUs0920EarlyShapeAllowed(ConvertToEastern(raw), s))
+                return "0920 shape block";
 
             // Mirror IsEntryWindowOpen's even/odd candle filter.
             if (!IsParityAllowed(ConvertToEastern(raw)))
@@ -1358,6 +1375,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        // M1-only shape of the US 09:20-09:50 window (Steve, 2026-08-01): effectively starts at
+        // 09:28 (09:20-09:27 blocked). 09:29 was blocked too on 2026-08-01 but Steve reversed
+        // that same day - re-included, not excluded (see EMAL-18-changelog.txt section 6). See
+        // the constant above for the 09:28 rationale. Deliberately overridden by
+        // EnableMinuteFilter - if the user has taken manual control via the per-position
+        // checkboxes, this hardcoded shape steps aside entirely rather than stacking with it.
+        // Only meaningful on M1 (see ResolveWindowPresets comment on why M5/M15 don't have a
+        // sub-bar-minute concept); harmless no-op otherwise since sessionIndex 3 only occurs
+        // within Us0920Start/EndMinute regardless of TimeFrame.
+        private bool IsUs0920EarlyShapeAllowed(DateTime easternTime, int sessionIndex)
+        {
+            if (EnableMinuteFilter || TimeFrame != EMALTimeFrame.M1 || sessionIndex != 3)
+                return true;
+
+            int nyMinute = easternTime.Hour * 60 + easternTime.Minute;
+
+            if (nyMinute < Us0920EffectiveStartMinuteM1)
+                return false;
+
+            return true;
+        }
+
         // Contract-rollover block (Steve, 2026-07-31). Blocks entries for the first
         // RolloverBlockSessions trading dates on/after Rollover Block Start. Trading dates are
         // calendar dates that are not Saturday (NQ trades Sun evening -> Fri). The user sets the
@@ -1400,10 +1439,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
             }
 
+            int session = GetSessionIndex(barOpenRaw);
+
             if (UsePerSessionSettings)
             {
-                int session = GetSessionIndex(barOpenRaw);
-
                 if (session < 0 || !IsSessionEnabled(session))
                     return false;
             }
@@ -1417,6 +1456,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsMinuteAllowed(barOpen))
             {
                 minuteFilterBlockedBarCount++;
+                return false;
+            }
+
+            if (!IsUs0920EarlyShapeAllowed(barOpen, session))
+            {
+                us0920EarlyShapeBlockedBarCount++;
                 return false;
             }
 
