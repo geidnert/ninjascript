@@ -140,6 +140,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int newsBlockedBarCount;
         private int bucketBlockedBarCount;
         private int parityBlockedBarCount;
+        private int rolloverBlockedBarCount;
+        private int minuteFilterBlockedBarCount;
+        private DateTime rolloverStart = DateTime.MinValue;
+        private bool rolloverStartValid;
 
         // Time stop ("horizontal filter"). Fill time is tracked outside the feature-log gate
         // so the rule works with logging off.
@@ -270,6 +274,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0920LimitOffset = 0.0;
                 Us0955LimitOffset = 0.0;
                 MaxAccountBalance = 0.0;
+                // Contract-rollover block (Steve, 2026-07-31): off until a roll date is set;
+                // when set, blocks the first 3 sessions of the new contract.
+                RolloverBlockStart = string.Empty;
+                RolloverBlockSessions = 3;
 
                 // Daily caps in POINTS of realised P&L. 0 = disabled.
                 // BOTH TESTED AND REJECTED on 78 sessions - days that go down recover
@@ -297,9 +305,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // TP, SL and entry type stay GLOBAL by design - three independent copies of an
                 // interacting triple is where overfitting lives.
                 UsePerSessionSettings = true;
-                AsiaEnabled = true;
-                EuropeEnabled = true;
-                UsEnabled = true;
+                // Default to the two US morning windows only (Steve, 2026-07-31); Asia, Europe
+                // and the US 10:30-17:00 session are OFF by default and enabled per user choice.
+                AsiaEnabled = false;
+                EuropeEnabled = false;
+                UsEnabled = false;
                 Us0920Enabled = true;
                 Us0955Enabled = true;
                 // Per-window bracket presets (Steve, 2026-07-30). Window 1 defaults to TP5/SL18
@@ -314,6 +324,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0920MinimumSlope = 2.75;   // overwritten by ResolveWindowPresets from the Setting popup
                 Us0955MinimumSlope = 2.75;
 
+                // M5-only free-form overrides (Steve, 2026-08-01). Seeded from the M1 preset
+                // defaults above so an untouched M5 chart isn't degenerate; overwritten by
+                // ResolveWindowPresets() whenever TimeFrame == M5. Set these directly (profile
+                // XML / CLI --select) to scan values outside the M1 preset list.
+                Us0920TakeProfitPointsM5 = 5.0;
+                Us0920StopLossPointsM5 = 18.0;
+                Us0920MinimumSlopeM5 = 2.75;
+                Us0955TakeProfitPointsM5 = 4.0;
+                Us0955StopLossPointsM5 = 18.0;
+                Us0955MinimumSlopeM5 = 2.75;
+
 
                 // Blackout around the 08:30 US data release. HHmm, inclusive both ends.
                 BlockNewsWindow = true;
@@ -322,8 +343,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 NewsBlockEndTime = 832;
 
                 UseBucketFilter = true;
+
+                // Minute-of-5 filter (Steve, 2026-08-01). Master switch defaults ON, with 1a/1e
+                // enabled and 1b/1c/1d off - Steve's typical usage. NOTE: this is a real
+                // behavior change from pre-filter EMAL versions for any FRESH instance (a new
+                // chart/strategy add), since it now trades only 2 of every 5 minutes out of the
+                // box instead of all 5 - not a no-op default like every other filter in this
+                // file. One shared setting for whichever sessions/windows are enabled -
+                // deliberately not per-window (see EMAL-18-changelog.txt).
+                EnableMinuteFilter = true;
+                TradeMinute1a = true;
+                TradeMinute1b = false;
+                TradeMinute1c = false;
+                TradeMinute1d = false;
+                TradeMinute1e = true;
+
                 ShowInfoPanel = true;
-                EnableFeatureLog = true;
+                EnableFeatureLog = false;   // logging OFF by default (Steve, 2026-07-31)
                 FeatureLogPath = @"C:\Users\Administrator\Documents\EMAL_features.csv";
                 EnablePathLog = false;   // research-only; never on for live trading
                 PathLogPath = string.Empty;
@@ -332,6 +368,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 ApplyTimeFrameSettings();
                 ResolveWindowPresets();   // window Setting popups -> per-window TP/SL/slope
+                rolloverStartValid = !string.IsNullOrWhiteSpace(RolloverBlockStart)
+                    && DateTime.TryParseExact(RolloverBlockStart.Trim(), "yyyy-MM-dd",
+                        CultureInfo.InvariantCulture, DateTimeStyles.None, out rolloverStart);
                 ValidateChart();
                 maxAccountBalanceLimitReached = false;
 
@@ -563,8 +602,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // Resolves each window's Setting popup into its TP / SL / slope. The slope is written
         // back into the per-window Us*MinimumSlope so GetConfiguredSlope keeps working unchanged.
+        // On M5, the *M5 free-form fields replace the presets entirely (Steve, 2026-08-01) - this
+        // is what lets the CLI scan arbitrary TP/SL/slope instead of the fixed preset list. M1 and
+        // M15 are completely unaffected by this branch.
         private void ResolveWindowPresets()
         {
+            if (TimeFrame == EMALTimeFrame.M5)
+            {
+                us0920Tp = Us0920TakeProfitPointsM5;
+                us0920Sl = Us0920StopLossPointsM5;
+                Us0920MinimumSlope = Us0920MinimumSlopeM5;
+
+                us0955Tp = Us0955TakeProfitPointsM5;
+                us0955Sl = Us0955StopLossPointsM5;
+                Us0955MinimumSlope = Us0955MinimumSlopeM5;
+                return;
+            }
+
             switch (Us0920Setting)
             {
                 case EMALUs0920Setting.TP2_SL10_Slope2_75: us0920Tp = 2; us0920Sl = 10; Us0920MinimumSlope = 2.75; break;
@@ -783,6 +837,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  bucket filter       : {0}  (bars blocked: {1})",
                 UseBucketFilter, bucketBlockedBarCount));
+            Print(string.Format("  minute filter       : {0}  1a={1} 1b={2} 1c={3} 1d={4} 1e={5}  (bars blocked: {6})",
+                EnableMinuteFilter, TradeMinute1a, TradeMinute1b, TradeMinute1c, TradeMinute1d, TradeMinute1e,
+                minuteFilterBlockedBarCount));
             Print(string.Format("  time frame / parity : {0} / {1}  (bars blocked: {2})",
                 TimeFrame, TradeParity, parityBlockedBarCount));
             Print(string.Format("  time stop           : {0}s  onlyWhenLosing={1} thresh={2}  (fired: {3})",
@@ -1014,6 +1071,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             DateTime raw = GetBarOpenRaw();
 
+            if (IsRolloverBlocked(ConvertToEastern(raw)))
+                return "rollover block";
+
             if (IsNewsBlackout(ConvertToEastern(raw)))
                 return "news blackout";
 
@@ -1030,6 +1090,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // bucket-blocked window even though no trade could fire.
             if (!IsBucketAllowed(ConvertToEastern(raw)))
                 return "time block";
+
+            // Mirror IsEntryWindowOpen's minute-of-5 filter (Steve, 2026-08-01).
+            if (!IsMinuteAllowed(ConvertToEastern(raw)))
+                return "minute block (" + MinutePositionLabel(ConvertToEastern(raw)) + ")";
 
             // Mirror IsEntryWindowOpen's even/odd candle filter.
             if (!IsParityAllowed(ConvertToEastern(raw)))
@@ -1260,10 +1324,74 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return bucket >= 0 && bucket < AllowedBuckets.Length && AllowedBuckets[bucket];
         }
 
+        // Minute-of-5 filter (Steve, 2026-08-01). Applies to the underlying 1-minute signal
+        // regardless of TimeFrame or which session/window is enabled - one shared setting, not
+        // per-window. Position is the bar-open minute's place within its nominal 5-minute
+        // grouping: 0=1a (1st minute), 1=1b, 2=1c, 3=1d, 4=1e. A real M5 chart bar's open minute
+        // is always a multiple of 5 (position 1a) since NT8 doesn't expose the sub-minute bars
+        // inside an aggregated 5-minute bar - this filter only has something to select between
+        // when the strategy is evaluating 1-minute bars.
+        private string MinutePositionLabel(DateTime easternTime)
+        {
+            switch (easternTime.Minute % 5)
+            {
+                case 0: return "1a";
+                case 1: return "1b";
+                case 2: return "1c";
+                case 3: return "1d";
+                default: return "1e";
+            }
+        }
+
+        private bool IsMinuteAllowed(DateTime easternTime)
+        {
+            if (!EnableMinuteFilter)
+                return true;
+
+            switch (easternTime.Minute % 5)
+            {
+                case 0: return TradeMinute1a;
+                case 1: return TradeMinute1b;
+                case 2: return TradeMinute1c;
+                case 3: return TradeMinute1d;
+                default: return TradeMinute1e;
+            }
+        }
+
+        // Contract-rollover block (Steve, 2026-07-31). Blocks entries for the first
+        // RolloverBlockSessions trading dates on/after Rollover Block Start. Trading dates are
+        // calendar dates that are not Saturday (NQ trades Sun evening -> Fri). The user sets the
+        // new contract's first session date each quarter (blank or Sessions<=0 = off).
+        private bool IsRolloverBlocked(DateTime easternBarOpen)
+        {
+            if (RolloverBlockSessions <= 0 || !rolloverStartValid)
+                return false;
+
+            DateTime d = easternBarOpen.Date;
+            if (d < rolloverStart)
+                return false;
+            if ((d - rolloverStart).Days > RolloverBlockSessions + 2)
+                return false;   // well past the window; cheap early-out for the loop below
+
+            int count = 0;
+            for (DateTime x = rolloverStart; x <= d; x = x.AddDays(1))
+                if (x.DayOfWeek != DayOfWeek.Saturday)
+                    count++;
+
+            return count <= RolloverBlockSessions;
+        }
+
         private bool IsEntryWindowOpen()
         {
             DateTime barOpenRaw = GetBarOpenRaw();
             DateTime barOpen = ConvertToEastern(barOpenRaw);
+
+            // Contract-rollover block: skip the first N sessions of a new contract.
+            if (IsRolloverBlocked(barOpen))
+            {
+                rolloverBlockedBarCount++;
+                return false;
+            }
 
             // News blackout applies on every day, independent of the session gate.
             if (IsNewsBlackout(barOpen))
@@ -1283,6 +1411,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsBucketAllowed(barOpen))
             {
                 bucketBlockedBarCount++;
+                return false;
+            }
+
+            if (!IsMinuteAllowed(barOpen))
+            {
+                minuteFilterBlockedBarCount++;
                 return false;
             }
 
@@ -1746,13 +1880,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (TimeFrame)
             {
                 case EMALTimeFrame.M5:
-                    // TODO(5m tuning): placeholder = M1 tuned set.
+                    // TP/SL/slope for the two US windows come from the *M5 fields via
+                    // ResolveWindowPresets() (Steve, 2026-08-01), not from here - the values
+                    // below only govern Asia/Europe/US-10:30-17:00 if the user re-enables them.
                     EmaPeriod = 9;
                     AsiaMinimumSlope = 3.0;
                     EuropeMinimumSlope = 0.5;
                     UsMinimumSlope = 2.75;
-                    Us0920MinimumSlope = 2.75;   // seeded from US; tune separately
-                    Us0955MinimumSlope = 2.75;   // seeded from US; tune separately
                     TakeProfitPoints = 4.0;
                     StopLossPoints = 18.0;
                     break;
@@ -2435,6 +2569,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Rollover Block Start (yyyy-MM-dd)", Description = "First session date of a new contract, e.g. 2026-09-14. The strategy blocks ALL entries for the first N trading days (Rollover Block Sessions) starting here. Blank = off. Update it each quarter at the roll.", GroupName = "Rollover", Order = 0)]
+        public string RolloverBlockStart { get; set; }
+
+        [Range(0, int.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Rollover Block Sessions", Description = "How many trading days (Sun-Fri; Saturday skipped) to block from Rollover Block Start. 0 = off.", GroupName = "Rollover", Order = 1)]
+        public int RolloverBlockSessions { get; set; }
+
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "Max Daily Profit (points)", Description = "Once realised profit for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET (CME trading day). 0 disables.", GroupName = "Risk", Order = 1)]
@@ -2622,9 +2764,67 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "Sessions", Order = 22)]
         public double Us0955MinimumSlope { get; set; }
 
+        // M5-only free-form overrides (Steve, 2026-08-01). While Time Frame = M5, these replace
+        // the Us0920Setting/Us0955Setting presets entirely (see ResolveWindowPresets()) so the
+        // CLI can scan arbitrary TP/SL/slope values instead of the fixed M1 preset list. Hidden
+        // from the live dialog on purpose - this is a research/tuning surface, not a trading
+        // control. Ignored on M1/M15.
+        [Range(0.25, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:20-09:50 TP (M5)", Description = "Take-profit points for the US 09:20-09:50 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 23)]
+        public double Us0920TakeProfitPointsM5 { get; set; }
 
+        [Range(0.25, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:20-09:50 SL (M5)", Description = "Stop-loss points for the US 09:20-09:50 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 24)]
+        public double Us0920StopLossPointsM5 { get; set; }
 
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:20-09:50 Min Slope (M5)", Description = "Slope threshold for the US 09:20-09:50 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 25)]
+        public double Us0920MinimumSlopeM5 { get; set; }
 
+        [Range(0.25, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:55-10:30 TP (M5)", Description = "Take-profit points for the US 09:55-10:30 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 26)]
+        public double Us0955TakeProfitPointsM5 { get; set; }
+
+        [Range(0.25, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:55-10:30 SL (M5)", Description = "Stop-loss points for the US 09:55-10:30 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 27)]
+        public double Us0955StopLossPointsM5 { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:55-10:30 Min Slope (M5)", Description = "Slope threshold for the US 09:55-10:30 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 28)]
+        public double Us0955MinimumSlopeM5 { get; set; }
+
+        // Minute-of-5 filter (Steve, 2026-08-01). One shared setting applied to whichever
+        // sessions/windows are enabled - deliberately not per-window (Us0920/Us0955 or otherwise).
+        // Only meaningful while the strategy evaluates 1-minute bars; see IsMinuteAllowed().
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Minute Filter", Description = "Master switch. When off, all five minute positions trade (current behavior). When on, only the positions checked below are allowed to enter, across every enabled session/window.", GroupName = "Minute Filter", Order = 0)]
+        public bool EnableMinuteFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Minute 1a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "Minute Filter", Order = 1)]
+        public bool TradeMinute1a { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Minute 1b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "Minute Filter", Order = 2)]
+        public bool TradeMinute1b { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Minute 1c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "Minute Filter", Order = 3)]
+        public bool TradeMinute1c { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Minute 1d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "Minute Filter", Order = 4)]
+        public bool TradeMinute1d { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Trade Minute 1e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "Minute Filter", Order = 5)]
+        public bool TradeMinute1e { get; set; }
 
 
 
