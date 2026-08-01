@@ -220,6 +220,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int rolloverBlockedBarCount;
         private int minuteFilterBlockedBarCount;
         private int us0920EarlyShapeBlockedBarCount;
+        private int m5WindowShapeBlockedBarCount;
         private DateTime rolloverStart = DateTime.MinValue;
         private bool rolloverStartValid;
 
@@ -291,9 +292,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // at reasonable sample size. (09:29 was also excluded here same-day, then Steve reversed
         // that - 09:29 trades normally again; see EMAL-18-changelog.txt section 6.) Does NOT
         // change the window's real boundaries (Us0920StartMinute/EndMinute above, used by
-        // GetSessionIndex and by M5/M15) - this only gates entries within IsEntryWindowOpen(),
-        // M1 only, and only when EnableMinuteFilter is off (see IsUs0920EarlyShapeAllowed()).
+        // GetSessionIndex for M1/M15) - this only gates entries within IsEntryWindowOpen(), M1
+        // only, and only when EnableMinuteFilter is off (see IsUs0920EarlyShapeAllowed()). M5 has
+        // its own, separate schedule - see below and EMAL-19-changelog.txt.
         private const int Us0920EffectiveStartMinuteM1 = 9 * 60 + 28; // 09:28 ET
+
+        // M5-only schedule (Steve, 2026-08-01, EMAL-19) - independent of the M1/M15 window
+        // boundaries above, per the per-native-5-minute-bar scan of a real M5 Playback run
+        // (results/EMAL-5m-per-bar-scan-apr26-jul24.md): 09:20/09:25/09:30 flip sign between
+        // date halves (noise), 09:35/09:40/09:45 are positive on BOTH halves, so the M5 session
+        // starts at 09:35 - implemented directly in GetSessionIndex's TimeFrame branch (no
+        // separate "blocking" needed for 09:20-09:34, they simply have no session). 10:05 is the
+        // one bar in either window negative on both halves - blocked below in
+        // IsEntryWindowOpen(), not here, since it falls inside an otherwise-valid session.
+        // Boundary between the two windows' presets stays at 09:50 (Steve's choice) - the M5
+        // session is continuous from 09:35-10:30 with no gap, unlike M1/M15's 09:50-09:55 block.
+        private const int Us0920EffectiveStartMinuteM5 = 9 * 60 + 35; // 09:35 ET
+        private const int Us0955BlockedBarMinuteM5 = 10 * 60 + 5;    // 10:05 ET, single bar
 
         // London-anchored boundary. Europe begins at 08:00 London, which tracks UK DST and so
         // lands on 03:00 ET most of the year and 04:00 ET during the ~4 misaligned weeks.
@@ -592,10 +607,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return ConvertToEastern(GetBarOpenRaw());
         }
 
-        // 0 = Asia, 1 = Europe, 2 = US cash (10:30-17:00), 3 = US 09:20-09:50,
-        // 5 = US 09:55-10:30, -1 = maintenance halt OR the 09:50-09:55 no-trade block.
+        // 0 = Asia, 1 = Europe, 2 = US cash (10:30-17:00), 3 = US 09:20-09:50 (M1/M15) or
+        // 09:35-09:50 (M5), 5 = US 09:55-10:30 (M1/M15) or 09:50-10:30 (M5), -1 = maintenance
+        // halt OR (M1/M15 only) the 09:50-09:55 no-trade block OR (M5 only) before 09:35.
         // All ET (NY) windows are checked before the London-anchored Europe band, which
-        // caps Europe at 09:20 (its 09:20-09:30 tail is claimed by US 09:20-09:50).
+        // caps Europe at 09:20 (its 09:20-09:30 tail is claimed by US 09:20-09:50) on M1/M15;
+        // on M5 the cutoff is 09:35 for the same reason. M5 runs one continuous session with no
+        // internal gap - see the TimeFrame branch below (Steve, 2026-08-01, EMAL-19).
         private int GetSessionIndex(DateTime platformTime)
         {
             DateTime ny = ConvertToZone(platformTime, easternZone);
@@ -605,16 +623,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (nyMinute >= UsEndMinute && nyMinute < AsiaStartMinute)
                 return -1;
 
-            // 09:50-09:55 ET hard no-trade block (returns "no session" so entries are gated).
-            if (nyMinute >= BlockStartMinute && nyMinute < BlockEndMinute)
-                return -1;
+            if (TimeFrame == EMALTimeFrame.M5)
+            {
+                // Single continuous M5 session, 09:35-10:30 ET, NO 09:50-09:55 gap (Steve,
+                // 2026-08-01 - independent M5 schedule, separate from M1/M15 below). Preset
+                // boundary kept at the old 09:50 split point: 09:35-09:49 -> session 3 (US-0920
+                // M5 fields), 09:50-10:29 -> session 5 (US-0955 M5 fields) - reuses both preset
+                // sets from EMAL-18 section 4 unchanged, just removes the gap between them and
+                // moves the start from 09:20 to 09:35. 09:20-09:34 explicitly returns -1 (not a
+                // fall-through to Europe) so the window's start is a clean cutoff. The single
+                // worst 5-min bar (10:05) is blocked separately in IsEntryWindowOpen(), not here -
+                // GetSessionIndex only shapes the continuous range, not the one-bar exclusion.
+                if (nyMinute >= Us0920StartMinute && nyMinute < Us0920EffectiveStartMinuteM5)
+                    return -1;
 
-            // Special US windows, checked before US proper AND before Europe.
-            if (nyMinute >= Us0920StartMinute && nyMinute < Us0920EndMinute)
-                return 3;
+                if (nyMinute >= Us0920EffectiveStartMinuteM5 && nyMinute < Us0920EndMinute)
+                    return 3;
 
-            if (nyMinute >= Us0955StartMinute && nyMinute < Us0955EndMinute)
-                return 5;
+                if (nyMinute >= Us0920EndMinute && nyMinute < Us0955EndMinute)
+                    return 5;
+            }
+            else
+            {
+                // 09:50-09:55 ET hard no-trade block (returns "no session" so entries are gated).
+                // M1/M15 only - M5 has its own continuous schedule above, no gap.
+                if (nyMinute >= BlockStartMinute && nyMinute < BlockEndMinute)
+                    return -1;
+
+                // Special US windows, checked before US proper AND before Europe.
+                if (nyMinute >= Us0920StartMinute && nyMinute < Us0920EndMinute)
+                    return 3;
+
+                if (nyMinute >= Us0955StartMinute && nyMinute < Us0955EndMinute)
+                    return 5;
+            }
 
             if (nyMinute >= UsStartMinute && nyMinute < UsEndMinute)
                 return 2;
@@ -946,6 +988,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 minuteFilterBlockedBarCount));
             Print(string.Format("  0920 M1 early shape : active={0}  start=09:28  (bars blocked: {1})",
                 !EnableMinuteFilter && TimeFrame == EMALTimeFrame.M1, us0920EarlyShapeBlockedBarCount));
+            Print(string.Format("  M5 schedule         : active={0}  09:35-10:30 continuous, no gap, block=10:05  (bars blocked: {1})",
+                TimeFrame == EMALTimeFrame.M5, m5WindowShapeBlockedBarCount));
             Print(string.Format("  time frame / parity : {0} / {1}  (bars blocked: {2})",
                 TimeFrame, TradeParity, parityBlockedBarCount));
             Print(string.Format("  time stop           : {0}s  onlyWhenLosing={1} thresh={2}  (fired: {3})",
@@ -1210,6 +1254,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsUs0920EarlyShapeAllowed(ConvertToEastern(raw), s))
                 return "0920 shape block";
 
+            // Mirror IsEntryWindowOpen's M5 10:05 block (Steve, 2026-08-01, EMAL-19).
+            if (!IsM5WindowShapeAllowed(ConvertToEastern(raw), s))
+                return "M5 shape block";
+
             // Mirror IsEntryWindowOpen's even/odd candle filter.
             if (!IsParityAllowed(ConvertToEastern(raw)))
                 return TradeParity == EMALTradeParity.Even ? "odd bar (want even)" : "even bar (want odd)";
@@ -1298,6 +1346,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime providerBlockedUntilUtc;
             if (TryGetOrderRateStatus(out projectedActions, out actionLimit, out providerBlockedUntilUtc))
                 lines.Add(new KeyValuePair<string, string>("API:", string.Format("{0}/{1}", projectedActions, actionLimit)));
+            else
+                lines.Add(new KeyValuePair<string, string>("API:", "Off"));
             lines.Add(new KeyValuePair<string, string>("Session:", SessionName(session)));
             lines.Add(new KeyValuePair<string, string>(InfoFooter, string.Empty));
             return lines;
@@ -1533,6 +1583,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return true;
         }
 
+        // M5-only single-bar block (Steve, 2026-08-01, EMAL-19): 10:05 is the one bar in either
+        // window negative on both date halves independently. The M5 session's start (09:35) and
+        // the removal of the 09:50-09:55 gap are handled directly in GetSessionIndex - this gate
+        // only needs to cover the one bar that falls INSIDE an otherwise-valid M5 session.
+        private bool IsM5WindowShapeAllowed(DateTime easternTime, int sessionIndex)
+        {
+            if (TimeFrame != EMALTimeFrame.M5 || sessionIndex != 5)
+                return true;
+
+            int nyMinute = easternTime.Hour * 60 + easternTime.Minute;
+
+            return nyMinute != Us0955BlockedBarMinuteM5;
+        }
+
         // Contract-rollover block (Steve, 2026-07-31). Blocks entries for the first
         // RolloverBlockSessions trading dates on/after Rollover Block Start. Trading dates are
         // calendar dates that are not Saturday (NQ trades Sun evening -> Fri). The user sets the
@@ -1598,6 +1662,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsUs0920EarlyShapeAllowed(barOpen, session))
             {
                 us0920EarlyShapeBlockedBarCount++;
+                return false;
+            }
+
+            if (!IsM5WindowShapeAllowed(barOpen, session))
+            {
+                m5WindowShapeBlockedBarCount++;
                 return false;
             }
 
