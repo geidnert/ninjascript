@@ -59,6 +59,29 @@ On entering blocked windows (skip/news/no-trades-after):
 - Cancel working entries/orders.
 - Flatten open position with reason tag.
 
+For tracked NinjaTrader `Order` references that can remain working across the
+historical-to-realtime boundary:
+- Translate a historical reference with `GetRealtimeOrder()` when
+  `State == State.Realtime` and `order.IsBacktestOrder`.
+- Store the return value exactly. A `null` result means NinjaTrader did not
+  create a realtime counterpart; clear the tracked reference instead of
+  retaining the historical order, which would falsely remain "active" and
+  block new entries.
+- Perform the translation at the top of `OnOrderUpdate()` before assigning or
+  modifying tracked orders; an additional `State.Realtime` handoff is allowed.
+- Never call `CancelOrder()` or `ChangeOrder()` on a historical reference after
+  it has transitioned to realtime.
+
+For strategies that manually submit protective orders from an entry execution:
+- Validate a long stop below the current bid and a short stop above the current
+  ask before submitting or changing it.
+- If price has already crossed the intended stop before it can be accepted,
+  submit one latched market exit instead of an invalid stop order.
+- If `RealtimeErrorHandling.IgnoreAllErrors` is used, handle every rejection in
+  `OnOrderUpdate()`. A protective rejection must trigger the same latched market
+  exit, and the strategy must not continue by submitting the rejected order's
+  OCO sibling.
+
 Reason tags used by convention:
 - `NoTradesAfter`
 - `SkipWindow`
@@ -104,6 +127,19 @@ Reason tags used by convention:
   - flatten any open position with a strategy-specific exit reason (for example `MaxBalance` or `MaxAccountBalance`),
   - latch the blocked state for the lifetime of the running strategy instance unless the feature is explicitly disabled/reset.
 - If threshold is hit while in a trade via unrealized PnL, exit immediately and do not allow more trades afterward.
+
+### Daily Profit Guard
+- Strategies should support a visible `MaxDailyProfit` input in account currency.
+- Default value is `0.0` (disabled).
+- On the first eligible primary bar of each calendar date, capture current net liquidation as that date's baseline.
+- Current daily profit is current net liquidation minus the captured baseline, so unrealized PnL counts toward the target.
+- When the target is reached or exceeded:
+  - block new entries,
+  - cancel working orders as appropriate,
+  - flatten any open position with the exit reason `MaxDailyProfit`,
+  - latch the blocked state for the remainder of that calendar date.
+- Reset the baseline and latch only when the primary bar's calendar date changes, or when the feature is disabled. Do not re-enable trading merely because flattening slippage moves profit back below the target.
+- This account-currency guard is separate from any existing strategy-specific daily profit control expressed in ticks or points.
 
 ### Heartbeat Reporting
 - Strategies should report liveness through `StrategyHeartbeatReporter`.
@@ -185,6 +221,9 @@ Reason tags used by convention:
 - Visible `MaxAccountBalance` input exists and defaults to disabled.
 - Account-balance guard uses `NetLiquidation` or explicit cash+unrealized fallback.
 - Account-balance guard blocks new entries and flattens open positions once threshold is hit.
+- Visible `MaxDailyProfit` input exists and defaults to disabled.
+- Daily-profit guard uses a per-calendar-date net-liquidation baseline, blocks new entries, and flattens open positions with reason `MaxDailyProfit` once hit.
+- Daily-profit latch resets on a new calendar date, not on post-flatten profit giveback.
 - Heartbeat reporter is instantiated in `State.DataLoaded`.
 - Heartbeat reporter is started in `State.Realtime`.
 - Heartbeat reporter is disposed in `State.Terminated`.

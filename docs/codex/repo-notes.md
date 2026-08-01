@@ -41,6 +41,7 @@ domains.
 - `Strategies/DUO.cs` is the default reference for shared bot modules:
   session/skip/news windows, transition safety, heartbeat lifecycle,
   strategy-prefixed signals, entry confirmation, `MaxAccountBalance`,
+  account-currency `MaxDailyProfit` with a per-calendar-date net-liquidation baseline,
   TradersPost ticker override, and DUO-style ProjectX transport/account/contract
   handling.
 - 2026-07-21: `Strategies/DUOlo.cs` is the separate DUO limit-order variant. It
@@ -55,17 +56,99 @@ domains.
   entry limits are mirrored at submit time and amended through `/api/Order/modify`;
   TradersPost timing is unchanged. Compile it through the explicit
   `NinjaTrader.Custom.csproj` `Strategies\\DUOlo.cs` entry.
+- 2026-07-24: `Strategies/PULL.cs` is a lightweight NT8-only prototype modeled
+  on `EMAL.cs`; its four-letter name is intentionally temporary. It is a
+  long/short NQ/MNQ minute-chart strategy that compares a completed directional
+  candle's range with the average range of preceding candles. Long impulses must
+  close above a configurable EMA and shorts below it. The strategy stages a
+  limit at a configurable percentage of the impulse range, with protective
+  stop/target prices beyond the directionally appropriate impulse extremes plus
+  optional point padding. An unfilled entry is canceled if price reaches its
+  directional impulse target first. There is no TradersPost or ProjectX routing
+  in this initial version. Compile it through the explicit
+  `NinjaTrader.Custom.csproj` `Strategies\\PULL.cs` entry.
+- 2026-07-28: Steve's Version 11 `Strategies/EMAL.cs` removes the old Sunday
+  window controls, starts the Asia gate at 18:30 ET, and retains the inclusive
+  daily news blackout with optional flatten plus DST-aware Asia/Europe/US
+  sessions. It includes selectable limit references and offsets, fill/reference
+  bracket anchoring, Points/ATR-ratio slope thresholds, adaptive TP/SL modes,
+  realized-points daily profit/loss entry gates resetting at 18:00 ET, a WPF
+  chart panel, graceful invalid-chart refusal, and a 51-column feature CSV with
+  entry mode/reference, offset, and MAE/MFE. The post-import audit also made the
+  queued bracket reference clear with other queued state and made daily realized
+  points use partial-entry and quantity-weighted multi-fill exit prices. Preserve
+  those features together with EMAL's existing safety layer when importing later
+  replacements: exact historical-to-realtime order translation, execution-driven
+  wrong-side stop validation, stop-first protective staging to avoid rejected-OCO
+  reuse, rejection-triggered emergency exits, and the `MaxAccountBalance` latch.
+  NT8's `OnExecutionUpdate` override ends with `DateTime time`; a trailing Boolean
+  is not a valid NT8 signature.
+- 2026-08-01: Steve's second Version 18 `Strategies/EMAL.cs` is the baseline for
+  EMAL ProjectX parity. EMAL mirrors market and staged limit entries to ProjectX
+  at NT8 submit time, attaches brackets immediately, routes confirmed entry
+  cancellations without cancelling protection after a partial fill, syncs live
+  stop/target price amendments, and uses idempotent flatten recovery. Its NT8
+  display name is assembly-versioned (`EMAL` + version digits) while order signal
+  names remain stable and EMAL-prefixed. A static rolling order-action guard is
+  shared by EMAL instances on the same `Account.Connection`; the default local
+  ceiling is 1100 actions/hour with six actions reserved per new trade. The guard
+  blocks new entries only. Provider rate-limit rejections add a one-hour shared
+  entry cooldown, while stop/target/cancel/emergency actions remain enabled.
+  This counter cannot see manual orders, other strategies, or the same provider
+  user running in another NT8 process/VPS, so it is a conservative safety buffer,
+  not an exact provider-request meter. It is active only for realtime,
+  non-Playback execution; Strategy Analyzer/historical processing and Market
+  Replay do not count actions or block tuning trades, while the infobox retains
+  the row as `API: Off`.
+- 2026-08-01: Steve's Version 19 EMAL delta gives M5 its own continuous
+  09:35-10:30 ET schedule, keeps the 09:50 preset boundary without the M1/M15
+  09:50-09:55 gap, and blocks the 10:05 M5 bar. M1 and M15 behavior remains
+  unchanged. Preserve this schedule when importing later Steve replacements.
+- 2026-07-20: Current DUO `State.SetDefaults` session defaults in
+  `Strategies/DUO.cs` are mirrored from Steve's
+  `/Volumes/Documents/NinjaTrader 8/bin/Custom/Strategies/DUOTesting-Trader-202.xml`
+  and correspond to released NT8 identity `2.1.1.0`. The sync intentionally
+  preserves `BarsRequiredToTrade = 250` even though the exported optimizer XML
+  contains the NT8 framework default `20`. The #202 XML predates the nine
+  per-session `TakeProfitPostTriggerPriceTrail` properties. Steve supplied
+  those defaults separately: `true` for Asia 1, Asia 2, and America 2, and
+  `false` for the other sessions (including disabled America 3). When Steve
+  sends new DUO defaults, sync NT8 DUO and TraderPro DUO in the same pass
+  unless explicitly scoped to one side.
 - DUO and DUOrc are maintained directly in `Strategies/DUO.cs` and
   `Strategies/DUOrc.cs`; do not recreate separate DUO/DUOrc testing variants
   unless the user explicitly asks.
-- 2026-07-19: Current DUOrc `State.SetDefaults` mapped defaults in
+- 2026-07-12: DUO and DUOrc use strategy type converters to hide an entire
+  session group from the NinjaTrader settings UI whenever that session's
+  `Contracts` value is `0`. Keep every configurable session slot represented in
+  its strategy's converter when session slots are added or renamed.
+- 2026-07-20: DUO and DUOrc trade-line overlays show the TP-percent trigger as
+  a dotted green line and the stop-move destination as a dotted red line. The
+  destination uses the same entry-to-target percentage calculation as live stop
+  management. Keep active, historical, restored-position, custom-rendered, and
+  fallback `Draw.Line` paths aligned when changing these indicators.
+- 2026-07-24: Current DUOrc `State.SetDefaults` mapped defaults in
   `Strategies/DUOrc.cs` are mirrored from Steve's
-  `/Volumes/Documents/NinjaTrader 8/bin/Custom/Strategies/DUOrcTesting-146.xml`.
+  `/Volumes/Documents/NinjaTrader 8/bin/Custom/Strategies/DUOrcTesting-155.xml`
+  and correspond to the NT8 `1.0.5.8` release.
+  Preserve `BarsRequiredToTrade = 250` even when an exported optimizer XML omits
+  it or reflects the NT8 framework default of `20`.
   When Steve sends new DUOrc defaults XML, sync both NT8 `Strategies/DUOrc.cs`
   and Trader `src/Trader.Strategies.Duorc.Core/DuorcStrategyCore.cs` in the same
   pass unless the user explicitly asks for only one side. Audit both global and
-  per-session mappings. The 146 XML includes TP-percent trigger/move fields and
-  no retired secondary-entry fields.
+  per-session mappings. The 155 XML includes TP-percent trigger/move fields and
+  no retired secondary-entry fields. DUOrc's additive EMA slope filter fields
+  (`Asia2/Asia3/London/NewYork2/NewYork4/NewYork5 EnableEmaSlopeFilter` and
+  `MinEmaSlopeNorm`) must stay hidden from the NT8 UI (`[Browsable(false)]`)
+  while remaining `[NinjaScriptProperty]` inputs with internal defaults. Future
+  Steve XML exports may omit those hidden settings; use Steve's explicit slope
+  table/source defaults instead of assuming the latest XML contains them. Steve's
+  v32/v148 DUOrc slope retune enables only Asia3 at `0.0096` and London at
+  `0.0097`; Asia2, NewYork2, NewYork4, and NewYork5 stay disabled at `0.01`.
+  The per-session `TakeProfitPostTriggerPriceTrail` Boolean is also hidden and
+  may be absent from XML exports; preserve Steve-confirmed defaults as true for
+  Asia2, NewYork2, and NewYork5, and false for the other DUOrc sessions unless
+  he explicitly retunes that hidden field.
 - 2026-07-11: DUOrc has fixed rollover blackout dates for the Mar/Jun 2026
   playback windows plus the next four quarterly contract rollover windows:
   Sep/Dec 2026 and Mar/Jun 2027, using the Steve-provided +/-4 calendar-day

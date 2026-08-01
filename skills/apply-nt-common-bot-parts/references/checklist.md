@@ -8,6 +8,11 @@
 - [ ] Entry path blocks in skip/news/no-trades-after windows
 - [ ] Entry and exit signal names are prefixed with the strategy name
 - [ ] Protective stops/targets use the active prefixed entry signal
+- [ ] Every tracked working order reference is translated with `GetRealtimeOrder()` at the historical-to-realtime boundary
+- [ ] A null `GetRealtimeOrder()` result clears the tracked reference; it never falls back to the stale backtest order
+- [ ] Execution-driven protective stops are validated against the current bid/ask before submit/change
+- [ ] A gap-through stop triggers one latched market exit instead of an invalid stop submission
+- [ ] Strategies using `RealtimeErrorHandling.IgnoreAllErrors` handle protective rejections in `OnOrderUpdate()` and do not submit a rejected OCO sibling
 - [ ] Optional `RequireEntryConfirmation` property exists
 - [ ] Entry confirmation helper exists (for example `ShowEntryConfirmation`)
 - [ ] Confirmation check runs before each new entry submission path
@@ -15,6 +20,10 @@
 - [ ] Account-balance guard uses `NetLiquidation` or explicit cash+unrealized fallback
 - [ ] Account-balance guard blocks new entries after hit
 - [ ] Account-balance guard flattens open position when threshold is reached intratrade
+- [ ] Visible `MaxDailyProfit` property exists and defaults to `0.0`
+- [ ] Daily-profit guard captures a net-liquidation baseline for each calendar date
+- [ ] Daily-profit guard includes unrealized PnL, blocks entries, and flattens with reason `MaxDailyProfit`
+- [ ] Daily-profit latch resets only on a new calendar date or when disabled
 - [ ] Transition to blocked window cancels orders
 - [ ] Transition to blocked window flattens open position
 - [ ] `HeartbeatStrategyName` constant exists
@@ -62,9 +71,11 @@
 rg -n "BuildInfoLines|RenderInfoBoxOverlay|EnsureInfoBoxOverlay" <target>
 rg -n "UseNewsSkip|NewsBlockMinutes|GetCurrentWeekNews|PassedNewsRowBrush" <target>
 rg -n "MaxAccountBalance|maxAccountLimitHit|accountBalanceLimitReached|NetLiquidation|GetUnrealizedProfitLoss" <target>
+rg -n "MaxDailyProfit|dailyProfitStartBalance|dailyProfitLimitHit|dailyProfitLimitReached" <target>
 rg -n "CancelAllOrders|ExitAllPositions|IsLastBarOfSession" <target>
 rg -n "HeartbeatStrategyName|heartbeatReporter|State == State.Realtime|State == State.Terminated" <target>
 rg -n "LongEntrySignal|ShortEntrySignal|BuildExitSignalName|GetOpenLongEntrySignal|GetOpenShortEntrySignal|SetStopLoss|SetProfitTarget" <target>
+rg -n "GetRealtimeOrder|OnExecutionUpdate|RealtimeErrorHandling|OrderState.Rejected|ProtectiveReject|GapStop" <target>
 rg -n "DrawSession|DrawSkip|DrawNews|NoTradesAfter" <target>
 rg -n "ValidateRequiredPrimaryTimeframe|isConfiguredTimeframeValid|ValidateRequiredPrimaryInstrument|isConfiguredInstrumentValid|InvalidConfiguration|timeframePopupShown|instrumentPopupShown" <target>
 rg -n "WebhookUrl|WebhookTickerOverride|Webhook|ProjectX|TradersPost|SendWebhook" <target>

@@ -19,6 +19,9 @@ Use this when external strategy files use different naming conventions.
 - `MaxAccountBalance` may be named `MaxBalance`, `MaxNetLiquidation`, `AccountBalanceTarget`
 - `maxAccountLimitHit` may be named `accountBalanceLimitReached`, `maxBalanceHit`, `balanceTargetReached`
 - `TryGetCurrentNetLiquidation` may be named `GetNetLiquidation`, `TryGetAccountBalance`, `GetCurrentAccountValue`
+- `MaxDailyProfit` may be named `DailyProfitTarget`, `MaxDailyAccountProfit`, `DailyProfitLimit`
+- `dailyProfitStartBalance` may be named `dailyNetLiquidationBaseline` or `startOfDayBalance`
+- `dailyProfitLimitHit` may be named `dailyProfitLimitReached` or `dailyProfitTargetReached`
 - `WebhookUrl` may be named `TradersPostWebhookUrl`, `OrderWebhookUrl`
 - `WebhookTickerOverride` may be named `WebhookInstrumentOverride`, `TickerOverride`, `InstrumentOverride`, `TradersPostTicker`
 - `timeframePopupShown` may be named `timeframeWarningShown`, `invalidTimeframeNotified`
@@ -47,6 +50,13 @@ For account-balance-guard equivalence, preserve this behavior even if names diff
 - threshold hit while in position flattens exposure immediately
 - blocked state latches for the running strategy instance unless explicitly reset/disabled
 
+For max-daily-profit-guard equivalence, preserve this behavior even if names differ:
+- visible strategy input exists and defaults to disabled
+- a fresh net-liquidation baseline is captured for each primary-bar calendar date
+- unrealized PnL counts toward the target
+- threshold hit blocks entries and flattens with reason `MaxDailyProfit`
+- the latch remains set for that calendar date even if flattening slippage moves profit below the target
+
 For heartbeat equivalence, preserve this behavior even if names differ:
 - reporter instance is created in `State.DataLoaded`
 - reporter starts in `State.Realtime`
@@ -57,6 +67,12 @@ For signal naming equivalence, preserve this behavior even if names differ:
 - entry signals are strategy-prefixed
 - exit signal builders preserve the strategy prefix
 - stops/targets/exits bind to the active prefixed entry signal
+
+For execution-driven protective-order safety equivalence, preserve this behavior even if names differ:
+- every tracked working order uses its realtime `Order` reference after the historical handoff
+- a proposed long stop is below the current bid and a proposed short stop is above the current ask
+- an already-crossed stop causes one latched market exit rather than an invalid stop submission
+- a protective rejection is handled in `OnOrderUpdate()` and prevents submission of its OCO sibling
 
 For webhook input equivalence, preserve this behavior even if names differ:
 - visible TradersPost URL input exists

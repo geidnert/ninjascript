@@ -1,6 +1,6 @@
 ---
 name: apply-nt-common-bot-parts
-description: Apply standardized non-strategy-specific modules to NinjaTrader strategies (session/skip/news windows, transition safety cancel+flatten logic, startup timeframe/instrument validation, max-account-balance guard, canonical infobox order, optional webhooks with ticker override/null-safety, and branding) using docs/bot-common-parts-spec.md as source of truth.
+description: Apply standardized non-strategy-specific modules to NinjaTrader strategies (session/skip/news windows, transition safety cancel+flatten logic, startup timeframe/instrument validation, max-account-balance and max-daily-profit guards, canonical infobox order, optional webhooks with ticker override/null-safety, and branding) using docs/bot-common-parts-spec.md as source of truth.
 ---
 
 # Apply NT Common Bot Parts
@@ -26,6 +26,7 @@ Use this skill when integrating a new strategy file from external developers and
 - skip/news gating methods
 - cancel/flatten helpers
 - max account balance guard / net liquidation helper / limit-hit latch
+- max daily profit guard / per-date net-liquidation baseline / daily latch
 - signal naming helpers/constants
 - entry confirmation property/helper
 - strategy lifecycle hooks for startup/shutdown
@@ -40,6 +41,7 @@ Use this skill when integrating a new strategy file from external developers and
 - entry gating checks
 - session boundary guards
 - max account balance guard using net liquidation (with cash+unrealized fallback when needed)
+- max daily profit guard using a per-calendar-date net-liquidation baseline, with a same-date latch and `MaxDailyProfit` flatten reason
 - strategy-name-prefixed signal constants/helpers for entries and exits
 - optional entry confirmation toggle and popup helper using the `Duo.cs` pattern
 - heartbeat reporting using `StrategyHeartbeatReporter`
