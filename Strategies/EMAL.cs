@@ -292,12 +292,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // at reasonable sample size. (09:29 was also excluded here same-day, then Steve reversed
         // that - 09:29 trades normally again; see EMAL-18-changelog.txt section 6.) Does NOT
         // change the window's real boundaries (Us0920StartMinute/EndMinute above, used by
-        // GetSessionIndex for M1/M15) - this only gates entries within IsEntryWindowOpen(), M1
+        // GetSessionIndex for M1) - this only gates entries within IsEntryWindowOpen(), M1
         // only, and only when EnableMinuteFilter is off (see IsUs0920EarlyShapeAllowed()). M5 has
         // its own, separate schedule - see below and EMAL-19-changelog.txt.
         private const int Us0920EffectiveStartMinuteM1 = 9 * 60 + 28; // 09:28 ET
 
-        // M5-only schedule (Steve, 2026-08-01, EMAL-19) - independent of the M1/M15 window
+        // M5-only schedule (Steve, 2026-08-01, EMAL-19) - independent of the M1 window
         // boundaries above, per the per-native-5-minute-bar scan of a real M5 Playback run
         // (results/EMAL-5m-per-bar-scan-apr26-jul24.md): 09:20/09:25/09:30 flip sign between
         // date halves (noise), 09:35/09:40/09:45 are positive on BOTH halves, so the M5 session
@@ -306,7 +306,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // one bar in either window negative on both halves - blocked below in
         // IsEntryWindowOpen(), not here, since it falls inside an otherwise-valid session.
         // Boundary between the two windows' presets stays at 09:50 (Steve's choice) - the M5
-        // session is continuous from 09:35-10:30 with no gap, unlike M1/M15's 09:50-09:55 block.
+        // session is continuous from 09:35-10:30 with no gap, unlike M1's 09:50-09:55 block.
         private const int Us0920EffectiveStartMinuteM5 = 9 * 60 + 35; // 09:35 ET
         private const int Us0955BlockedBarMinuteM5 = 10 * 60 + 5;    // 10:05 ET, single bar
 
@@ -340,7 +340,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (State == State.SetDefaults)
             {
                 Description = "EMA direction strategy for NQ with market or passive bid/ask limit entries "
-                    + "and fixed take-profit and stop-loss brackets. Select the Time Frame (M1/M5/M15) and "
+                    + "and fixed take-profit and stop-loss brackets. Select the Time Frame (M1/M5) and "
                     + "apply the strategy to a chart of the matching bar period.";
                 Name = GetVersionedStrategyName("EMAL");
                 Calculate = Calculate.OnEachTick;
@@ -439,10 +439,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0920MinimumSlope = 2.75;   // overwritten by ResolveWindowPresets from the Setting popup
                 Us0955MinimumSlope = 2.75;
 
-                // M5-only free-form overrides (Steve, 2026-08-01). Seeded from the M1 preset
+                // Sessions 5m (Steve, 2026-08-01, EMAL-21): independent enable flags, default on
+                // to match the current continuous 09:35-10:30 M5 schedule out of the box.
+                Us0920EnabledM5 = true;
+                Us0955EnabledM5 = true;
+
+                // M5-only free-form TP/SL/slope (Steve, 2026-08-01). Seeded from the M1 preset
                 // defaults above so an untouched M5 chart isn't degenerate; overwritten by
-                // ResolveWindowPresets() whenever TimeFrame == M5. Set these directly (profile
-                // XML / CLI --select) to scan values outside the M1 preset list.
+                // ResolveWindowPresets() whenever TimeFrame == M5. Now visible in the Sessions 5m
+                // group (EMAL-21) - set directly until a few good settings are found, then they'll
+                // collapse into a preset popup like Sessions 1m has.
                 Us0920TakeProfitPointsM5 = 5.0;
                 Us0920StopLossPointsM5 = 18.0;
                 Us0920MinimumSlopeM5 = 2.75;
@@ -607,11 +613,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return ConvertToEastern(GetBarOpenRaw());
         }
 
-        // 0 = Asia, 1 = Europe, 2 = US cash (10:30-17:00), 3 = US 09:20-09:50 (M1/M15) or
-        // 09:35-09:50 (M5), 5 = US 09:55-10:30 (M1/M15) or 09:50-10:30 (M5), -1 = maintenance
-        // halt OR (M1/M15 only) the 09:50-09:55 no-trade block OR (M5 only) before 09:35.
+        // 0 = Asia, 1 = Europe, 2 = US cash (10:30-17:00), 3 = US 09:20-09:50 (M1) or
+        // 09:35-09:50 (M5), 5 = US 09:55-10:30 (M1) or 09:50-10:30 (M5), -1 = maintenance
+        // halt OR (M1 only) the 09:50-09:55 no-trade block OR (M5 only) before 09:35.
         // All ET (NY) windows are checked before the London-anchored Europe band, which
-        // caps Europe at 09:20 (its 09:20-09:30 tail is claimed by US 09:20-09:50) on M1/M15;
+        // caps Europe at 09:20 (its 09:20-09:30 tail is claimed by US 09:20-09:50) on M1;
         // on M5 the cutoff is 09:35 for the same reason. M5 runs one continuous session with no
         // internal gap - see the TimeFrame branch below (Steve, 2026-08-01, EMAL-19).
         private int GetSessionIndex(DateTime platformTime)
@@ -626,7 +632,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (TimeFrame == EMALTimeFrame.M5)
             {
                 // Single continuous M5 session, 09:35-10:30 ET, NO 09:50-09:55 gap (Steve,
-                // 2026-08-01 - independent M5 schedule, separate from M1/M15 below). Preset
+                // 2026-08-01 - independent M5 schedule, separate from M1 below). Preset
                 // boundary kept at the old 09:50 split point: 09:35-09:49 -> session 3 (US-0920
                 // M5 fields), 09:50-10:29 -> session 5 (US-0955 M5 fields) - reuses both preset
                 // sets from EMAL-18 section 4 unchanged, just removes the gap between them and
@@ -646,7 +652,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else
             {
                 // 09:50-09:55 ET hard no-trade block (returns "no session" so entries are gated).
-                // M1/M15 only - M5 has its own continuous schedule above, no gap.
+                // M1 only - M5 has its own continuous schedule above, no gap.
                 if (nyMinute >= BlockStartMinute && nyMinute < BlockEndMinute)
                     return -1;
 
@@ -685,15 +691,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        // US 09:20 and 09:55 windows have independent enable flags per timeframe (Steve,
+        // 2026-08-01, EMAL-21) - Us0920Enabled/Us0955Enabled (Sessions 1m) only apply on M1;
+        // Us0920EnabledM5/Us0955EnabledM5 (Sessions 5m) only apply on M5. Asia/Europe/US-cash
+        // are shared across both timeframes (no M5-specific equivalents requested).
         private bool IsSessionEnabled(int index)
         {
+            bool m5 = TimeFrame == EMALTimeFrame.M5;
             switch (index)
             {
                 case 0: return AsiaEnabled;
                 case 1: return EuropeEnabled;
                 case 2: return UsEnabled;
-                case 3: return Us0920Enabled;
-                case 5: return Us0955Enabled;
+                case 3: return m5 ? Us0920EnabledM5 : Us0920Enabled;
+                case 5: return m5 ? Us0955EnabledM5 : Us0955Enabled;
                 default: return false;
             }
         }
@@ -749,8 +760,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // Resolves each window's Setting popup into its TP / SL / slope. The slope is written
         // back into the per-window Us*MinimumSlope so GetConfiguredSlope keeps working unchanged.
         // On M5, the *M5 free-form fields replace the presets entirely (Steve, 2026-08-01) - this
-        // is what lets the CLI scan arbitrary TP/SL/slope instead of the fixed preset list. M1 and
-        // M15 are completely unaffected by this branch.
+        // is what lets the CLI scan arbitrary TP/SL/slope instead of the fixed preset list. M1 is
+        // completely unaffected by this branch.
         private void ResolveWindowPresets()
         {
             if (TimeFrame == EMALTimeFrame.M5)
@@ -1567,7 +1578,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // the constant above for the 09:28 rationale. Deliberately overridden by
         // EnableMinuteFilter - if the user has taken manual control via the per-position
         // checkboxes, this hardcoded shape steps aside entirely rather than stacking with it.
-        // Only meaningful on M1 (see ResolveWindowPresets comment on why M5/M15 don't have a
+        // Only meaningful on M1 (see ResolveWindowPresets comment on why M5 doesn't have a
         // sub-bar-minute concept); harmless no-op otherwise since sessionIndex 3 only occurs
         // within Us0920Start/EndMinute regardless of TimeFrame.
         private bool IsUs0920EarlyShapeAllowed(DateTime easternTime, int sessionIndex)
@@ -2145,7 +2156,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (TimeFrame)
             {
                 case EMALTimeFrame.M5: return 5;
-                case EMALTimeFrame.M15: return 15;
                 default: return 1;
             }
         }
@@ -2154,8 +2164,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // All of these are hidden from the user; the Time Frame popup is the only control.
         //
         // M1 is the tuned live config (EMA 9 / Asia 3.0 / Europe 0.5 / US 2.75 / TP 4 / SL 18,
-        // Tuning Brief line 414). M5 and M15 are NOT yet tuned - they reuse the M1 values as
-        // placeholders. TODO: replace the M5/M15 blocks once the higher-timeframe sweeps are done.
+        // Tuning Brief line 414). M5 is not yet tuned via this block - it reuses the M1 values
+        // as placeholders for Asia/Europe/US-cash (the two special US windows get their own
+        // values via the *M5 fields and ResolveWindowPresets() instead, see below). M15 removed
+        // entirely (Steve, 2026-08-01, EMAL-21) - not a planned timeframe for this strategy.
         private void ApplyTimeFrameSettings()
         {
             switch (TimeFrame)
@@ -2168,18 +2180,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     AsiaMinimumSlope = 3.0;
                     EuropeMinimumSlope = 0.5;
                     UsMinimumSlope = 2.75;
-                    TakeProfitPoints = 4.0;
-                    StopLossPoints = 18.0;
-                    break;
-
-                case EMALTimeFrame.M15:
-                    // TODO(15m tuning): placeholder = M1 tuned set.
-                    EmaPeriod = 9;
-                    AsiaMinimumSlope = 3.0;
-                    EuropeMinimumSlope = 0.5;
-                    UsMinimumSlope = 2.75;
-                    Us0920MinimumSlope = 2.75;   // seeded from US; tune separately
-                    Us0955MinimumSlope = 2.75;   // seeded from US; tune separately
                     TakeProfitPoints = 4.0;
                     StopLossPoints = 18.0;
                     break;
@@ -4399,7 +4399,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Time Frame", Description = "Candle timeframe the strategy is tuned for. Apply the strategy to a chart of the MATCHING bar period: M1 = 1-minute, M5 = 5-minute, M15 = 15-minute. Selecting a timeframe loads its internally-managed parameter set. M5 and M15 are NOT yet tuned - they currently reuse the 1-minute values as placeholders.", GroupName = "Time Frame", Order = 0)]
+        [Display(Name = "Time Frame", Description = "Candle timeframe the strategy is tuned for. Apply the strategy to a chart of the MATCHING bar period: M1 = 1-minute, M5 = 5-minute. Selecting a timeframe loads its own independent schedule and settings - see the Sessions 1m / Sessions 5m groups.", GroupName = "Time Frame", Order = 0)]
         public EMALTimeFrame TimeFrame { get; set; }
 
         [NinjaScriptProperty]
@@ -4592,133 +4592,154 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Cancel If Moved (points)", Description = "Cancel an unfilled limit entry once price has travelled this far in the signal direction without us. 0 disables.", GroupName = "Limit Entry Cancellation", Order = 1)]
         public double CancelIfMovedPoints { get; set; }
 
+        // ================================================================================
+        // Advanced (Steve, 2026-08-01, EMAL-21) - moved out of Sessions 1m into their own
+        // section, even though both remain hidden. Both apply regardless of Time Frame
+        // (unchanged behavior) - not 1m-specific despite where they used to live.
+        // ================================================================================
+
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Use Per-Session Settings", Description = "Enable the per-session split (Asia 18:30-03:00, Europe 03:00-09:20, US 09:20-09:50, US 09:55-10:30, US 10:30-17:00). When off, the global Minimum EMA Slope applies to every hour.", GroupName = "Sessions", Order = 0)]
+        [Display(Name = "Use Per-Session Settings", Description = "Enable the per-session split (Asia 18:30-03:00, Europe 03:00-09:20, US 09:20-09:50, US 09:55-10:30, US 10:30-17:00). When off, the global Minimum EMA Slope applies to every hour.", GroupName = "Advanced", Order = 0)]
         public bool UsePerSessionSettings { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Use Bucket Filter", Description = "Restrict entries to the 33 approved 30-minute windows derived from 78 sessions of playback. The window list is hardcoded and not user-editable. Risk-reduction setting: it lowers drawdown and also lowers gross profit.", GroupName = "Sessions", Order = 10)]
+        [Display(Name = "Use Bucket Filter", Description = "Restrict entries to the 33 approved 30-minute windows derived from 78 sessions of playback. The window list is hardcoded and not user-editable. Risk-reduction setting: it lowers drawdown and also lowers gross profit. Applies regardless of Time Frame.", GroupName = "Advanced", Order = 1)]
         public bool UseBucketFilter { get; set; }
 
-
-
-
-        [NinjaScriptProperty]
-        [Display(Name = "Asia 18:30-03:00 Enabled", GroupName = "Sessions", Order = 1)]
-        public bool AsiaEnabled { get; set; }
-
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Asia Min Slope", Description = "Slope threshold for the Asia session.", GroupName = "Sessions", Order = 2)]
-        public double AsiaMinimumSlope { get; set; }
+        // ================================================================================
+        // Sessions 1m (Steve, 2026-08-01, EMAL-21) - reorganized so the two US windows this
+        // strategy actually runs come first, then the minute filter, with Asia/Europe/US-cash
+        // (rarely touched) hidden at the bottom. Only affects M1; see Sessions 5m below for M5's
+        // independent equivalents.
+        // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "Europe 03:00-09:20 Enabled", GroupName = "Sessions", Order = 3)]
-        public bool EuropeEnabled { get; set; }
-
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Europe Min Slope", Description = "Slope threshold for the Europe session.", GroupName = "Sessions", Order = 4)]
-        public double EuropeMinimumSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "US 10:30-17:00 Enabled", GroupName = "Sessions", Order = 5)]
-        public bool UsEnabled { get; set; }
-
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US Min Slope", Description = "Slope threshold for the US cash session (10:30-17:00).", GroupName = "Sessions", Order = 6)]
-        public double UsMinimumSlope { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "US 09:20-09:50 Enabled", GroupName = "Sessions", Order = 7)]
+        [Display(Name = "US 09:20-09:50 Enabled", GroupName = "Sessions 1m", Order = 0)]
         public bool Us0920Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:20-09:50 Setting", Description = "Preset TP/SL/slope for the US 09:20-09:50 window. Member name reads TP_SL_Slope (e.g. TP5_SL18_Slope2_75 = TP 5, SL 18, slope 2.75).", GroupName = "Sessions", Order = 8)]
+        [Display(Name = "US 09:20-09:50 Setting", Description = "Preset TP/SL/slope for the US 09:20-09:50 window. Member name reads TP_SL_Slope (e.g. TP5_SL18_Slope2_75 = TP 5, SL 18, slope 2.75).", GroupName = "Sessions 1m", Order = 1)]
         public EMALUs0920Setting Us0920Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:20-09:50 Min Slope", Description = "Driven by the US 09:20-09:50 Setting preset; not user-editable.", GroupName = "Sessions", Order = 21)]
+        [Display(Name = "US 09:20-09:50 Min Slope", Description = "Driven by the US 09:20-09:50 Setting preset; not user-editable.", GroupName = "Sessions 1m", Order = 2)]
         public double Us0920MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Enabled", GroupName = "Sessions", Order = 9)]
+        [Display(Name = "US 09:55-10:30 Enabled", GroupName = "Sessions 1m", Order = 3)]
         public bool Us0955Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Setting", Description = "Preset TP/SL/slope for the US 09:55-10:30 window. Member name reads TP_SL_Slope (e.g. TP4_SL18_Slope2_75 = TP 4, SL 18, slope 2.75).", GroupName = "Sessions", Order = 10)]
+        [Display(Name = "US 09:55-10:30 Setting", Description = "Preset TP/SL/slope for the US 09:55-10:30 window. Member name reads TP_SL_Slope (e.g. TP4_SL18_Slope2_75 = TP 4, SL 18, slope 2.75).", GroupName = "Sessions 1m", Order = 4)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "Sessions", Order = 22)]
+        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "Sessions 1m", Order = 5)]
         public double Us0955MinimumSlope { get; set; }
-
-        // M5-only free-form overrides (Steve, 2026-08-01). While Time Frame = M5, these replace
-        // the Us0920Setting/Us0955Setting presets entirely (see ResolveWindowPresets()) so the
-        // CLI can scan arbitrary TP/SL/slope values instead of the fixed M1 preset list. Hidden
-        // from the live dialog on purpose - this is a research/tuning surface, not a trading
-        // control. Ignored on M1/M15.
-        [Range(0.25, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:20-09:50 TP (M5)", Description = "Take-profit points for the US 09:20-09:50 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 23)]
-        public double Us0920TakeProfitPointsM5 { get; set; }
-
-        [Range(0.25, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:20-09:50 SL (M5)", Description = "Stop-loss points for the US 09:20-09:50 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 24)]
-        public double Us0920StopLossPointsM5 { get; set; }
-
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:20-09:50 Min Slope (M5)", Description = "Slope threshold for the US 09:20-09:50 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 25)]
-        public double Us0920MinimumSlopeM5 { get; set; }
-
-        [Range(0.25, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 TP (M5)", Description = "Take-profit points for the US 09:55-10:30 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 26)]
-        public double Us0955TakeProfitPointsM5 { get; set; }
-
-        [Range(0.25, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 SL (M5)", Description = "Stop-loss points for the US 09:55-10:30 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 27)]
-        public double Us0955StopLossPointsM5 { get; set; }
-
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Min Slope (M5)", Description = "Slope threshold for the US 09:55-10:30 window, used only when Time Frame = M5.", GroupName = "Sessions", Order = 28)]
-        public double Us0955MinimumSlopeM5 { get; set; }
 
         // Minute-of-5 filter (Steve, 2026-08-01). One shared setting applied to whichever
         // sessions/windows are enabled - deliberately not per-window (Us0920/Us0955 or otherwise).
         // Only meaningful while the strategy evaluates 1-minute bars; see IsMinuteAllowed().
         [NinjaScriptProperty]
-        [Display(Name = "Enable Minute Filter", Description = "Master switch. When off, all five minute positions trade (current behavior). When on, only the positions checked below are allowed to enter, across every enabled session/window.", GroupName = "Minute Filter", Order = 0)]
+        [Display(Name = "Enable Minute Filter", Description = "Master switch. When off, all five minute positions trade (current behavior). When on, only the positions checked below are allowed to enter, across every enabled session/window.", GroupName = "Sessions 1m", Order = 6)]
         public bool EnableMinuteFilter { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "Minute Filter", Order = 1)]
+        [Display(Name = "Trade Minute 1a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "Sessions 1m", Order = 7)]
         public bool TradeMinute1a { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "Minute Filter", Order = 2)]
+        [Display(Name = "Trade Minute 1b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "Sessions 1m", Order = 8)]
         public bool TradeMinute1b { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "Minute Filter", Order = 3)]
+        [Display(Name = "Trade Minute 1c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "Sessions 1m", Order = 9)]
         public bool TradeMinute1c { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "Minute Filter", Order = 4)]
+        [Display(Name = "Trade Minute 1d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "Sessions 1m", Order = 10)]
         public bool TradeMinute1d { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "Minute Filter", Order = 5)]
+        [Display(Name = "Trade Minute 1e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "Sessions 1m", Order = 11)]
         public bool TradeMinute1e { get; set; }
+
+        // Rarely touched - hidden at the bottom of Sessions 1m rather than removed (Steve,
+        // 2026-08-01, EMAL-21). Asia/Europe/US-cash have no M5-specific equivalent since only
+        // the two short US windows were asked for on M5.
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia 18:30-03:00 Enabled", GroupName = "Sessions 1m", Order = 22)]
+        public bool AsiaEnabled { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia Min Slope", Description = "Slope threshold for the Asia session.", GroupName = "Sessions 1m", Order = 23)]
+        public double AsiaMinimumSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Europe 03:00-09:20 Enabled", GroupName = "Sessions 1m", Order = 24)]
+        public bool EuropeEnabled { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Europe Min Slope", Description = "Slope threshold for the Europe session.", GroupName = "Sessions 1m", Order = 25)]
+        public double EuropeMinimumSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 10:30-17:00 Enabled", GroupName = "Sessions 1m", Order = 26)]
+        public bool UsEnabled { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US Min Slope", Description = "Slope threshold for the US cash session (10:30-17:00).", GroupName = "Sessions 1m", Order = 27)]
+        public double UsMinimumSlope { get; set; }
+
+        // ================================================================================
+        // Sessions 5m (Steve, 2026-08-01, EMAL-21) - independent of Sessions 1m above. Only the
+        // two short US windows exist on M5 (continuous 09:35-10:30, see GetSessionIndex); no
+        // Asia/Europe/US-cash equivalent was asked for. TP/SL/slope are plain numeric fields for
+        // now, visible so they can be tuned directly - Steve's plan is to collapse them into a
+        // preset popup (like Sessions 1m's Setting dropdowns) once a few good values are found.
+        // ================================================================================
+
+        [NinjaScriptProperty]
+        [Display(Name = "US 09:20 Window Enabled (5m)", Description = "Enables the 09:35-09:50 portion of the continuous M5 session. Independent of the 1m US 09:20-09:50 Enabled flag above.", GroupName = "Sessions 5m", Order = 0)]
+        public bool Us0920EnabledM5 { get; set; }
+
+        [Range(0.25, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "US 09:20 Window TP (5m)", Description = "Take-profit points for the 09:35-09:50 portion of the M5 session.", GroupName = "Sessions 5m", Order = 1)]
+        public double Us0920TakeProfitPointsM5 { get; set; }
+
+        [Range(0.25, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "US 09:20 Window SL (5m)", Description = "Stop-loss points for the 09:35-09:50 portion of the M5 session.", GroupName = "Sessions 5m", Order = 2)]
+        public double Us0920StopLossPointsM5 { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "US 09:20 Window Min Slope (5m)", Description = "Slope threshold for the 09:35-09:50 portion of the M5 session.", GroupName = "Sessions 5m", Order = 3)]
+        public double Us0920MinimumSlopeM5 { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "US 09:55 Window Enabled (5m)", Description = "Enables the 09:50-10:30 portion of the continuous M5 session (10:05 bar excepted - always blocked). Independent of the 1m US 09:55-10:30 Enabled flag above.", GroupName = "Sessions 5m", Order = 4)]
+        public bool Us0955EnabledM5 { get; set; }
+
+        [Range(0.25, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "US 09:55 Window TP (5m)", Description = "Take-profit points for the 09:50-10:30 portion of the M5 session.", GroupName = "Sessions 5m", Order = 5)]
+        public double Us0955TakeProfitPointsM5 { get; set; }
+
+        [Range(0.25, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "US 09:55 Window SL (5m)", Description = "Stop-loss points for the 09:50-10:30 portion of the M5 session.", GroupName = "Sessions 5m", Order = 6)]
+        public double Us0955StopLossPointsM5 { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "US 09:55 Window Min Slope (5m)", Description = "Slope threshold for the 09:50-10:30 portion of the M5 session.", GroupName = "Sessions 5m", Order = 7)]
+        public double Us0955MinimumSlopeM5 { get; set; }
 
 
 
@@ -4769,8 +4790,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     public enum EMALTimeFrame
     {
         M1,
-        M5,
-        M15
+        M5
     }
 
     public enum EMALTradeParity
