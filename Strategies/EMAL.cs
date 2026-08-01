@@ -5,7 +5,10 @@ using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
+using System.Web.Script.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -29,6 +32,80 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string TargetExitSignal = StrategySignalPrefix + "Target";
         private const string TerminalExitSignalPrefix = StrategySignalPrefix + "Exit";
         private const string NewsExitSignal = StrategySignalPrefix + "NewsFlat";
+
+        public enum WebhookProvider
+        {
+            TradersPost,
+            ProjectX
+        }
+
+        private enum ProjectXProtectionOrderKind
+        {
+            StopLoss,
+            TakeProfit
+        }
+
+        private sealed class ProjectXAccountInfo
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
+            public bool CanTrade { get; set; }
+            public bool IsVisible { get; set; }
+        }
+
+        private sealed class ProjectXContractInfo
+        {
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public string SymbolId { get; set; }
+            public bool ActiveContract { get; set; }
+        }
+
+        // The Tradovate/Apex quota is shared by every account on the same connection/user.
+        // These counters therefore live across EMAL instances, keyed by the NT connection
+        // object rather than by account. They intentionally count only order actions EMAL
+        // itself requests; manual orders, other strategies and other VPS processes are not
+        // visible here, which is why the default ceiling leaves a large safety margin.
+        private sealed class SharedOrderRateState
+        {
+            public readonly Queue<DateTime> ActionsUtc = new Queue<DateTime>();
+            public readonly Dictionary<string, int> Reservations = new Dictionary<string, int>();
+            public DateTime ProviderBlockedUntilUtc = DateTime.MinValue;
+            public string ProviderBlockReason = string.Empty;
+        }
+
+        private static readonly object OrderRateGuardSync = new object();
+        private static readonly Dictionary<object, SharedOrderRateState> OrderRateStates =
+            new Dictionary<object, SharedOrderRateState>();
+        private const int NewTradeActionReserve = 6;
+        private readonly string orderRateInstanceId = Guid.NewGuid().ToString("N");
+        private int rateGuardBlockedEntryCount;
+
+        // ProjectX session and mirror state. The actual entry/exit signal names remain stable
+        // EMAL-prefixed names; the assembly version is used only for the strategy display name.
+        private string webhookUrl = string.Empty;
+        private string webhookTickerOverride = string.Empty;
+        private string projectXSessionToken = string.Empty;
+        private DateTime projectXTokenAcquiredUtc = DateTime.MinValue;
+        private List<ProjectXAccountInfo> projectXAccounts;
+        private string projectXResolvedContractId = string.Empty;
+        private string projectXResolvedInstrumentKey = string.Empty;
+        private readonly Dictionary<string, long> projectXLastOrderIds = new Dictionary<string, long>();
+        private double projectXLastSyncedStopPrice;
+        private double projectXLastSyncedTargetPrice;
+        private bool projectXEntryMirrorActive;
+        private bool suppressProjectXNextExecutionExit;
+        private DateTime projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+        private int projectXOrphanRecoveryCount;
+
+        // Emergency-exit recovery. A rejected market exit must release its latch; otherwise a
+        // later partial entry fill can leave the existing stop sized for only part of the position.
+        private string terminalExitRetryReason = string.Empty;
+        private string terminalExitRetryEntrySignal = string.Empty;
+        private DateTime terminalExitRetryDueUtc = DateTime.MinValue;
+        private int terminalExitRetryCount;
+        private bool terminalExitRetryExhaustedLogged;
+        private const int MaxTerminalExitRetries = 8;
 
         // ---- chart info panel (WPF overlay on ChartControl's parent, not SharpDX) ----
         private const string InfoFooter = "AutoEdge Systems™";
@@ -250,7 +327,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Description = "EMA direction strategy for NQ with market or passive bid/ask limit entries "
                     + "and fixed take-profit and stop-loss brackets. Select the Time Frame (M1/M5/M15) and "
                     + "apply the strategy to a chart of the matching bar period.";
-                Name = "EMAL";
+                Name = GetVersionedStrategyName("EMAL");
                 Calculate = Calculate.OnEachTick;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
@@ -285,6 +362,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0920LimitOffset = 0.0;
                 Us0955LimitOffset = 0.0;
                 MaxAccountBalance = 0.0;
+                EnableOrderRateGuard = true;
+                OrderActionLimitPerHour = 1100;
+
+                WebhookUrl = string.Empty;
+                WebhookTickerOverride = string.Empty;
+                WebhookProviderType = WebhookProvider.TradersPost;
+                ProjectXApiBaseUrl = "https://api.topstepx.com";
+                ProjectXTradeAllAccounts = false;
+                ProjectXUsername = string.Empty;
+                ProjectXApiKey = string.Empty;
+                ProjectXAccountId = string.Empty;
+                ProjectXContractId = string.Empty;
                 // Contract-rollover block (Steve, 2026-07-31): off until a roll date is set;
                 // when set, blocks the first 3 sessions of the new contract.
                 RolloverBlockStart = string.Empty;
@@ -398,9 +487,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (State == State.Realtime)
             {
                 TransitionTrackedOrderReferencesToRealtime();
+                RunProjectXStartupPreflight();
             }
             else if (State == State.Terminated)
             {
+                CancelWorkingEntryOnTermination();
+                FlattenProjectXOrphanOnTermination();
+                ReleaseOrderRateReservation();
                 FlushAllPathRecorders();
                 PrintFillRateSummary();
                 CloseFeatureLog();
@@ -863,6 +956,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 FlattenAtNewsBlock, newsFlattenCount));
             Print(string.Format("  timeout / moved     : {0}s / {1} pts (0 = off)",
                 LimitOrderTimeoutSeconds, CancelIfMovedPoints));
+            Print(string.Format("  order rate guard    : {0} / {1} actions (entries blocked: {2})",
+                EnableOrderRateGuard, OrderActionLimitPerHour, rateGuardBlockedEntryCount));
             Print(string.Format("  signals generated   : {0}", signalCount));
             Print(string.Format("  filled              : {0}  ({1:F1}%)",
                 filledCount, 100.0 * filledCount / signalCount));
@@ -890,6 +985,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             TrackExcursion();
             UpdatePathRecorders();
+            EvaluateProjectXOrphanRecovery();
+            EvaluateTerminalExitRecovery();
             EvaluateTimeStop();
             EvaluateEntryCancellation();
         }
@@ -1062,6 +1159,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Latch before cancelling: CancelOrder is asynchronous and this method runs on
             // every tick, so without this we would re-issue the cancel until it confirms.
             entryCancelPending = true;
+            RecordNtOrderAction("cancel-entry-" + reason);
             CancelOrder(entryOrder);
 
             Print(string.Format("{0} | cancel {1} | {2} | ref={3:F2} last={4:F2} held={5:F1}s",
@@ -1120,6 +1218,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (dailyLossLimitReached) return "daily loss cap";
             if (maxAccountBalanceLimitReached) return "balance cap";
 
+            int projectedActions;
+            int actionLimit;
+            DateTime providerBlockedUntilUtc;
+            if (TryGetOrderRateStatus(out projectedActions, out actionLimit, out providerBlockedUntilUtc))
+            {
+                if (providerBlockedUntilUtc > DateTime.UtcNow)
+                    return "API cooldown";
+                if (projectedActions + NewTradeActionReserve > actionLimit)
+                    return "API guard";
+            }
+
             return "allow";
         }
 
@@ -1139,6 +1248,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // silently never fills. Surfaces the "enable Tick Replay" cause.
             if (State == State.Realtime && EntryOrderType == EMALEntryOrderType.Limit && !sawMarketData)
                 return "ERROR: no ticks (enable Tick Replay)";
+
+            if (State == State.Realtime
+                && Position.MarketPosition != MarketPosition.Flat
+                && !IsOrderActive(protectiveStopOrder)
+                && !terminalExitPending)
+            {
+                return "CRITICAL: position has no confirmed stop";
+            }
+
+            int projectedActions;
+            int actionLimit;
+            DateTime providerBlockedUntilUtc;
+            if (TryGetOrderRateStatus(out projectedActions, out actionLimit, out providerBlockedUntilUtc)
+                && providerBlockedUntilUtc > DateTime.UtcNow)
+            {
+                return string.Format("API cooldown to {0:HH:mm} UTC", providerBlockedUntilUtc);
+            }
 
             return null;
         }
@@ -1167,6 +1293,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lines.Add(new KeyValuePair<string, string>("TP:", GetConfiguredTakeProfit().ToString("0.##", CultureInfo.InvariantCulture)));
             lines.Add(new KeyValuePair<string, string>("SL:", GetConfiguredStopLoss().ToString("0.##", CultureInfo.InvariantCulture)));
             lines.Add(new KeyValuePair<string, string>("Trade:", GetTradeGateState()));
+            int projectedActions;
+            int actionLimit;
+            DateTime providerBlockedUntilUtc;
+            if (TryGetOrderRateStatus(out projectedActions, out actionLimit, out providerBlockedUntilUtc))
+                lines.Add(new KeyValuePair<string, string>("API:", string.Format("{0}/{1}", projectedActions, actionLimit)));
             lines.Add(new KeyValuePair<string, string>("Session:", SessionName(session)));
             lines.Add(new KeyValuePair<string, string>(InfoFooter, string.Empty));
             return lines;
@@ -1293,6 +1424,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             var assembly = Assembly.GetExecutingAssembly();
             Version version = assembly.GetName().Version;
             return version != null ? version.ToString() : "0.0.0.0";
+        }
+
+        private string GetVersionedStrategyName(string baseName)
+        {
+            return baseName + GetAddOnVersion().Replace(".", string.Empty);
         }
 
         // Allowed 30-minute entry buckets, indexed from 00:00 ET in 30-minute steps
@@ -1508,6 +1644,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (TimeStopSeconds <= 0.0
                 || terminalExitPending
+                || IsTerminalExitRetryWaiting()
                 || openEntryDirection == 0
                 || openEntryPrice <= 0.0
                 || openEntryTime == DateTime.MinValue
@@ -1539,15 +1676,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void FlattenForNews()
         {
-            if (Position.MarketPosition == MarketPosition.Flat)
+            if (Position.MarketPosition == MarketPosition.Flat
+                || terminalExitPending
+                || IsTerminalExitRetryWaiting())
                 return;
 
             int quantity = Position.Quantity;
+            terminalExitPending = true;
+
+            RecordNtOrderAction("news-exit");
 
             if (Position.MarketPosition == MarketPosition.Long)
                 ExitLong(quantity, NewsExitSignal, LongEntrySignal);
             else
                 ExitShort(quantity, NewsExitSignal, ShortEntrySignal);
+
+            SendExplicitProjectXExit("news");
 
             newsFlattenCount++;
 
@@ -1710,6 +1854,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
+            string rateBlockReason;
+            if (!TryReserveNewTradeActions(out rateBlockReason))
+            {
+                rateGuardBlockedEntryCount++;
+                ClearQueuedEntry();
+                Print(string.Format(
+                    "{0} | ORDER RATE GUARD | entry blocked | {1}",
+                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                    rateBlockReason));
+                return;
+            }
+
             int direction = queuedDirection;
             double limitPrice = queuedLimitPrice;
             double takeProfit = queuedTakeProfitPoints;
@@ -1741,6 +1897,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 takeProfit,
                 stopLoss,
                 atr[1]));
+
+            SendPlannedProjectXEntry(
+                direction,
+                EntryOrderType == EMALEntryOrderType.Limit ? limitPrice : GetProjectXMarketReferencePrice(direction),
+                bracketReference,
+                takeProfit,
+                stopLoss);
+
+            RecordNtOrderAction("entry");
 
             if (direction > 0)
             {
@@ -1823,6 +1988,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             cancelBarEndCount++;
             entryCancelPending = true;
+            RecordNtOrderAction("cancel-entry-bar-end");
             CancelOrder(entryOrder);
         }
 
@@ -2003,6 +2169,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             string orderName = order.Name ?? string.Empty;
+            bool rateLimitedRejection = orderState == OrderState.Rejected
+                && IsProviderRateLimitRejection(comment);
+            if (rateLimitedRejection)
+                MarkProviderRateLimit(comment);
 
             if (orderName == StopExitSignal || orderName == TargetExitSignal)
             {
@@ -2029,19 +2199,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     SubmitOrUpdateProfitTarget();
                 }
 
+                if (orderState == OrderState.Accepted
+                    || orderState == OrderState.Working
+                    || orderState == OrderState.PartFilled)
+                {
+                    if (orderName == StopExitSignal)
+                        SyncProjectXProtectionUpdate(ProjectXProtectionOrderKind.StopLoss,
+                            stopPrice > 0.0 ? stopPrice : order.StopPrice, "nt8-stop-update");
+                    else
+                        SyncProjectXProtectionUpdate(ProjectXProtectionOrderKind.TakeProfit,
+                            limitPrice > 0.0 ? limitPrice : order.LimitPrice, "nt8-target-update");
+                }
+
                 return;
             }
 
             if (IsTerminalExitOrderName(orderName))
             {
-                if (orderState == OrderState.Rejected)
+                if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
                 {
                     Print(string.Format(
-                        "{0} | CRITICAL: terminal exit {1} rejected | error={2} comment={3}",
+                        "{0} | CRITICAL: terminal exit {1} {4} | error={2} comment={3}",
                         time,
                         orderName,
                         error,
-                        comment ?? string.Empty));
+                        comment ?? string.Empty,
+                        orderState));
+
+                    string reason = orderName.Length > TerminalExitSignalPrefix.Length
+                        ? orderName.Substring(TerminalExitSignalPrefix.Length)
+                        : "Rejected";
+                    ScheduleTerminalExitRetry(reason, order.FromEntrySignal, rateLimitedRejection);
                 }
 
                 return;
@@ -2049,14 +2237,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (orderName == NewsExitSignal)
             {
-                if (orderState == OrderState.Rejected)
+                if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
                 {
                     Print(string.Format(
                         "{0} | news flatten rejected | error={1} comment={2} | retrying emergency exit",
                         time,
                         error,
                         comment ?? string.Empty));
-                    TrySubmitTerminalExit("NewsReject", order.FromEntrySignal);
+                    ScheduleTerminalExitRetry("NewsReject", order.FromEntrySignal, rateLimitedRejection);
                 }
 
                 return;
@@ -2089,6 +2277,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 entryOrder = null;
                 ClearActiveEntryContext();
+                CancelProjectXEntryMirror(Position.MarketPosition == MarketPosition.Flat);
+                if (Position.MarketPosition == MarketPosition.Flat)
+                    ReleaseOrderRateReservation();
                 TrySubmitQueuedEntry();
             }
             else if (orderState == OrderState.Rejected)
@@ -2096,6 +2287,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 entryOrder = null;
                 ClearActiveEntryContext();
                 ClearQueuedEntry();
+                CancelProjectXEntryMirror(true);
+                ReleaseOrderRateReservation();
                 Print(string.Format(
                     "{0} | {1} entry rejected | error={2} comment={3}",
                     time,
@@ -2154,6 +2347,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 bool positionIsFlat = marketPosition == MarketPosition.Flat
                     || Position.MarketPosition == MarketPosition.Flat;
 
+                if (positionIsFlat && projectXEntryMirrorActive)
+                {
+                    if (suppressProjectXNextExecutionExit)
+                    {
+                        suppressProjectXNextExecutionExit = false;
+                        projectXEntryMirrorActive = false;
+                    }
+                    else if (SendWebhook("exit", 0.0, 0.0, 0.0, true, Math.Abs(quantity)))
+                    {
+                        projectXEntryMirrorActive = false;
+                    }
+                    else
+                    {
+                        projectXOrphanRecoveryCount++;
+                        projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(5);
+                    }
+
+                    if (!projectXEntryMirrorActive)
+                    {
+                        projectXLastSyncedStopPrice = 0.0;
+                        projectXLastSyncedTargetPrice = 0.0;
+                        projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                        projectXOrphanRecoveryCount = 0;
+                    }
+                }
+
                 RecordRealizedPoints(price, quantity, positionIsFlat);
 
                 if (EnableFeatureLog && positionIsFlat)
@@ -2163,14 +2382,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 if (positionIsFlat)
                     ResetProtectionTracking();
+                else if (IsTerminalExitOrderName(orderName))
+                    ScheduleTerminalExitRetry("ResidualPosition", execution.Order.FromEntrySignal, false);
             }
         }
 
         private void SubmitOrUpdateProtection(MarketPosition positionDirection, double averageEntryPrice,
             int protectedQuantity, DateTime time)
         {
-            if (terminalExitPending
-                || positionDirection == MarketPosition.Flat
+            if (positionDirection == MarketPosition.Flat
                 || protectedQuantity <= 0)
             {
                 return;
@@ -2246,10 +2466,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (IsOrderActive(protectiveStopOrder))
             {
-                ChangeOrder(protectiveStopOrder, protectedQuantity, 0.0, stopPrice);
+                bool quantityMatches = protectiveStopOrder.Quantity == protectedQuantity;
+                bool priceMatches = Math.Abs(protectiveStopOrder.StopPrice - stopPrice) < TickSize / 2.0;
+                if (!quantityMatches || !priceMatches)
+                {
+                    RecordNtOrderAction("change-stop");
+                    ChangeOrder(protectiveStopOrder, protectedQuantity, 0.0, stopPrice);
+                }
             }
             else
             {
+                if (terminalExitPending)
+                    return;
+
+                RecordNtOrderAction("submit-stop");
                 protectiveStopOrder = positionDirection == MarketPosition.Long
                     ? ExitLongStopMarket(0, true, protectedQuantity, stopPrice, StopExitSignal, protectedEntrySignal)
                     : ExitShortStopMarket(0, true, protectedQuantity, stopPrice, StopExitSignal, protectedEntrySignal);
@@ -2258,7 +2488,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // A rejection can callback synchronously from the submission above. Do not submit
             // its OCO sibling with an identifier NinjaTrader has already retired.
             if (terminalExitPending
-                || Position.MarketPosition == MarketPosition.Flat)
+                || Position.MarketPosition == MarketPosition.Flat
+                || IsTerminalExitRetryWaiting())
             {
                 return;
             }
@@ -2274,6 +2505,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // position is already closing and no target sibling should be submitted.
             if (!IsOrderActive(protectiveStopOrder))
                 return;
+
+            // Normally the stop's Accepted/Working callback stages the target. This fallback
+            // also restores a missing target after a rejected terminal-exit recovery.
+            if (!terminalExitPending)
+                SubmitOrUpdateProfitTarget();
         }
 
         private void SubmitOrUpdateProfitTarget()
@@ -2296,6 +2532,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (quantityMatches && priceMatches)
                     return;
 
+                RecordNtOrderAction("change-target");
                 ChangeOrder(
                     profitTargetOrder,
                     desiredProtectionQuantity,
@@ -2304,6 +2541,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else
             {
+                RecordNtOrderAction("submit-target");
                 profitTargetOrder = Position.MarketPosition == MarketPosition.Long
                     ? ExitLongLimit(
                         0,
@@ -2322,6 +2560,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             if (!terminalExitPending
+                && !IsTerminalExitRetryWaiting()
                 && Position.MarketPosition != MarketPosition.Flat
                 && (profitTargetOrder == null || profitTargetOrder.OrderState == OrderState.Rejected))
             {
@@ -2361,7 +2600,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void TrySubmitTerminalExit(string reason, string entrySignal)
         {
-            if (terminalExitPending)
+            if (terminalExitPending || IsTerminalExitRetryWaiting())
                 return;
 
             MarketPosition positionDirection = Position.MarketPosition;
@@ -2383,10 +2622,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 positionDirection,
                 fromEntrySignal));
 
+            terminalExitRetryReason = reason ?? string.Empty;
+            terminalExitRetryEntrySignal = fromEntrySignal ?? string.Empty;
+            RecordNtOrderAction("emergency-exit-" + (reason ?? string.Empty));
+
             if (positionDirection == MarketPosition.Long)
                 ExitLong(exitSignal, fromEntrySignal);
             else
                 ExitShort(exitSignal, fromEntrySignal);
+
+            SendExplicitProjectXExit("emergency-" + (reason ?? string.Empty));
         }
 
         private void CancelRemainingEntryAfterExit()
@@ -2399,7 +2644,47 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             entryCancelPending = true;
+            RecordNtOrderAction("cancel-entry-after-exit");
             CancelOrder(entryOrder);
+        }
+
+        private void CancelWorkingEntryOnTermination()
+        {
+            if (Account == null
+                || string.Equals(Account.Name, "Backtest", StringComparison.OrdinalIgnoreCase)
+                || !IsOrderActive(entryOrder)
+                || entryOrder.IsBacktestOrder)
+                return;
+
+            try
+            {
+                if (Account != null)
+                    Account.Cancel(new[] { entryOrder });
+
+                CancelProjectXEntryMirror(Position.MarketPosition == MarketPosition.Flat);
+                Print(string.Format(
+                    "{0} | strategy termination safety | working entry cancellation requested; protective exits left working",
+                    lastTickTime != DateTime.MinValue ? lastTickTime : DateTime.Now));
+            }
+            catch (Exception ex)
+            {
+                Print("EMAL CRITICAL: could not cancel working entry during termination: " + ex.Message);
+            }
+        }
+
+        private void FlattenProjectXOrphanOnTermination()
+        {
+            if (!projectXEntryMirrorActive
+                || WebhookProviderType != WebhookProvider.ProjectX
+                || Position.MarketPosition != MarketPosition.Flat)
+            {
+                return;
+            }
+
+            if (!SendWebhook("exit"))
+                Print("EMAL CRITICAL: ProjectX mirror could not be verified flat during strategy termination.");
+            else
+                projectXEntryMirrorActive = false;
         }
 
         // CME trading day: 18:00 ET starts the NEXT day's session, so anything at or after
@@ -2600,6 +2885,1447 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             protectiveStopOrder = null;
             profitTargetOrder = null;
             terminalExitPending = false;
+            ClearTerminalExitRetry();
+            ReleaseOrderRateReservation();
+        }
+
+        private bool IsLiveOrderRateGuardActive()
+        {
+            return EnableOrderRateGuard
+                && State == State.Realtime
+                && !IsPlaybackOrderContext();
+        }
+
+        private bool IsPlaybackOrderContext()
+        {
+            try
+            {
+                if (Account != null
+                    && !string.IsNullOrWhiteSpace(Account.Name)
+                    && Account.Name.IndexOf("Playback", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+
+                if (Account != null && Account.Connection != null)
+                {
+                    string connectionName = Account.Connection.Options != null
+                        ? Account.Connection.Options.Name
+                        : Account.Connection.ToString();
+
+                    return !string.IsNullOrWhiteSpace(connectionName)
+                        && connectionName.IndexOf("Playback", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private object GetOrderRateGuardKey()
+        {
+            try
+            {
+                if (Account != null && Account.Connection != null)
+                    return Account.Connection;
+            }
+            catch
+            {
+            }
+
+            return Account != null
+                ? (object)("EMAL-account:" + (Account.Name ?? string.Empty))
+                : (object)"EMAL-no-account";
+        }
+
+        private static void PruneOrderRateState(SharedOrderRateState state, DateTime nowUtc)
+        {
+            DateTime cutoffUtc = nowUtc.AddHours(-1);
+            while (state.ActionsUtc.Count > 0 && state.ActionsUtc.Peek() <= cutoffUtc)
+                state.ActionsUtc.Dequeue();
+
+            if (state.ProviderBlockedUntilUtc <= nowUtc)
+            {
+                state.ProviderBlockedUntilUtc = DateTime.MinValue;
+                state.ProviderBlockReason = string.Empty;
+            }
+        }
+
+        private SharedOrderRateState GetOrCreateOrderRateState(object key)
+        {
+            SharedOrderRateState state;
+            if (!OrderRateStates.TryGetValue(key, out state))
+            {
+                state = new SharedOrderRateState();
+                OrderRateStates[key] = state;
+            }
+            return state;
+        }
+
+        private bool TryReserveNewTradeActions(out string blockReason)
+        {
+            blockReason = string.Empty;
+            if (!IsLiveOrderRateGuardActive())
+                return true;
+
+            object key = GetOrderRateGuardKey();
+            DateTime nowUtc = DateTime.UtcNow;
+            lock (OrderRateGuardSync)
+            {
+                SharedOrderRateState state = GetOrCreateOrderRateState(key);
+                PruneOrderRateState(state, nowUtc);
+
+                if (state.ProviderBlockedUntilUtc > nowUtc)
+                {
+                    blockReason = string.Format(
+                        "provider cooldown until {0:HH:mm:ss} UTC",
+                        state.ProviderBlockedUntilUtc);
+                    return false;
+                }
+
+                int existingReservation;
+                if (state.Reservations.TryGetValue(orderRateInstanceId, out existingReservation)
+                    && existingReservation > 0)
+                {
+                    return true;
+                }
+
+                int reserved = state.Reservations.Values.Sum();
+                int projected = state.ActionsUtc.Count + reserved + NewTradeActionReserve;
+                int limit = Math.Max(NewTradeActionReserve, OrderActionLimitPerHour);
+                if (projected > limit)
+                {
+                    blockReason = string.Format(
+                        "order guard {0}/{1} incl. reserve",
+                        projected,
+                        limit);
+                    return false;
+                }
+
+                state.Reservations[orderRateInstanceId] = NewTradeActionReserve;
+                return true;
+            }
+        }
+
+        private void RecordNtOrderAction(string action)
+        {
+            if (!IsLiveOrderRateGuardActive())
+                return;
+
+            object key = GetOrderRateGuardKey();
+            DateTime nowUtc = DateTime.UtcNow;
+            int used;
+            int limit = Math.Max(NewTradeActionReserve, OrderActionLimitPerHour);
+
+            lock (OrderRateGuardSync)
+            {
+                SharedOrderRateState state = GetOrCreateOrderRateState(key);
+                PruneOrderRateState(state, nowUtc);
+                state.ActionsUtc.Enqueue(nowUtc);
+
+                int remaining;
+                if (state.Reservations.TryGetValue(orderRateInstanceId, out remaining))
+                {
+                    remaining--;
+                    if (remaining > 0)
+                        state.Reservations[orderRateInstanceId] = remaining;
+                    else
+                        state.Reservations.Remove(orderRateInstanceId);
+                }
+
+                used = state.ActionsUtc.Count + state.Reservations.Values.Sum();
+            }
+
+            if (used >= limit)
+            {
+                Print(string.Format(
+                    "{0} | ORDER RATE GUARD | action={1} projected={2}/{3} | new entries blocked; safety orders remain enabled",
+                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                    action,
+                    used,
+                    limit));
+            }
+        }
+
+        private void ReleaseOrderRateReservation()
+        {
+            object key = GetOrderRateGuardKey();
+            lock (OrderRateGuardSync)
+            {
+                SharedOrderRateState state;
+                if (OrderRateStates.TryGetValue(key, out state))
+                    state.Reservations.Remove(orderRateInstanceId);
+            }
+        }
+
+        private void MarkProviderRateLimit(string comment)
+        {
+            if (!IsLiveOrderRateGuardActive())
+                return;
+
+            object key = GetOrderRateGuardKey();
+            DateTime blockedUntilUtc = DateTime.UtcNow.AddHours(1);
+            lock (OrderRateGuardSync)
+            {
+                SharedOrderRateState state = GetOrCreateOrderRateState(key);
+                if (blockedUntilUtc > state.ProviderBlockedUntilUtc)
+                    state.ProviderBlockedUntilUtc = blockedUntilUtc;
+                state.ProviderBlockReason = comment ?? string.Empty;
+            }
+
+            Print(string.Format(
+                "{0} | CRITICAL ORDER RATE LIMIT | all EMAL entries on this connection blocked until {1:HH:mm:ss} UTC | protection/exits still allowed | {2}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                blockedUntilUtc,
+                comment ?? string.Empty));
+        }
+
+        private bool IsProviderRateLimitRejection(string comment)
+        {
+            string text = comment ?? string.Empty;
+            return text.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("1500 requests", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("too many requests", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool TryGetOrderRateStatus(out int projectedActions, out int limit, out DateTime providerBlockedUntilUtc)
+        {
+            projectedActions = 0;
+            limit = Math.Max(NewTradeActionReserve, OrderActionLimitPerHour);
+            providerBlockedUntilUtc = DateTime.MinValue;
+            if (!IsLiveOrderRateGuardActive())
+                return false;
+
+            object key = GetOrderRateGuardKey();
+            lock (OrderRateGuardSync)
+            {
+                SharedOrderRateState state = GetOrCreateOrderRateState(key);
+                PruneOrderRateState(state, DateTime.UtcNow);
+                projectedActions = state.ActionsUtc.Count + state.Reservations.Values.Sum();
+                providerBlockedUntilUtc = state.ProviderBlockedUntilUtc;
+            }
+            return true;
+        }
+
+        private void ClearTerminalExitRetry()
+        {
+            terminalExitRetryReason = string.Empty;
+            terminalExitRetryEntrySignal = string.Empty;
+            terminalExitRetryDueUtc = DateTime.MinValue;
+            terminalExitRetryCount = 0;
+            terminalExitRetryExhaustedLogged = false;
+        }
+
+        private bool IsTerminalExitRetryWaiting()
+        {
+            return !string.IsNullOrWhiteSpace(terminalExitRetryReason)
+                && terminalExitRetryDueUtc > DateTime.UtcNow;
+        }
+
+        private void ScheduleTerminalExitRetry(string reason, string entrySignal, bool rateLimited)
+        {
+            terminalExitPending = false;
+            terminalExitRetryReason = string.IsNullOrWhiteSpace(reason) ? "Rejected" : reason;
+            terminalExitRetryEntrySignal = string.IsNullOrWhiteSpace(entrySignal)
+                ? protectedEntrySignal
+                : entrySignal;
+            terminalExitRetryCount++;
+
+            if (terminalExitRetryCount > MaxTerminalExitRetries)
+            {
+                terminalExitRetryDueUtc = DateTime.MaxValue;
+                if (!terminalExitRetryExhaustedLogged)
+                {
+                    terminalExitRetryExhaustedLogged = true;
+                    Print(string.Format(
+                        "{0} | CRITICAL: emergency exit retry limit reached while position remains {1}; verify account protection manually",
+                        lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                        Position.MarketPosition));
+                }
+                return;
+            }
+
+            int[] delays = { 2, 5, 15, 30, 60, 120, 300, 300 };
+            int delaySeconds = delays[Math.Min(terminalExitRetryCount - 1, delays.Length - 1)];
+            if (rateLimited)
+                delaySeconds = Math.Max(delaySeconds, 60);
+            terminalExitRetryDueUtc = DateTime.UtcNow.AddSeconds(delaySeconds);
+
+            Print(string.Format(
+                "{0} | emergency exit retry scheduled | attempt={1}/{2} due={3:HH:mm:ss} UTC reason={4}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                terminalExitRetryCount,
+                MaxTerminalExitRetries,
+                terminalExitRetryDueUtc,
+                terminalExitRetryReason));
+        }
+
+        private void EvaluateTerminalExitRecovery()
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                ClearTerminalExitRetry();
+                return;
+            }
+
+            if (terminalExitPending || string.IsNullOrWhiteSpace(terminalExitRetryReason))
+                return;
+
+            if (DateTime.UtcNow < terminalExitRetryDueUtc)
+                return;
+
+            // Restore/resize the stop before another market-exit attempt. This is the critical
+            // difference from the old latch: a failed exit can no longer freeze partial-fill
+            // protection at an undersized quantity.
+            int quantity = Math.Abs(Position.Quantity);
+            double averagePrice = openEntryPrice > 0.0 ? openEntryPrice : Position.AveragePrice;
+            if (quantity > 0 && averagePrice > 0.0)
+                SubmitOrUpdateProtection(Position.MarketPosition, averagePrice, quantity,
+                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0]);
+
+            if (!terminalExitPending && terminalExitRetryCount <= MaxTerminalExitRetries)
+            {
+                TrySubmitTerminalExit(terminalExitRetryReason, terminalExitRetryEntrySignal);
+            }
+        }
+
+        private double GetProjectXMarketReferencePrice(int direction)
+        {
+            double price = direction > 0 ? GetCurrentAsk() : GetCurrentBid();
+            if (price <= 0.0 || double.IsNaN(price) || double.IsInfinity(price))
+                price = lastTickPrice;
+            if ((price <= 0.0 || double.IsNaN(price) || double.IsInfinity(price)) && CurrentBar >= 0)
+                price = Close[0];
+            return Instrument.MasterInstrument.RoundToTickSize(price);
+        }
+
+        private void SendPlannedProjectXEntry(int direction, double plannedEntryPrice,
+            double bracketReference, double takeProfitPoints, double stopLossPoints)
+        {
+            if (State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            double entry = Instrument.MasterInstrument.RoundToTickSize(plannedEntryPrice);
+            double anchor = BracketAnchor == EMALBracketAnchor.Reference && bracketReference > 0.0
+                ? Instrument.MasterInstrument.RoundToTickSize(bracketReference)
+                : entry;
+            double target = Instrument.MasterInstrument.RoundToTickSize(
+                direction > 0 ? anchor + takeProfitPoints : anchor - takeProfitPoints);
+            double stop = Instrument.MasterInstrument.RoundToTickSize(
+                direction > 0 ? anchor - stopLossPoints : anchor + stopLossPoints);
+
+            bool hadUnresolvedMirror = projectXEntryMirrorActive;
+            bool sent = SendWebhook(
+                direction > 0 ? "buy" : "sell",
+                entry,
+                target,
+                stop,
+                EntryOrderType == EMALEntryOrderType.Market,
+                Contracts);
+
+            if (sent)
+            {
+                projectXEntryMirrorActive = true;
+                suppressProjectXNextExecutionExit = false;
+                projectXLastSyncedStopPrice = stop;
+                projectXLastSyncedTargetPrice = target;
+                projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                projectXOrphanRecoveryCount = 0;
+            }
+            else if (hadUnresolvedMirror)
+            {
+                projectXEntryMirrorActive = true;
+                projectXOrphanRecoveryCount++;
+                projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(5);
+            }
+        }
+
+        private void CancelProjectXEntryMirror(bool flattenIfOrphaned)
+        {
+            if (!projectXEntryMirrorActive || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            if (flattenIfOrphaned)
+            {
+                if (SendWebhook("exit"))
+                {
+                    projectXEntryMirrorActive = false;
+                    projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                    projectXOrphanRecoveryCount = 0;
+                }
+                else
+                {
+                    projectXOrphanRecoveryCount++;
+                    projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(
+                        Math.Min(60, 5 * projectXOrphanRecoveryCount));
+                    ProjectXLog(string.Format(
+                        "ProjectX orphan flatten retry scheduled | attempt={0} due={1:HH:mm:ss} UTC",
+                        projectXOrphanRecoveryCount, projectXOrphanRecoveryDueUtc));
+                }
+            }
+            else
+            {
+                SendWebhook("cancel");
+            }
+
+            if (!projectXEntryMirrorActive || !flattenIfOrphaned)
+            {
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
+            }
+        }
+
+        private void EvaluateProjectXOrphanRecovery()
+        {
+            if (!projectXEntryMirrorActive
+                || WebhookProviderType != WebhookProvider.ProjectX
+                || Position.MarketPosition != MarketPosition.Flat
+                || IsOrderActive(entryOrder)
+                || projectXOrphanRecoveryDueUtc == DateTime.MinValue
+                || DateTime.UtcNow < projectXOrphanRecoveryDueUtc)
+            {
+                return;
+            }
+
+            if (SendWebhook("exit"))
+            {
+                projectXEntryMirrorActive = false;
+                projectXLastSyncedStopPrice = 0.0;
+                projectXLastSyncedTargetPrice = 0.0;
+                projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                projectXOrphanRecoveryCount = 0;
+                ProjectXLog("ProjectX orphan flatten recovery succeeded");
+            }
+            else
+            {
+                projectXOrphanRecoveryCount++;
+                projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(
+                    Math.Min(60, 5 * projectXOrphanRecoveryCount));
+            }
+        }
+
+        private void SendExplicitProjectXExit(string reason)
+        {
+            if (!projectXEntryMirrorActive || WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            bool sent = SendWebhook("exit", 0.0, 0.0, 0.0, true, Math.Abs(Position.Quantity));
+            if (sent)
+            {
+                suppressProjectXNextExecutionExit = true;
+                Print(string.Format("{0} | ProjectX explicit exit sent | reason={1}",
+                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0], reason));
+            }
+        }
+
+        private bool SendWebhook(string eventType, double entryPrice = 0.0, double takeProfit = 0.0,
+            double stopLoss = 0.0, bool isMarketEntry = false, int quantityOverride = 0)
+        {
+            if (State != State.Realtime && State != State.Terminated)
+                return false;
+
+            int quantity = quantityOverride > 0 ? quantityOverride : Math.Max(1, Contracts);
+            if (WebhookProviderType == WebhookProvider.ProjectX)
+                return SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+
+            if (string.IsNullOrWhiteSpace(WebhookUrl))
+                return false;
+
+            try
+            {
+                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
+                    ? WebhookTickerOverride.Trim()
+                    : (Instrument != null && Instrument.MasterInstrument != null
+                        ? Instrument.MasterInstrument.Name
+                        : "UNKNOWN");
+                string action = (eventType ?? string.Empty).ToLowerInvariant();
+                string json;
+                if (action == "buy" || action == "sell")
+                {
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"takeProfit\":{{\"limitPrice\":{5}}},\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{6}}}}}",
+                        JsonEscape(ticker), action, isMarketEntry ? "market" : "limit", quantity,
+                        FormatProjectXPrice(entryPrice), FormatProjectXPrice(takeProfit), FormatProjectXPrice(stopLoss));
+                }
+                else
+                {
+                    string tpAction = action == "cancel" ? "cancel" : "exit";
+                    json = string.Format(CultureInfo.InvariantCulture,
+                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\"}}",
+                        JsonEscape(ticker), tpAction);
+                }
+
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    client.UploadString(WebhookUrl, "POST", json);
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Print("EMAL webhook error: " + ex.Message);
+                return false;
+            }
+        }
+
+        private bool SendProjectX(string eventType, double entryPrice, double takeProfit,
+            double stopLoss, bool isMarketEntry, int quantity)
+        {
+            if (!EnsureProjectXSession())
+                return false;
+
+            List<ProjectXAccountInfo> targetAccounts;
+            string contractId;
+            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+                return false;
+
+            bool sentAny = false;
+            foreach (ProjectXAccountInfo account in targetAccounts)
+            {
+                try
+                {
+                    switch ((eventType ?? string.Empty).ToLowerInvariant())
+                    {
+                        case "buy":
+                        case "sell":
+                            if (ProjectXPrepareForEntry(account.Id, contractId)
+                                && ProjectXPlaceOrder(eventType, account.Id, contractId, entryPrice,
+                                    takeProfit, stopLoss, isMarketEntry, quantity))
+                            {
+                                sentAny = true;
+                            }
+                            break;
+
+                        case "exit":
+                            if (ProjectXFlattenPosition(account.Id, contractId))
+                                sentAny = true;
+                            break;
+
+                        case "cancel":
+                            ProjectXCancelEntryOrder(account.Id, contractId);
+                            sentAny = true;
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ProjectXLog(string.Format(
+                        "ProjectX account error | event={0} accountId={1} name={2} error={3}",
+                        eventType, account.Id, account.Name ?? string.Empty, ex.Message));
+                }
+            }
+
+            return sentAny;
+        }
+
+        private void RunProjectXStartupPreflight()
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX)
+                return;
+
+            ProjectXLog(string.Format(
+                "ProjectX startup preflight begin | instrument={0} selectors={1}",
+                GetProjectXInstrumentKey(), ProjectXAccountId ?? string.Empty));
+
+            if (!EnsureProjectXSession())
+            {
+                ProjectXLog("ProjectX startup preflight failed | stage=auth");
+                return;
+            }
+
+            List<ProjectXAccountInfo> targets;
+            string contractId;
+            if (!TryGetProjectXTargets(out targets, out contractId))
+            {
+                ProjectXLog("ProjectX startup preflight failed | stage=targets");
+                return;
+            }
+
+            ProjectXLog(string.Format(
+                "ProjectX startup preflight ready | accounts={0} contractId={1}",
+                FormatProjectXAccountsForLog(targets), contractId));
+        }
+
+        private bool EnsureProjectXSession()
+        {
+            if (string.IsNullOrWhiteSpace(ProjectXApiBaseUrl)
+                || string.IsNullOrWhiteSpace(ProjectXUsername)
+                || string.IsNullOrWhiteSpace(ProjectXApiKey))
+            {
+                ProjectXLog("ProjectX login failed | missing base URL or credentials");
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(projectXSessionToken)
+                && (DateTime.UtcNow - projectXTokenAcquiredUtc).TotalHours < 23.0)
+            {
+                return true;
+            }
+
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"userName\":\"{0}\",\"apiKey\":\"{1}\"}}",
+                JsonEscape(ProjectXUsername), JsonEscape(ProjectXApiKey));
+            string response = ProjectXPost("/api/Auth/loginKey", json, false, true);
+            string token;
+            if (!TryGetJsonString(response, "token", out token))
+            {
+                ProjectXLog("ProjectX login failed | token missing");
+                return false;
+            }
+
+            projectXSessionToken = token;
+            projectXTokenAcquiredUtc = DateTime.UtcNow;
+            projectXAccounts = null;
+            projectXResolvedContractId = string.Empty;
+            projectXResolvedInstrumentKey = string.Empty;
+            projectXLastOrderIds.Clear();
+            ProjectXLog("ProjectX login succeeded");
+            return true;
+        }
+
+        private bool TryGetProjectXTargets(out List<ProjectXAccountInfo> targetAccounts, out string contractId)
+        {
+            targetAccounts = null;
+            contractId = null;
+            if (!TryResolveProjectXContractId(out contractId))
+                return false;
+
+            List<ProjectXAccountInfo> accounts;
+            if (!TryLoadProjectXAccounts(out accounts))
+                return false;
+
+            if (ProjectXTradeAllAccounts)
+            {
+                targetAccounts = accounts.Where(a => a.CanTrade).ToList();
+                return targetAccounts.Count > 0;
+            }
+
+            List<string> selectors = ParseProjectXAccountSelectors(ProjectXAccountId);
+            if (selectors.Count == 0)
+            {
+                ProjectXLog("ProjectX target selection failed | ProjectX Accounts is empty");
+                return false;
+            }
+
+            var matched = new List<ProjectXAccountInfo>();
+            var matchedIds = new HashSet<int>();
+            foreach (string selector in selectors)
+            {
+                int id;
+                IEnumerable<ProjectXAccountInfo> candidates = int.TryParse(
+                    selector, NumberStyles.Integer, CultureInfo.InvariantCulture, out id)
+                    ? accounts.Where(a => a.CanTrade && a.Id == id)
+                    : accounts.Where(a => a.CanTrade
+                        && string.Equals(a.Name ?? string.Empty, selector, StringComparison.OrdinalIgnoreCase));
+
+                foreach (ProjectXAccountInfo account in candidates)
+                {
+                    if (matchedIds.Add(account.Id))
+                        matched.Add(account);
+                }
+            }
+
+            targetAccounts = matched;
+            if (targetAccounts.Count == 0)
+                ProjectXLog("ProjectX target selection failed | no matching tradable accounts");
+            return targetAccounts.Count > 0;
+        }
+
+        private bool TryLoadProjectXAccounts(out List<ProjectXAccountInfo> accounts)
+        {
+            if (projectXAccounts != null && projectXAccounts.Count > 0)
+            {
+                accounts = projectXAccounts;
+                return true;
+            }
+
+            string response = ProjectXPost("/api/Account/search", "{\"onlyActiveAccounts\":true}", true, true);
+            accounts = ExtractProjectXAccounts(response).ToList();
+            projectXAccounts = accounts.Count > 0 ? accounts : null;
+            ProjectXLog(string.Format("ProjectX accounts found | count={0}", accounts.Count));
+            return accounts.Count > 0;
+        }
+
+        private bool TryResolveProjectXContractId(out string contractId)
+        {
+            contractId = null;
+            if (!string.IsNullOrWhiteSpace(ProjectXContractId))
+            {
+                contractId = ProjectXContractId.Trim();
+                return true;
+            }
+
+            string instrumentKey = GetProjectXInstrumentKey();
+            if (!string.IsNullOrWhiteSpace(projectXResolvedContractId)
+                && string.Equals(projectXResolvedInstrumentKey, instrumentKey, StringComparison.OrdinalIgnoreCase))
+            {
+                contractId = projectXResolvedContractId;
+                return true;
+            }
+
+            string root = GetProjectXInstrumentRoot();
+            if (string.IsNullOrWhiteSpace(root))
+                return false;
+
+            DateTime expiry;
+            string suffix = TryGetInstrumentExpiry(out expiry) || TryParseInstrumentExpiryFromFullName(out expiry)
+                ? GetProjectXFuturesMonthCode(expiry.Month) + expiry.ToString("yy", CultureInfo.InvariantCulture)
+                : string.Empty;
+
+            List<ProjectXContractInfo> contracts;
+            if (!TrySearchProjectXContracts(root, suffix, out contracts))
+                return false;
+
+            ProjectXContractInfo selected = SelectProjectXContract(suffix, contracts);
+            if (selected == null || string.IsNullOrWhiteSpace(selected.Id))
+                return false;
+
+            contractId = selected.Id;
+            projectXResolvedContractId = contractId;
+            projectXResolvedInstrumentKey = instrumentKey;
+            ProjectXLog(string.Format("ProjectX contract resolved | instrument={0} contractId={1}",
+                instrumentKey, contractId));
+            return true;
+        }
+
+        private bool TrySearchProjectXContracts(string root, string suffix, out List<ProjectXContractInfo> contracts)
+        {
+            string primary = string.IsNullOrWhiteSpace(suffix) ? root : root + suffix;
+            if (TrySearchProjectXContractsByText(primary, root, true, out contracts) && contracts.Count > 0)
+                return true;
+            if (TrySearchProjectXContractsByText(primary, root, false, out contracts) && contracts.Count > 0)
+                return true;
+            if (!string.Equals(primary, root, StringComparison.OrdinalIgnoreCase))
+            {
+                if (TrySearchProjectXContractsByText(root, root, true, out contracts) && contracts.Count > 0)
+                    return true;
+                if (TrySearchProjectXContractsByText(root, root, false, out contracts) && contracts.Count > 0)
+                    return true;
+            }
+            contracts = new List<ProjectXContractInfo>();
+            return false;
+        }
+
+        private bool TrySearchProjectXContractsByText(string searchText, string root, bool live,
+            out List<ProjectXContractInfo> contracts)
+        {
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"live\":{0},\"searchText\":\"{1}\"}}",
+                live ? "true" : "false", JsonEscape(searchText));
+            string response = ProjectXPost("/api/Contract/search", json, true, true);
+            contracts = ExtractProjectXContracts(response)
+                .Where(c => DoesProjectXContractMatchRoot(c, root))
+                .ToList();
+            return !string.IsNullOrWhiteSpace(response);
+        }
+
+        private ProjectXContractInfo SelectProjectXContract(string suffix, List<ProjectXContractInfo> contracts)
+        {
+            if (contracts == null || contracts.Count == 0)
+                return null;
+            if (!string.IsNullOrWhiteSpace(suffix))
+            {
+                List<ProjectXContractInfo> exact = contracts
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Id)
+                        && c.Id.EndsWith("." + suffix, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (exact.Count > 0)
+                    return exact.FirstOrDefault(c => c.ActiveContract) ?? exact[0];
+            }
+            return contracts.FirstOrDefault(c => c.ActiveContract) ?? contracts[0];
+        }
+
+        private bool DoesProjectXContractMatchRoot(ProjectXContractInfo contract, string root)
+        {
+            if (contract == null || string.IsNullOrWhiteSpace(root))
+                return false;
+            return (!string.IsNullOrWhiteSpace(contract.SymbolId)
+                    && string.Equals(contract.SymbolId, "F.US." + root, StringComparison.OrdinalIgnoreCase))
+                || (!string.IsNullOrWhiteSpace(contract.Id)
+                    && contract.Id.IndexOf(".US." + root + ".", StringComparison.OrdinalIgnoreCase) >= 0)
+                || (!string.IsNullOrWhiteSpace(contract.Name)
+                    && contract.Name.StartsWith(root, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private string GetProjectXInstrumentKey()
+        {
+            return Instrument != null && !string.IsNullOrWhiteSpace(Instrument.FullName)
+                ? Instrument.FullName.Trim().ToUpperInvariant()
+                : GetProjectXInstrumentRoot();
+        }
+
+        private string GetProjectXInstrumentRoot()
+        {
+            return Instrument != null && Instrument.MasterInstrument != null
+                ? (Instrument.MasterInstrument.Name ?? string.Empty).Trim().ToUpperInvariant()
+                : string.Empty;
+        }
+
+        private bool TryGetInstrumentExpiry(out DateTime expiry)
+        {
+            expiry = Core.Globals.MinDate;
+            if (Instrument == null)
+                return false;
+            try
+            {
+                PropertyInfo property = Instrument.GetType().GetProperty(
+                    "Expiry", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+                object raw = property != null ? property.GetValue(Instrument, null) : null;
+                if (!(raw is DateTime) || ((DateTime)raw).Year < 2000)
+                    return false;
+                expiry = (DateTime)raw;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryParseInstrumentExpiryFromFullName(out DateTime expiry)
+        {
+            expiry = Core.Globals.MinDate;
+            string fullName = Instrument != null ? (Instrument.FullName ?? string.Empty) : string.Empty;
+            Match match = Regex.Match(fullName, @"\b(?<month>\d{1,2})[-/](?<year>\d{2,4})\b");
+            int month;
+            int year;
+            if (!match.Success
+                || !int.TryParse(match.Groups["month"].Value, out month)
+                || !int.TryParse(match.Groups["year"].Value, out year))
+                return false;
+            if (year < 100)
+                year += 2000;
+            if (month < 1 || month > 12 || year < 2000)
+                return false;
+            expiry = new DateTime(year, month, 1);
+            return true;
+        }
+
+        private string GetProjectXFuturesMonthCode(int month)
+        {
+            const string codes = " FGHJKMNQUVXZ";
+            return month >= 1 && month <= 12 ? codes[month].ToString() : string.Empty;
+        }
+
+        private List<string> ParseProjectXAccountSelectors(string raw)
+        {
+            return (raw ?? string.Empty)
+                .Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private string FormatProjectXAccountsForLog(IEnumerable<ProjectXAccountInfo> accounts)
+        {
+            return accounts == null ? "<none>" : string.Join(", ", accounts.Select(a =>
+                string.Format(CultureInfo.InvariantCulture, "{0}:{1}", a.Id, a.Name ?? string.Empty)).ToArray());
+        }
+
+        private void SyncProjectXProtectionUpdate(ProjectXProtectionOrderKind kind, double price, string reason)
+        {
+            if (State != State.Realtime
+                || WebhookProviderType != WebhookProvider.ProjectX
+                || !projectXEntryMirrorActive
+                || Position.MarketPosition == MarketPosition.Flat)
+            {
+                return;
+            }
+
+            price = Instrument.MasterInstrument.RoundToTickSize(price);
+            if (price <= 0.0 || double.IsNaN(price) || double.IsInfinity(price))
+                return;
+
+            double lastPrice = kind == ProjectXProtectionOrderKind.StopLoss
+                ? projectXLastSyncedStopPrice
+                : projectXLastSyncedTargetPrice;
+            if (lastPrice > 0.0 && Math.Abs(lastPrice - price) < TickSize / 2.0)
+                return;
+
+            if (!EnsureProjectXSession())
+                return;
+
+            List<ProjectXAccountInfo> targets;
+            string contractId;
+            if (!TryGetProjectXTargets(out targets, out contractId))
+                return;
+
+            bool modifiedAny = false;
+            int expectedSide = Position.MarketPosition == MarketPosition.Long ? 1 : 0;
+            foreach (ProjectXAccountInfo account in targets)
+            {
+                Dictionary<string, object> order = SelectProjectXProtectionOrder(
+                    account.Id, contractId, kind, expectedSide);
+                if (order == null)
+                {
+                    ProjectXLog(string.Format(
+                        "ProjectX protection sync skipped | account={0} kind={1} reason=no-unique-open-order",
+                        account.Id, kind));
+                    continue;
+                }
+
+                long orderId;
+                int size;
+                if (!TryGetProjectXOrderLong(order, "id", out orderId) || orderId <= 0)
+                    continue;
+                if (!TryGetProjectXOrderInt(order, "size", out size) || size <= 0)
+                    size = Math.Max(1, Math.Abs(Position.Quantity));
+
+                string response = ProjectXModifyProtectionOrder(account.Id, orderId, size, kind, price);
+                bool success;
+                if (!TryGetJsonBool(response, "success", out success) || success)
+                    modifiedAny = true;
+                else
+                    ProjectXLog(string.Format(
+                        "ProjectX protection sync failed | account={0} order={1} kind={2} price={3:0.00} reason={4}",
+                        account.Id, orderId, kind, price, reason));
+            }
+
+            if (modifiedAny)
+            {
+                if (kind == ProjectXProtectionOrderKind.StopLoss)
+                    projectXLastSyncedStopPrice = price;
+                else
+                    projectXLastSyncedTargetPrice = price;
+            }
+        }
+
+        private Dictionary<string, object> SelectProjectXProtectionOrder(int accountId, string contractId,
+            ProjectXProtectionOrderKind kind, int expectedSide)
+        {
+            List<Dictionary<string, object>> matches = GetProjectXOpenOrders(accountId, contractId)
+                .Where(o => IsProjectXProtectionOrderMatch(o, kind, expectedSide))
+                .ToList();
+            return matches.Count == 1 ? matches[0] : null;
+        }
+
+        private bool IsProjectXProtectionOrderMatch(Dictionary<string, object> order,
+            ProjectXProtectionOrderKind kind, int expectedSide)
+        {
+            int side;
+            if (TryGetProjectXOrderInt(order, "side", out side) && side != expectedSide)
+                return false;
+
+            int type;
+            if (TryGetProjectXOrderInt(order, "type", out type))
+                return kind == ProjectXProtectionOrderKind.StopLoss ? type == 4 : type == 1;
+
+            double price;
+            return kind == ProjectXProtectionOrderKind.StopLoss
+                ? TryGetProjectXOrderDouble(order, "stopPrice", out price) && price > 0.0
+                : TryGetProjectXOrderDouble(order, "limitPrice", out price) && price > 0.0;
+        }
+
+        private string ProjectXModifyProtectionOrder(int accountId, long orderId, int size,
+            ProjectXProtectionOrderKind kind, double price)
+        {
+            string limit = kind == ProjectXProtectionOrderKind.TakeProfit ? FormatProjectXPrice(price) : "null";
+            string stop = kind == ProjectXProtectionOrderKind.StopLoss ? FormatProjectXPrice(price) : "null";
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"orderId\":{1},\"size\":{2},\"limitPrice\":{3},\"stopPrice\":{4},\"trailPrice\":null}}",
+                accountId, orderId, Math.Max(1, size), limit, stop);
+            return ProjectXPost("/api/Order/modify", json, true);
+        }
+
+        private bool ProjectXPlaceOrder(string side, int accountId, string contractId,
+            double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+        {
+            int orderSide = string.Equals(side, "buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            int orderType = isMarketEntry ? 2 : 1;
+            int normalizedQuantity = Math.Max(1, quantity);
+            double entry = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
+            bool isLong = orderSide == 0;
+            int tpTicks = NormalizeProjectXBracketTicks(
+                PriceToTicks(takeProfit - entry), 4, isLong ? 1 : -1);
+            int slTicks = NormalizeProjectXBracketTicks(
+                PriceToTicks(stopLoss - entry), 1, isLong ? -1 : 1);
+            string limitPart = isMarketEntry
+                ? string.Empty
+                : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", FormatProjectXPrice(entry));
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":{6},\"type\":1,\"ticks\":{7}}},\"stopLossBracket\":{{\"quantity\":{6},\"type\":4,\"ticks\":{8}}}}}",
+                accountId, JsonEscape(contractId), orderType, orderSide, normalizedQuantity,
+                limitPart, normalizedQuantity, tpTicks, slTicks);
+            string response = ProjectXPost("/api/Order/place", json, true);
+            bool success;
+            if (TryGetJsonBool(response, "success", out success) && !success)
+                return false;
+            long orderId;
+            if (TryGetJsonLong(response, "orderId", out orderId) && orderId > 0)
+                projectXLastOrderIds[GetProjectXOrderKey(accountId, contractId)] = orderId;
+            return !string.IsNullOrWhiteSpace(response);
+        }
+
+        private int NormalizeProjectXBracketTicks(int rawTicks, int minAbsoluteTicks, int zeroDirection)
+        {
+            int direction = rawTicks == 0 ? Math.Sign(zeroDirection) : Math.Sign(rawTicks);
+            return direction * Math.Max(minAbsoluteTicks, Math.Abs(rawTicks));
+        }
+
+        private bool ProjectXPrepareForEntry(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                return false;
+
+            int positionSize;
+            if (!TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize))
+            {
+                ProjectXLog(string.Format(
+                    "ProjectX prepare failed | account={0} reason=position-query-failed", accountId));
+                return false;
+            }
+
+            if (positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                    return false;
+                ProjectXCancelOrders(accountId, contractId);
+                if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                    return false;
+            }
+            return true;
+        }
+
+        private bool ProjectXFlattenPosition(int accountId, string contractId)
+        {
+            ProjectXCancelOrders(accountId, contractId);
+            if (!WaitForProjectXOrdersCleared(accountId, contractId, 4000))
+                ProjectXLog(string.Format("ProjectX flatten warning | account={0} orders-not-cleared", accountId));
+
+            int positionSize;
+            if (!TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize))
+            {
+                ProjectXLog(string.Format(
+                    "ProjectX flatten failed | account={0} reason=position-query-failed", accountId));
+                return false;
+            }
+
+            if (positionSize != 0)
+            {
+                ProjectXClosePosition(accountId, contractId);
+                if (!WaitForProjectXFlat(accountId, contractId, 4000))
+                {
+                    ProjectXLog(string.Format("ProjectX flatten warning | account={0} position={1}",
+                        accountId, positionSize));
+                    return false;
+                }
+            }
+
+            ProjectXCancelOrders(accountId, contractId);
+            return WaitForProjectXOrdersCleared(accountId, contractId, 4000);
+        }
+
+        private string ProjectXClosePosition(int accountId, string contractId)
+        {
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"contractId\":\"{1}\"}}",
+                accountId, JsonEscape(contractId));
+            return ProjectXPost("/api/Position/closeContract", json, true);
+        }
+
+        private void ProjectXCancelOrders(int accountId, string contractId)
+        {
+            foreach (long orderId in GetProjectXOpenOrderIds(accountId, contractId))
+            {
+                string json = string.Format(CultureInfo.InvariantCulture,
+                    "{{\"accountId\":{0},\"orderId\":{1}}}", accountId, orderId);
+                ProjectXPost("/api/Order/cancel", json, true);
+            }
+            projectXLastOrderIds.Remove(GetProjectXOrderKey(accountId, contractId));
+        }
+
+        private void ProjectXCancelEntryOrder(int accountId, string contractId)
+        {
+            string key = GetProjectXOrderKey(accountId, contractId);
+            long orderId;
+            if (!projectXLastOrderIds.TryGetValue(key, out orderId) || orderId <= 0)
+                return;
+
+            string json = string.Format(CultureInfo.InvariantCulture,
+                "{{\"accountId\":{0},\"orderId\":{1}}}", accountId, orderId);
+            ProjectXPost("/api/Order/cancel", json, true);
+            projectXLastOrderIds.Remove(key);
+        }
+
+        private bool WaitForProjectXFlat(int accountId, string contractId, int timeoutMilliseconds)
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
+            do
+            {
+                int positionSize;
+                if (TryGetProjectXOpenPositionSize(accountId, contractId, out positionSize) && positionSize == 0)
+                    return true;
+                System.Threading.Thread.Sleep(150);
+            }
+            while (DateTime.UtcNow <= deadline);
+            return false;
+        }
+
+        private bool WaitForProjectXOrdersCleared(int accountId, string contractId, int timeoutMilliseconds)
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
+            do
+            {
+                if (GetProjectXOpenOrderIds(accountId, contractId).Count == 0)
+                    return true;
+                System.Threading.Thread.Sleep(150);
+            }
+            while (DateTime.UtcNow <= deadline);
+            return false;
+        }
+
+        private List<long> GetProjectXOpenOrderIds(int accountId, string contractId)
+        {
+            var ids = new List<long>();
+            foreach (Dictionary<string, object> order in GetProjectXOpenOrders(accountId, contractId))
+            {
+                long id;
+                if (TryGetProjectXOrderLong(order, "id", out id) && id > 0)
+                    ids.Add(id);
+            }
+            return ids;
+        }
+
+        private List<Dictionary<string, object>> GetProjectXOpenOrders(int accountId, string contractId)
+        {
+            string json = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string response = ProjectXPost("/api/Order/searchOpen", json, true);
+            return ExtractProjectXCollection(response, "orders")
+                .Where(o => ProjectXDictionaryValueEquals(o, "contractId", contractId))
+                .ToList();
+        }
+
+        private bool TryGetProjectXOpenPositionSize(int accountId, string contractId, out int signedSize)
+        {
+            signedSize = 0;
+            string json = string.Format(CultureInfo.InvariantCulture, "{{\"accountId\":{0}}}", accountId);
+            string response = ProjectXPost("/api/Position/searchOpen", json, true);
+            bool success;
+            if (TryGetJsonBool(response, "success", out success) && !success)
+                return false;
+
+            foreach (Dictionary<string, object> position in ExtractProjectXCollection(response, "positions"))
+            {
+                if (!ProjectXDictionaryValueEquals(position, "contractId", contractId))
+                    continue;
+                int type;
+                int size;
+                object rawType;
+                object rawSize;
+                if (!position.TryGetValue("type", out rawType) || !TryConvertToInt(rawType, out type)
+                    || !position.TryGetValue("size", out rawSize) || !TryConvertToInt(rawSize, out size))
+                    continue;
+                signedSize += type == 2 ? -Math.Abs(size) : Math.Abs(size);
+            }
+            return true;
+        }
+
+        private bool ProjectXDictionaryValueEquals(Dictionary<string, object> data, string key, string expected)
+        {
+            object raw;
+            return data != null && data.TryGetValue(key, out raw)
+                && string.Equals(raw != null ? raw.ToString() : string.Empty,
+                    expected ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string GetProjectXOrderKey(int accountId, string contractId)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
+        }
+
+        private string FormatProjectXPrice(double price)
+        {
+            return Instrument.MasterInstrument.RoundToTickSize(price)
+                .ToString("0.########", CultureInfo.InvariantCulture);
+        }
+
+        private int PriceToTicks(double distance)
+        {
+            return TickSize > 0.0
+                ? (int)Math.Round(distance / TickSize, MidpointRounding.AwayFromZero)
+                : 0;
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuthentication)
+        {
+            return ProjectXPost(path, json, requiresAuthentication, false);
+        }
+
+        private string ProjectXPost(string path, string json, bool requiresAuthentication, bool alwaysLog)
+        {
+            string baseUrl = (ProjectXApiBaseUrl ?? string.Empty).TrimEnd('/');
+            if (string.IsNullOrWhiteSpace(baseUrl))
+                return null;
+
+            try
+            {
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    if (requiresAuthentication && !string.IsNullOrWhiteSpace(projectXSessionToken))
+                        client.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + projectXSessionToken;
+                    string response = client.UploadString(baseUrl + path, "POST", json);
+                    if (alwaysLog)
+                        ProjectXLog(string.Format("ProjectX response | path={0} body={1}",
+                            path, SanitizeProjectXJsonForLog(response)));
+                    return response;
+                }
+            }
+            catch (System.Net.WebException ex)
+            {
+                string body = ReadWebExceptionResponse(ex);
+                ProjectXLog(string.Format("ProjectX request failed | path={0} error={1} body={2}",
+                    path, ex.Message, SanitizeProjectXJsonForLog(body)));
+                return body;
+            }
+            catch (Exception ex)
+            {
+                ProjectXLog(string.Format("ProjectX request failed | path={0} error={1}", path, ex.Message));
+                return null;
+            }
+        }
+
+        private string ReadWebExceptionResponse(System.Net.WebException exception)
+        {
+            try
+            {
+                if (exception == null || exception.Response == null)
+                    return null;
+                using (Stream stream = exception.Response.GetResponseStream())
+                using (var reader = stream != null ? new StreamReader(stream) : null)
+                    return reader != null ? reader.ReadToEnd() : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void ProjectXLog(string message)
+        {
+            if (WebhookProviderType == WebhookProvider.ProjectX)
+                Print(string.Format("{0} | EMAL | {1}",
+                    lastTickTime != DateTime.MinValue ? lastTickTime : DateTime.Now,
+                    message ?? string.Empty));
+        }
+
+        private string JsonEscape(string value)
+        {
+            if (value == null)
+                return string.Empty;
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                .Replace("\r", "\\r").Replace("\n", "\\n");
+        }
+
+        private string SanitizeProjectXJsonForLog(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return string.Empty;
+            string sanitized = json;
+            foreach (string key in new[] { "apiKey", "loginKey", "token", "newToken" })
+            {
+                sanitized = Regex.Replace(sanitized,
+                    "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"[^\"]*\"",
+                    "\"" + key + "\":\"***\"");
+            }
+            return sanitized;
+        }
+
+        private bool TryGetJsonString(string json, string key, out string value)
+        {
+            value = null;
+            object raw;
+            Dictionary<string, object> data;
+            if (!TryDeserializeProjectXObject(json, out data)
+                || !data.TryGetValue(key, out raw) || raw == null)
+                return false;
+            value = raw.ToString();
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        private bool TryGetJsonLong(string json, string key, out long value)
+        {
+            value = 0;
+            object raw;
+            Dictionary<string, object> data;
+            return TryDeserializeProjectXObject(json, out data)
+                && data.TryGetValue(key, out raw)
+                && TryConvertToLong(raw, out value);
+        }
+
+        private bool TryGetJsonBool(string json, string key, out bool value)
+        {
+            value = false;
+            object raw;
+            Dictionary<string, object> data;
+            return TryDeserializeProjectXObject(json, out data)
+                && data.TryGetValue(key, out raw)
+                && TryConvertToBool(raw, out value);
+        }
+
+        private bool TryDeserializeProjectXObject(string json, out Dictionary<string, object> data)
+        {
+            data = null;
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+            try
+            {
+                data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+                return data != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private IEnumerable<ProjectXAccountInfo> ExtractProjectXAccounts(string json)
+        {
+            foreach (Dictionary<string, object> item in ExtractProjectXCollection(json, "accounts"))
+            {
+                object rawId;
+                int id;
+                if (!item.TryGetValue("id", out rawId) || !TryConvertToInt(rawId, out id) || id <= 0)
+                    continue;
+
+                object rawName;
+                object rawCanTrade;
+                object rawVisible;
+                bool canTrade;
+                bool visible;
+                item.TryGetValue("name", out rawName);
+                item.TryGetValue("canTrade", out rawCanTrade);
+                item.TryGetValue("isVisible", out rawVisible);
+                TryConvertToBool(rawCanTrade, out canTrade);
+                TryConvertToBool(rawVisible, out visible);
+
+                yield return new ProjectXAccountInfo
+                {
+                    Id = id,
+                    Name = rawName != null ? rawName.ToString() : string.Empty,
+                    CanTrade = canTrade,
+                    IsVisible = visible
+                };
+            }
+        }
+
+        private IEnumerable<ProjectXContractInfo> ExtractProjectXContracts(string json)
+        {
+            foreach (Dictionary<string, object> item in ExtractProjectXCollection(json, "contracts"))
+            {
+                object rawId;
+                if (!item.TryGetValue("id", out rawId) || rawId == null)
+                    continue;
+                object rawName;
+                object rawSymbol;
+                object rawActive;
+                bool active;
+                item.TryGetValue("name", out rawName);
+                item.TryGetValue("symbolId", out rawSymbol);
+                item.TryGetValue("activeContract", out rawActive);
+                TryConvertToBool(rawActive, out active);
+
+                yield return new ProjectXContractInfo
+                {
+                    Id = rawId.ToString(),
+                    Name = rawName != null ? rawName.ToString() : string.Empty,
+                    SymbolId = rawSymbol != null ? rawSymbol.ToString() : string.Empty,
+                    ActiveContract = active
+                };
+            }
+        }
+
+        private IEnumerable<Dictionary<string, object>> ExtractProjectXCollection(string json, string key)
+        {
+            Dictionary<string, object> data;
+            if (!TryDeserializeProjectXObject(json, out data))
+                yield break;
+            object raw;
+            if (!data.TryGetValue(key, out raw) || raw == null)
+                yield break;
+            var items = raw as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+            foreach (object item in items)
+            {
+                var dictionary = item as Dictionary<string, object>;
+                if (dictionary != null)
+                    yield return dictionary;
+            }
+        }
+
+        private bool TryGetProjectXOrderInt(Dictionary<string, object> order, string key, out int value)
+        {
+            value = 0;
+            object raw;
+            return order != null && order.TryGetValue(key, out raw) && TryConvertToInt(raw, out value);
+        }
+
+        private bool TryGetProjectXOrderLong(Dictionary<string, object> order, string key, out long value)
+        {
+            value = 0;
+            object raw;
+            return order != null && order.TryGetValue(key, out raw) && TryConvertToLong(raw, out value);
+        }
+
+        private bool TryGetProjectXOrderDouble(Dictionary<string, object> order, string key, out double value)
+        {
+            value = 0.0;
+            object raw;
+            return order != null && order.TryGetValue(key, out raw) && TryConvertToDouble(raw, out value);
+        }
+
+        private bool TryConvertToInt(object raw, out int value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+            if (raw is int) { value = (int)raw; return true; }
+            if (raw is long && (long)raw >= int.MinValue && (long)raw <= int.MaxValue)
+            { value = (int)(long)raw; return true; }
+            if (raw is decimal) { value = (int)(decimal)raw; return true; }
+            if (raw is double) { value = (int)(double)raw; return true; }
+            return int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToLong(object raw, out long value)
+        {
+            value = 0;
+            if (raw == null)
+                return false;
+            if (raw is int) { value = (int)raw; return true; }
+            if (raw is long) { value = (long)raw; return true; }
+            if (raw is decimal) { value = (long)(decimal)raw; return true; }
+            if (raw is double) { value = (long)(double)raw; return true; }
+            return long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryConvertToDouble(object raw, out double value)
+        {
+            value = 0.0;
+            if (raw == null)
+                return false;
+            if (raw is double) { value = (double)raw; return true; }
+            if (raw is decimal) { value = (double)(decimal)raw; return true; }
+            if (raw is int) { value = (int)raw; return true; }
+            if (raw is long) { value = (long)raw; return true; }
+            return double.TryParse(raw.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                || double.TryParse(raw.ToString(), NumberStyles.Float, CultureInfo.CurrentCulture, out value);
+        }
+
+        private bool TryConvertToBool(object raw, out bool value)
+        {
+            value = false;
+            if (raw == null)
+                return false;
+            if (raw is bool) { value = (bool)raw; return true; }
+            return bool.TryParse(raw.ToString(), out value);
         }
 
         [NinjaScriptProperty]
@@ -2613,6 +4339,59 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling EMAL order-action budget across all strategy instances on the same NT8 connection. Blocks new entries only; protection and exits are never blocked.", GroupName = "Risk", Order = 1)]
+        public bool EnableOrderRateGuard { get; set; }
+
+        [Range(NewTradeActionReserve, 5000), NinjaScriptProperty]
+        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "Risk", Order = 2)]
+        public int OrderActionLimitPerHour { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TradersPost Webhook URL", Description = "Optional TradersPost endpoint. Leave empty when using ProjectX.", GroupName = "ProjectX / Webhooks", Order = 0)]
+        public string WebhookUrl
+        {
+            get { return webhookUrl ?? string.Empty; }
+            set { webhookUrl = value ?? string.Empty; }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker override. Leave empty to use the chart instrument.", GroupName = "ProjectX / Webhooks", Order = 1)]
+        public string WebhookTickerOverride
+        {
+            get { return webhookTickerOverride ?? string.Empty; }
+            set { webhookTickerOverride = value ?? string.Empty; }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Webhook Provider", Description = "Select TradersPost or direct ProjectX order routing.", GroupName = "ProjectX / Webhooks", Order = 2)]
+        public WebhookProvider WebhookProviderType { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "ProjectX API Base URL", GroupName = "ProjectX / Webhooks", Order = 3)]
+        public string ProjectXApiBaseUrl { get; set; }
+
+        [Browsable(false)]
+        public bool ProjectXTradeAllAccounts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX Username", Description = "ProjectX login username for direct routing.", GroupName = "ProjectX / Webhooks", Order = 5)]
+        public string ProjectXUsername { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX API Key", Description = "ProjectX API key used with the username.", GroupName = "ProjectX / Webhooks", Order = 6)]
+        public string ProjectXApiKey { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ProjectX Accounts", Description = "Comma-separated ProjectX account IDs or exact account names.", GroupName = "ProjectX / Webhooks", Order = 7)]
+        public string ProjectXAccountId { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "ProjectX Contract ID", Description = "Hidden optional contract override for support/debug use.", GroupName = "ProjectX / Webhooks", Order = 8)]
+        public string ProjectXContractId { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Rollover Block Start (yyyy-MM-dd)", Description = "First session date of a new contract, e.g. 2026-09-14. The strategy blocks ALL entries for the first N trading days (Rollover Block Sessions) starting here. Blank = off. Update it each quarter at the roll.", GroupName = "Rollover", Order = 0)]
