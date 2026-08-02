@@ -1,6 +1,6 @@
 # Codex Repo Notes
 
-Last reviewed: 2026-06-29.
+Last reviewed: 2026-08-02.
 
 This note is durable handoff memory for future Codex threads. It complements
 `AGENTS.md`; the behavior specs and skills remain the source of truth for their
@@ -104,6 +104,15 @@ domains.
   09:35-10:30 ET schedule, keeps the 09:50 preset boundary without the M1/M15
   09:50-09:55 gap, and blocks the 10:05 M5 bar. M1 and M15 behavior remains
   unchanged. Preserve this schedule when importing later Steve replacements.
+- 2026-08-02: `Strategies/EMAL5.cs` is Steve's separate, self-contained native
+  five-minute EMA-direction strategy, initially imported from `EMAL5-1.cs`.
+  It uses one configurable ET session (09:30-10:30 by default), a separately
+  tunable EMA slope lookback, fixed TP/SL settings, NQ/MNQ and five-minute chart
+  validation, passive entries, ProjectX/TradersPost routing, and EMAL5-prefixed
+  signals and log files. It deliberately does not share its class, enums, or
+  rate-guard state with EMAL; the EMAL and EMAL5 order-action budgets therefore
+  do not coordinate when both run on the same connection. ATR, London/Tokyo log
+  columns, news blackout, time stop, and the M1-specific filters are absent.
 - 2026-07-20: Current DUO `State.SetDefaults` session defaults in
   `Strategies/DUO.cs` are mirrored from Steve's
   `/Volumes/Documents/NinjaTrader 8/bin/Custom/Strategies/DUOTesting-Trader-202.xml`
