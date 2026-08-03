@@ -185,6 +185,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ceiling, the latch remains set for the lifetime of this strategy instance.
         private bool maxAccountBalanceLimitReached;
 
+        // Daily account-currency profit guard. The baseline is the first available net
+        // liquidation value on each primary-bar calendar date, so unrealized P&L counts.
+        private bool maxDailyProfitLimitReached;
+        private double maxDailyProfitStartBalance = double.NaN;
+        private DateTime maxDailyProfitDate = DateTime.MinValue;
+
         // Daily profit cap, measured in POINTS of realised P&L. Tracked independently of the
         // feature log so it works whether logging is on or off. The "day" is the CME trading
         // day, 18:00 ET to 17:00 ET, matching the session model used everywhere else.
@@ -321,6 +327,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 BracketAnchor = EMAL5BracketAnchor.Fill;
                 LimitOffsetPoints = 0.0;
                 MaxAccountBalance = 0.0;
+                MaxDailyProfit = 0.0;
                 EnableOrderRateGuard = true;
                 OrderActionLimitPerHour = 1100;
 
@@ -360,6 +367,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CultureInfo.InvariantCulture, DateTimeStyles.None, out rolloverStart);
                 ValidateChart();
                 maxAccountBalanceLimitReached = false;
+                maxDailyProfitLimitReached = false;
+                maxDailyProfitStartBalance = double.NaN;
+                maxDailyProfitDate = DateTime.MinValue;
 
                 SetupTimeZones();
 
@@ -939,7 +949,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsParityAllowed(ConvertToEastern(raw)))
                 return TradeParity == EMAL5TradeParity.Even ? "odd bar (want even)" : "even bar (want odd)";
 
-            if (dailyProfitLimitReached) return "daily profit cap";
+            if (maxDailyProfitLimitReached) return "daily profit cap";
+            if (dailyProfitLimitReached) return "daily points cap";
             if (dailyLossLimitReached) return "daily loss cap";
             if (maxAccountBalanceLimitReached) return "balance cap";
 
@@ -1238,11 +1249,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // Evaluate on every tick so unrealized profit can flatten an open position
             // immediately instead of waiting for the next five-minute bar.
-            if (IsAccountBalanceBlocked())
+            if (IsAccountBalanceBlocked() || IsAccountDailyProfitBlocked())
             {
-                // v16 fix: still draw the info panel (showing "balance cap") before bailing.
-                // Previously this early return skipped UpdateInfoText() below, so setting a
-                // non-zero Max Account Balance made the panel vanish entirely.
+                // Keep drawing the info panel after either account-level latch is hit.
                 if (IsFirstTickOfBar)
                     UpdateInfoText();
                 return;
@@ -1338,6 +1347,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Recheck the account latch here so no queued entry can escape the main gate.
             if (configurationBlocked
                 || IsAccountBalanceBlocked()
+                || IsAccountDailyProfitBlocked()
                 || IsDailyProfitBlocked()
                 || IsDailyLossBlocked())
             {
@@ -1754,9 +1764,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (openEntryTime == DateTime.MinValue)
                     openEntryTime = time;
 
-                if (maxAccountBalanceLimitReached)
+                if (maxAccountBalanceLimitReached || maxDailyProfitLimitReached)
                 {
-                    TrySubmitTerminalExit("MaxAccountBalance", orderName);
+                    TrySubmitTerminalExit(
+                        maxAccountBalanceLimitReached ? "MaxAccountBalance" : "MaxDailyProfit",
+                        orderName);
                     return;
                 }
 
@@ -2260,6 +2272,60 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
                 netLiquidation,
                 MaxAccountBalance));
+
+            return true;
+        }
+
+        private bool IsAccountDailyProfitBlocked()
+        {
+            if (MaxDailyProfit <= 0.0)
+            {
+                maxDailyProfitLimitReached = false;
+                maxDailyProfitStartBalance = double.NaN;
+                maxDailyProfitDate = DateTime.MinValue;
+                return false;
+            }
+
+            DateTime currentDate = Time[0].Date;
+            if (maxDailyProfitDate != currentDate)
+            {
+                maxDailyProfitDate = currentDate;
+                maxDailyProfitLimitReached = false;
+                maxDailyProfitStartBalance = double.NaN;
+            }
+
+            if (maxDailyProfitLimitReached)
+                return true;
+
+            double netLiquidation;
+            if (!TryGetCurrentNetLiquidation(out netLiquidation))
+                return false;
+
+            if (double.IsNaN(maxDailyProfitStartBalance))
+            {
+                maxDailyProfitStartBalance = netLiquidation;
+                return false;
+            }
+
+            double dailyProfit = netLiquidation - maxDailyProfitStartBalance;
+            if (dailyProfit < MaxDailyProfit)
+                return false;
+
+            maxDailyProfitLimitReached = true;
+            ClearQueuedEntry();
+            CancelRemainingEntryAfterExit();
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+                TrySubmitTerminalExit("MaxDailyProfit", protectedEntrySignal);
+
+            Print(string.Format(
+                "{0} | max daily profit reached | startNetLiq={1:F2} netLiq={2:F2} profit={3:F2} target={4:F2} | trading stopped for {5:yyyy-MM-dd}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                maxDailyProfitStartBalance,
+                netLiquidation,
+                dailyProfit,
+                MaxDailyProfit,
+                maxDailyProfitDate));
 
             return true;
         }
@@ -3766,12 +3832,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
 
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first primary bar's net liquidation for each calendar date. Reaching it cancels pending entries, flattens open positions, and blocks new entries for the rest of that date. 0 disables.", GroupName = "Risk", Order = 1)]
+        public double MaxDailyProfit { get; set; }
+
         [NinjaScriptProperty]
-        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling order-action budget across all EMAL5 instances on the same NT8 connection. NOTE: this budget is separate from EMAL's (M1) own guard - the two do not coordinate with each other, so running both strategies live on the same connection at once can exceed the broker's real per-connection rate limit even if each strategy's own guard reports headroom. Blocks new entries only; protection and exits are never blocked.", GroupName = "Risk", Order = 1)]
+        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling order-action budget across all EMAL5 instances on the same NT8 connection. NOTE: this budget is separate from EMAL's (M1) own guard - the two do not coordinate with each other, so running both strategies live on the same connection at once can exceed the broker's real per-connection rate limit even if each strategy's own guard reports headroom. Blocks new entries only; protection and exits are never blocked.", GroupName = "Risk", Order = 2)]
         public bool EnableOrderRateGuard { get; set; }
 
         [Range(NewTradeActionReserve, 5000), NinjaScriptProperty]
-        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL5 action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "Risk", Order = 2)]
+        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL5 action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "Risk", Order = 3)]
         public int OrderActionLimitPerHour { get; set; }
 
         [NinjaScriptProperty]
