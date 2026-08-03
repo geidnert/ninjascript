@@ -187,6 +187,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ceiling, the latch remains set for the lifetime of this strategy instance.
         private bool maxAccountBalanceLimitReached;
 
+        // Daily account-currency profit guard. The baseline is the first available net
+        // liquidation value on each primary-bar calendar date, so unrealized P&L counts.
+        private bool maxDailyProfitLimitReached;
+        private double maxDailyProfitStartBalance = double.NaN;
+        private DateTime maxDailyProfitDate = DateTime.MinValue;
+
         // Daily profit cap, measured in POINTS of realised P&L. Tracked independently of the
         // feature log so it works whether logging is on or off. The "day" is the CME trading
         // day, 18:00 ET to 17:00 ET, matching the session model used everywhere else.
@@ -353,6 +359,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0928LimitOffset = 0.0;
                 Us0955LimitOffset = 0.0;
                 MaxAccountBalance = 0.0;
+                MaxDailyProfit = 0.0;
                 EnableOrderRateGuard = true;
                 OrderActionLimitPerHour = 1100;
 
@@ -405,9 +412,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0928Setting = EMALUs0928Setting.TP5_SL18_Slope2_75;
                 Us0955Setting = EMALUs0955Setting.TP4_SL18_Slope2_75;
 
+                // Free-tune escape hatch for the two NY windows (Steve, 2026-08-03). OFF by
+                // default - live behavior is byte-for-byte unchanged from EMAL-23. When on,
+                // ResolveWindowPresets() stops resolving Us0928Setting/Us0955Setting into
+                // TP/SL/slope and reads these four fields directly instead, and it stops
+                // overwriting Us0928MinimumSlope/Us0955MinimumSlope from the preset - closing
+                // the "slope field is inert while a preset is selected" trap. Defaults below
+                // reproduce the current TP5_SL18_Slope2_75 / TP4_SL18_Slope2_75 presets exactly,
+                // so flipping TuneUsWindowsFree on with no other changes is a no-op.
+                TuneUsWindowsFree = false;
+                Us0928TakeProfitPoints = 5.0;
+                Us0928StopLossPoints = 18.0;
+                Us0955TakeProfitPoints = 4.0;
+                Us0955StopLossPoints = 18.0;
+
                 AsiaMinimumSlope = 3.0;
                 UsMinimumSlope = 2.75;
-                Us0928MinimumSlope = 2.75;   // overwritten by ResolveWindowPresets from the Setting popup
+                Us0928MinimumSlope = 2.75;   // overwritten by ResolveWindowPresets from the Setting popup, unless TuneUsWindowsFree
                 Us0955MinimumSlope = 2.75;
 
                 // Blackout around the 08:30 US data release. HHmm, inclusive both ends.
@@ -446,6 +467,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CultureInfo.InvariantCulture, DateTimeStyles.None, out rolloverStart);
                 ValidateChart();
                 maxAccountBalanceLimitReached = false;
+                maxDailyProfitLimitReached = false;
+                maxDailyProfitStartBalance = double.NaN;
+                maxDailyProfitDate = DateTime.MinValue;
 
                 SetupTimeZones();
 
@@ -664,8 +688,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // Resolves each window's Setting popup into its TP / SL / slope. The slope is written
         // back into the per-window Us*MinimumSlope so GetConfiguredSlope keeps working unchanged.
+        //
+        // TuneUsWindowsFree (Steve, 2026-08-03): when on, skip preset resolution entirely and
+        // read TP/SL straight from Us0928TakeProfitPoints/Us0928StopLossPoints (and the 0955
+        // pair) - and, critically, do NOT touch Us0928MinimumSlope/Us0955MinimumSlope here, so
+        // whatever value the tuner set on those fields stands. In preset mode those two fields
+        // are the ones ResolveWindowPresets overwrites every DataLoaded, which is why sweeping
+        // them while a preset is selected is a no-op - closed for the free-tune path only.
         private void ResolveWindowPresets()
         {
+            if (TuneUsWindowsFree)
+            {
+                us0928Tp = Us0928TakeProfitPoints;
+                us0928Sl = Us0928StopLossPoints;
+                us0955Tp = Us0955TakeProfitPoints;
+                us0955Sl = Us0955StopLossPoints;
+                return;
+            }
 
             switch (Us0928Setting)
             {
@@ -1141,7 +1180,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsParityAllowed(ConvertToEastern(raw)))
                 return TradeParity == EMALTradeParity.Even ? "odd bar (want even)" : "even bar (want odd)";
 
-            if (dailyProfitLimitReached) return "daily profit cap";
+            if (maxDailyProfitLimitReached) return "daily profit cap";
+            if (dailyProfitLimitReached) return "daily points cap";
             if (dailyLossLimitReached) return "daily loss cap";
             if (maxAccountBalanceLimitReached) return "balance cap";
 
@@ -1631,11 +1671,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // Evaluate on every tick so unrealized profit can flatten an open position
             // immediately instead of waiting for the next one-minute bar.
-            if (IsAccountBalanceBlocked())
+            if (IsAccountBalanceBlocked() || IsAccountDailyProfitBlocked())
             {
-                // v16 fix: still draw the info panel (showing "balance cap") before bailing.
-                // Previously this early return skipped UpdateInfoText() below, so setting a
-                // non-zero Max Account Balance made the panel vanish entirely.
+                // Keep drawing the info panel after either account-level latch is hit.
                 if (IsFirstTickOfBar)
                     UpdateInfoText();
                 return;
@@ -1736,6 +1774,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Recheck the account latch here so no queued entry can escape the main gate.
             if (configurationBlocked
                 || IsAccountBalanceBlocked()
+                || IsAccountDailyProfitBlocked()
                 || IsDailyProfitBlocked()
                 || IsDailyLossBlocked())
             {
@@ -2160,9 +2199,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (openEntryTime == DateTime.MinValue)
                     openEntryTime = time;
 
-                if (maxAccountBalanceLimitReached)
+                if (maxAccountBalanceLimitReached || maxDailyProfitLimitReached)
                 {
-                    TrySubmitTerminalExit("MaxAccountBalance", orderName);
+                    TrySubmitTerminalExit(
+                        maxAccountBalanceLimitReached ? "MaxAccountBalance" : "MaxDailyProfit",
+                        orderName);
                     return;
                 }
 
@@ -2666,6 +2707,60 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
                 netLiquidation,
                 MaxAccountBalance));
+
+            return true;
+        }
+
+        private bool IsAccountDailyProfitBlocked()
+        {
+            if (MaxDailyProfit <= 0.0)
+            {
+                maxDailyProfitLimitReached = false;
+                maxDailyProfitStartBalance = double.NaN;
+                maxDailyProfitDate = DateTime.MinValue;
+                return false;
+            }
+
+            DateTime currentDate = Time[0].Date;
+            if (maxDailyProfitDate != currentDate)
+            {
+                maxDailyProfitDate = currentDate;
+                maxDailyProfitLimitReached = false;
+                maxDailyProfitStartBalance = double.NaN;
+            }
+
+            if (maxDailyProfitLimitReached)
+                return true;
+
+            double netLiquidation;
+            if (!TryGetCurrentNetLiquidation(out netLiquidation))
+                return false;
+
+            if (double.IsNaN(maxDailyProfitStartBalance))
+            {
+                maxDailyProfitStartBalance = netLiquidation;
+                return false;
+            }
+
+            double dailyProfit = netLiquidation - maxDailyProfitStartBalance;
+            if (dailyProfit < MaxDailyProfit)
+                return false;
+
+            maxDailyProfitLimitReached = true;
+            ClearQueuedEntry();
+            CancelRemainingEntryAfterExit();
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+                TrySubmitTerminalExit("MaxDailyProfit", protectedEntrySignal);
+
+            Print(string.Format(
+                "{0} | max daily profit reached | startNetLiq={1:F2} netLiq={2:F2} profit={3:F2} target={4:F2} | trading stopped for {5:yyyy-MM-dd}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                maxDailyProfitStartBalance,
+                netLiquidation,
+                dailyProfit,
+                MaxDailyProfit,
+                maxDailyProfitDate));
 
             return true;
         }
@@ -4172,12 +4267,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
 
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first primary bar's net liquidation for each calendar date. Reaching it cancels pending entries, flattens open positions, and blocks new entries for the rest of that date. 0 disables.", GroupName = "Risk", Order = 1)]
+        public double MaxDailyProfit { get; set; }
+
         [NinjaScriptProperty]
-        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling EMAL order-action budget across all strategy instances on the same NT8 connection. Blocks new entries only; protection and exits are never blocked.", GroupName = "Risk", Order = 1)]
+        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling EMAL order-action budget across all strategy instances on the same NT8 connection. Blocks new entries only; protection and exits are never blocked.", GroupName = "Risk", Order = 2)]
         public bool EnableOrderRateGuard { get; set; }
 
         [Range(NewTradeActionReserve, 5000), NinjaScriptProperty]
-        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "Risk", Order = 2)]
+        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "Risk", Order = 3)]
         public int OrderActionLimitPerHour { get; set; }
 
         [NinjaScriptProperty]
@@ -4360,6 +4459,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Use Bucket Filter", Description = "Restrict entries to the 33 approved 30-minute windows derived from 78 sessions of playback. The window list is hardcoded and not user-editable. Risk-reduction setting: it lowers drawdown and also lowers gross profit.", GroupName = "Advanced", Order = 1)]
         public bool UseBucketFilter { get; set; }
 
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Tune US Windows Free", Description = "Research-only escape hatch (EMAL-24, Steve 2026-08-03). When on, ResolveWindowPresets() ignores Us0928Setting/Us0955Setting and reads TP/SL directly from Us0928TakeProfitPoints/Us0928StopLossPoints/Us0955TakeProfitPoints/Us0955StopLossPoints, and stops overwriting Us0928MinimumSlope/Us0955MinimumSlope - making all six fields freely tunable instead of preset-locked. OFF by default; live behavior unchanged.", GroupName = "Advanced", Order = 2)]
+        public bool TuneUsWindowsFree { get; set; }
+
         // ================================================================================
         // Sessions 1m (Steve, 2026-08-01, EMAL-21) - reorganized so the two US windows this
         // strategy actually runs come first, then the minute filter, with Asia/US-cash (rarely
@@ -4392,6 +4496,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "Sessions 1m", Order = 5)]
         public double Us0955MinimumSlope { get; set; }
+
+        // Free TP/SL fields (EMAL-24, Steve 2026-08-03). Inert unless TuneUsWindowsFree is on -
+        // see ResolveWindowPresets(). Hidden from the live UI like the preset/slope fields above;
+        // reachable through the CLI tuner via their parameter ids.
+        [Range(0.01, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:28-09:50 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "Sessions 1m", Order = 6)]
+        public double Us0928TakeProfitPoints { get; set; }
+
+        [Range(0.01, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:28-09:50 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "Sessions 1m", Order = 7)]
+        public double Us0928StopLossPoints { get; set; }
+
+        [Range(0.01, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:55-10:30 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "Sessions 1m", Order = 8)]
+        public double Us0955TakeProfitPoints { get; set; }
+
+        [Range(0.01, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US 09:55-10:30 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "Sessions 1m", Order = 9)]
+        public double Us0955StopLossPoints { get; set; }
 
         // Minute-of-5 filter (Steve, 2026-08-01). One shared setting applied to whichever
         // sessions/windows are enabled - deliberately not per-window (Us0928/Us0955 or otherwise).
