@@ -719,6 +719,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case EMALUs0955Setting.TP3_SL16_Slope2_75: us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
                 case EMALUs0955Setting.TP3_SL18_Slope2_75: us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
                 case EMALUs0955Setting.TP2_SL18_Slope2_75: us0955Tp = 2; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.TP4_SL20_Slope2_50: us0955Tp = 4; us0955Sl = 20; Us0955MinimumSlope = 2.50; break;
                 default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
             }
         }
@@ -4636,7 +4637,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         TP3_SL16_Slope2_75,
         TP3_SL18_Slope2_75,
         TP2_SL18_Slope2_75,
-        TP4_SL18_Slope2_75
+        TP4_SL18_Slope2_75,
+        TP4_SL20_Slope2_50
     }
 
     public enum EMALEntryOrderType
