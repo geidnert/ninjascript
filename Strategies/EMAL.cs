@@ -111,46 +111,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool terminalExitRetryExhaustedLogged;
         private const int MaxTerminalExitRetries = 8;
 
-        // Live order diagnostics. A managed entry method can be called while NinjaTrader is
-        // still in WaitUntilFlat; in that case no order reaches OnOrderUpdate. Keep this
-        // diagnostic-only so it never delays or suppresses the normal entry path.
-        private bool entryRequestAwaitingAcknowledgement;
-        private string entryRequestSignal = string.Empty;
-        private DateTime entryRequestTimeUtc = DateTime.MinValue;
-        private DateTime entryRequestMarketTime = DateTime.MinValue;
-        private bool entryAcknowledgementWarning;
-        private int unacknowledgedEntryRequestCount;
-        private const int SlowEntryAcknowledgementMilliseconds = 250;
-        private const int EntryAcknowledgementTimeoutMilliseconds = 2000;
-
-        // Event-driven live protection watchdog. The first stop is still submitted immediately
-        // from OnExecutionUpdate; this only reconciles callbacks/order state after the fact and
-        // is throttled while a position or related order is active.
-        private DateTime protectionAuditDueUtc = DateTime.MinValue;
-        private DateTime lastProtectionAuditUtc = DateTime.MinValue;
-        private string protectionAuditReason = string.Empty;
-        private bool missingProtectionWarningPrinted;
-        private bool flatProtectionCleanupPending;
-        private const int ProtectionAuditIntervalMilliseconds = 1000;
-
-        // Track the actual terminal order and original side so a late fill cannot silently
-        // reverse the strategy after an emergency exit raced an OCO sibling.
-        private Order terminalExitOrder;
-        private MarketPosition terminalExitOriginalSide = MarketPosition.Flat;
-        private MarketPosition lastExposureSide = MarketPosition.Flat;
-        private bool emergencyOverfillFlattenPending;
-        private DateTime emergencyOverfillFlattenRetryUtc = DateTime.MinValue;
-        private int emergencyOverfillFlattenAttempts;
-        private bool emergencyAccountFlattenSubmitted;
-        private string lastProtectiveExitDeferralReason = string.Empty;
-        private const int MaxManagedOverfillFlattenAttempts = 2;
-
-        // Connection events block new submissions while the order feed is unavailable. Existing
-        // protection is reconciled after reconnect before another entry can be attempted.
-        private bool orderConnectionAvailable = true;
-        private bool orderConnectionLossLogged;
-        private bool connectionReconciliationPending;
-
         // ---- chart info panel (WPF overlay on ChartControl's parent, not SharpDX) ----
         private const string InfoFooter = "AutoEdge Systems™";
         private Border infoBoxContainer;
@@ -368,7 +328,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Description = "EMA direction strategy for NQ (1-minute bars) with market or passive "
                     + "bid/ask limit entries and fixed take-profit and stop-loss brackets.";
-                Name = GetVersionedStrategyName("EMAL");
+                Name = "EMAL";
                 Calculate = Calculate.OnEachTick;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
@@ -377,6 +337,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
+
+                Version = EMALVersion.version_1022;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
 
@@ -405,7 +367,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 WebhookUrl = string.Empty;
                 WebhookTickerOverride = string.Empty;
-                WebhookProviderType = WebhookProvider.TradersPost;
+                WebhookProviderType = WebhookProvider.ProjectX;
                 ProjectXApiBaseUrl = "https://api.topstepx.com";
                 ProjectXTradeAllAccounts = false;
                 ProjectXUsername = string.Empty;
@@ -479,14 +441,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 UseBucketFilter = true;
 
-                // Minute-of-5 filter (Steve, 2026-08-01). Master switch defaults ON, with 1a/1e
-                // enabled and 1b/1c/1d off - Steve's typical usage. NOTE: this is a real
-                // behavior change from pre-filter EMAL versions for any FRESH instance (a new
-                // chart/strategy add), since it now trades only 2 of every 5 minutes out of the
-                // box instead of all 5 - not a no-op default like every other filter in this
-                // file. One shared setting for whichever sessions/windows are enabled -
-                // deliberately not per-window (see EMAL-18-changelog.txt).
-                EnableMinuteFilter = true;
+                // Minute-of-5 filter (Steve, 2026-08-01; master switch removed 2026-08-05,
+                // EMAL-1022). 1a/1e enabled, 1b/1c/1d off by default - Steve's typical usage.
+                // To trade all five minutes, check all five boxes; there is no separate
+                // on/off switch. One shared setting for whichever sessions/windows are
+                // enabled - deliberately not per-window (see EMAL-18-changelog.txt).
                 TradeMinute1a = true;
                 TradeMinute1b = false;
                 TradeMinute1c = false;
@@ -510,11 +469,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 maxDailyProfitLimitReached = false;
                 maxDailyProfitStartBalance = double.NaN;
                 maxDailyProfitDate = DateTime.MinValue;
-                orderConnectionAvailable = true;
-                orderConnectionLossLogged = false;
-                connectionReconciliationPending = false;
-                ClearEntryAcknowledgementState();
-                ClearProtectionAuditState();
 
                 SetupTimeZones();
 
@@ -522,18 +476,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 pathLogHeaderWritten = false;
                 pathLogFailureCount = 0;
 
-                // Bind the strategy EMA explicitly to the primary Close series. Keeping this
-                // instance synchronized in OnBarUpdate is important at maximum Playback speed,
-                // especially after a strategy is disabled, edited, and enabled again.
+                // Bind explicitly to the primary Close series. Combined with the Update()
+                // call in OnBarUpdate, this prevents a re-enabled Playback/chart instance
+                // from asking a lagging hosted EMA for unavailable bars.
                 ema = EMA(Close, EmaPeriod);
                 AddChartIndicator(ema);
             }
             else if (State == State.Realtime)
             {
                 TransitionTrackedOrderReferencesToRealtime();
-                RefreshOrderConnectionAvailability();
-                PrintRealtimeStartupDiagnostics();
-                ScheduleProtectionAudit("realtime-start", 250);
                 RunProjectXStartupPreflight();
             }
             else if (State == State.Terminated)
@@ -545,49 +496,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 PrintFillRateSummary();
                 CloseFeatureLog();
                 DisposeInfoBoxOverlay();
-            }
-        }
-
-        protected override void OnConnectionStatusUpdate(ConnectionStatusEventArgs connectionStatusUpdate)
-        {
-            if (connectionStatusUpdate == null || Account == null || Account.Connection == null)
-                return;
-
-            if (!ReferenceEquals(connectionStatusUpdate.Connection, Account.Connection))
-                return;
-
-            if (State != State.Realtime || IsPlaybackOrderContext())
-                return;
-
-            bool connected = connectionStatusUpdate.Status == ConnectionStatus.Connected;
-            bool wasAvailable = orderConnectionAvailable;
-            orderConnectionAvailable = connected;
-
-            if (!connected)
-            {
-                connectionReconciliationPending = true;
-                ClearQueuedEntry();
-                if (!orderConnectionLossLogged)
-                {
-                    orderConnectionLossLogged = true;
-                    Print(string.Format(
-                        "{0} | ORDER CONNECTION {1} | new entries blocked; existing broker protection left working",
-                        DateTime.Now,
-                        connectionStatusUpdate.Status));
-                }
-                return;
-            }
-
-            orderConnectionLossLogged = false;
-            if (!wasAvailable)
-            {
-                connectionReconciliationPending = true;
-                Print(string.Format(
-                    "{0} | ORDER CONNECTION RESTORED | reconciling position protection before new entries",
-                    DateTime.Now));
-                AuditAndRepairPositionProtection("connection-restored");
-                if (connectionReconciliationPending)
-                    ScheduleProtectionAudit("connection-restored-pending", 250);
             }
         }
 
@@ -611,170 +519,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private bool IsLiveNtSafetyContext()
-        {
-            return State == State.Realtime && !IsPlaybackOrderContext();
-        }
-
-        private bool IsRealtimeProtectionSafetyContext()
-        {
-            // Market Replay must exercise the same bracket/reversal cleanup as a live
-            // connection. Provider connection checks, API accounting and wall-clock entry
-            // acknowledgement diagnostics remain excluded from Playback separately.
-            return State == State.Realtime;
-        }
-
-        private void RefreshOrderConnectionAvailability()
-        {
-            if (!IsLiveNtSafetyContext())
-            {
-                orderConnectionAvailable = true;
-                return;
-            }
-
-            try
-            {
-                orderConnectionAvailable = Account == null
-                    || Account.Connection == null
-                    || Account.Connection.Status == ConnectionStatus.Connected;
-            }
-            catch
-            {
-                // Do not turn a transient status-read failure into a false disconnect. The
-                // connection callback will set the authoritative state when it fires.
-            }
-        }
-
-        private bool IsOrderConnectionAvailable()
-        {
-            if (!IsLiveNtSafetyContext())
-                return true;
-
-            try
-            {
-                return orderConnectionAvailable
-                    && !connectionReconciliationPending
-                    && (Account == null
-                        || Account.Connection == null
-                        || Account.Connection.Status == ConnectionStatus.Connected);
-            }
-            catch
-            {
-                return orderConnectionAvailable && !connectionReconciliationPending;
-            }
-        }
-
-        private void PrintRealtimeStartupDiagnostics()
-        {
-            if (State != State.Realtime)
-                return;
-
-            Print(string.Format(
-                "{0} | STARTUP | account={1} start={2} waitUntilFlat={3} strategyPos={4} qty={5} connection={6} history=warmup-only | windows 09:28={7} 09:55={8} minuteFilter={9} [{10}{11}{12}{13}{14}]",
-                DateTime.Now,
-                Account == null ? "-" : Account.Name,
-                StartBehavior,
-                IsWaitUntilFlat,
-                Position.MarketPosition,
-                Math.Abs(Position.Quantity),
-                IsOrderConnectionAvailable() ? "connected" : "offline",
-                Us0928Enabled,
-                Us0955Enabled,
-                EnableMinuteFilter,
-                TradeMinute1a ? "1a " : string.Empty,
-                TradeMinute1b ? "1b " : string.Empty,
-                TradeMinute1c ? "1c " : string.Empty,
-                TradeMinute1d ? "1d " : string.Empty,
-                TradeMinute1e ? "1e" : string.Empty));
-        }
-
         private bool IsHistoricalTradeSimulationContext()
         {
-            // Strategy Analyzer uses the synthetic Backtest account and must retain normal
-            // historical order/fill processing for tuning. A chart/Strategies-tab instance
-            // on Playback101 or a broker account needs historical bars only for indicator
-            // warmup; creating historical live-until-cancelled entries there can carry a
-            // managed entry signal across the realtime boundary and suppress fresh entries.
+            // Analyzer uses the synthetic Backtest account and must retain historical fills.
+            // Playback and broker-account instances use historical bars for indicator warmup
+            // only, preventing historical managed orders from suppressing realtime entries.
             return Account == null
                 || string.Equals(Account.Name, "Backtest", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private void MarkEntryRequestAwaitingAcknowledgement(string signalName, DateTime marketTime)
-        {
-            if (!IsLiveNtSafetyContext())
-                return;
-
-            entryRequestAwaitingAcknowledgement = true;
-            entryRequestSignal = signalName ?? string.Empty;
-            entryRequestTimeUtc = DateTime.UtcNow;
-            entryRequestMarketTime = marketTime;
-            entryAcknowledgementWarning = false;
-        }
-
-        private void AcknowledgeEntryRequest(string signalName, OrderState orderState, int quantity, DateTime time)
-        {
-            if (!IsLiveNtSafetyContext())
-                return;
-
-            bool matchesRequest = entryRequestAwaitingAcknowledgement
-                && string.Equals(entryRequestSignal, signalName, StringComparison.Ordinal);
-            if (!matchesRequest)
-                return;
-
-            double elapsedMilliseconds = entryRequestTimeUtc == DateTime.MinValue
-                ? 0.0
-                : Math.Max(0.0, (DateTime.UtcNow - entryRequestTimeUtc).TotalMilliseconds);
-
-            bool wasWarning = entryAcknowledgementWarning;
-            if (wasWarning || elapsedMilliseconds >= SlowEntryAcknowledgementMilliseconds)
-            {
-                Print(string.Format(
-                    "{0} | ENTRY ACK {1}| account={2} signal={3} state={4} qty={5} latency={6:F0}ms",
-                    time,
-                    wasWarning ? "AFTER WARNING " : "SLOW ",
-                    Account == null ? "-" : Account.Name,
-                    signalName,
-                    orderState,
-                    quantity,
-                    elapsedMilliseconds));
-            }
-
-            ClearEntryAcknowledgementState();
-            if (wasWarning)
-                UpdateInfoText();
-        }
-
-        private void EvaluateEntryAcknowledgement()
-        {
-            if (!IsLiveNtSafetyContext()
-                || !entryRequestAwaitingAcknowledgement
-                || entryAcknowledgementWarning
-                || entryRequestTimeUtc == DateTime.MinValue
-                || (DateTime.UtcNow - entryRequestTimeUtc).TotalMilliseconds < EntryAcknowledgementTimeoutMilliseconds)
-            {
-                return;
-            }
-
-            entryAcknowledgementWarning = true;
-            unacknowledgedEntryRequestCount++;
-            Print(string.Format(
-                "{0} | ENTRY NOT ACKNOWLEDGED | account={1} signal={2} waitUntilFlat={3} connection={4} count={5} | NinjaTrader created no managed order callback",
-                entryRequestMarketTime == DateTime.MinValue ? lastTickTime : entryRequestMarketTime,
-                Account == null ? "-" : Account.Name,
-                entryRequestSignal,
-                IsWaitUntilFlat,
-                IsOrderConnectionAvailable() ? "connected" : "offline",
-                unacknowledgedEntryRequestCount));
-            UpdateInfoText();
-        }
-
-        private void ClearEntryAcknowledgementState()
-        {
-            entryRequestAwaitingAcknowledgement = false;
-            entryRequestSignal = string.Empty;
-            entryRequestTimeUtc = DateTime.MinValue;
-            entryRequestMarketTime = DateTime.MinValue;
-            entryAcknowledgementWarning = false;
         }
 
         private DateTime ConvertToZone(DateTime platformTime, TimeZoneInfo target)
@@ -1174,8 +925,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  bucket filter       : {0}  (bars blocked: {1})",
                 UseBucketFilter, bucketBlockedBarCount));
-            Print(string.Format("  minute filter       : {0}  1a={1} 1b={2} 1c={3} 1d={4} 1e={5}  (bars blocked: {6})",
-                EnableMinuteFilter, TradeMinute1a, TradeMinute1b, TradeMinute1c, TradeMinute1d, TradeMinute1e,
+            Print(string.Format("  minute filter       : 1a={0} 1b={1} 1c={2} 1d={3} 1e={4}  (bars blocked: {5})",
+                TradeMinute1a, TradeMinute1b, TradeMinute1c, TradeMinute1d, TradeMinute1e,
                 minuteFilterBlockedBarCount));
             Print(string.Format("  trade parity        : {0}  (bars blocked: {1})",
                 TradeParity, parityBlockedBarCount));
@@ -1189,7 +940,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 LimitOrderTimeoutSeconds, CancelIfMovedPoints));
             Print(string.Format("  order rate guard    : {0} / {1} actions (entries blocked: {2})",
                 EnableOrderRateGuard, OrderActionLimitPerHour, rateGuardBlockedEntryCount));
-            Print(string.Format("  entry requests no ack: {0}", unacknowledgedEntryRequestCount));
             Print(string.Format("  signals generated   : {0}", signalCount));
             Print(string.Format("  filled              : {0}  ({1:F1}%)",
                 filledCount, 100.0 * filledCount / signalCount));
@@ -1218,10 +968,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             TrackExcursion();
             UpdatePathRecorders();
             EvaluateProjectXOrphanRecovery();
-            EvaluateEmergencyOverfillFlatten();
             EvaluateTerminalExitRecovery();
-            EvaluateEntryAcknowledgement();
-            EvaluateProtectionWatchdog();
             EvaluateTimeStop();
             EvaluateEntryCancellation();
         }
@@ -1415,18 +1162,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (configurationBlocked)
                 return "disabled";
 
-            if (State == State.Realtime && IsWaitUntilFlat)
-                return "NT startup wait";
-
-            if (connectionReconciliationPending)
-                return "NT order sync";
-
-            if (flatProtectionCleanupPending)
-                return "NT order cleanup";
-
-            if (!IsOrderConnectionAvailable())
-                return "connection wait";
-
             DateTime raw = GetBarOpenRaw();
 
             if (IsRolloverBlocked(ConvertToEastern(raw)))
@@ -1484,21 +1219,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (configurationBlocked)
                 return "ERROR: " + configurationBlockReason;
-
-            if (State == State.Realtime && IsWaitUntilFlat)
-                return "NT startup wait";
-
-            if (connectionReconciliationPending)
-                return "Order reconnect check";
-
-            if (flatProtectionCleanupPending)
-                return "Order cleanup pending";
-
-            if (!IsOrderConnectionAvailable())
-                return "ERROR: order connection offline";
-
-            if (entryAcknowledgementWarning)
-                return "WARNING: entry not acknowledged";
 
             if (CurrentBar < Math.Max(EmaPeriod, 20) + 2)
                 return "Warmup in progress";
@@ -1687,11 +1407,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return version != null ? version.ToString() : "0.0.0.0";
         }
 
-        private string GetVersionedStrategyName(string baseName)
-        {
-            return baseName + GetAddOnVersion().Replace(".", string.Empty);
-        }
-
         // Allowed 30-minute entry buckets, indexed from 00:00 ET in 30-minute steps
         // (0 = 00:00, 1 = 00:30, ... 47 = 23:30). Hardcoded by design - this is a
         // research result, not a user setting.
@@ -1756,9 +1471,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsMinuteAllowed(DateTime easternTime)
         {
-            if (!EnableMinuteFilter)
-                return true;
-
             switch (easternTime.Minute % 5)
             {
                 case 0: return TradeMinute1a;
@@ -1952,17 +1664,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (BarsInProgress != 0)
                 return;
 
-            // Keep the hosted EMA aligned with the primary series before ANY gate can return.
-            // EMAL can skip several consecutive updates because of its session/minute/news
-            // filters, and a chart-hosted EMA may also be suspended while its chart is inactive.
-            // At maximum Playback speed a newly re-enabled instance could otherwise ask EMA to
-            // catch up by more bars than NinjaTrader currently has available and be disabled
-            // with an out-of-range series error. Update() is a no-op when EMA is already current.
+            // Keep the hosted EMA synchronized before any strategy gate can return.
+            // Update() is a no-op when the EMA is already current.
             ema.Update();
 
-            // Start Playback/live instances clean at the current realtime boundary. Historical
-            // bars warm indicators only; no historical strategy/order logic runs for those
-            // accounts. Analyzer runs continue through the full historical trading path.
+            // Historical bars warm Playback/live instances only. Strategy Analyzer retains
+            // the complete historical order/fill path through the Backtest account.
             if (State == State.Historical && !IsHistoricalTradeSimulationContext())
                 return;
 
@@ -2082,9 +1789,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 || IsAccountBalanceBlocked()
                 || IsAccountDailyProfitBlocked()
                 || IsDailyProfitBlocked()
-                || IsDailyLossBlocked()
-                || !IsOrderConnectionAvailable()
-                || (IsRealtimeProtectionSafetyContext() && flatProtectionCleanupPending))
+                || IsDailyLossBlocked())
             {
                 ClearQueuedEntry();
                 return;
@@ -2131,7 +1836,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             CaptureEntryFeatures(direction, signalPrice, takeProfit, stopLoss);
 
             Print(string.Format(
-                "{0} | ENTRY REQUEST | account={6} {1} {2}{3} | target={4:F2} pts stop={5:F2} pts | waitUntilFlat={7}",
+                "{0} | {1} {2}{3} | target={4:F2} pts stop={5:F2} pts",
                 Time[0],
                 direction > 0 ? "LONG" : "SHORT",
                 EntryOrderType,
@@ -2139,9 +1844,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     ? string.Format("@{0}={1:F2}", LimitPriceReference, limitPrice)
                     : string.Empty,
                 takeProfit,
-                stopLoss,
-                Account == null ? "-" : Account.Name,
-                State == State.Realtime && IsWaitUntilFlat));
+                stopLoss));
 
             SendPlannedProjectXEntry(
                 direction,
@@ -2151,9 +1854,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 stopLoss);
 
             RecordNtOrderAction("entry");
-            MarkEntryRequestAwaitingAcknowledgement(
-                entrySignal,
-                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0]);
 
             if (direction > 0)
             {
@@ -2262,8 +1962,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             desiredProtectionQuantity = 0;
             protectiveStopOrder = null;
             profitTargetOrder = null;
-            ClearTerminalExitTracking();
-            ClearProtectionAuditState();
+            terminalExitPending = false;
         }
 
         private void TransitionTrackedOrderReferencesToRealtime()
@@ -2366,9 +2065,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (orderName == StopExitSignal || orderName == TargetExitSignal)
             {
                 TrackProtectiveOrder(order, orderState);
-                ScheduleProtectionAudit(
-                    "order-" + orderName + "-" + orderState,
-                    orderState == OrderState.Accepted || orderState == OrderState.Working ? 1000 : 250);
 
                 if (orderState == OrderState.Rejected)
                 {
@@ -2388,12 +2084,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     && (orderState == OrderState.Accepted || orderState == OrderState.Working))
                 {
                     // Stage the OCO sibling only after the stop is valid and accepted.
-                    // A stop can also receive an automatic quantity-reduction callback after
-                    // the target partially fills. At that moment desiredProtectionQuantity can
-                    // still contain the original entry size, so this callback must never grow an
-                    // already-working target. The execution/audit path below is the only path
-                    // allowed to expand it for a genuine late entry fill.
-                    SubmitOrUpdateProfitTarget(false);
+                    SubmitOrUpdateProfitTarget();
                 }
 
                 if (orderState == OrderState.Accepted
@@ -2413,8 +2104,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (IsTerminalExitOrderName(orderName))
             {
-                TrackTerminalExitOrder(order, orderState);
-
                 if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
                 {
                     Print(string.Format(
@@ -2430,8 +2119,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         : "Rejected";
                     ScheduleTerminalExitRetry(reason, order.FromEntrySignal, rateLimitedRejection);
                 }
-
-                ScheduleProtectionAudit("terminal-order-" + orderState, 250);
 
                 return;
             }
@@ -2453,8 +2140,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (orderName != LongEntrySignal && orderName != ShortEntrySignal)
                 return;
-
-            AcknowledgeEntryRequest(orderName, orderState, quantity, time);
 
             if (orderState != OrderState.Cancelled
                 && orderState != OrderState.Filled
@@ -2522,7 +2207,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 entryFilledQuantity += executionQuantity;
                 openEntryPrice = entryFillValue / entryFilledQuantity;
                 openEntryDirection = orderName == LongEntrySignal ? 1 : -1;
-                lastExposureSide = openEntryDirection > 0 ? MarketPosition.Long : MarketPosition.Short;
 
                 // First fill starts the time-stop clock; later partials do not restart it.
                 if (openEntryTime == DateTime.MinValue)
@@ -2537,21 +2221,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 }
 
                 double averageEntryPrice = entryFillValue / entryFilledQuantity;
-                int actualPositionQuantity = Math.Abs(Position.Quantity);
-                if (actualPositionQuantity <= 0)
-                    actualPositionQuantity = entryFilledQuantity;
-
-                if (Position.AveragePrice > 0.0)
-                    averageEntryPrice = Position.AveragePrice;
-
                 SubmitOrUpdateProtection(
-                    Position.MarketPosition != MarketPosition.Flat
-                        ? Position.MarketPosition
-                        : (orderName == LongEntrySignal ? MarketPosition.Long : MarketPosition.Short),
+                    orderName == LongEntrySignal ? MarketPosition.Long : MarketPosition.Short,
                     averageEntryPrice,
-                    actualPositionQuantity,
+                    entryFilledQuantity,
                     time);
-                ScheduleProtectionAudit("entry-execution", 1000);
                 return;
             }
 
@@ -2560,11 +2234,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 || orderName == NewsExitSignal
                 || IsTerminalExitOrderName(orderName))
             {
-                // Preserve the existing exit/webhook flat test. For local protection sizing,
-                // use the updated strategy Position as the net remaining size; the execution's
-                // order can represent only one leg of a partial-fill sequence.
-                bool strategyPositionIsFlat = Position.MarketPosition == MarketPosition.Flat;
-                bool positionIsFlat = marketPosition == MarketPosition.Flat || strategyPositionIsFlat;
+                bool positionIsFlat = marketPosition == MarketPosition.Flat
+                    || Position.MarketPosition == MarketPosition.Flat;
 
                 if (positionIsFlat && projectXEntryMirrorActive)
                 {
@@ -2599,18 +2270,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 CancelRemainingEntryAfterExit();
 
-                if (strategyPositionIsFlat)
-                {
+                if (positionIsFlat)
                     ResetProtectionTracking();
-                    flatProtectionCleanupPending = true;
-                    ScheduleProtectionAudit("flat-execution-cleanup", 250);
-                }
-                else if (CheckUnexpectedPositionReversal("execution-" + orderName))
-                    return;
                 else if (IsTerminalExitOrderName(orderName))
                     ScheduleTerminalExitRetry("ResidualPosition", execution.Order.FromEntrySignal, false);
-                else
-                    ScheduleProtectionAudit("residual-after-" + orderName, 250);
             }
         }
 
@@ -2693,16 +2356,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (IsOrderActive(protectiveStopOrder))
             {
-                bool quantityMatches = GetRemainingOrderQuantity(protectiveStopOrder) == protectedQuantity;
+                bool quantityMatches = protectiveStopOrder.Quantity == protectedQuantity;
                 bool priceMatches = Math.Abs(protectiveStopOrder.StopPrice - stopPrice) < TickSize / 2.0;
                 if (!quantityMatches || !priceMatches)
                 {
                     RecordNtOrderAction("change-stop");
-                    ChangeOrder(
-                        protectiveStopOrder,
-                        protectiveStopOrder.Filled + protectedQuantity,
-                        0.0,
-                        stopPrice);
+                    ChangeOrder(protectiveStopOrder, protectedQuantity, 0.0, stopPrice);
                 }
             }
             else
@@ -2740,10 +2399,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Normally the stop's Accepted/Working callback stages the target. This fallback
             // also restores a missing target after a rejected terminal-exit recovery.
             if (!terminalExitPending)
-                SubmitOrUpdateProfitTarget(true);
+                SubmitOrUpdateProfitTarget();
         }
 
-        private void SubmitOrUpdateProfitTarget(bool allowQuantityIncrease)
+        private void SubmitOrUpdateProfitTarget()
         {
             if (terminalExitPending
                 || Position.MarketPosition == MarketPosition.Flat
@@ -2756,11 +2415,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (IsOrderActive(profitTargetOrder))
             {
-                int desiredTotalQuantity = profitTargetOrder.Filled + desiredProtectionQuantity;
-                if (!allowQuantityIncrease && desiredTotalQuantity > profitTargetOrder.Quantity)
-                    desiredTotalQuantity = profitTargetOrder.Quantity;
-
-                bool quantityMatches = profitTargetOrder.Quantity == desiredTotalQuantity;
+                bool quantityMatches = profitTargetOrder.Quantity == desiredProtectionQuantity;
                 bool priceMatches = Math.Abs(
                     profitTargetOrder.LimitPrice - desiredProtectionTargetPrice) < TickSize / 2.0;
 
@@ -2770,7 +2425,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RecordNtOrderAction("change-target");
                 ChangeOrder(
                     profitTargetOrder,
-                    desiredTotalQuantity,
+                    desiredProtectionQuantity,
                     desiredProtectionTargetPrice,
                     0.0);
             }
@@ -2833,733 +2488,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 profitTargetOrder = terminalState ? null : order;
         }
 
-        private void TrackTerminalExitOrder(Order order, OrderState orderState)
-        {
-            bool terminalState = orderState == OrderState.Cancelled
-                || orderState == OrderState.Filled
-                || orderState == OrderState.Rejected;
-
-            if (!terminalState)
-            {
-                terminalExitOrder = order;
-                if (terminalExitOriginalSide == MarketPosition.Flat
-                    && Position.MarketPosition != MarketPosition.Flat)
-                {
-                    terminalExitOriginalSide = Position.MarketPosition;
-                }
-                terminalExitPending = true;
-                return;
-            }
-
-            if (MatchesOrderReference(terminalExitOrder, order))
-                terminalExitOrder = null;
-        }
-
-        private static int GetRemainingOrderQuantity(Order order)
-        {
-            return order == null ? 0 : Math.Max(0, order.Quantity - order.Filled);
-        }
-
-        private static bool MatchesOrderReference(Order tracked, Order update)
-        {
-            if (tracked == null || update == null)
-                return false;
-
-            if (ReferenceEquals(tracked, update))
-                return true;
-
-            string trackedId = tracked.OrderId ?? string.Empty;
-            string updateId = update.OrderId ?? string.Empty;
-            return trackedId.Length > 0
-                && string.Equals(trackedId, updateId, StringComparison.Ordinal);
-        }
-
-        private bool CheckUnexpectedPositionReversal(string reason)
-        {
-            MarketPosition currentSide = Position.MarketPosition;
-            MarketPosition expectedSide = terminalExitOriginalSide;
-
-            if (expectedSide == MarketPosition.Flat && openEntryDirection != 0)
-                expectedSide = openEntryDirection > 0 ? MarketPosition.Long : MarketPosition.Short;
-            if (expectedSide == MarketPosition.Flat)
-                expectedSide = lastExposureSide;
-
-            bool reversed = (expectedSide == MarketPosition.Long && currentSide == MarketPosition.Short)
-                || (expectedSide == MarketPosition.Short && currentSide == MarketPosition.Long);
-            if (!reversed)
-                return false;
-
-            SubmitEmergencyOverfillFlatten(reason, expectedSide);
-            return true;
-        }
-
-        private void SubmitEmergencyOverfillFlatten(string reason, MarketPosition expectedSide)
-        {
-            if (emergencyOverfillFlattenPending || Position.MarketPosition == MarketPosition.Flat)
-                return;
-
-            emergencyOverfillFlattenPending = true;
-            terminalExitPending = true;
-            terminalExitOriginalSide = Position.MarketPosition;
-            emergencyOverfillFlattenAttempts = 0;
-            emergencyOverfillFlattenRetryUtc = DateTime.UtcNow;
-            emergencyAccountFlattenSubmitted = false;
-            CancelRemainingEntryAfterExit();
-
-            Print(string.Format(
-                "{0} | CRITICAL EXIT OVERFILL | reason={1} expected={2} actual={3} qty={4} | cancelling competing exits before flattening reversal",
-                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                reason,
-                expectedSide,
-                Position.MarketPosition,
-                Math.Abs(Position.Quantity)));
-
-            CancelCompetingSafetyOrdersForOverfill();
-            ScheduleProtectionAudit("overfill-flatten", 250);
-        }
-
-        private void EvaluateEmergencyOverfillFlatten()
-        {
-            if (!emergencyOverfillFlattenPending)
-                return;
-
-            if (Position.MarketPosition == MarketPosition.Flat)
-            {
-                ClearTerminalExitTracking();
-                ClearTerminalExitRetry();
-                return;
-            }
-
-            if (!IsRawOrderFeedConnected())
-                return;
-
-            // Never add another closing order while a stale stop, target or earlier terminal
-            // exit can still execute. This is the failure that created the July 14 orphan long.
-            if (CancelCompetingSafetyOrdersForOverfill())
-            {
-                ScheduleProtectionAudit("overfill-cancel-wait", 250);
-                return;
-            }
-
-            string exitSignal = TerminalExitSignalPrefix + "Overfill";
-            if (IsOrderActive(terminalExitOrder)
-                && string.Equals(terminalExitOrder.Name, exitSignal, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            DateTime nowUtc = DateTime.UtcNow;
-            if (nowUtc < emergencyOverfillFlattenRetryUtc)
-                return;
-
-            if (emergencyOverfillFlattenAttempts < MaxManagedOverfillFlattenAttempts)
-            {
-                emergencyOverfillFlattenAttempts++;
-                emergencyOverfillFlattenRetryUtc = IsPlaybackOrderContext()
-                    ? nowUtc
-                    : nowUtc.AddMilliseconds(250);
-
-                RecordNtOrderAction("emergency-overfill-exit");
-                if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong(exitSignal);
-                else if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort(exitSignal);
-
-                if (!IsOrderActive(terminalExitOrder))
-                {
-                    Print(string.Format(
-                        "{0} | CRITICAL: managed overfill flatten produced no order acknowledgement | attempt={1}/{2} side={3} qty={4}",
-                        lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                        emergencyOverfillFlattenAttempts,
-                        MaxManagedOverfillFlattenAttempts,
-                        Position.MarketPosition,
-                        Math.Abs(Position.Quantity)));
-                }
-
-                ScheduleProtectionAudit("overfill-managed-flatten", 250);
-                return;
-            }
-
-            if (emergencyAccountFlattenSubmitted)
-                return;
-
-            // A position created by overfilling the opposite-side managed exit may have no
-            // matching entry signal, so ExitLong/ExitShort can be ignored by the managed order
-            // engine. Account.Flatten is a last-resort account-level safety action: it cancels
-            // the remaining orders for this instrument and closes the actual account position.
-            MarketPosition accountSide;
-            int accountQuantity;
-            GetCurrentAccountInstrumentPosition(out accountSide, out accountQuantity);
-            emergencyAccountFlattenSubmitted = true;
-
-            if (accountSide == MarketPosition.Flat || accountQuantity <= 0)
-            {
-                Print(string.Format(
-                    "{0} | CRITICAL: strategy still shows {1} {2}, but account is flat; entries remain locked until strategy restart",
-                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                    Position.MarketPosition,
-                    Math.Abs(Position.Quantity)));
-                return;
-            }
-
-            try
-            {
-                RecordNtOrderAction("account-flatten-overfill");
-                Account.Flatten(new[] { Instrument });
-                Print(string.Format(
-                    "{0} | CRITICAL ACCOUNT FLATTEN submitted | reason=Overfill side={1} qty={2} | strategy remains entry-locked until flat/restarted",
-                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                    accountSide,
-                    accountQuantity));
-            }
-            catch (Exception ex)
-            {
-                emergencyAccountFlattenSubmitted = false;
-                emergencyOverfillFlattenRetryUtc = IsPlaybackOrderContext()
-                    ? DateTime.UtcNow
-                    : DateTime.UtcNow.AddSeconds(1);
-                Print("CRITICAL: account-level overfill flatten failed: " + ex.Message);
-            }
-        }
-
-        private bool CancelCompetingSafetyOrdersForOverfill()
-        {
-            if (Account == null)
-                return false;
-
-            bool foundActive = false;
-            string overfillExitSignal = TerminalExitSignalPrefix + "Overfill";
-
-            try
-            {
-                foreach (Order accountOrder in Account.Orders)
-                {
-                    if (!IsOrderActive(accountOrder)
-                        || !IsOrderForCurrentInstrument(accountOrder))
-                    {
-                        continue;
-                    }
-
-                    string orderName = accountOrder.Name ?? string.Empty;
-                    bool competingSafetyOrder = IsEmalProtectiveOrder(accountOrder)
-                        || (IsTerminalExitOrderName(orderName)
-                            && !string.Equals(orderName, overfillExitSignal, StringComparison.Ordinal))
-                        || orderName == NewsExitSignal;
-                    if (!competingSafetyOrder)
-                        continue;
-
-                    foundActive = true;
-                    if (!CanCancelOrder(accountOrder))
-                        continue;
-
-                    RecordNtOrderAction("cancel-competing-overfill-exit");
-                    CancelOrder(accountOrder);
-                }
-            }
-            catch (Exception ex)
-            {
-                Print("EMAL overfill competing-order cancellation failed: " + ex.Message);
-                return true;
-            }
-
-            return foundActive;
-        }
-
-        private void GetCurrentAccountInstrumentPosition(out MarketPosition accountSide, out int accountQuantity)
-        {
-            accountSide = MarketPosition.Flat;
-            accountQuantity = 0;
-            if (Account == null || Instrument == null)
-                return;
-
-            try
-            {
-                foreach (NinjaTrader.Cbi.Position accountPosition in Account.Positions)
-                {
-                    if (accountPosition == null
-                        || accountPosition.Instrument == null
-                        || !string.Equals(accountPosition.Instrument.FullName, Instrument.FullName,
-                            StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-
-                    accountSide = accountPosition.MarketPosition;
-                    accountQuantity = Math.Abs(accountPosition.Quantity);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                Print("EMAL account-position lookup failed: " + ex.Message);
-            }
-        }
-
-        private void ClearTerminalExitTracking()
-        {
-            terminalExitPending = false;
-            terminalExitOrder = null;
-            terminalExitOriginalSide = MarketPosition.Flat;
-            emergencyOverfillFlattenPending = false;
-            emergencyOverfillFlattenRetryUtc = DateTime.MinValue;
-            emergencyOverfillFlattenAttempts = 0;
-            emergencyAccountFlattenSubmitted = false;
-            lastProtectiveExitDeferralReason = string.Empty;
-        }
-
-        private void ScheduleProtectionAudit(string reason, int delayMilliseconds)
-        {
-            if (!IsRealtimeProtectionSafetyContext())
-                return;
-
-            // Playback can advance many simulated minutes inside a few wall-clock milliseconds;
-            // waiting on DateTime.UtcNow would let stale orders survive far into the replay.
-            DateTime candidateUtc = IsPlaybackOrderContext()
-                ? DateTime.UtcNow
-                : DateTime.UtcNow.AddMilliseconds(Math.Max(0, delayMilliseconds));
-            if (protectionAuditDueUtc == DateTime.MinValue || candidateUtc < protectionAuditDueUtc)
-                protectionAuditDueUtc = candidateUtc;
-
-            protectionAuditReason = reason ?? string.Empty;
-        }
-
-        private void EvaluateProtectionWatchdog()
-        {
-            if (!IsRealtimeProtectionSafetyContext() || !IsRawOrderFeedConnected())
-                return;
-
-            bool playback = IsPlaybackOrderContext();
-
-            bool hasExposureOrOrders = Position.MarketPosition != MarketPosition.Flat
-                || IsOrderActive(entryOrder)
-                || IsOrderActive(protectiveStopOrder)
-                || IsOrderActive(profitTargetOrder)
-                || terminalExitPending
-                || IsOrderActive(terminalExitOrder)
-                || flatProtectionCleanupPending;
-
-            if (!hasExposureOrOrders && !connectionReconciliationPending)
-            {
-                protectionAuditDueUtc = DateTime.MinValue;
-                return;
-            }
-
-            DateTime nowUtc = DateTime.UtcNow;
-            if (!playback
-                && protectionAuditDueUtc != DateTime.MinValue
-                && nowUtc < protectionAuditDueUtc)
-                return;
-
-            if (!playback
-                && lastProtectionAuditUtc != DateTime.MinValue
-                && (nowUtc - lastProtectionAuditUtc).TotalMilliseconds < ProtectionAuditIntervalMilliseconds)
-            {
-                protectionAuditDueUtc = lastProtectionAuditUtc.AddMilliseconds(
-                    ProtectionAuditIntervalMilliseconds);
-                return;
-            }
-
-            lastProtectionAuditUtc = nowUtc;
-            string reason = string.IsNullOrWhiteSpace(protectionAuditReason)
-                ? "live-watchdog"
-                : protectionAuditReason;
-            protectionAuditReason = string.Empty;
-            protectionAuditDueUtc = DateTime.MinValue;
-
-            AuditAndRepairPositionProtection(reason);
-
-            if (Position.MarketPosition != MarketPosition.Flat
-                || IsOrderActive(entryOrder)
-                || terminalExitPending
-                || IsOrderActive(terminalExitOrder))
-            {
-                protectionAuditDueUtc = playback
-                    ? DateTime.UtcNow
-                    : DateTime.UtcNow.AddMilliseconds(ProtectionAuditIntervalMilliseconds);
-            }
-        }
-
-        private bool IsRawOrderFeedConnected()
-        {
-            if (!IsLiveNtSafetyContext())
-                return true;
-
-            try
-            {
-                return orderConnectionAvailable
-                    && (Account == null
-                        || Account.Connection == null
-                        || Account.Connection.Status == ConnectionStatus.Connected);
-            }
-            catch
-            {
-                return orderConnectionAvailable;
-            }
-        }
-
-        private void AuditAndRepairPositionProtection(string reason)
-        {
-            CancelWrongSideProtectiveOrders(reason);
-
-            int stopCount;
-            int stopRemaining;
-            int targetCount;
-            int targetRemaining;
-            ReconcileLiveOrderReferences(
-                out stopCount,
-                out stopRemaining,
-                out targetCount,
-                out targetRemaining);
-
-            if (Position.MarketPosition == MarketPosition.Flat)
-            {
-                bool foundOrphanProtection = CancelOrphanProtectiveOrders(reason);
-                bool terminalStillActive = IsOrderActive(terminalExitOrder);
-                if (!terminalStillActive)
-                {
-                    ClearTerminalExitTracking();
-                    ClearTerminalExitRetry();
-                }
-                missingProtectionWarningPrinted = false;
-                flatProtectionCleanupPending = foundOrphanProtection || terminalStillActive;
-                connectionReconciliationPending = IsLiveNtSafetyContext()
-                    && flatProtectionCleanupPending;
-                if (!flatProtectionCleanupPending)
-                    lastExposureSide = MarketPosition.Flat;
-                if (flatProtectionCleanupPending)
-                {
-                    protectionAuditDueUtc = IsPlaybackOrderContext()
-                        ? DateTime.UtcNow
-                        : DateTime.UtcNow.AddMilliseconds(ProtectionAuditIntervalMilliseconds);
-                }
-                return;
-            }
-
-            if (CheckUnexpectedPositionReversal("protection-audit-" + reason))
-                return;
-
-            if (terminalExitPending || IsOrderActive(terminalExitOrder))
-            {
-                connectionReconciliationPending = false;
-                return;
-            }
-
-            int positionQuantity = Math.Abs(Position.Quantity);
-            if (positionQuantity <= 0)
-                return;
-
-            bool hasExactStopCoverage = stopRemaining == positionQuantity;
-            bool hasExactTargetCoverage = targetRemaining == positionQuantity;
-
-            // Multiple same-side protective orders can legitimately exist after partial fills.
-            // If their totals exactly cover the position, leave them alone. If not, flattening
-            // is safer than guessing which OCO pair should be changed or cancelled.
-            if (stopCount > 1 || targetCount > 1)
-            {
-                if (hasExactStopCoverage && hasExactTargetCoverage)
-                {
-                    connectionReconciliationPending = false;
-                    missingProtectionWarningPrinted = false;
-                    return;
-                }
-
-                PrintProtectionMismatch(reason, positionQuantity, stopCount, stopRemaining,
-                    targetCount, targetRemaining, "multiple OCO groups");
-                TrySubmitTerminalExit("ProtectionMismatch", protectedEntrySignal);
-                return;
-            }
-
-            // A target without a stop is the dangerous half of a broken OCO pair. Do not add a
-            // new stop to an unknown OCO group; exit the position using the existing terminal
-            // safeguards instead.
-            if (stopCount == 0 && targetCount > 0)
-            {
-                PrintProtectionMismatch(reason, positionQuantity, stopCount, stopRemaining,
-                    targetCount, targetRemaining, "target exists without stop");
-                TrySubmitTerminalExit("MissingStop", protectedEntrySignal);
-                return;
-            }
-
-            double averagePrice = Position.AveragePrice > 0.0
-                ? Position.AveragePrice
-                : openEntryPrice;
-            if (averagePrice <= 0.0)
-            {
-                PrintProtectionMismatch(reason, positionQuantity, stopCount, stopRemaining,
-                    targetCount, targetRemaining, "no usable average entry price");
-                TrySubmitTerminalExit("ProtectionUnknown", protectedEntrySignal);
-                return;
-            }
-
-            if (!hasExactStopCoverage || !hasExactTargetCoverage)
-            {
-                // A full-size stop/target that is already at or through the market is actively
-                // closing the position. Let that order finish before repairing its OCO sibling;
-                // submitting a second market exit here can overfill the remaining position.
-                if (IsProtectiveExitLikelyPending())
-                {
-                    missingProtectionWarningPrinted = false;
-                    connectionReconciliationPending = false;
-                    ScheduleProtectionAudit("protective-exit-pending-" + reason, 250);
-                    return;
-                }
-
-                if (!missingProtectionWarningPrinted)
-                {
-                    missingProtectionWarningPrinted = true;
-                    Print(string.Format(
-                        "{0} | PROTECTION REPAIR | reason={1} side={2} positionQty={3} stop={4}/{5} target={6}/{7}",
-                        lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                        reason,
-                        Position.MarketPosition,
-                        positionQuantity,
-                        stopRemaining,
-                        stopCount,
-                        targetRemaining,
-                        targetCount));
-                }
-
-                SubmitOrUpdateProtection(
-                    Position.MarketPosition,
-                    averagePrice,
-                    positionQuantity,
-                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0]);
-            }
-            else
-            {
-                missingProtectionWarningPrinted = false;
-            }
-
-            connectionReconciliationPending = false;
-        }
-
-        private void PrintProtectionMismatch(string reason, int positionQuantity,
-            int stopCount, int stopRemaining, int targetCount, int targetRemaining, string detail)
-        {
-            if (missingProtectionWarningPrinted)
-                return;
-
-            missingProtectionWarningPrinted = true;
-            Print(string.Format(
-                "{0} | CRITICAL PROTECTION MISMATCH | reason={1} detail={2} side={3} positionQty={4} stop={5}/{6} target={7}/{8} | emergency exit requested",
-                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                reason,
-                detail,
-                Position.MarketPosition,
-                positionQuantity,
-                stopRemaining,
-                stopCount,
-                targetRemaining,
-                targetCount));
-        }
-
-        private void ReconcileLiveOrderReferences(out int stopCount, out int stopRemaining,
-            out int targetCount, out int targetRemaining)
-        {
-            stopCount = 0;
-            stopRemaining = 0;
-            targetCount = 0;
-            targetRemaining = 0;
-
-            if (Account == null)
-                return;
-
-            Order foundStop = null;
-            Order foundTarget = null;
-            Order foundTerminalExit = null;
-
-            try
-            {
-                foreach (Order accountOrder in Account.Orders)
-                {
-                    if (!IsOrderActive(accountOrder) || !IsOrderForCurrentInstrument(accountOrder))
-                        continue;
-
-                    string orderName = accountOrder.Name ?? string.Empty;
-                    if (IsTerminalExitOrderName(orderName))
-                    {
-                        foundTerminalExit = accountOrder;
-                        continue;
-                    }
-
-                    if (!IsEmalProtectiveOrder(accountOrder)
-                        || !IsProtectiveOrderForCurrentPositionSide(accountOrder))
-                    {
-                        continue;
-                    }
-
-                    if (orderName == StopExitSignal)
-                    {
-                        stopCount++;
-                        stopRemaining += GetRemainingOrderQuantity(accountOrder);
-                        foundStop = accountOrder;
-                    }
-                    else if (orderName == TargetExitSignal)
-                    {
-                        targetCount++;
-                        targetRemaining += GetRemainingOrderQuantity(accountOrder);
-                        foundTarget = accountOrder;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Print("EMAL protection reconciliation failed: " + ex.Message);
-                return;
-            }
-
-            if (stopCount == 0 && IsOrderActive(protectiveStopOrder)
-                && IsOrderForCurrentInstrument(protectiveStopOrder)
-                && IsProtectiveOrderForCurrentPositionSide(protectiveStopOrder))
-            {
-                stopCount = 1;
-                stopRemaining = GetRemainingOrderQuantity(protectiveStopOrder);
-                foundStop = protectiveStopOrder;
-            }
-
-            if (targetCount == 0 && IsOrderActive(profitTargetOrder)
-                && IsOrderForCurrentInstrument(profitTargetOrder)
-                && IsProtectiveOrderForCurrentPositionSide(profitTargetOrder))
-            {
-                targetCount = 1;
-                targetRemaining = GetRemainingOrderQuantity(profitTargetOrder);
-                foundTarget = profitTargetOrder;
-            }
-
-            protectiveStopOrder = foundStop;
-            profitTargetOrder = foundTarget;
-            if (foundTerminalExit != null)
-                terminalExitOrder = foundTerminalExit;
-        }
-
-        private void CancelWrongSideProtectiveOrders(string reason)
-        {
-            if (Position.MarketPosition == MarketPosition.Flat || Account == null)
-                return;
-
-            try
-            {
-                foreach (Order accountOrder in Account.Orders)
-                {
-                    if (!CanCancelOrder(accountOrder)
-                        || !IsOrderForCurrentInstrument(accountOrder)
-                        || !IsEmalProtectiveOrder(accountOrder)
-                        || IsProtectiveOrderForCurrentPositionSide(accountOrder))
-                    {
-                        continue;
-                    }
-
-                    RecordNtOrderAction("cancel-wrong-side-protection");
-                    CancelOrder(accountOrder);
-                    Print(string.Format(
-                        "{0} | stale {1} cancelled | reason={2} action={3} position={4}",
-                        lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                        accountOrder.Name,
-                        reason,
-                        accountOrder.OrderAction,
-                        Position.MarketPosition));
-                }
-            }
-            catch (Exception ex)
-            {
-                Print("EMAL stale-protection scan failed: " + ex.Message);
-            }
-        }
-
-        private bool CancelOrphanProtectiveOrders(string reason)
-        {
-            if (Account == null)
-                return false;
-
-            bool found = false;
-
-            try
-            {
-                foreach (Order accountOrder in Account.Orders)
-                {
-                    string orderName = accountOrder == null ? string.Empty : (accountOrder.Name ?? string.Empty);
-                    bool isStrategySafetyOrder = IsEmalProtectiveOrder(accountOrder)
-                        || IsTerminalExitOrderName(orderName)
-                        || orderName == NewsExitSignal;
-                    if (!IsOrderActive(accountOrder)
-                        || !IsOrderForCurrentInstrument(accountOrder)
-                        || !isStrategySafetyOrder)
-                    {
-                        continue;
-                    }
-
-                    found = true;
-                    if (!CanCancelOrder(accountOrder))
-                        continue;
-
-                    RecordNtOrderAction("cancel-orphan-protection");
-                    CancelOrder(accountOrder);
-                    Print(string.Format(
-                        "{0} | orphan safety order {1} cancelled while strategy flat | reason={2}",
-                        lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                        accountOrder.Name,
-                        reason));
-                }
-            }
-            catch (Exception ex)
-            {
-                Print("EMAL orphan-protection scan failed: " + ex.Message);
-            }
-
-            return found;
-        }
-
-        private bool IsOrderForCurrentInstrument(Order order)
-        {
-            return order != null
-                && order.Instrument != null
-                && Instrument != null
-                && string.Equals(order.Instrument.FullName, Instrument.FullName, StringComparison.Ordinal);
-        }
-
-        private bool IsEmalProtectiveOrder(Order order)
-        {
-            if (order == null
-                || (order.Name != StopExitSignal && order.Name != TargetExitSignal))
-            {
-                return false;
-            }
-
-            string fromEntrySignal = order.FromEntrySignal ?? string.Empty;
-            return fromEntrySignal.Length == 0
-                || fromEntrySignal == LongEntrySignal
-                || fromEntrySignal == ShortEntrySignal;
-        }
-
-        private bool IsProtectiveOrderForCurrentPositionSide(Order order)
-        {
-            if (order == null)
-                return false;
-
-            if (Position.MarketPosition == MarketPosition.Long)
-                return order.OrderAction == OrderAction.Sell;
-            if (Position.MarketPosition == MarketPosition.Short)
-                return order.OrderAction == OrderAction.BuyToCover;
-
-            return false;
-        }
-
-        private static bool CanCancelOrder(Order order)
-        {
-            return IsOrderActive(order)
-                && order.OrderState != OrderState.CancelPending
-                && order.OrderState != OrderState.CancelSubmitted;
-        }
-
-        private void ClearProtectionAuditState()
-        {
-            protectionAuditDueUtc = DateTime.MinValue;
-            lastProtectionAuditUtc = DateTime.MinValue;
-            protectionAuditReason = string.Empty;
-            missingProtectionWarningPrinted = false;
-            flatProtectionCleanupPending = false;
-        }
-
         private void TrySubmitTerminalExit(string reason, string entrySignal)
         {
             if (terminalExitPending || IsTerminalExitRetryWaiting())
@@ -3567,46 +2495,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             MarketPosition positionDirection = Position.MarketPosition;
             if (positionDirection == MarketPosition.Flat)
-            {
-                ClearTerminalExitTracking();
                 return;
-            }
-
-            // DUO-proven race guard: if an exact-size protective order is already at/through
-            // the market, it is the terminal exit. Do not submit a second market order against
-            // the same remaining position. The watchdog will retry if that order stops being
-            // active or no longer covers the full position.
-            int ignoredStopCount;
-            int ignoredStopRemaining;
-            int ignoredTargetCount;
-            int ignoredTargetRemaining;
-            ReconcileLiveOrderReferences(
-                out ignoredStopCount,
-                out ignoredStopRemaining,
-                out ignoredTargetCount,
-                out ignoredTargetRemaining);
-            if (IsProtectiveExitLikelyPending())
-            {
-                if (!string.Equals(lastProtectiveExitDeferralReason, reason ?? string.Empty,
-                    StringComparison.Ordinal))
-                {
-                    lastProtectiveExitDeferralReason = reason ?? string.Empty;
-                    Print(string.Format(
-                        "{0} | emergency exit deferred | reason={1} | exact-size protective order already at market",
-                        lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                        reason ?? string.Empty));
-                }
-
-                ScheduleProtectionAudit("protective-exit-pending-" + (reason ?? string.Empty), 250);
-                return;
-            }
-
-            lastProtectiveExitDeferralReason = string.Empty;
 
             terminalExitPending = true;
-            terminalExitOriginalSide = positionDirection;
-            lastExposureSide = positionDirection;
-            emergencyOverfillFlattenPending = false;
             CancelRemainingEntryAfterExit();
 
             string exitSignal = TerminalExitSignalPrefix + reason;
@@ -3631,60 +2522,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ExitShort(exitSignal, fromEntrySignal);
 
             SendExplicitProjectXExit("emergency-" + (reason ?? string.Empty));
-        }
-
-        private bool IsProtectiveExitLikelyPending()
-        {
-            if (Position.MarketPosition == MarketPosition.Flat)
-                return false;
-
-            int positionQuantity = Math.Abs(Position.Quantity);
-            if (positionQuantity <= 0)
-                return false;
-
-            double marketPrice = GetProtectiveReferencePrice(Position.MarketPosition);
-            if (marketPrice <= 0.0 || double.IsNaN(marketPrice) || double.IsInfinity(marketPrice))
-                return false;
-
-            double threshold = TickSize * 0.5;
-            if (Position.MarketPosition == MarketPosition.Long)
-            {
-                if (IsOrderActive(profitTargetOrder)
-                    && GetRemainingOrderQuantity(profitTargetOrder) == positionQuantity
-                    && profitTargetOrder.LimitPrice > 0.0
-                    && marketPrice >= profitTargetOrder.LimitPrice - threshold)
-                {
-                    return true;
-                }
-
-                if (IsOrderActive(protectiveStopOrder)
-                    && GetRemainingOrderQuantity(protectiveStopOrder) == positionQuantity
-                    && protectiveStopOrder.StopPrice > 0.0
-                    && marketPrice <= protectiveStopOrder.StopPrice + threshold)
-                {
-                    return true;
-                }
-            }
-            else if (Position.MarketPosition == MarketPosition.Short)
-            {
-                if (IsOrderActive(profitTargetOrder)
-                    && GetRemainingOrderQuantity(profitTargetOrder) == positionQuantity
-                    && profitTargetOrder.LimitPrice > 0.0
-                    && marketPrice <= profitTargetOrder.LimitPrice + threshold)
-                {
-                    return true;
-                }
-
-                if (IsOrderActive(protectiveStopOrder)
-                    && GetRemainingOrderQuantity(protectiveStopOrder) == positionQuantity
-                    && protectiveStopOrder.StopPrice > 0.0
-                    && marketPrice >= protectiveStopOrder.StopPrice - threshold)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         private void CancelRemainingEntryAfterExit()
@@ -3992,10 +2829,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             protectiveStopOrder = null;
             profitTargetOrder = null;
             terminalExitPending = false;
-            terminalExitOrder = null;
-            terminalExitOriginalSide = MarketPosition.Flat;
-            emergencyOverfillFlattenPending = false;
-            ClearProtectionAuditState();
             ClearTerminalExitRetry();
             ReleaseOrderRateReservation();
         }
@@ -4238,7 +3071,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void ScheduleTerminalExitRetry(string reason, string entrySignal, bool rateLimited)
         {
             terminalExitPending = false;
-            terminalExitOrder = null;
             terminalExitRetryReason = string.IsNullOrWhiteSpace(reason) ? "Rejected" : reason;
             terminalExitRetryEntrySignal = string.IsNullOrWhiteSpace(entrySignal)
                 ? protectedEntrySignal
@@ -4282,12 +3114,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            // A detected reversal has its own cancel-first recovery. The ordinary retry uses
-            // the original entry signal, which cannot close an orphan position on the opposite
-            // side and must not compete with the overfill recovery.
-            if (emergencyOverfillFlattenPending)
-                return;
-
             if (terminalExitPending || string.IsNullOrWhiteSpace(terminalExitRetryReason))
                 return;
 
@@ -4319,10 +3145,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Instrument.MasterInstrument.RoundToTickSize(price);
         }
 
+        private bool IsProjectXConfigured()
+        {
+            return WebhookProviderType == WebhookProvider.ProjectX
+                && !string.IsNullOrWhiteSpace(ProjectXApiBaseUrl)
+                && !string.IsNullOrWhiteSpace(ProjectXUsername)
+                && !string.IsNullOrWhiteSpace(ProjectXApiKey)
+                && (ProjectXTradeAllAccounts || !string.IsNullOrWhiteSpace(ProjectXAccountId));
+        }
+
         private void SendPlannedProjectXEntry(int direction, double plannedEntryPrice,
             double bracketReference, double takeProfitPoints, double stopLossPoints)
         {
-            if (State != State.Realtime || WebhookProviderType != WebhookProvider.ProjectX)
+            if (State != State.Realtime || !IsProjectXConfigured())
                 return;
 
             double entry = Instrument.MasterInstrument.RoundToTickSize(plannedEntryPrice);
@@ -4446,7 +3281,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             int quantity = quantityOverride > 0 ? quantityOverride : Math.Max(1, Contracts);
             if (WebhookProviderType == WebhookProvider.ProjectX)
-                return SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+                return IsProjectXConfigured()
+                    && SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
 
             if (string.IsNullOrWhiteSpace(WebhookUrl))
                 return false;
@@ -4492,6 +3328,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool SendProjectX(string eventType, double entryPrice, double takeProfit,
             double stopLoss, bool isMarketEntry, int quantity)
         {
+            if (!IsProjectXConfigured())
+                return false;
+
             if (!EnsureProjectXSession())
                 return false;
 
@@ -4544,6 +3383,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (WebhookProviderType != WebhookProvider.ProjectX)
                 return;
 
+            if (!IsProjectXConfigured())
+            {
+                ProjectXLog("ProjectX inactive | configure Username, API and Accounts to enable");
+                return;
+            }
+
             ProjectXLog(string.Format(
                 "ProjectX startup preflight begin | instrument={0} selectors={1}",
                 GetProjectXInstrumentKey(), ProjectXAccountId ?? string.Empty));
@@ -4569,13 +3414,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool EnsureProjectXSession()
         {
-            if (string.IsNullOrWhiteSpace(ProjectXApiBaseUrl)
-                || string.IsNullOrWhiteSpace(ProjectXUsername)
-                || string.IsNullOrWhiteSpace(ProjectXApiKey))
-            {
-                ProjectXLog("ProjectX login failed | missing base URL or credentials");
+            if (!IsProjectXConfigured())
                 return false;
-            }
 
             if (!string.IsNullOrWhiteSpace(projectXSessionToken)
                 && (DateTime.UtcNow - projectXTokenAcquiredUtc).TotalHours < 23.0)
@@ -4847,7 +3687,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private void SyncProjectXProtectionUpdate(ProjectXProtectionOrderKind kind, double price, string reason)
         {
             if (State != State.Realtime
-                || WebhookProviderType != WebhookProvider.ProjectX
+                || !IsProjectXConfigured()
                 || !projectXEntryMirrorActive
                 || Position.MarketPosition == MarketPosition.Flat)
             {
@@ -5447,27 +4287,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Parity", Description = "Reduce trade count by trading only alternate candles. Even = even-numbered minute; Odd = odd-numbered minute; Both = every candle (current behaviour).", GroupName = "Time Frame", Order = 1)]
+        [Display(Name = "Trade Parity", Description = "Reduce trade count by trading only alternate candles. Even = even-numbered minute; Odd = odd-numbered minute; Both = every candle (current behaviour).", GroupName = "B. Sessions", Order = 16)]
         public EMALTradeParity TradeParity { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "Risk", Order = 0)]
+        [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "C. Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first primary bar's net liquidation for each calendar date. Reaching it cancels pending entries, flattens open positions, and blocks new entries for the rest of that date. 0 disables.", GroupName = "Risk", Order = 1)]
+        [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first primary bar's net liquidation for each calendar date. Reaching it cancels pending entries, flattens open positions, and blocks new entries for the rest of that date. 0 disables.", GroupName = "C. Risk", Order = 1)]
         public double MaxDailyProfit { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling EMAL order-action budget across all strategy instances on the same NT8 connection. Blocks new entries only; protection and exits are never blocked.", GroupName = "Risk", Order = 2)]
+        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling EMAL order-action budget across all strategy instances on the same NT8 connection. Blocks new entries only; protection and exits are never blocked.", GroupName = "C. Risk", Order = 2)]
         public bool EnableOrderRateGuard { get; set; }
 
         [Range(NewTradeActionReserve, 5000), NinjaScriptProperty]
-        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "Risk", Order = 3)]
+        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "C. Risk", Order = 3)]
         public int OrderActionLimitPerHour { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "TradersPost Webhook URL", Description = "Optional TradersPost endpoint. Leave empty when using ProjectX.", GroupName = "ProjectX / Webhooks", Order = 0)]
+        [Browsable(false)]
+        [Display(Name = "TradersPost Webhook URL", Description = "Optional TradersPost endpoint. Leave empty when using ProjectX.", GroupName = "D. ProjectX API", Order = 0)]
         public string WebhookUrl
         {
             get { return webhookUrl ?? string.Empty; }
@@ -5475,7 +4316,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker override. Leave empty to use the chart instrument.", GroupName = "ProjectX / Webhooks", Order = 1)]
+        [Browsable(false)]
+        [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker override. Leave empty to use the chart instrument.", GroupName = "D. ProjectX API", Order = 1)]
         public string WebhookTickerOverride
         {
             get { return webhookTickerOverride ?? string.Empty; }
@@ -5483,50 +4325,51 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Webhook Provider", Description = "Select TradersPost or direct ProjectX order routing.", GroupName = "ProjectX / Webhooks", Order = 2)]
+        [Browsable(false)]
+        [Display(Name = "Webhook Provider", Description = "Select TradersPost or direct ProjectX order routing.", GroupName = "D. ProjectX API", Order = 2)]
         public WebhookProvider WebhookProviderType { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "ProjectX API Base URL", GroupName = "ProjectX / Webhooks", Order = 3)]
+        [Display(Name = "ProjectX API Base URL", GroupName = "D. ProjectX API", Order = 3)]
         public string ProjectXApiBaseUrl { get; set; }
 
         [Browsable(false)]
         public bool ProjectXTradeAllAccounts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX Username", Description = "ProjectX login username for direct routing.", GroupName = "ProjectX / Webhooks", Order = 5)]
+        [Display(Name = "Username", Description = "ProjectX login username for direct routing.", GroupName = "D. ProjectX API", Order = 5)]
         public string ProjectXUsername { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX API Key", Description = "ProjectX API key used with the username.", GroupName = "ProjectX / Webhooks", Order = 6)]
+        [Display(Name = "API", Description = "ProjectX API key used with the username.", GroupName = "D. ProjectX API", Order = 6)]
         public string ProjectXApiKey { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ProjectX Accounts", Description = "Comma-separated ProjectX account IDs or exact account names.", GroupName = "ProjectX / Webhooks", Order = 7)]
+        [Display(Name = "Accounts", Description = "Comma-separated ProjectX account IDs or exact account names.", GroupName = "D. ProjectX API", Order = 7)]
         public string ProjectXAccountId { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "ProjectX Contract ID", Description = "Hidden optional contract override for support/debug use.", GroupName = "ProjectX / Webhooks", Order = 8)]
+        [Display(Name = "ProjectX Contract ID", Description = "Hidden optional contract override for support/debug use.", GroupName = "D. ProjectX API", Order = 8)]
         public string ProjectXContractId { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Rollover Block Start (yyyy-MM-dd)", Description = "First session date of a new contract, e.g. 2026-09-14. The strategy blocks ALL entries for the first N trading days (Rollover Block Sessions) starting here. Blank = off. Update it each quarter at the roll.", GroupName = "Rollover", Order = 0)]
+        [Display(Name = "Rollover Block Start (yyyy-MM-dd)", Description = "First session date of a new contract, e.g. 2026-09-14. The strategy blocks ALL entries for the first N trading days (Rollover Block Sessions) starting here. Blank = off. Update it each quarter at the roll.", GroupName = "E. Rollover", Order = 0)]
         public string RolloverBlockStart { get; set; }
 
         [Range(0, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Rollover Block Sessions", Description = "How many trading days (Sun-Fri; Saturday skipped) to block from Rollover Block Start. 0 = off.", GroupName = "Rollover", Order = 1)]
+        [Display(Name = "Rollover Block Sessions", Description = "How many trading days (Sun-Fri; Saturday skipped) to block from Rollover Block Start. 0 = off.", GroupName = "E. Rollover", Order = 1)]
         public int RolloverBlockSessions { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Max Daily Profit (points)", Description = "Once realised profit for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET (CME trading day). 0 disables.", GroupName = "Risk", Order = 1)]
+        [Display(Name = "Max Daily Profit (points)", Description = "Once realised profit for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET (CME trading day). 0 disables.", GroupName = "C. Risk", Order = 1)]
         public double MaxDailyProfitPoints { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Max Daily Loss (points)", Description = "Enter as a POSITIVE number. Once realised loss for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET. 0 disables.", GroupName = "Risk", Order = 2)]
+        [Display(Name = "Max Daily Loss (points)", Description = "Enter as a POSITIVE number. Once realised loss for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET. 0 disables.", GroupName = "C. Risk", Order = 2)]
         public double MaxDailyLossPoints { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5546,47 +4389,57 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "EMA Period", Description = "EMA period evaluated on the one-minute chart.", GroupName = "Parameters", Order = 0)]
+        [Display(Name = "EMA Period", Description = "EMA period evaluated on the one-minute chart.", GroupName = "Advanced", Order = 3)]
         public int EmaPeriod { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Minimum EMA Slope (points/minute)", Description = "Minimum completed-bar EMA change required in the trade direction.", GroupName = "Parameters", Order = 1)]
+        [Display(Name = "Minimum EMA Slope (points/minute)", Description = "Minimum completed-bar EMA change required in the trade direction.", GroupName = "Advanced", Order = 4)]
         public double MinimumEmaSlopePoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Take Profit (points)", Description = "Profit-target distance from the actual fill.", GroupName = "Parameters", Order = 2)]
+        [Display(Name = "Take Profit (points)", Description = "Profit-target distance from the actual fill.", GroupName = "Advanced", Order = 5)]
         public double TakeProfitPoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Stop Loss (points)", Description = "Stop-loss distance from the actual fill.", GroupName = "Parameters", Order = 3)]
+        [Display(Name = "Stop Loss (points)", Description = "Stop-loss distance from the actual fill.", GroupName = "Advanced", Order = 6)]
         public double StopLossPoints { get; set; }
 
         [Range(1, int.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Contracts", Description = "Number of contracts per entry.", GroupName = "Parameters", Order = 4)]
+        [Display(Name = "Contracts", Description = "Number of contracts per entry.", GroupName = "B. Sessions", Order = 0)]
         public int Contracts { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Entry Order Type", Description = "Market, or limit at the price set by Limit Price Reference.", GroupName = "Parameters", Order = 5)]
+        [Display(Name = "Entry Order Type", Description = "Market, or limit at the price set by Limit Price Reference.", GroupName = "Advanced", Order = 7)]
         public EMALEntryOrderType EntryOrderType { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Limit Price Reference", Description = "Where a limit entry is placed. BidAsk = passive, bid for longs and ask for shorts. Open = this bar's open. Close = previous bar's close. Ignored when Entry Order Type is Market.", GroupName = "Parameters", Order = 6)]
+        [Display(Name = "Limit Price Reference", Description = "Where a limit entry is placed. BidAsk = passive, bid for longs and ask for shorts. Open = this bar's open. Close = previous bar's close. Ignored when Entry Order Type is Market.", GroupName = "Advanced", Order = 8)]
         public EMALLimitPriceReference LimitPriceReference { get; set; }
 
+        // Version stamp (Steve, 2026-08-05). GroupName has a leading space so it sorts
+        // ahead of every other group, alphabetically, in the NT8 property grid - this must
+        // stay the topmost setting. Purely informational; never read by strategy logic.
         [NinjaScriptProperty]
+        [Display(Name = "Version", Description = "Which EMAL cut is installed. First entry is the current version number (selected by default); second entry is the IST date it was last modified. Never changes behavior.", GroupName = "A. Version", Order = 0)]
+        public EMALVersion Version { get; set; }
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Bracket Anchor", Description = "Fill: stop and target are measured from the actual fill (original behaviour). Reference: measured from the UNOFFSET limit price, so an offset entry keeps the exact barrier prices the un-offset trade would have had - identical outcome, offset is pure gain. Only matters when Limit Offset is non-zero.", GroupName = "Limit Offset", Order = 0)]
         public EMALBracketAnchor BracketAnchor { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Limit Offset Mode", Description = "Global uses one offset everywhere. PerSession uses the per-session values (hidden). Start with Global.", GroupName = "Limit Offset", Order = 1)]
         public EMALLimitOffsetMode LimitOffsetMode { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Limit Offset (points)", Description = "Shifts the limit entry in your favour: below the reference for longs, above for shorts. Positive = more passive, better price, fewer fills. Negative chases the move. 0 = off.", GroupName = "Limit Offset", Order = 2)]
         public double LimitOffsetPoints { get; set; }
 
@@ -5659,29 +4512,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:50 Enabled", GroupName = "Sessions 1m", Order = 0)]
+        [Display(Name = "US 09:28-09:50 Enabled", GroupName = "B. Sessions", Order = 1)]
         public bool Us0928Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:50 Setting", Description = "Preset TP/SL/slope for the US 09:28-09:50 window. Member name reads TP_SL_Slope (e.g. TP5_SL18_Slope2_75 = TP 5, SL 18, slope 2.75).", GroupName = "Sessions 1m", Order = 1)]
+        [Display(Name = "US 09:28-09:50 Setting", Description = "Preset TP/SL/slope for the US 09:28-09:50 window. Member name reads TP_SL_Slope (e.g. TP5_SL18_Slope2_75 = TP 5, SL 18, slope 2.75).", GroupName = "B. Sessions", Order = 2)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:28-09:50 Min Slope", Description = "Driven by the US 09:28-09:50 Setting preset; not user-editable.", GroupName = "Sessions 1m", Order = 2)]
+        [Display(Name = "US 09:28-09:50 Min Slope", Description = "Driven by the US 09:28-09:50 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 3)]
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Enabled", GroupName = "Sessions 1m", Order = 3)]
+        [Display(Name = "US 09:55-10:30 Enabled", GroupName = "B. Sessions", Order = 4)]
         public bool Us0955Enabled { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Setting", Description = "Preset TP/SL/slope for the US 09:55-10:30 window. Member name reads TP_SL_Slope (e.g. TP4_SL18_Slope2_75 = TP 4, SL 18, slope 2.75).", GroupName = "Sessions 1m", Order = 4)]
+        [Display(Name = "US 09:55-10:30 Setting", Description = "Preset TP/SL/slope for the US 09:55-10:30 window. Member name reads TP_SL_Slope (e.g. TP4_SL18_Slope2_75 = TP 4, SL 18, slope 2.75).", GroupName = "B. Sessions", Order = 5)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "Sessions 1m", Order = 5)]
+        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 6)]
         public double Us0955MinimumSlope { get; set; }
 
         // Free TP/SL fields (EMAL-24, Steve 2026-08-03). Inert unless TuneUsWindowsFree is on -
@@ -5689,71 +4542,69 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // reachable through the CLI tuner via their parameter ids.
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:28-09:50 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "Sessions 1m", Order = 6)]
+        [Display(Name = "US 09:28-09:50 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "B. Sessions", Order = 7)]
         public double Us0928TakeProfitPoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:28-09:50 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "Sessions 1m", Order = 7)]
+        [Display(Name = "US 09:28-09:50 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "B. Sessions", Order = 8)]
         public double Us0928StopLossPoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "Sessions 1m", Order = 8)]
+        [Display(Name = "US 09:55-10:30 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "B. Sessions", Order = 9)]
         public double Us0955TakeProfitPoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "Sessions 1m", Order = 9)]
+        [Display(Name = "US 09:55-10:30 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "B. Sessions", Order = 10)]
         public double Us0955StopLossPoints { get; set; }
 
-        // Minute-of-5 filter (Steve, 2026-08-01). One shared setting applied to whichever
-        // sessions/windows are enabled - deliberately not per-window (Us0928/Us0955 or otherwise).
-        // Only meaningful while the strategy evaluates 1-minute bars; see IsMinuteAllowed().
+        // Minute-of-5 filter (Steve, 2026-08-01; master switch removed 2026-08-05, EMAL-1022 -
+        // relies solely on which of the five boxes below are checked). One shared setting
+        // applied to whichever sessions/windows are enabled - deliberately not per-window
+        // (Us0928/Us0955 or otherwise). Only meaningful while the strategy evaluates 1-minute
+        // bars; see IsMinuteAllowed().
         [NinjaScriptProperty]
-        [Display(Name = "Enable Minute Filter", Description = "Master switch. When off, all five minute positions trade (current behavior). When on, only the positions checked below are allowed to enter, across every enabled session/window.", GroupName = "Sessions 1m", Order = 6)]
-        public bool EnableMinuteFilter { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "Sessions 1m", Order = 7)]
+        [Display(Name = "Trade Minute 1a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "B. Sessions", Order = 11)]
         public bool TradeMinute1a { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "Sessions 1m", Order = 8)]
+        [Display(Name = "Trade Minute 1b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "B. Sessions", Order = 12)]
         public bool TradeMinute1b { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "Sessions 1m", Order = 9)]
+        [Display(Name = "Trade Minute 1c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "B. Sessions", Order = 13)]
         public bool TradeMinute1c { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "Sessions 1m", Order = 10)]
+        [Display(Name = "Trade Minute 1d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "B. Sessions", Order = 14)]
         public bool TradeMinute1d { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "Sessions 1m", Order = 11)]
+        [Display(Name = "Trade Minute 1e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "B. Sessions", Order = 15)]
         public bool TradeMinute1e { get; set; }
 
         // Rarely touched - hidden at the bottom of Sessions 1m rather than removed (Steve,
         // 2026-08-01, EMAL-21).
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Asia 18:30-03:00 Enabled", GroupName = "Sessions 1m", Order = 22)]
+        [Display(Name = "Asia 18:30-03:00 Enabled", GroupName = "B. Sessions", Order = 17)]
         public bool AsiaEnabled { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Asia Min Slope", Description = "Slope threshold for the Asia session.", GroupName = "Sessions 1m", Order = 23)]
+        [Display(Name = "Asia Min Slope", Description = "Slope threshold for the Asia session.", GroupName = "B. Sessions", Order = 18)]
         public double AsiaMinimumSlope { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 10:30-17:00 Enabled", GroupName = "Sessions 1m", Order = 26)]
+        [Display(Name = "US 10:30-17:00 Enabled", GroupName = "B. Sessions", Order = 19)]
         public bool UsEnabled { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US Min Slope", Description = "Slope threshold for the US cash session (10:30-17:00).", GroupName = "Sessions 1m", Order = 27)]
+        [Display(Name = "US Min Slope", Description = "Slope threshold for the US cash session (10:30-17:00).", GroupName = "B. Sessions", Order = 20)]
         public double UsMinimumSlope { get; set; }
 
 
@@ -5764,40 +4615,54 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Block News Window", Description = "Block new entries across a fixed daily time range, applied every day independently of the session gate.", GroupName = "News Blackout", Order = 0)]
         public bool BlockNewsWindow { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Flatten At News Block", Description = "Also close any open position at market when the blackout begins. This is the only rule that force-exits a trade; all other exits are left to the stop and target.", GroupName = "News Blackout", Order = 1)]
         public bool FlattenAtNewsBlock { get; set; }
 
         [Range(0, 2359), NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "News Block Start (HHmm)", Description = "Start of the blackout as HHmm. 828 = 08:28. Inclusive.", GroupName = "News Blackout", Order = 2)]
         public int NewsBlockStartTime { get; set; }
 
         [Range(0, 2359), NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "News Block End (HHmm)", Description = "End of the blackout as HHmm. 832 = 08:32. Inclusive, so the 08:32 bar is also blocked.", GroupName = "News Blackout", Order = 3)]
         public int NewsBlockEndTime { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Show Info Panel", Description = "Draw the strategy status panel in the lower-left of the chart.", GroupName = "Logging", Order = 2)]
+        [Display(Name = "Show Info Panel", Description = "Draw the strategy status panel in the lower-left of the chart.", GroupName = "F. Logging", Order = 2)]
         public bool ShowInfoPanel { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Logging", Description = "Write one CSV row per completed trade containing the entry context: slope, the previous three bars OHLCV, fill delay and outcome. Turn off to disable all file writing.", GroupName = "Logging", Order = 0)]
+        [Display(Name = "Logging", Description = "Write one CSV row per completed trade containing the entry context: slope, the previous three bars OHLCV, fill delay and outcome. Turn off to disable all file writing.", GroupName = "F. Logging", Order = 0)]
         public bool EnableFeatureLog { get; set; }
 
-        [Display(Name = "Log File Path", Description = "Full path to the CSV. Leave blank to auto-name a timestamped file in Documents. Appends if the file already exists. Ignored when Logging is off.", GroupName = "Logging", Order = 1)]
+        [Display(Name = "Log File Path", Description = "Full path to the CSV. Leave blank to auto-name a timestamped file in Documents. Appends if the file already exists. Ignored when Logging is off.", GroupName = "F. Logging", Order = 1)]
         public string FeatureLogPath { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Research Path Log", Description = "Research-only, leave OFF for live trading. Records per fill the first-touch time to a 0.5pt grid (+/-30pt, 300s horizon), tracked past the TP/SL exit, so any TP/SL can be reconstructed offline.", GroupName = "Logging", Order = 3)]
+        [Display(Name = "Research Path Log", Description = "Research-only, leave OFF for live trading. Records per fill the first-touch time to a 0.5pt grid (+/-30pt, 300s horizon), tracked past the TP/SL exit, so any TP/SL can be reconstructed offline.", GroupName = "F. Logging", Order = 3)]
         public bool EnablePathLog { get; set; }
 
         [Browsable(false)]
-        [Display(Name = "Path Log File", Description = "Full path to the research path-log CSV. Blank auto-names EMAL_path_log.csv in Documents.", GroupName = "Logging", Order = 4)]
+        [Display(Name = "Path Log File", Description = "Full path to the research path-log CSV. Blank auto-names EMAL_path_log.csv in Documents.", GroupName = "F. Logging", Order = 4)]
         public string PathLogPath { get; set; }
+    }
+
+    // Version stamp (Steve, 2026-08-05). Purely informational, no effect on strategy
+    // behavior. Two entries: the current cut number (default-selected) and the IST date
+    // it was last modified. Bump the first member's number on every new cut, and rename
+    // the second member's date to today (IST) on every edit, even within the same cut.
+    public enum EMALVersion
+    {
+        version_1022,
+        modified_2026_08_05
     }
 
     public enum EMALTradeParity
