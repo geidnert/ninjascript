@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
+using System.Xml.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -121,9 +122,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Color.FromArgb(240, 0x14, 0x18, 0x28));
         private static readonly Brush InfoBodyOddBrush = CreateFrozenBrush(240, 0x0F, 0x0F, 0x17);
         private static readonly Brush InfoBodyEvenBrush = CreateFrozenBrush(240, 0x11, 0x11, 0x18);
-        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(255, 0x00, 0xFF, 0x00);
+        private static readonly Brush InfoHeaderTextBrush = CreateFrozenBrush(255, 0xFF, 0xD7, 0x00);
         private static readonly Brush InfoLabelBrush = CreateFrozenBrush(255, 0xA0, 0xA5, 0xB8);
         private static readonly Brush InfoValueBrush = CreateFrozenBrush(255, 0xE6, 0xE8, 0xF2);
+        private static readonly Brush InfoStatusTextBrush = CreateFrozenBrush(255, 0xFF, 0x33, 0x33);
 
         private static Brush CreateFrozenBrush(byte a, byte r, byte g, byte b)
         {
@@ -180,23 +182,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ceiling, the latch remains set for the lifetime of this strategy instance.
         private bool maxAccountBalanceLimitReached;
 
-        // Daily account-currency profit guard. The baseline is the first available net
-        // liquidation value on each primary-bar calendar date, so unrealized P&L counts.
-        private bool maxDailyProfitLimitReached;
-        private double maxDailyProfitStartBalance = double.NaN;
-        private DateTime maxDailyProfitDate = DateTime.MinValue;
-
-        // Daily profit cap, measured in POINTS of realised P&L. Tracked independently of the
-        // feature log so it works whether logging is on or off. The "day" is the CME trading
-        // day, 18:00 ET to 17:00 ET, matching the session model used everywhere else.
-        private DateTime currentTradingDay = DateTime.MinValue;
-        private double dailyRealizedPoints;
-        private bool dailyProfitLimitReached;
-        private bool dailyLossLimitReached;
         private double openEntryPrice;
         private int openEntryDirection;
-        private double openExitValue;
-        private int openExitQuantity;
 
         // Set by ValidateChart when the strategy is on the wrong series or instrument.
         private bool configurationBlocked;
@@ -319,7 +306,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
 
-                Version = EMALVersion.version_1023;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1026;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
 
@@ -328,7 +315,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Contracts = 1;
 
                 MaxAccountBalance = 0.0;
-                MaxDailyProfit = 0.0;
                 EnableOrderRateGuard = true;
                 OrderActionLimitPerHour = 1100;
 
@@ -345,13 +331,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // when set, blocks the first 3 sessions of the new contract.
                 RolloverBlockStart = string.Empty;
                 RolloverBlockSessions = 3;
-
-                // Daily caps in POINTS of realised P&L. 0 = disabled.
-                // BOTH TESTED AND REJECTED on 78 sessions - days that go down recover
-                // (down 80 pts -> rest of day averages +267) and days that go up keep going
-                // (up 300 pts -> rest of day averages +134). Leave at 0.
-                MaxDailyProfitPoints = 0.0;
-                MaxDailyLossPoints = 0.0;
 
                 // Per-session settings. Defaults reproduce current behaviour exactly: all three
                 // sessions on, all thresholds equal to the global MinimumEmaSlopePoints.
@@ -411,9 +390,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         CultureInfo.InvariantCulture, DateTimeStyles.None, out rolloverStart);
                 ValidateChart();
                 maxAccountBalanceLimitReached = false;
-                maxDailyProfitLimitReached = false;
-                maxDailyProfitStartBalance = double.NaN;
-                maxDailyProfitDate = DateTime.MinValue;
 
                 SetupTimeZones();
 
@@ -431,6 +407,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 TransitionTrackedOrderReferencesToRealtime();
                 RunProjectXStartupPreflight();
+
+                // Draw the panel the moment the strategy goes live, instead of waiting for
+                // OnBarUpdate's first tick of a bar - historical warmup skips OnBarUpdate's
+                // panel draw entirely (see the State.Historical check there), so without this
+                // a strategy enabled mid-bar could sit with no visible panel for up to a full
+                // bar period. (Steve, 2026-08-06 - reported panel "waits for a candle to print".)
+                UpdateInfoText();
             }
             else if (State == State.Terminated)
             {
@@ -555,8 +538,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             switch (index)
             {
-                case 3: return "US 09:28-09:50";
-                case 5: return "US 09:55-10:30";
+                case 3: return "9:28-9:50";
+                case 5: return "9:55-10:30";
                 default: return "Halt";
             }
         }
@@ -1044,9 +1027,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsParityAllowed(ConvertToEastern(raw)))
                 return TradeParity == EMALTradeParity.Even ? "odd bar (want even)" : "even bar (want odd)";
 
-            if (maxDailyProfitLimitReached) return "daily profit cap";
-            if (dailyProfitLimitReached) return "daily points cap";
-            if (dailyLossLimitReached) return "daily loss cap";
             if (maxAccountBalanceLimitReached) return "balance cap";
 
             int projectedActions;
@@ -1065,7 +1045,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // A single top-of-panel status line, shown only when something needs the user's
         // attention: a hard error that stops the strategy, or warmup in progress. Returns
-        // null when everything is fine (the line is then omitted). Placed above "Contracts:"
+        // null when everything is fine (the line is then omitted). Placed above "Instrument:"
         // so the panel always tells the user WHY it is or isn't trading (Steve, 2026-07-30).
         private string GetStatusLine()
         {
@@ -1100,8 +1080,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return null;
         }
 
-        private List<KeyValuePair<string, string>> BuildInfoLines()
+        // Five-character minute-of-5 label: each position shows its own letter (a-e) if that
+        // TradeMinute flag is enabled, or 'x' if disabled. E.g. all five on -> "abcde"; only
+        // 1a/1d/1e on -> "axxde". (Steve, 2026-08-06, info panel addition.)
+        private string GetTradeMinuteLabel()
         {
+            char[] label = new char[5];
+            label[0] = TradeMinute1a ? 'a' : 'x';
+            label[1] = TradeMinute1b ? 'b' : 'x';
+            label[2] = TradeMinute1c ? 'c' : 'x';
+            label[3] = TradeMinute1d ? 'd' : 'x';
+            label[4] = TradeMinute1e ? 'e' : 'x';
+            return new string(label);
+        }
+
+        // statusLineIndex (Steve, 2026-08-07): index of the status/error row within the
+        // returned list, or -1 if none this bar - so the renderer can color just that row
+        // red without guessing from position or an empty Value (header/footer also have an
+        // empty Value, so that alone isn't a safe way to identify this row).
+        private List<KeyValuePair<string, string>> BuildInfoLines(out int statusLineIndex)
+        {
+            statusLineIndex = -1;
             DateTime raw = GetBarOpenRaw();
             int session = GetSessionIndex(raw);
             string instrument = Instrument != null && Instrument.MasterInstrument != null
@@ -1115,24 +1114,49 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             string status = GetStatusLine();
             if (!string.IsNullOrEmpty(status))
+            {
+                statusLineIndex = lines.Count;
                 lines.Add(new KeyValuePair<string, string>(status, string.Empty));
+            }
 
+            lines.Add(new KeyValuePair<string, string>("Instrument:", instrument));
             lines.Add(new KeyValuePair<string, string>("Contracts:", Contracts.ToString(CultureInfo.InvariantCulture)));
-            lines.Add(new KeyValuePair<string, string>("Contract:", instrument));
-            lines.Add(new KeyValuePair<string, string>("Slope:", GetRequiredSlope(raw).ToString("0.##", CultureInfo.InvariantCulture)));
-            lines.Add(new KeyValuePair<string, string>("EMA:", EmaPeriod.ToString(CultureInfo.InvariantCulture)));
+            // Current slope shown alongside the required threshold so it's easy to monitor
+            // how close the live EMA slope is to triggering a signal (Steve, 2026-08-06).
+            // Same completed-bar calc OnBarUpdate uses for the actual entry decision
+            // (ema[1] - ema[2]), signed - unlike the threshold, which is always positive.
+            double currentSlope = CurrentBar >= 2 ? ema[1] - ema[2] : double.NaN;
+            double requiredSlopePanel = GetRequiredSlope(raw);
+            string currentSlopeText = double.IsNaN(currentSlope)
+                ? "n/a"
+                : currentSlope.ToString("0.##", CultureInfo.InvariantCulture);
+            // Emoji indicator (Steve, 2026-08-07): compares slope MAGNITUDE only, matching the
+            // slope half of OnBarUpdate's signal test (completedEmaSlope >= requiredSlope for a
+            // long, <= -requiredSlope for a short - both reduce to abs(slope) >= threshold).
+            // Direction (price vs EMA) is a separate condition this indicator doesn't cover -
+            // it answers "is the slope steep enough right now", not "would a trade fire".
+            // No emoji while current slope is n/a (not enough bars yet) - neither symbol fits.
+            string slopeEmoji = double.IsNaN(currentSlope)
+                ? string.Empty
+                : (Math.Abs(currentSlope) >= requiredSlopePanel ? " ✅" : " ⛔️");
+            lines.Add(new KeyValuePair<string, string>("EMA Period:", EmaPeriod.ToString(CultureInfo.InvariantCulture)));
+            lines.Add(new KeyValuePair<string, string>("Slope:",
+                string.Format("{0} ({1}){2}", requiredSlopePanel.ToString("0.##", CultureInfo.InvariantCulture), currentSlopeText, slopeEmoji)));
             double panelTakeProfit = GetConfiguredTakeProfit();
             double panelStopLoss = GetConfiguredStopLoss();
             lines.Add(new KeyValuePair<string, string>("TP:", double.IsNaN(panelTakeProfit) ? "n/a" : panelTakeProfit.ToString("0.##", CultureInfo.InvariantCulture)));
             lines.Add(new KeyValuePair<string, string>("SL:", double.IsNaN(panelStopLoss) ? "n/a" : panelStopLoss.ToString("0.##", CultureInfo.InvariantCulture)));
             lines.Add(new KeyValuePair<string, string>("Trade:", GetTradeGateState()));
+            lines.Add(new KeyValuePair<string, string>("Trade Minute:", GetTradeMinuteLabel()));
+            lines.Add(new KeyValuePair<string, string>("Max Account Balance:",
+                MaxAccountBalance > 0.0 ? "$" + MaxAccountBalance.ToString("0.##", CultureInfo.InvariantCulture) : "Off"));
             int projectedActions;
             int actionLimit;
             DateTime providerBlockedUntilUtc;
             if (TryGetOrderRateStatus(out projectedActions, out actionLimit, out providerBlockedUntilUtc))
-                lines.Add(new KeyValuePair<string, string>("API:", string.Format("{0}/{1}", projectedActions, actionLimit)));
+                lines.Add(new KeyValuePair<string, string>("API Guard:", string.Format("{0}/{1}", projectedActions, actionLimit)));
             else
-                lines.Add(new KeyValuePair<string, string>("API:", "Off"));
+                lines.Add(new KeyValuePair<string, string>("API Guard:", "Off"));
             lines.Add(new KeyValuePair<string, string>("Session:", SessionName(session)));
             lines.Add(new KeyValuePair<string, string>(InfoFooter, string.Empty));
             return lines;
@@ -1146,11 +1170,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (State != State.Realtime && State != State.Historical)
                 return;
 
-            var lines = BuildInfoLines();
-            ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines));
+            int statusLineIndex;
+            var lines = BuildInfoLines(out statusLineIndex);
+            ChartControl.Dispatcher.InvokeAsync(() => RenderInfoBoxOverlay(lines, statusLineIndex));
         }
 
-        private void RenderInfoBoxOverlay(List<KeyValuePair<string, string>> lines)
+        private void RenderInfoBoxOverlay(List<KeyValuePair<string, string>> lines, int statusLineIndex)
         {
             if (!EnsureInfoBoxOverlay() || infoBoxRowsPanel == null)
                 return;
@@ -1160,12 +1185,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             for (int i = 0; i < lines.Count; i++)
             {
                 bool edge = i == 0 || i == lines.Count - 1;
+                bool isStatusRow = i == statusLineIndex;
 
                 var text = new TextBlock
                 {
                     FontFamily = new FontFamily("Segoe UI"),
                     FontSize = edge ? 15 : 14,
-                    FontWeight = edge ? FontWeights.SemiBold : FontWeights.Normal,
+                    FontWeight = edge || isStatusRow ? FontWeights.SemiBold : FontWeights.Normal,
                     TextAlignment = edge ? TextAlignment.Center : TextAlignment.Left,
                     HorizontalAlignment = HorizontalAlignment.Stretch
                 };
@@ -1173,7 +1199,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 text.Inlines.Add(new Run(lines[i].Key)
                 {
-                    Foreground = edge ? InfoHeaderTextBrush : InfoLabelBrush
+                    Foreground = isStatusRow ? InfoStatusTextBrush : (edge ? InfoHeaderTextBrush : InfoLabelBrush)
                 });
 
                 if (!string.IsNullOrEmpty(lines[i].Value))
@@ -1393,9 +1419,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             // Evaluate on every tick so unrealized profit can flatten an open position
             // immediately instead of waiting for the next one-minute bar.
-            if (IsAccountBalanceBlocked() || IsAccountDailyProfitBlocked())
+            if (IsAccountBalanceBlocked())
             {
-                // Keep drawing the info panel after either account-level latch is hit.
+                // Keep drawing the info panel after the account-level latch is hit.
                 if (IsFirstTickOfBar)
                     UpdateInfoText();
                 return;
@@ -1406,13 +1432,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             ClearQueuedEntry();
 
-            // Roll the daily accumulator before any gate reads it.
-            RollTradingDayIfNeeded();
-
             UpdateInfoText();
-
-            if (IsDailyProfitBlocked() || IsDailyLossBlocked())
-                return;
 
             if (Position.MarketPosition != MarketPosition.Flat)
             {
@@ -1486,10 +1506,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // OnOrderUpdate can re-enter this method after an asynchronous cancellation.
             // Recheck the account latch here so no queued entry can escape the main gate.
             if (configurationBlocked
-                || IsAccountBalanceBlocked()
-                || IsAccountDailyProfitBlocked()
-                || IsDailyProfitBlocked()
-                || IsDailyLossBlocked())
+                || IsAccountBalanceBlocked())
             {
                 ClearQueuedEntry();
                 return;
@@ -1587,8 +1604,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             activeStopLossPoints = Math.Max(TickSize, stopLossPoints);
             entryFillValue = 0.0;
             entryFilledQuantity = 0;
-            openExitValue = 0.0;
-            openExitQuantity = 0;
             desiredProtectionTargetPrice = 0.0;
             desiredProtectionQuantity = 0;
             protectiveStopOrder = null;
@@ -1823,11 +1838,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 openEntryPrice = entryFillValue / entryFilledQuantity;
                 openEntryDirection = orderName == LongEntrySignal ? 1 : -1;
 
-                if (maxAccountBalanceLimitReached || maxDailyProfitLimitReached)
+                if (maxAccountBalanceLimitReached)
                 {
-                    TrySubmitTerminalExit(
-                        maxAccountBalanceLimitReached ? "MaxAccountBalance" : "MaxDailyProfit",
-                        orderName);
+                    TrySubmitTerminalExit("MaxAccountBalance", orderName);
                     return;
                 }
 
@@ -1873,7 +1886,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     }
                 }
 
-                RecordRealizedPoints(price, quantity, positionIsFlat);
+                ClearOpenPositionStateIfFlat(positionIsFlat);
 
                 if (EnableFeatureLog && positionIsFlat)
                     CaptureExitAndWrite(price, time, orderName);
@@ -2182,119 +2195,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 projectXEntryMirrorActive = false;
         }
 
-        // CME trading day: 18:00 ET starts the NEXT day's session, so anything at or after
-        // 18:00 belongs to tomorrow. Keeps an overnight session in one bucket.
-        private DateTime GetTradingDay(DateTime easternTime)
+        // Clears the open-entry snapshot (openEntryPrice/openEntryDirection, read by the
+        // protective-order fallback) once the position is fully flat. Was previously also
+        // where daily realised points were accumulated for the two removed daily caps
+        // (Steve, 2026-08-06) - the exit-value accumulation that fed that calculation had no
+        // other reader, so it was removed along with the caps rather than left computing an
+        // unused number.
+        private void ClearOpenPositionStateIfFlat(bool positionIsFlat)
         {
-            return easternTime.Hour >= 18
-                ? easternTime.Date.AddDays(1)
-                : easternTime.Date;
-        }
-
-        private void RollTradingDayIfNeeded()
-        {
-            DateTime day = GetTradingDay(ConvertToEastern(GetBarOpenRaw()));
-
-            if (day == currentTradingDay)
-                return;
-
-            if (currentTradingDay != DateTime.MinValue
-                && (MaxDailyProfitPoints > 0.0 || MaxDailyLossPoints > 0.0))
-            {
-                Print(string.Format("{0:yyyy-MM-dd} | day closed | realised {1:F2} pts | profit cap {2} | loss cap {3}",
-                    currentTradingDay, dailyRealizedPoints,
-                    dailyProfitLimitReached ? "HIT" : "-",
-                    dailyLossLimitReached ? "HIT" : "-"));
-            }
-
-            currentTradingDay = day;
-            dailyRealizedPoints = 0.0;
-            dailyProfitLimitReached = false;
-            dailyLossLimitReached = false;
-        }
-
-        // Daily loss cap. MaxDailyLossPoints is entered as a POSITIVE number of points.
-        // Blocks new entries only; an open position is left to its stop and target.
-        private bool IsDailyLossBlocked()
-        {
-            if (MaxDailyLossPoints <= 0.0)
-                return false;
-
-            if (dailyLossLimitReached)
-                return true;
-
-            if (dailyRealizedPoints > -Math.Abs(MaxDailyLossPoints))
-                return false;
-
-            dailyLossLimitReached = true;
-            ClearQueuedEntry();
-            CancelEntryOrderIfActive();
-
-            Print(string.Format(
-                "{0:yyyy-MM-dd} | DAILY LOSS LIMIT | realised {1:F2} pts <= -{2:F2} | no new entries today",
-                currentTradingDay, dailyRealizedPoints, Math.Abs(MaxDailyLossPoints)));
-
-            return true;
-        }
-
-        // Blocks NEW entries only. An open position is left to its stop and target, exactly
-        // like the session filter.
-        private bool IsDailyProfitBlocked()
-        {
-            if (MaxDailyProfitPoints <= 0.0)
-                return false;
-
-            if (dailyProfitLimitReached)
-                return true;
-
-            if (dailyRealizedPoints < MaxDailyProfitPoints)
-                return false;
-
-            dailyProfitLimitReached = true;
-            ClearQueuedEntry();
-            CancelEntryOrderIfActive();
-
-            Print(string.Format(
-                "{0:yyyy-MM-dd} | DAILY PROFIT LIMIT | realised {1:F2} pts >= {2:F2} | no new entries today",
-                currentTradingDay, dailyRealizedPoints, MaxDailyProfitPoints));
-
-            return true;
-        }
-
-        private void RecordRealizedPoints(double exitPrice, int exitQuantity, bool positionIsFlat)
-        {
-            if (openEntryDirection == 0 || openEntryPrice <= 0.0)
-            {
-                if (positionIsFlat)
-                {
-                    openExitValue = 0.0;
-                    openExitQuantity = 0;
-                }
-
-                return;
-            }
-
-            int filledQuantity = Math.Abs(exitQuantity);
-
-            if (filledQuantity > 0)
-            {
-                openExitValue += exitPrice * filledQuantity;
-                openExitQuantity += filledQuantity;
-            }
-
             if (!positionIsFlat)
                 return;
 
-            if (openExitQuantity > 0)
-            {
-                double averageExitPrice = openExitValue / openExitQuantity;
-                dailyRealizedPoints += (averageExitPrice - openEntryPrice) * openEntryDirection;
-            }
-
             openEntryDirection = 0;
             openEntryPrice = 0.0;
-            openExitValue = 0.0;
-            openExitQuantity = 0;
         }
 
         private bool IsAccountBalanceBlocked()
@@ -2324,60 +2237,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
                 netLiquidation,
                 MaxAccountBalance));
-
-            return true;
-        }
-
-        private bool IsAccountDailyProfitBlocked()
-        {
-            if (MaxDailyProfit <= 0.0)
-            {
-                maxDailyProfitLimitReached = false;
-                maxDailyProfitStartBalance = double.NaN;
-                maxDailyProfitDate = DateTime.MinValue;
-                return false;
-            }
-
-            DateTime currentDate = Time[0].Date;
-            if (maxDailyProfitDate != currentDate)
-            {
-                maxDailyProfitDate = currentDate;
-                maxDailyProfitLimitReached = false;
-                maxDailyProfitStartBalance = double.NaN;
-            }
-
-            if (maxDailyProfitLimitReached)
-                return true;
-
-            double netLiquidation;
-            if (!TryGetCurrentNetLiquidation(out netLiquidation))
-                return false;
-
-            if (double.IsNaN(maxDailyProfitStartBalance))
-            {
-                maxDailyProfitStartBalance = netLiquidation;
-                return false;
-            }
-
-            double dailyProfit = netLiquidation - maxDailyProfitStartBalance;
-            if (dailyProfit < MaxDailyProfit)
-                return false;
-
-            maxDailyProfitLimitReached = true;
-            ClearQueuedEntry();
-            CancelRemainingEntryAfterExit();
-
-            if (Position.MarketPosition != MarketPosition.Flat)
-                TrySubmitTerminalExit("MaxDailyProfit", protectedEntrySignal);
-
-            Print(string.Format(
-                "{0} | max daily profit reached | startNetLiq={1:F2} netLiq={2:F2} profit={3:F2} target={4:F2} | trading stopped for {5:yyyy-MM-dd}",
-                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
-                maxDailyProfitStartBalance,
-                netLiquidation,
-                dailyProfit,
-                MaxDailyProfit,
-                maxDailyProfitDate));
 
             return true;
         }
@@ -3885,16 +3744,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "C. Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
 
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first primary bar's net liquidation for each calendar date. Reaching it cancels pending entries, flattens open positions, and blocks new entries for the rest of that date. 0 disables.", GroupName = "C. Risk", Order = 1)]
-        public double MaxDailyProfit { get; set; }
-
         [NinjaScriptProperty]
-        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling EMAL order-action budget across all strategy instances on the same NT8 connection. Blocks new entries only; protection and exits are never blocked.", GroupName = "C. Risk", Order = 2)]
+        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling EMAL order-action budget across all strategy instances on the same NT8 connection. Blocks new entries only; protection and exits are never blocked.", GroupName = "C. Risk", Order = 1)]
         public bool EnableOrderRateGuard { get; set; }
 
         [Range(NewTradeActionReserve, 5000), NinjaScriptProperty]
-        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "C. Risk", Order = 3)]
+        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "C. Risk", Order = 2)]
         public int OrderActionLimitPerHour { get; set; }
 
         [NinjaScriptProperty]
@@ -3953,17 +3808,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Rollover Block Sessions", Description = "How many trading days (Sun-Fri; Saturday skipped) to block from Rollover Block Start. 0 = off.", GroupName = "E. Rollover", Order = 1)]
         public int RolloverBlockSessions { get; set; }
 
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Max Daily Profit (points)", Description = "Once realised profit for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET (CME trading day). 0 disables.", GroupName = "C. Risk", Order = 1)]
-        public double MaxDailyProfitPoints { get; set; }
-
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Max Daily Loss (points)", Description = "Enter as a POSITIVE number. Once realised loss for the trading day reaches this many points, no further entries are taken until the next day. Any open position is left to its stop and target. Resets at 18:00 ET. 0 disables.", GroupName = "C. Risk", Order = 2)]
-        public double MaxDailyLossPoints { get; set; }
-
-
         [Range(1, int.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "EMA Period", Description = "EMA period evaluated on the one-minute chart.", GroupName = "Advanced", Order = 2)]
@@ -3982,6 +3826,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ahead of every other group, alphabetically, in the NT8 property grid - this must
         // stay the topmost setting. Purely informational; never read by strategy logic.
         [NinjaScriptProperty]
+        [XmlIgnore]
         [Display(Name = "Version", Description = "Which EMAL cut is installed. First entry is the current version number (selected by default); second entry is the IST date it was last modified. Never changes behavior.", GroupName = "A. Version", Order = 0)]
         public EMALVersion Version { get; set; }
 
@@ -4062,23 +3907,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // (Us0928/Us0955 or otherwise). Only meaningful while the strategy evaluates 1-minute
         // bars; see IsMinuteAllowed().
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "B. Sessions", Order = 9)]
+        [Display(Name = "Trade Minute a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "B. Sessions", Order = 9)]
         public bool TradeMinute1a { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "B. Sessions", Order = 10)]
+        [Display(Name = "Trade Minute b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "B. Sessions", Order = 10)]
         public bool TradeMinute1b { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "B. Sessions", Order = 11)]
+        [Display(Name = "Trade Minute c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "B. Sessions", Order = 11)]
         public bool TradeMinute1c { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "B. Sessions", Order = 12)]
+        [Display(Name = "Trade Minute d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "B. Sessions", Order = 12)]
         public bool TradeMinute1d { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Trade Minute 1e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "B. Sessions", Order = 13)]
+        [Display(Name = "Trade Minute e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "B. Sessions", Order = 13)]
         public bool TradeMinute1e { get; set; }
 
 
@@ -4115,8 +3960,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1023,
-        modified_2026_08_06
+        version_1026,
+        modified_2026_08_07
     }
 
     public enum EMALTradeParity

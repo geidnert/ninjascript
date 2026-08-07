@@ -104,6 +104,53 @@ domains.
   09:35-10:30 ET schedule, keeps the 09:50 preset boundary without the M1/M15
   09:50-09:55 gap, and blocks the 10:05 M5 bar. M1 and M15 behavior remains
   unchanged. Preserve this schedule when importing later Steve replacements.
+- 2026-08-02: Current `Strategies/EMAL.cs` adds a visible account-currency
+  `MaxDailyProfit` guard alongside the hidden realized-points research controls.
+  It captures a net-liquidation baseline for each primary-bar calendar date,
+  includes unrealized P&L, cancels pending entries, flattens at the threshold,
+  and latches for the rest of that date. Preserve this separately from the
+  18:00 ET realized-points daily profit/loss controls in future imports.
+- 2026-08-05: Current `Strategies/EMAL.cs` deliberately restores the exact
+  EMAL-1019 / Git `610f48b` trade and managed-order baseline after the later
+  multi-contract protection watchdog produced emergency-exit/normal-bracket
+  races, opposite-side positions, cleanup orders, and strategy shutdowns in
+  live trading. Do not restore the removed entry-acknowledgement, connection
+  reconciliation, continuous protection audit/repair, or overfill-flatten
+  package without a new design and isolated validation.
+  Two non-order fixes from that work are intentionally retained. The EMA is
+  explicitly bound to primary `Close` and receives `ema.Update()` before any
+  primary-bar gate. Playback and broker-account instances use historical bars
+  for warmup only, while the Strategy Analyzer `Backtest` account retains the
+  complete historical order/fill path. These fixes prevent the re-enable EMA
+  out-of-range failure and historical managed entries suppressing fresh 09:30
+  or mid-session realtime entries.
+  Steve's EMAL-1022 settings delta is forward-ported on top: the informational
+  `EMALVersion` property defaults to `version_1022`, ProjectX is the default
+  provider, the minute-filter master switch is removed (the five 1a-1e boxes
+  directly define allowed minutes), and the property grid is reorganized under
+  `A. Version` through `F. Logging` with advanced fields hidden as in Steve's
+  cut. The NinjaTrader strategy/list label is deliberately the stable plain
+  `EMAL` name (the version remains visible separately), while NinjaTrader
+  `VendorLicense`, ProjectX routing, the 1100-action guard, and EMAL-1019
+  stop-first/wrong-side/OCO protections remain intact.
+  ProjectX remains Steve's default provider but is inactive until base URL,
+  username, API key, and either account selectors or the internal all-accounts
+  flag are present. An incomplete setup produces one startup status line and no
+  authentication, discovery, entry, exit, cancel, or protective-sync requests;
+  signal-time processing must not repeat missing-credential errors.
+- 2026-08-07: Current EMAL is `version_1026`. The 1023-1026 settings cleanup
+  leaves only the two NY morning windows, fixes entry to passive
+  `Limit(BidAsk)` with fill-relative protection, adds `Disabled` to both window
+  presets, defaults direct minutes to `true,false,false,true,true`, and removes
+  the obsolete entry/offset, Asia/late-US, bucket/news/time-stop, separate
+  enable, and daily-cap properties. Preserve that reduced surface in later
+  cuts.
+  The visible informational `Version` enum must remain `[XmlIgnore]`. Earlier
+  cuts serialized values such as `version_1022`/`version_1023`, then removed
+  those enum members; loading the next vendor assembly consequently produced
+  `unable to deserialize user data: There is an error in XML document` for
+  every saved instance. Excluding Version from workspace/template XML lets old
+  elements be ignored while `State.SetDefaults` supplies the installed cut.
 - 2026-08-02: `Strategies/EMAL5.cs` is Steve's separate, self-contained native
   five-minute EMA-direction strategy, initially imported from `EMAL5-1.cs`.
   It uses one configurable ET session (09:30-10:30 by default), a separately
@@ -111,8 +158,12 @@ domains.
   validation, passive entries, ProjectX/TradersPost routing, and EMAL5-prefixed
   signals and log files. It deliberately does not share its class, enums, or
   rate-guard state with EMAL; the EMAL and EMAL5 order-action budgets therefore
-  do not coordinate when both run on the same connection. ATR, London/Tokyo log
-  columns, news blackout, time stop, and the M1-specific filters are absent.
+  do not coordinate when both run on the same connection. Its visible
+  account-currency `MaxDailyProfit` guard uses a per-primary-bar-calendar-date
+  net-liquidation baseline, includes unrealized P&L, cancels pending entries,
+  flattens at the threshold, and latches for the rest of that date. ATR,
+  London/Tokyo log columns, news blackout, time stop, and the M1-specific
+  filters are absent.
 - 2026-07-20: Current DUO `State.SetDefaults` session defaults in
   `Strategies/DUO.cs` are mirrored from Steve's
   `/Volumes/Documents/NinjaTrader 8/bin/Custom/Strategies/DUOTesting-Trader-202.xml`
