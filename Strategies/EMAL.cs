@@ -322,7 +322,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
 
-                Version = EMALVersion.version_1028;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1029;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
 
@@ -356,13 +356,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UsePerSessionSettings = true;
                 // Only the two US morning windows exist now (Steve, 2026-08-06); Asia and the
                 // US 10:30-17:00 session were removed entirely, not just defaulted off.
-                // Per-window bracket presets (Steve, 2026-07-30). Window 1 defaults to TP5/SL18
-                // (best net/maxDD of its four options; no TP4 option there). Window 2 defaults to
+                // Per-window bracket presets (Steve, 2026-07-30). Window 2 defaults to
                 // TP4/SL18 = current behaviour. ResolveWindowPresets() applies them in DataLoaded.
                 // Selecting "Disabled" on either Setting popup turns that window off (2026-08-06);
                 // there is no separate Enabled toggle anymore, see IsSessionEnabled.
-                Us0928Setting = EMALUs0928Setting.TP5_SL18_Slope2_75;
-                Us0955Setting = EMALUs0955Setting.TP4_SL18_Slope2_75;
+                // Window 1 default changed 2026-08-08 (Steve): TP5/SL18/slope2.75 -> slope3.50.
+                // Adopted per EMAL_Analysis_Plan.md §8.10 - NT8-confirmed on the risk-over-profit
+                // tie-breaker (drawdown down ~9-10%, net down ~3%, both directions replicated
+                // independently on two NT8 halves and on the r56 engine's four-halves split).
+                // Not a dominant win - §8.10 flags it explicitly as a preference call, not a
+                // clean improvement, and closes 09:28 to further sweeping on this bracket.
+                Us0928Setting = EMALUs0928Setting.P1_NT8_TP5_SL18_Slope3_50;
+                Us0955Setting = EMALUs0955Setting.P1_ENG_TP4_SL18_Slope2_75;
 
                 // Free-tune escape hatch for the two NY windows (Steve, 2026-08-03). OFF by
                 // default - live behavior is byte-for-byte unchanged from EMAL-23. When on,
@@ -648,21 +653,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             switch (Us0928Setting)
             {
-                case EMALUs0928Setting.Disabled:           us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALUs0928Setting.TP2_SL10_Slope2_75: us0928Tp = 2; us0928Sl = 10; Us0928MinimumSlope = 2.75; break;
-                case EMALUs0928Setting.TP4_SL18_Slope2_75: us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
-                case EMALUs0928Setting.TP2_SL14_Slope3_0:  us0928Tp = 2; us0928Sl = 14; Us0928MinimumSlope = 3.0;  break;
-                case EMALUs0928Setting.TP2_SL14_Slope2_75: us0928Tp = 2; us0928Sl = 14; Us0928MinimumSlope = 2.75; break;
-                case EMALUs0928Setting.TP5_SL18_Slope3_5:  us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 3.5;  break;
+                case EMALUs0928Setting.Disabled:                   us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
+                case EMALUs0928Setting.P1_NT8_TP5_SL18_Slope3_50:  us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 3.5;  break;
+                case EMALUs0928Setting.P2_NT8_TP5_SL18_Slope2_75:  us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                case EMALUs0928Setting.P3_ENG_TP3_SL18_Slope3_50:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 3.5;  break;
+                case EMALUs0928Setting.P4_ENG_TP4_SL18_Slope3_50:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 3.5;  break;
+                case EMALUs0928Setting.P5_ENG_TP3_SL18_Slope2_75:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                case EMALUs0928Setting.P6_ENG_TP4_SL18_Slope2_75:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
                 default: /* TP5_SL18_Slope2_75 */          us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
             }
             switch (Us0955Setting)
             {
-                case EMALUs0955Setting.Disabled:           us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALUs0955Setting.TP3_SL16_Slope2_75: us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.TP3_SL18_Slope2_75: us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.TP2_SL18_Slope2_75: us0955Tp = 2; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.TP4_SL20_Slope2_50: us0955Tp = 4; us0955Sl = 20; Us0955MinimumSlope = 2.50; break;
+                case EMALUs0955Setting.Disabled:                   us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
+                case EMALUs0955Setting.P1_ENG_TP4_SL18_Slope2_75:  us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.P2_ENG_TP4_SL20_Slope2_50:  us0955Tp = 4; us0955Sl = 20; Us0955MinimumSlope = 2.50; break;
+                case EMALUs0955Setting.P3_ENG_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.P4_ENG_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
                 default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
             }
         }
@@ -4039,7 +4045,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:50 Setting", Description = "Preset TP/SL/slope for the US 09:28-09:50 window, or Disabled to turn the window off entirely. Member name reads TP_SL_Slope (e.g. TP5_SL18_Slope2_75 = TP 5, SL 18, slope 2.75).", GroupName = "B. Sessions", Order = 1)]
+        [Display(Name = "US 09:28-09:50 Setting", Description = "Stats as of 2026-08-08, re-derive after big data imports. P1 WR85.8% PF1.61 Net$34,343 MaxDD$2,148 Net/DD16.0 | P2 WR85.3% PF1.55 Net$35,265 MaxDD$2,588 Net/DD13.6 | P3 WR92.9% PF2.04 Net$29,611 MaxDD$1,872 Net/DD15.8 | P4 WR89.2% PF1.74 Net$31,896 MaxDD$2,162 Net/DD14.8 | P5 WR92.1% PF1.82 Net$28,656 MaxDD$2,183 Net/DD13.1 | P6 WR88.6% PF1.65 Net$32,348 MaxDD$2,598 Net/DD12.4. Net is commission-adjusted; MaxDD is a real dollar peak-to-trough.", GroupName = "B. Sessions", Order = 1)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -4048,7 +4054,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Setting", Description = "Preset TP/SL/slope for the US 09:55-10:30 window, or Disabled to turn the window off entirely. Member name reads TP_SL_Slope (e.g. TP4_SL18_Slope2_75 = TP 4, SL 18, slope 2.75).", GroupName = "B. Sessions", Order = 3)]
+        [Display(Name = "US 09:55-10:30 Setting", Description = "Stats as of 2026-08-08, re-derive after big data imports. P1 WR87.8% PF1.52 Net$39,507 MaxDD$2,079 Net/DD19.0 | P2 WR88.9% PF1.53 Net$41,499 MaxDD$2,323 Net/DD17.9 | P3 WR90.8% PF1.55 Net$31,555 MaxDD$2,077 Net/DD15.2 | P4 WR89.3% PF1.46 Net$27,459 MaxDD$2,252 Net/DD12.2. Net is commission-adjusted; MaxDD is a real dollar peak-to-trough.", GroupName = "B. Sessions", Order = 3)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -4138,8 +4144,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1028,
-        modified_2026_08_07
+        version_1029,
+        modified_2026_08_08
     }
 
     public enum EMALTradeParity
@@ -4149,27 +4155,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         Odd
     }
 
-    // Per-window bracket presets (Steve, 2026-07-30). Member names read TP / SL / Slope
-    // (e.g. TP2_SL10_Slope2_75 = TP 2, SL 10, slope 2.75). NinjaTrader shows the member name.
     public enum EMALUs0928Setting
     {
         Disabled,
-        TP2_SL10_Slope2_75,
-        TP4_SL18_Slope2_75,
-        TP2_SL14_Slope3_0,
-        TP2_SL14_Slope2_75,
-        TP5_SL18_Slope2_75,
-        TP5_SL18_Slope3_5
+        P1_NT8_TP5_SL18_Slope3_50,
+        P2_NT8_TP5_SL18_Slope2_75,
+        P3_ENG_TP3_SL18_Slope3_50,
+        P4_ENG_TP4_SL18_Slope3_50,
+        P5_ENG_TP3_SL18_Slope2_75,
+        P6_ENG_TP4_SL18_Slope2_75
     }
 
     public enum EMALUs0955Setting
     {
         Disabled,
-        TP3_SL16_Slope2_75,
-        TP3_SL18_Slope2_75,
-        TP2_SL18_Slope2_75,
-        TP4_SL18_Slope2_75,
-        TP4_SL20_Slope2_50
+        P1_ENG_TP4_SL18_Slope2_75,
+        P2_ENG_TP4_SL20_Slope2_50,
+        P3_ENG_TP3_SL18_Slope2_75,
+        P4_ENG_TP3_SL16_Slope2_75
     }
 
 }
