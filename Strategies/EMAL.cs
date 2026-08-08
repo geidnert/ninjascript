@@ -263,26 +263,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // Session boundaries in minutes-of-day, New York time. Asia and the US 10:30-17:00 cash
         // session were removed entirely (Steve, 2026-08-06) - this strategy now trades only the
         // two NY morning windows below.
-        // Boundary moved 2026-08-08 (Steve): the two windows used to be 09:28-09:50 / 09:55-10:30
-        // with a hard 09:50-09:55 no-trade gap between them. Steve judged the round 10:00 hour
-        // mark a more logical market-structure break than 09:55, and the two windows' settings
-        // are similar enough that the exact handoff point matters less than having one - the
-        // windows are now CONTIGUOUS at 09:28-09:59 / 10:00-10:30, no gap at all. Constant names
-        // (Us0928.../Us0955...) kept as-is even though the windows no longer literally start at
-        // :28/:55 - they still identify "the first window" / "the second window" throughout the
-        // source, and renaming every reference was judged not worth the diff for no functional
-        // benefit. Decision is Steve's, not validated by four-halves/selectivity - the prior 5-min
-        // whole-day bucket scan (2026-07-29, five-min-bucket-stats.csv, run on real NT8 Playback
-        // data, NOT the tuner engine) measured the old 09:50 bucket weaker than its neighbors
-        // (83.33% WR vs ~88.5-88.6% either side) under a different, single global bracket that
-        // predates today's per-window settings - noted as prior context, not re-tested here.
+        // Boundary moved 2026-08-08 (Steve), then REVERTED same day after the gap was actually
+        // measured. EMAL-1031 briefly made the windows CONTIGUOUS (09:28-09:59 / 10:00-10:30,
+        // no gap) on Steve's market-structure judgment, explicitly NOT four-halves validated at
+        // the time. Steve then unblocked the gap specifically so it could be measured on the
+        // current engine (it previously carried zero data - the old boundary made it
+        // structurally empty, so the historical "57-minute block screen" never actually tested
+        // it). Measured 2026-08-08 on real trade data for the first time: 09:50-09:54 clears the
+        // project's 1.22x selectivity bar in ALL FOUR halves (1.32x-1.94x) and reduces maxDD in
+        // ALL FOUR halves (12%-56%), for a small and mixed net effect (+$695/-$156/-$128/+$667
+        // across the four folds) - exactly the "cuts drawdown, costs some net" shape Steve has
+        // said is acceptable for this project. This corroborates an independent 2026-07-29
+        // finding on real NT8 Playback data (five-min-bucket-stats.csv, different single global
+        // bracket) that the old 09:50 bucket ran weaker than its neighbors (83.33% WR vs
+        // ~88.5-88.6% either side). Reverted back to the original gapped boundary accordingly.
+        // Constant names (Us0928.../Us0955...) still identify "the first window" / "the second
+        // window" throughout the source.
         // NY-anchored boundaries. Globex reopen and the US cash session never drift, because
         // CME (Chicago) and New York share the same DST dates.
-        // US 09:28-09:59 window (Steve, 2026-08-02: start moved to 09:28, the real researched
+        // US 09:28-09:50 window (Steve, 2026-08-02: start moved to 09:28, the real researched
         // start - see below).
-        private const int Us0928StartMinute = 9 * 60 + 28; // 09:28 ET, US 09:28-09:59 opens
-        private const int Us0928EndMinute = 10 * 60 + 0;   // 10:00 ET (exclusive) - through 09:59
-        private const int Us0955StartMinute = 10 * 60 + 0; // 10:00 ET, US 10:00-10:30 opens
+        private const int Us0928StartMinute = 9 * 60 + 28; // 09:28 ET, US 09:28-09:50 opens
+        private const int Us0928EndMinute = 9 * 60 + 50;   // 09:50 ET (exclusive)
+        private const int Us0955StartMinute = 9 * 60 + 55; // 09:55 ET, US 09:55-10:30 opens - the
+                                                             // 09:50-09:54 gap between the windows
+                                                             // is a deliberate, measured no-trade
+                                                             // block (see comment block above)
         private const int Us0955EndMinute = 10 * 60 + 30;  // 10:30 ET
 
         // 09:28 is a real researched boundary (Steve, 2026-08-01), from the per-minute scan of
@@ -331,7 +337,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
 
-                Version = EMALVersion.version_1031;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1032;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
 
@@ -545,7 +551,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Time[0].AddMinutes(-BarsPeriod.Value);
         }
 
-        // 3 = US 09:28-09:59, 5 = US 10:00-10:30, -1 = outside both windows (the two windows
+        // 3 = US 09:28-09:50, 5 = US 09:55-10:30, -1 = outside both windows (the two windows
         // are contiguous, no gap between them - see the boundary comment above).
         private int GetSessionIndex(DateTime platformTime)
         {
@@ -565,8 +571,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             switch (index)
             {
-                case 3: return "9:28-9:59";
-                case 5: return "10:00-10:30";
+                case 3: return "9:28-9:50";
+                case 5: return "9:55-10:30";
                 default: return "Halt";
             }
         }
@@ -862,8 +868,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             Print("================ EMAL fill rate ================");
             Print(string.Format("  per-session         : {0}", UsePerSessionSettings));
-            Print(string.Format("      US 0928-0959       : {0}  slope {1}", Us0928Setting, Us0928MinimumSlope));
-            Print(string.Format("      US 1000-1030       : {0}  slope {1}", Us0955Setting, Us0955MinimumSlope));
+            Print(string.Format("      US 0928-0950       : {0}  slope {1}", Us0928Setting, Us0928MinimumSlope));
+            Print(string.Format("      (block 0950-0955, no trade)"));
+            Print(string.Format("      US 0955-1030       : {0}  slope {1}", Us0955Setting, Us0955MinimumSlope));
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  9:30 hard block     : bars blocked: {0}", hardBlockedMinuteBarCount));
             Print(string.Format("  minute filter       : 1a={0} 1b={1} 1c={2} 1d={3} 1e={4}  (bars blocked: {5})",
@@ -1421,7 +1428,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // cash-open-volatility mechanism's own prediction of a dangerous neighborhood, not one
         // isolated bar. Kept anyway on Steve's discretion: cheap (~1% of the book, ~$11/session,
         // deletes losing not winning trades), NOT because it is a validated drawdown reduction.
-        // Only ever fires within the US 09:28-09:59 window (09:30 doesn't occur in the 10:00-10:30
+        // Only ever fires within the US 09:28-09:50 window (09:30 doesn't occur in the 09:55-10:30
         // window or in any other session), but checked unconditionally rather than gated behind
         // the session index, matching Steve's "no matter what the settings are" instruction.
         private bool IsHardBlockedMinute(DateTime easternTime)
@@ -4020,7 +4027,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Use Per-Session Settings", Description = "Enable the per-window split (US 09:28-09:59, US 10:00-10:30). When off, the global Minimum EMA Slope applies to both windows.", GroupName = "Advanced", Order = 0)]
+        [Display(Name = "Use Per-Session Settings", Description = "Enable the per-window split (US 09:28-09:50, US 09:55-10:30). When off, the global Minimum EMA Slope applies to both windows.", GroupName = "Advanced", Order = 0)]
         public bool UsePerSessionSettings { get; set; }
 
         [NinjaScriptProperty]
@@ -4036,21 +4043,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:59 Setting", Description = "P1 WR85.8% PF1.61 Net$34,343 MaxDD$2,148 Net/DD16.0\n\nP2 WR85.3% PF1.55 Net$35,265 MaxDD$2,588 Net/DD13.6\n\nP3 WR92.9% PF2.04 Net$29,611 MaxDD$1,872 Net/DD15.8\n\nP4 WR89.2% PF1.74 Net$31,896 MaxDD$2,162 Net/DD14.8\n\nP5 WR92.1% PF1.82 Net$28,656 MaxDD$2,183 Net/DD13.1\n\nP6 WR88.6% PF1.65 Net$32,348 MaxDD$2,598 Net/DD12.4", GroupName = "B. Sessions", Order = 1)]
+        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 WR85.8% PF1.61 Net$34,343 MaxDD$2,148 Net/DD16.0\n\nP2 WR85.3% PF1.55 Net$35,265 MaxDD$2,588 Net/DD13.6\n\nP3 WR92.9% PF2.04 Net$29,611 MaxDD$1,872 Net/DD15.8\n\nP4 WR89.2% PF1.74 Net$31,896 MaxDD$2,162 Net/DD14.8\n\nP5 WR92.1% PF1.82 Net$28,656 MaxDD$2,183 Net/DD13.1\n\nP6 WR88.6% PF1.65 Net$32,348 MaxDD$2,598 Net/DD12.4", GroupName = "B. Sessions", Order = 1)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:28-09:59 Min Slope", Description = "Driven by the US 09:28-09:59 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 2)]
+        [Display(Name = "US 09:28-09:50 Min Slope", Description = "Driven by the US 09:28-09:50 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 2)]
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 10:00-10:30 Setting", Description = "P1 WR87.8% PF1.52 Net$39,507 MaxDD$2,079 Net/DD19.0\n\nP2 WR88.9% PF1.53 Net$41,499 MaxDD$2,323 Net/DD17.9\n\nP3 WR90.8% PF1.55 Net$31,555 MaxDD$2,077 Net/DD15.2\n\nP4 WR89.3% PF1.46 Net$27,459 MaxDD$2,252 Net/DD12.2", GroupName = "B. Sessions", Order = 3)]
+        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR87.8% PF1.52 Net$39,507 MaxDD$2,079 Net/DD19.0\n\nP2 WR88.9% PF1.53 Net$41,499 MaxDD$2,323 Net/DD17.9\n\nP3 WR90.8% PF1.55 Net$31,555 MaxDD$2,077 Net/DD15.2\n\nP4 WR89.3% PF1.46 Net$27,459 MaxDD$2,252 Net/DD12.2", GroupName = "B. Sessions", Order = 3)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 10:00-10:30 Min Slope", Description = "Driven by the US 10:00-10:30 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 4)]
+        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 4)]
         public double Us0955MinimumSlope { get; set; }
 
         // Free TP/SL fields (EMAL-24, Steve 2026-08-03). Inert unless TuneUsWindowsFree is on -
@@ -4058,22 +4065,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // reachable through the CLI tuner via their parameter ids.
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:28-09:59 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:59 Setting preset.", GroupName = "B. Sessions", Order = 5)]
+        [Display(Name = "US 09:28-09:50 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "B. Sessions", Order = 5)]
         public double Us0928TakeProfitPoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:28-09:59 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:59 Setting preset.", GroupName = "B. Sessions", Order = 6)]
+        [Display(Name = "US 09:28-09:50 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "B. Sessions", Order = 6)]
         public double Us0928StopLossPoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 10:00-10:30 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 10:00-10:30 Setting preset.", GroupName = "B. Sessions", Order = 7)]
+        [Display(Name = "US 09:55-10:30 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "B. Sessions", Order = 7)]
         public double Us0955TakeProfitPoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 10:00-10:30 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 10:00-10:30 Setting preset.", GroupName = "B. Sessions", Order = 8)]
+        [Display(Name = "US 09:55-10:30 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "B. Sessions", Order = 8)]
         public double Us0955StopLossPoints { get; set; }
 
         // Minute-of-5 filter (Steve, 2026-08-01; master switch removed 2026-08-05, EMAL-1022 -
@@ -4135,7 +4142,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1031,
+        version_1032,
         modified_2026_08_08
     }
 
