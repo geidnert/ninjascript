@@ -322,7 +322,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
 
-                Version = EMALVersion.version_1029;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1030;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
 
@@ -4045,7 +4045,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:50 Setting", Description = "Stats as of 2026-08-08, re-derive after big data imports. P1 WR85.8% PF1.61 Net$34,343 MaxDD$2,148 Net/DD16.0 | P2 WR85.3% PF1.55 Net$35,265 MaxDD$2,588 Net/DD13.6 | P3 WR92.9% PF2.04 Net$29,611 MaxDD$1,872 Net/DD15.8 | P4 WR89.2% PF1.74 Net$31,896 MaxDD$2,162 Net/DD14.8 | P5 WR92.1% PF1.82 Net$28,656 MaxDD$2,183 Net/DD13.1 | P6 WR88.6% PF1.65 Net$32,348 MaxDD$2,598 Net/DD12.4. Net is commission-adjusted; MaxDD is a real dollar peak-to-trough.", GroupName = "B. Sessions", Order = 1)]
+        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 WR85.8% PF1.61 Net$34,343 MaxDD$2,148 Net/DD16.0\n\nP2 WR85.3% PF1.55 Net$35,265 MaxDD$2,588 Net/DD13.6\n\nP3 WR92.9% PF2.04 Net$29,611 MaxDD$1,872 Net/DD15.8\n\nP4 WR89.2% PF1.74 Net$31,896 MaxDD$2,162 Net/DD14.8\n\nP5 WR92.1% PF1.82 Net$28,656 MaxDD$2,183 Net/DD13.1\n\nP6 WR88.6% PF1.65 Net$32,348 MaxDD$2,598 Net/DD12.4", GroupName = "B. Sessions", Order = 1)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -4054,7 +4054,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Setting", Description = "Stats as of 2026-08-08, re-derive after big data imports. P1 WR87.8% PF1.52 Net$39,507 MaxDD$2,079 Net/DD19.0 | P2 WR88.9% PF1.53 Net$41,499 MaxDD$2,323 Net/DD17.9 | P3 WR90.8% PF1.55 Net$31,555 MaxDD$2,077 Net/DD15.2 | P4 WR89.3% PF1.46 Net$27,459 MaxDD$2,252 Net/DD12.2. Net is commission-adjusted; MaxDD is a real dollar peak-to-trough.", GroupName = "B. Sessions", Order = 3)]
+        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR87.8% PF1.52 Net$39,507 MaxDD$2,079 Net/DD19.0\n\nP2 WR88.9% PF1.53 Net$41,499 MaxDD$2,323 Net/DD17.9\n\nP3 WR90.8% PF1.55 Net$31,555 MaxDD$2,077 Net/DD15.2\n\nP4 WR89.3% PF1.46 Net$27,459 MaxDD$2,252 Net/DD12.2", GroupName = "B. Sessions", Order = 3)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -4144,7 +4144,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1029,
+        version_1030,
         modified_2026_08_08
     }
 
