@@ -337,9 +337,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
 
-                Version = EMALVersion.version_1032;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1033;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
+
+                // Asia session (Steve, 2026-08-09; distinct from the Asia session removed
+                // entirely in EMAL-21/2026-08-06 - this is a fresh, simpler re-add). Single
+                // continuous window, off by default. Deliberately does NOT use TradeParity
+                // above (that stays NY-only, unrenamed) and has no parity control of its own -
+                // Asia trades every qualifying candle regardless of even/odd. Also does not use
+                // TradeMinute1a-1e - see IsEntryWindowOpen. Hidden from the live UI; reachable
+                // via the CLI tuner through these parameter ids.
+                AsiaEnabled = false;
+                AsiaSessionStartMinute = 16 * 60 + 5;   // 16:05 ET
+                AsiaSessionStopMinute = 2 * 60;         // 02:00 ET, next day - see GetSessionIndex
+                AsiaMinimumSlope = 2.5;
+                AsiaTakeProfitPoints = 4.0;
+                AsiaStopLossPoints = 12.0;
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // global fallback; unused while per-session is on
@@ -377,8 +391,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // independently on two NT8 halves and on the r56 engine's four-halves split).
                 // Not a dominant win - §8.10 flags it explicitly as a preference call, not a
                 // clean improvement, and closes 09:28 to further sweeping on this bracket.
-                Us0928Setting = EMALUs0928Setting.P1_NT8_TP5_SL18_Slope3_50;
-                Us0955Setting = EMALUs0955Setting.P1_ENG_TP4_SL18_Slope2_75;
+                // Both windows default to Disabled as of 2026-08-09 (Steve): the strategy no
+                // longer opts a fresh instance into live trading on either window by default -
+                // a preset must be chosen explicitly. This is a real behavior change, not a
+                // UI-only default; an instance left at defaults now takes zero trades.
+                Us0928Setting = EMALUs0928Setting.Disabled;
+                Us0955Setting = EMALUs0955Setting.Disabled;
 
                 // Free-tune escape hatch for the two NY windows (Steve, 2026-08-03). OFF by
                 // default - live behavior is byte-for-byte unchanged from EMAL-23. When on,
@@ -398,14 +416,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0955MinimumSlope = 2.75;
 
                 // Minute-of-5 filter (Steve, 2026-08-01; master switch removed 2026-08-05,
-                // EMAL-1022). 1a/1d/1e enabled, 1b/1c off by default (updated 2026-08-06,
-                // was 1a/1e only) - Steve's typical usage. To trade all five minutes, check
-                // all five boxes; there is no separate on/off switch. One shared setting for
-                // whichever sessions/windows are enabled - deliberately not per-window (see
+                // EMAL-1022). All five minutes enabled by default as of 2026-08-09 (Steve) -
+                // previously 1a/1d/1e on, 1b/1c off. There is no separate on/off switch; to
+                // narrow to specific minutes, uncheck boxes. One shared setting for whichever
+                // sessions/windows are enabled - deliberately not per-window (see
                 // EMAL-18-changelog.txt).
                 TradeMinute1a = true;
-                TradeMinute1b = false;
-                TradeMinute1c = false;
+                TradeMinute1b = true;
+                TradeMinute1c = true;
                 TradeMinute1d = true;
                 TradeMinute1e = true;
 
@@ -527,6 +545,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        // ET/EST for the info panel's Session: row (Steve, 2026-08-09; confirmed the exact
+        // pair he wants 2026-08-09: "ET" while daylight saving is in effect, "EST" during
+        // standard time - not the EDT/EST pair). easternZone covers both offsets under one
+        // Windows ID (see ConvertToEastern's comment) - this asks it which one applies to the
+        // specific bar's date, so a backtest crossing a DST transition shows the correct label
+        // for each bar rather than whatever's true today. Falls back to "ET" if the zone
+        // lookup itself ever failed (see DataLoaded) - same label as the daylight case, since
+        // at that point the actual offset is unknown anyway.
+        private string GetEasternZoneAbbreviation(DateTime easternTime)
+        {
+            if (easternZone == null)
+                return "ET";
+
+            return easternZone.IsDaylightSavingTime(easternTime) ? "ET" : "EST";
+        }
+
         private DateTime ConvertToUtc(DateTime platformTime)
         {
             if (platformZone == null)
@@ -553,6 +587,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // 3 = US 09:28-09:50, 5 = US 09:55-10:30, -1 = outside both windows (the two windows
         // are contiguous, no gap between them - see the boundary comment above).
+        // Session index for Asia (Steve, 2026-08-09). 3 and 5 are the two NY windows; 1 was
+        // free (no session has ever used it). Referenced everywhere a session index is
+        // switched on, so Asia's index only needs to change in one place.
+        private const int AsiaSessionIndex = 1;
+
         private int GetSessionIndex(DateTime platformTime)
         {
             DateTime ny = ConvertToZone(platformTime, easternZone);
@@ -564,6 +603,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (nyMinute >= Us0955StartMinute && nyMinute < Us0955EndMinute)
                 return 5;
 
+            // Asia crosses midnight (default 16:05 -> 02:00 next day), so start > stop in
+            // minute-of-day terms - unlike the two NY windows, this needs an OR, not an AND:
+            // "at or after start" OR "before stop", not "at or after start" AND "before stop".
+            // If a start/stop pair is ever configured same-day (start < stop), this still works
+            // correctly as a same-day window.
+            bool asiaWraps = AsiaSessionStartMinute > AsiaSessionStopMinute;
+            bool inAsiaWindow = asiaWraps
+                ? (nyMinute >= AsiaSessionStartMinute || nyMinute < AsiaSessionStopMinute)
+                : (nyMinute >= AsiaSessionStartMinute && nyMinute < AsiaSessionStopMinute);
+            if (inAsiaWindow)
+                return AsiaSessionIndex;
+
             return -1;
         }
 
@@ -573,6 +624,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return "9:28-9:50";
                 case 5: return "9:55-10:30";
+                case AsiaSessionIndex: return "Asia";
                 default: return "Halt";
             }
         }
@@ -583,14 +635,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return Us0928Setting != EMALUs0928Setting.Disabled;
                 case 5: return Us0955Setting != EMALUs0955Setting.Disabled;
+                case AsiaSessionIndex: return AsiaEnabled;
                 default: return false;
             }
         }
 
         // Per-session slope threshold. Falls back to the global value when per-session
-        // settings are off, so the two cannot disagree silently.
+        // settings are off, so the two cannot disagree silently. Asia is checked before that
+        // fallback (Steve, 2026-08-09) - UsePerSessionSettings' own description scopes it to
+        // "the per-window split (US 09:28-09:50, US 09:55-10:30)", so it has no business
+        // overriding Asia's dedicated slope field.
         private double GetConfiguredSlope(DateTime platformTime)
         {
+            if (GetSessionIndex(platformTime) == AsiaSessionIndex)
+                return Math.Abs(AsiaMinimumSlope);
+
             if (!UsePerSessionSettings)
                 return Math.Abs(MinimumEmaSlopePoints);
 
@@ -625,6 +684,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return us0928Tp;
                 case 5: return us0955Tp;
+                case AsiaSessionIndex: return AsiaTakeProfitPoints;
                 default: return double.NaN;
             }
         }
@@ -635,6 +695,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return us0928Sl;
                 case 5: return us0955Sl;
+                case AsiaSessionIndex: return AsiaStopLossPoints;
                 default: return double.NaN;
             }
         }
@@ -662,21 +723,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (Us0928Setting)
             {
                 case EMALUs0928Setting.Disabled:                   us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALUs0928Setting.P1_NT8_TP5_SL18_Slope3_50:  us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 3.5;  break;
-                case EMALUs0928Setting.P2_NT8_TP5_SL18_Slope2_75:  us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
-                case EMALUs0928Setting.P3_ENG_TP3_SL18_Slope3_50:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 3.5;  break;
-                case EMALUs0928Setting.P4_ENG_TP4_SL18_Slope3_50:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 3.5;  break;
-                case EMALUs0928Setting.P5_ENG_TP3_SL18_Slope2_75:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
-                case EMALUs0928Setting.P6_ENG_TP4_SL18_Slope2_75:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
-                default: /* TP5_SL18_Slope2_75 */          us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                case EMALUs0928Setting.P1_ENG_TP4_SL18_Slope2_75:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                case EMALUs0928Setting.P2_ENG_TP3_SL18_Slope2_75:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                default: /* TP4_SL18_Slope2_75 */          us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
             }
             switch (Us0955Setting)
             {
                 case EMALUs0955Setting.Disabled:                   us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
                 case EMALUs0955Setting.P1_ENG_TP4_SL18_Slope2_75:  us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.P2_ENG_TP4_SL20_Slope2_50:  us0955Tp = 4; us0955Sl = 20; Us0955MinimumSlope = 2.50; break;
-                case EMALUs0955Setting.P3_ENG_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.P4_ENG_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.P2_ENG_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.P3_ENG_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
                 default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
             }
         }
@@ -871,6 +927,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("      US 0928-0950       : {0}  slope {1}", Us0928Setting, Us0928MinimumSlope));
             Print(string.Format("      (block 0950-0955, no trade)"));
             Print(string.Format("      US 0955-1030       : {0}  slope {1}", Us0955Setting, Us0955MinimumSlope));
+            Print(string.Format("      Asia (hidden)       : enabled={0}  {1}-{2} ET  TP{3}/SL{4}  slope {5}  (no minute filter, no parity gate)",
+                AsiaEnabled, AsiaSessionStartMinute, AsiaSessionStopMinute, AsiaTakeProfitPoints, AsiaStopLossPoints, AsiaMinimumSlope));
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  9:30 hard block     : bars blocked: {0}", hardBlockedMinuteBarCount));
             Print(string.Format("  minute filter       : 1a={0} 1b={1} 1c={2} 1d={3} 1e={4}  (bars blocked: {5})",
@@ -1055,13 +1113,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (s < 0 || !IsSessionEnabled(s))
                 return "session gate";
 
-            // Mirror IsEntryWindowOpen's minute-of-5 filter (Steve, 2026-08-01).
-            if (!IsMinuteAllowed(ConvertToEastern(raw)))
-                return "minute block (" + MinutePositionLabel(ConvertToEastern(raw)) + ")";
+            // Asia (Steve, 2026-08-09): mirror IsEntryWindowOpen - neither gate below applies.
+            if (s != AsiaSessionIndex)
+            {
+                // Mirror IsEntryWindowOpen's minute-of-5 filter (Steve, 2026-08-01).
+                if (!IsMinuteAllowed(ConvertToEastern(raw)))
+                    return "minute block (" + MinutePositionLabel(ConvertToEastern(raw)) + ")";
 
-            // Mirror IsEntryWindowOpen's even/odd candle filter.
-            if (!IsParityAllowed(ConvertToEastern(raw)))
-                return TradeParity == EMALTradeParity.Even ? "odd bar (want even)" : "even bar (want odd)";
+                // Mirror IsEntryWindowOpen's even/odd candle filter.
+                if (!IsParityAllowed(ConvertToEastern(raw)))
+                    return TradeParity == EMALTradeParity.Even ? "odd bar (want even)" : "even bar (want odd)";
+            }
 
             if (maxDailyProfitLimitReached) return "daily profit cap";
             if (maxAccountBalanceLimitReached) return "balance cap";
@@ -1202,7 +1264,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 blockedValueLineIndices.Add(lines.Count);
             lines.Add(new KeyValuePair<string, string>("Trade:", tradeGateState));
 
-            if (!IsMinuteAllowed(ConvertToEastern(raw)))
+            // Asia (Steve, 2026-08-09): the minute-of-5 filter doesn't apply there, so this row
+            // never renders red while Asia is the active session - matches IsEntryWindowOpen.
+            if (session != AsiaSessionIndex && !IsMinuteAllowed(ConvertToEastern(raw)))
                 blockedValueLineIndices.Add(lines.Count);
             lines.Add(new KeyValuePair<string, string>("Trade Minute:", GetTradeMinuteLabel()));
 
@@ -1233,7 +1297,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string sessionName = SessionName(session);
             if (sessionName == "Halt")
                 blockedValueLineIndices.Add(lines.Count);
-            lines.Add(new KeyValuePair<string, string>("Session:", sessionName));
+            string sessionZoneAbbrev = GetEasternZoneAbbreviation(ConvertToEastern(raw));
+            lines.Add(new KeyValuePair<string, string>("Session:", string.Format("{0} {1}", sessionName, sessionZoneAbbrev)));
             lines.Add(new KeyValuePair<string, string>(InfoFooter, string.Empty));
             return lines;
         }
@@ -1274,14 +1339,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     TextAlignment = edge ? TextAlignment.Center : TextAlignment.Left,
                     HorizontalAlignment = HorizontalAlignment.Stretch
                 };
-                // TextFormattingMode.Display (used everywhere else for crisp small text) uses
-                // WPF's legacy GDI-compatible glyph path, which does not support multi-layer
-                // color-emoji glyphs (COLR/CPAL) - it silently substitutes a plain fallback
-                // character instead of the real ✅/⛔️ icon (Steve, 2026-08-07: this is what was
-                // actually happening on the live chart, not a lack of C#/WPF emoji support).
-                // TextFormattingMode.Ideal supports color glyphs, so the Slope: row - the only
-                // row with an emoji - uses Ideal; every other row keeps Display's crisper text.
-                TextOptions.SetTextFormattingMode(text, i == slopeLineIndex ? TextFormattingMode.Ideal : TextFormattingMode.Display);
+                // Every row stays on Display (crisp small text, matches every other row) - see
+                // the emoji Run below for the actual color-glyph fix, corrected 2026-08-09
+                // against DUO-21.cs's BuildInfoValueRun, which renders ✅/⛔️ correctly in
+                // production. The previous fix here (Steve, 2026-08-07) switched this whole
+                // row to TextFormattingMode.Ideal on the theory that Display's legacy
+                // GDI-compatible glyph path can't render color-layer (COLR/CPAL) emoji - that
+                // was a plausible but never-confirmed diagnosis, and it had the side effect of
+                // rendering the Slope: row's label/value text through a different formatting
+                // path than every other row. DUO proves the actual fix doesn't touch
+                // TextFormattingMode at all.
+                TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
 
                 text.Inlines.Add(new Run(lines[i].Key)
                 {
@@ -1300,13 +1368,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (i == slopeLineIndex && slopeValid.HasValue)
                 {
                     text.Inlines.Add(new Run(" ") { Foreground = InfoLabelBrush });
-                    // Explicit Segoe UI Emoji font for just this glyph - guarantees the color
-                    // glyph table is used rather than relying on automatic font-fallback
-                    // picking it (fallback is what produced the wrong dingbat originally).
-                    text.Inlines.Add(new Run(slopeValid.Value ? "✅" : "⛔️")
+                    // Segoe UI Emoji font family + TextRenderingMode.Grayscale on this Run is
+                    // the actual working fix (2026-08-09, matched against DUO-21.cs's
+                    // BuildInfoValueRun/InfoEmojiTokens path, confirmed correct in production
+                    // there) - not TextFormattingMode.Ideal, which the previous cut used on
+                    // the whole row instead. ClearType (the default rendering mode) is what
+                    // was producing the fallback dingbat; Grayscale is what DUO uses for every
+                    // token it classifies as emoji.
+                    var slopeGlyphRun = new Run(slopeValid.Value ? "✅" : "⛔️")
                     {
                         FontFamily = new FontFamily("Segoe UI Emoji")
-                    });
+                    };
+                    TextOptions.SetTextRenderingMode(slopeGlyphRun, TextRenderingMode.Grayscale);
+                    text.Inlines.Add(slopeGlyphRun);
                 }
 
                 infoBoxRowsPanel.Children.Add(new Border
@@ -1459,6 +1533,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int session = GetSessionIndex(barOpenRaw);
             if (session < 0 || !IsSessionEnabled(session))
                 return false;
+
+            // Asia (Steve, 2026-08-09): neither gate applies. No minute-of-5 filter and no
+            // trade-parity gate - Asia takes every qualifying candle in its window, unlike the
+            // two NY sessions below.
+            if (session == AsiaSessionIndex)
+                return true;
 
             if (!IsMinuteAllowed(barOpen))
             {
@@ -3921,6 +4001,45 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Trade Parity", Description = "Reduce trade count by trading only alternate candles. Even = even-numbered minute; Odd = odd-numbered minute; Both = every candle (current behaviour).", GroupName = "B. Sessions", Order = 14)]
         public EMALTradeParity TradeParity { get; set; }
 
+        // ================================================================================
+        // Asia (hidden) (Steve, 2026-08-09) - single continuous session, off by default.
+        // Deliberately independent of everything above: does not use Trade Parity (that
+        // property stays NY-only, unchanged) and has no parity control of its own; does not use
+        // TradeMinute1a-1e. Shares the global EMA Period with NY - no separate Asia EMA period.
+        // All six fields hidden from the live UI; reachable via the CLI tuner through their
+        // parameter ids. See GetSessionIndex for the midnight-crossing window logic.
+        // ================================================================================
+
+        [NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia Enabled", Description = "Turn the Asia session on. Off by default - no Disabled-style preset, just this switch.", GroupName = "B. Sessions", Order = 15)]
+        public bool AsiaEnabled { get; set; }
+
+        [Range(0, 1439), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia Session Start", Description = "Session start, minute-of-day in Eastern time (0-1439). Default 965 = 16:05 ET.", GroupName = "B. Sessions", Order = 16)]
+        public int AsiaSessionStartMinute { get; set; }
+
+        [Range(0, 1439), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia Session Stop", Description = "Session stop, minute-of-day in Eastern time (0-1439), exclusive. Default 120 = 02:00 ET. Stop < Start means the window crosses midnight (the default case) - see GetSessionIndex.", GroupName = "B. Sessions", Order = 17)]
+        public int AsiaSessionStopMinute { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia Min Slope", Description = "Minimum completed-bar EMA slope required for an Asia entry. Default 2.5.", GroupName = "B. Sessions", Order = 18)]
+        public double AsiaMinimumSlope { get; set; }
+
+        [Range(0.01, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia Take Profit", Description = "Fixed take-profit distance in points for Asia entries. Default 4.", GroupName = "B. Sessions", Order = 19)]
+        public double AsiaTakeProfitPoints { get; set; }
+
+        [Range(0.01, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia Stop Loss", Description = "Fixed stop-loss distance in points for Asia entries. Default 12.", GroupName = "B. Sessions", Order = 20)]
+        public double AsiaStopLossPoints { get; set; }
+
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "C. Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
@@ -4036,14 +4155,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool TuneUsWindowsFree { get; set; }
 
         // ================================================================================
-        // Sessions 1m (Steve, 2026-08-01, EMAL-21; Asia and US 10:30-17:00 removed entirely
-        // 2026-08-06) - the two US morning windows below are the only sessions this strategy
-        // trades. Europe removed entirely 2026-08-02 (Steve: "I never want to use this bot on
-        // London").
+        // Sessions 1m (Steve, 2026-08-01, EMAL-21; original Asia and US 10:30-17:00 removed
+        // entirely 2026-08-06, Europe removed entirely 2026-08-02, Steve: "I never want to use
+        // this bot on London") - the two US morning windows below are the only VISIBLE sessions
+        // this strategy trades. A new, hidden Asia session was re-added 2026-08-09 (see the
+        // "Asia (hidden)" block after Trade Parity below) - unrelated to the old removed one:
+        // single continuous window, no minute filter, no parity gate, off by default.
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 WR85.8% PF1.61 Net$34,343 MaxDD$2,148 Net/DD16.0\n\nP2 WR85.3% PF1.55 Net$35,265 MaxDD$2,588 Net/DD13.6\n\nP3 WR92.9% PF2.04 Net$29,611 MaxDD$1,872 Net/DD15.8\n\nP4 WR89.2% PF1.74 Net$31,896 MaxDD$2,162 Net/DD14.8\n\nP5 WR92.1% PF1.82 Net$28,656 MaxDD$2,183 Net/DD13.1\n\nP6 WR88.6% PF1.65 Net$32,348 MaxDD$2,598 Net/DD12.4", GroupName = "B. Sessions", Order = 1)]
+        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 WR88.95% PF1.7 Net$19,719 MaxDD$1,386 Net/DD14.23\n\nP2 WR92.01% PF1.797 Net$16,332 MaxDD$1,339 Net/DD12.2", GroupName = "B. Sessions", Order = 1)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -4052,7 +4173,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR87.8% PF1.52 Net$39,507 MaxDD$2,079 Net/DD19.0\n\nP2 WR88.9% PF1.53 Net$41,499 MaxDD$2,323 Net/DD17.9\n\nP3 WR90.8% PF1.55 Net$31,555 MaxDD$2,077 Net/DD15.2\n\nP4 WR89.3% PF1.46 Net$27,459 MaxDD$2,252 Net/DD12.2", GroupName = "B. Sessions", Order = 3)]
+        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR86.99% PF1.413 Net$20,087 MaxDD$2,162 Net/DD9.29\n\nP2 WR89.96% PF1.403 Net$15,154 MaxDD$1,258 Net/DD12.05\n\nP3 WR88.89% PF1.4 Net$14,899 MaxDD$2,053 Net/DD7.26", GroupName = "B. Sessions", Order = 3)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -4142,8 +4263,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1032,
-        modified_2026_08_08
+        version_1033,
+        modified_2026_08_09
     }
 
     public enum EMALTradeParity
@@ -4156,21 +4277,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     public enum EMALUs0928Setting
     {
         Disabled,
-        P1_NT8_TP5_SL18_Slope3_50,
-        P2_NT8_TP5_SL18_Slope2_75,
-        P3_ENG_TP3_SL18_Slope3_50,
-        P4_ENG_TP4_SL18_Slope3_50,
-        P5_ENG_TP3_SL18_Slope2_75,
-        P6_ENG_TP4_SL18_Slope2_75
+        P1_ENG_TP4_SL18_Slope2_75,
+        P2_ENG_TP3_SL18_Slope2_75
     }
 
     public enum EMALUs0955Setting
     {
         Disabled,
         P1_ENG_TP4_SL18_Slope2_75,
-        P2_ENG_TP4_SL20_Slope2_50,
-        P3_ENG_TP3_SL18_Slope2_75,
-        P4_ENG_TP3_SL16_Slope2_75
+        P2_ENG_TP3_SL18_Slope2_75,
+        P3_ENG_TP3_SL16_Slope2_75
     }
 
 }
