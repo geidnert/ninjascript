@@ -349,8 +349,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // TradeMinute1a-1e - see IsEntryWindowOpen. Hidden from the live UI; reachable
                 // via the CLI tuner through these parameter ids.
                 AsiaEnabled = false;
-                AsiaSessionStartMinute = 16 * 60 + 5;   // 16:05 ET
-                AsiaSessionStopMinute = 2 * 60;         // 02:00 ET, next day - see GetSessionIndex
+                AsiaSessionStartMinute = 19 * 60 + 45;  // 19:45 ET (JPX futures day-session open, 08:45 JST)
+                AsiaSessionStopMinute = 20 * 60 + 30;   // 20:30 ET (30 min past TSE cash open, 09:00 JST)
                 AsiaMinimumSlope = 2.5;
                 AsiaTakeProfitPoints = 4.0;
                 AsiaStopLossPoints = 12.0;
@@ -4006,37 +4006,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // Deliberately independent of everything above: does not use Trade Parity (that
         // property stays NY-only, unchanged) and has no parity control of its own; does not use
         // TradeMinute1a-1e. Shares the global EMA Period with NY - no separate Asia EMA period.
-        // All six fields hidden from the live UI; reachable via the CLI tuner through their
-        // parameter ids. See GetSessionIndex for the midnight-crossing window logic.
+        // Un-hidden 2026-08-09 (EMAL-1034) so Steve can set these from the NT8 Properties
+        // panel for the JPX-open Playback confirmation (Analysis Plan §15) -- was UI-hidden
+        // only pending that first real-fill check, per the original EMAL-1033 comment above
+        // (now stale, corrected here). CLI parameter ids unchanged either way.
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Asia Enabled", Description = "Turn the Asia session on. Off by default - no Disabled-style preset, just this switch.", GroupName = "B. Sessions", Order = 15)]
         public bool AsiaEnabled { get; set; }
 
         [Range(0, 1439), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Asia Session Start", Description = "Session start, minute-of-day in Eastern time (0-1439). Default 965 = 16:05 ET.", GroupName = "B. Sessions", Order = 16)]
+        [Display(Name = "Asia Session Start", Description = "Session start, minute-of-day in Eastern time (0-1439). Default 1185 = 19:45 ET (JPX futures open, 08:45 JST).", GroupName = "B. Sessions", Order = 16)]
         public int AsiaSessionStartMinute { get; set; }
 
         [Range(0, 1439), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Asia Session Stop", Description = "Session stop, minute-of-day in Eastern time (0-1439), exclusive. Default 120 = 02:00 ET. Stop < Start means the window crosses midnight (the default case) - see GetSessionIndex.", GroupName = "B. Sessions", Order = 17)]
+        [Display(Name = "Asia Session Stop", Description = "Session stop, minute-of-day in Eastern time (0-1439), exclusive. Default 1230 = 20:30 ET (30 min past TSE cash open, 09:00 JST). Stop < Start means the window crosses midnight - see GetSessionIndex (the ORIGINAL EMAL-1033 default, 16:05-02:00 ET, was this case; the current 19:45-20:30 default is not).", GroupName = "B. Sessions", Order = 17)]
         public int AsiaSessionStopMinute { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Asia Min Slope", Description = "Minimum completed-bar EMA slope required for an Asia entry. Default 2.5.", GroupName = "B. Sessions", Order = 18)]
         public double AsiaMinimumSlope { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Asia Take Profit", Description = "Fixed take-profit distance in points for Asia entries. Default 4.", GroupName = "B. Sessions", Order = 19)]
         public double AsiaTakeProfitPoints { get; set; }
 
         [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
         [Display(Name = "Asia Stop Loss", Description = "Fixed stop-loss distance in points for Asia entries. Default 12.", GroupName = "B. Sessions", Order = 20)]
         public double AsiaStopLossPoints { get; set; }
 
