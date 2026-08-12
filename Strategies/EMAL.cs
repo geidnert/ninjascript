@@ -172,6 +172,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double activeStopLossPoints;
         // Per-window bracket presets, resolved from the Setting popups in DataLoaded.
         private double us0928Tp, us0928Sl, us0955Tp, us0955Sl;
+        // EU 4:00-5:00 window (Steve, 2026-08-12). Not user-editable - driven entirely by
+        // the Eu0400Setting preset popup, same pattern as the two US windows.
+        private double eu0400Tp, eu0400Sl, eu0400Slope;
+        private double eu0800Tp, eu0800Sl, eu0800Slope;
         private double entryFillValue;
         private int entryFilledQuantity;
         private double desiredProtectionTargetPrice;
@@ -220,6 +224,224 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int parityBlockedBarCount;
         private int minuteFilterBlockedBarCount;
         private int hardBlockedMinuteBarCount;
+        private int hardBlocked0835MinuteBarCount;
+        private int newsBlockedBarCount;
+
+        // 8:30 news block (Steve, 2026-08-12), ported from DUO-28.cs's weekly-news-calendar
+        // mechanism - reuses EMAL's existing System.Net.WebClient / JavaScriptSerializer
+        // infrastructure (already present for ProjectX API calls). Blocks EU2 entries within
+        // NewsBlockMinutes of a scheduled High-impact USD release. Resolution order per
+        // refresh: (1) live fetch of the current week from ForexFactory's public calendar
+        // JSON, (2) this instance's own on-disk cache of the last successful fetch, (3) the
+        // hardcoded fallback list below (covers through 2026-12-30). Static/shared across
+        // instances so multiple EMAL charts don't each hit the feed independently.
+        private const string NewsDatesRaw =
+@"2025-01-02,08:30
+2025-01-08,08:30
+2025-01-08,14:00
+2025-01-10,08:30
+2025-01-14,08:30
+2025-01-15,08:30
+2025-01-16,08:30
+2025-01-23,08:30
+2025-01-29,14:00
+2025-01-30,08:30
+2025-01-31,08:30
+2025-02-06,08:30
+2025-02-07,08:30
+2025-02-12,08:30
+2025-02-13,08:30
+2025-02-14,08:30
+2025-02-19,14:00
+2025-02-20,08:30
+2025-02-27,08:30
+2025-02-28,08:30
+2025-03-06,08:30
+2025-03-07,08:30
+2025-03-12,08:30
+2025-03-13,08:30
+2025-03-17,08:30
+2025-03-19,14:00
+2025-03-20,08:30
+2025-03-27,08:30
+2025-03-28,08:30
+2025-04-03,08:30
+2025-04-04,08:30
+2025-04-09,14:00
+2025-04-10,08:30
+2025-04-11,08:30
+2025-04-16,08:30
+2025-04-17,08:30
+2025-04-24,08:30
+2025-04-30,08:30
+2025-05-01,08:30
+2025-05-02,08:30
+2025-05-07,14:00
+2025-05-08,08:30
+2025-05-13,08:30
+2025-05-15,08:30
+2025-05-22,08:30
+2025-05-28,14:00
+2025-05-29,08:30
+2025-05-30,08:30
+2025-06-05,08:30
+2025-06-06,08:30
+2025-06-11,08:30
+2025-06-12,08:30
+2025-06-17,08:30
+2025-06-18,08:30
+2025-06-18,14:00
+2025-06-26,08:30
+2025-06-27,08:30
+2025-07-03,08:30
+2025-07-09,14:00
+2025-07-10,08:30
+2025-07-15,08:30
+2025-07-16,08:30
+2025-07-17,08:30
+2025-07-24,08:30
+2025-07-30,08:30
+2025-07-30,14:00
+2025-07-31,08:30
+2025-08-01,08:30
+2025-08-07,08:30
+2025-08-12,08:30
+2025-08-14,08:30
+2025-08-15,08:30
+2025-08-20,14:00
+2025-08-21,08:30
+2025-08-28,08:30
+2025-08-29,08:30
+2025-09-04,08:30
+2025-09-05,08:30
+2025-09-10,08:30
+2025-09-11,08:30
+2025-09-16,08:30
+2025-09-17,14:00
+2025-09-18,08:30
+2025-09-25,08:30
+2025-09-26,08:30
+2025-10-08,14:00
+2025-10-24,08:30
+2025-10-29,14:00
+2025-11-19,14:00
+2025-11-20,08:30
+2025-11-25,08:30
+2025-11-26,08:30
+2025-12-04,08:30
+2025-12-10,08:30
+2025-12-10,14:00
+2025-12-11,08:30
+2025-12-16,08:30
+2025-12-18,08:30
+2025-12-23,08:30
+2025-12-24,08:30
+2025-12-30,14:00
+2025-12-31,08:30
+2026-01-08,08:30
+2026-01-09,08:30
+2026-01-13,08:30
+2026-01-14,08:30
+2026-01-15,08:30
+2026-01-21,08:30
+2026-01-22,08:30
+2026-01-28,14:00
+2026-01-29,08:30
+2026-01-30,08:30
+2026-02-05,08:30
+2026-02-10,08:30
+2026-02-11,08:30
+2026-02-12,08:30
+2026-02-13,08:30
+2026-02-18,14:00
+2026-02-19,08:30
+2026-02-20,08:30
+2026-02-26,08:30
+2026-02-27,08:30
+2026-03-05,08:30
+2026-03-06,08:30
+2026-03-11,08:30
+2026-03-12,08:30
+2026-03-13,08:30
+2026-03-18,08:30
+2026-03-18,14:00
+2026-03-19,08:30
+2026-03-26,08:30
+2026-04-01,08:30
+2026-04-02,08:30
+2026-04-03,08:30
+2026-04-08,14:00
+2026-04-09,08:30
+2026-04-10,08:30
+2026-04-14,08:30
+2026-04-21,08:30
+2026-04-29,14:00
+2026-04-30,08:30
+2026-05-08,08:30
+2026-05-12,08:30
+2026-05-13,08:30
+2026-05-14,08:30
+2026-05-20,14:00
+2026-05-28,08:30
+2026-06-05,08:30
+2026-06-10,08:30
+2026-06-11,08:30
+2026-06-17,08:30
+2026-06-17,14:00
+2026-06-25,08:30
+2026-07-02,08:30
+2026-07-08,14:00
+2026-07-14,08:30
+2026-07-15,08:30
+2026-07-16,08:30
+2026-07-29,14:00
+2026-07-30,08:30
+2026-07-31,08:30
+2026-08-07,08:30
+2026-08-12,08:30
+2026-08-13,08:30
+2026-08-14,08:30
+2026-08-19,14:00
+2026-08-26,08:30
+2026-09-04,08:30
+2026-09-10,08:30
+2026-09-11,08:30
+2026-09-16,08:30
+2026-09-16,14:00
+2026-09-30,08:30
+2026-10-02,08:30
+2026-10-07,14:00
+2026-10-14,08:30
+2026-10-15,08:30
+2026-10-28,14:00
+2026-10-29,08:30
+2026-10-30,08:30
+2026-11-06,08:30
+2026-11-10,08:30
+2026-11-13,08:30
+2026-11-17,08:30
+2026-11-18,14:00
+2026-11-25,08:30
+2026-12-04,08:30
+2026-12-09,14:00
+2026-12-10,08:30
+2026-12-15,08:30
+2026-12-16,08:30
+2026-12-23,08:30
+2026-12-30,14:00";
+        private const string NewsWeeklyJsonUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
+        private const string NewsCacheFilePrefix = "AutoEdge.emal_ff_weekly_news_cache.";
+        private const string NewsCacheWeekPrefix = "# week-start-et=";
+        private const string NewsTargetCurrency = "USD";
+        private const string NewsTargetImpact = "High";
+        private const int NewsBlockMinutes = 2;   // Steve, 2026-08-12: 2 min before/after 8:30
+        private static readonly List<DateTime> NewsDates = new List<DateTime>();
+        private static readonly object NewsDatesSync = new object();
+        private static bool newsDatesInitialized;
+        private static bool newsDatesAvailable;
+        private static DateTime newsDatesWeekStart = DateTime.MinValue;
+        private static DateTime newsFetchBlockedWeekStart = DateTime.MinValue;
+        private static DateTime newsFetchBlockedUntilUtc = DateTime.MinValue;
 
         // Feature logging. The entry-side fragment is built when the order is submitted, the
         // fill fragment when it fills, and the row is written when the position closes.
@@ -291,6 +513,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                                                              // block (see comment block above)
         private const int Us0955EndMinute = 10 * 60 + 30;  // 10:30 ET
 
+        // EU 4:00-5:00 window (Steve, 2026-08-12). Added for NT8 Playback testing only -
+        // this candidate FAILED Gate 0/1 arithmetic in EMAL_Analysis_Plan.md SS19 (day-clustered
+        // t falls to 0.96 after the overnight fill-bias haircut, against a family-max bar of
+        // roughly 3.1-3.3) and is not a validated finding. Steve wants it playback-tested
+        // anyway, independent of the desk's rejection. Kept as its own gated window, disabled
+        // by default - selecting the preset is an explicit opt-in.
+        private const int Eu0400StartMinute = 4 * 60;       // 04:00 ET
+        private const int Eu0400EndMinute = 5 * 60;         // 05:00 ET (exclusive)
+        private const int Eu0400SessionIndex = 7;                // GetSessionIndex return value for this window
+
+        // EU 8:00-9:28 window (Steve, 2026-08-12). Same status as the 4:00-5:00 window above -
+        // playback-test only, FAILED Gate 1 (best raw net/DD across the full 217-cell TP/SL/
+        // slope search was 6.18, against a pre-committed floor of 20). Ends exactly at
+        // Us0928StartMinute with no gap - the two windows abut but do not overlap
+        // (Eu0800EndMinute is exclusive).
+        private const int Eu0800StartMinute = 8 * 60;       // 08:00 ET
+        private const int Eu0800EndMinute = 9 * 60 + 28;    // 09:28 ET (exclusive)
+        private const int Eu0800SessionIndex = 9;                // GetSessionIndex return value for this window
+
         // 09:28 is a real researched boundary (Steve, 2026-08-01), from the per-minute scan of
         // NT8 Playback ground truth (results/EMAL-5m-position-scan-apr24-jul24.md and the
         // in-chat 09:20-09:39 per-minute breakdown): 09:28 held up as strong on BOTH date halves
@@ -337,23 +578,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
 
-                Version = EMALVersion.version_1033;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1036;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
-
-                // Asia session (Steve, 2026-08-09; distinct from the Asia session removed
-                // entirely in EMAL-21/2026-08-06 - this is a fresh, simpler re-add). Single
-                // continuous window, off by default. Deliberately does NOT use TradeParity
-                // above (that stays NY-only, unrenamed) and has no parity control of its own -
-                // Asia trades every qualifying candle regardless of even/odd. Also does not use
-                // TradeMinute1a-1e - see IsEntryWindowOpen. Hidden from the live UI; reachable
-                // via the CLI tuner through these parameter ids.
-                AsiaEnabled = false;
-                AsiaSessionStartMinute = 19 * 60 + 45;  // 19:45 ET (JPX futures day-session open, 08:45 JST)
-                AsiaSessionStopMinute = 20 * 60 + 30;   // 20:30 ET (30 min past TSE cash open, 09:00 JST)
-                AsiaMinimumSlope = 2.5;
-                AsiaTakeProfitPoints = 4.0;
-                AsiaStopLossPoints = 12.0;
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // global fallback; unused while per-session is on
@@ -397,6 +624,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // UI-only default; an instance left at defaults now takes zero trades.
                 Us0928Setting = EMALUs0928Setting.Disabled;
                 Us0955Setting = EMALUs0955Setting.Disabled;
+
+                // EU 4:00-5:00 and EU 8:00-9:28 (Steve, 2026-08-12): playback-test-only windows,
+                // see the Eu0400StartMinute / Eu0800StartMinute comments above. Disabled by
+                // default, same as the two US windows - an instance must opt in explicitly.
+                Eu0400Setting = EMALEu0400Setting.Disabled;
+                Eu0800Setting = EMALEu0800Setting.Disabled;
 
                 // Free-tune escape hatch for the two NY windows (Steve, 2026-08-03). OFF by
                 // default - live behavior is byte-for-byte unchanged from EMAL-23. When on,
@@ -587,11 +820,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // 3 = US 09:28-09:50, 5 = US 09:55-10:30, -1 = outside both windows (the two windows
         // are contiguous, no gap between them - see the boundary comment above).
-        // Session index for Asia (Steve, 2026-08-09). 3 and 5 are the two NY windows; 1 was
-        // free (no session has ever used it). Referenced everywhere a session index is
-        // switched on, so Asia's index only needs to change in one place.
-        private const int AsiaSessionIndex = 1;
-
         private int GetSessionIndex(DateTime platformTime)
         {
             DateTime ny = ConvertToZone(platformTime, easternZone);
@@ -603,17 +831,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (nyMinute >= Us0955StartMinute && nyMinute < Us0955EndMinute)
                 return 5;
 
-            // Asia crosses midnight (default 16:05 -> 02:00 next day), so start > stop in
-            // minute-of-day terms - unlike the two NY windows, this needs an OR, not an AND:
-            // "at or after start" OR "before stop", not "at or after start" AND "before stop".
-            // If a start/stop pair is ever configured same-day (start < stop), this still works
-            // correctly as a same-day window.
-            bool asiaWraps = AsiaSessionStartMinute > AsiaSessionStopMinute;
-            bool inAsiaWindow = asiaWraps
-                ? (nyMinute >= AsiaSessionStartMinute || nyMinute < AsiaSessionStopMinute)
-                : (nyMinute >= AsiaSessionStartMinute && nyMinute < AsiaSessionStopMinute);
-            if (inAsiaWindow)
-                return AsiaSessionIndex;
+            if (nyMinute >= Eu0400StartMinute && nyMinute < Eu0400EndMinute)
+                return Eu0400SessionIndex;
+
+            if (nyMinute >= Eu0800StartMinute && nyMinute < Eu0800EndMinute)
+                return Eu0800SessionIndex;
 
             return -1;
         }
@@ -624,7 +846,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return "9:28-9:50";
                 case 5: return "9:55-10:30";
-                case AsiaSessionIndex: return "Asia";
+                case Eu0400SessionIndex: return "EU 4:00-5:00";
+                case Eu0800SessionIndex: return "EU 8:00-9:28";
                 default: return "Halt";
             }
         }
@@ -635,20 +858,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return Us0928Setting != EMALUs0928Setting.Disabled;
                 case 5: return Us0955Setting != EMALUs0955Setting.Disabled;
-                case AsiaSessionIndex: return AsiaEnabled;
+                case Eu0400SessionIndex: return Eu0400Setting != EMALEu0400Setting.Disabled;
+                case Eu0800SessionIndex: return Eu0800Setting != EMALEu0800Setting.Disabled;
                 default: return false;
             }
         }
 
         // Per-session slope threshold. Falls back to the global value when per-session
-        // settings are off, so the two cannot disagree silently. Asia is checked before that
-        // fallback (Steve, 2026-08-09) - UsePerSessionSettings' own description scopes it to
-        // "the per-window split (US 09:28-09:50, US 09:55-10:30)", so it has no business
-        // overriding Asia's dedicated slope field.
+        // settings are off, so the two cannot disagree silently. "Use Per-Session Settings"
+        // describes and controls only the two US windows (see its Display description) - the
+        // EU window always uses its own preset slope regardless of that toggle, checked first.
         private double GetConfiguredSlope(DateTime platformTime)
         {
-            if (GetSessionIndex(platformTime) == AsiaSessionIndex)
-                return Math.Abs(AsiaMinimumSlope);
+            int euSession = GetSessionIndex(platformTime);
+            if (euSession == Eu0400SessionIndex)
+                return Math.Abs(eu0400Slope);
+            if (euSession == Eu0800SessionIndex)
+                return Math.Abs(eu0800Slope);
 
             if (!UsePerSessionSettings)
                 return Math.Abs(MinimumEmaSlopePoints);
@@ -684,7 +910,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return us0928Tp;
                 case 5: return us0955Tp;
-                case AsiaSessionIndex: return AsiaTakeProfitPoints;
+                case Eu0400SessionIndex: return eu0400Tp;
+                case Eu0800SessionIndex: return eu0800Tp;
                 default: return double.NaN;
             }
         }
@@ -695,7 +922,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return us0928Sl;
                 case 5: return us0955Sl;
-                case AsiaSessionIndex: return AsiaStopLossPoints;
+                case Eu0400SessionIndex: return eu0400Sl;
+                case Eu0800SessionIndex: return eu0800Sl;
                 default: return double.NaN;
             }
         }
@@ -711,6 +939,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // them while a preset is selected is a no-op - closed for the free-tune path only.
         private void ResolveWindowPresets()
         {
+            // Neither EU window has a free-tune escape hatch - both resolve unconditionally,
+            // whether or not TuneUsWindowsFree (a US-window-only setting) is on.
+            switch (Eu0400Setting)
+            {
+                case EMALEu0400Setting.Disabled:                  eu0400Tp = 5; eu0400Sl = 14; eu0400Slope = 3.95; break;   // window is off; values are inert, see IsSessionEnabled
+                case EMALEu0400Setting.P1_ENG_TP5_SL14_Slope3_95: eu0400Tp = 5; eu0400Sl = 14; eu0400Slope = 3.95; break;
+                default: /* TP5_SL14_Slope3_95 */         eu0400Tp = 5; eu0400Sl = 14; eu0400Slope = 3.95; break;
+            }
+            switch (Eu0800Setting)
+            {
+                case EMALEu0800Setting.Disabled:                  eu0800Tp = 6; eu0800Sl = 18; eu0800Slope = 1.55; break;   // window is off; values are inert, see IsSessionEnabled
+                case EMALEu0800Setting.P1_ENG_TP6_SL18_Slope1_55: eu0800Tp = 6; eu0800Sl = 18; eu0800Slope = 1.55; break;
+                default: /* TP6_SL18_Slope1_55 */         eu0800Tp = 6; eu0800Sl = 18; eu0800Slope = 1.55; break;
+            }
+
             if (TuneUsWindowsFree)
             {
                 us0928Tp = Us0928TakeProfitPoints;
@@ -735,6 +978,297 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case EMALUs0955Setting.P3_ENG_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
                 default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
             }
+        }
+
+        // ---------------- 8:30 news block (ported from DUO-28.cs) ----------------
+
+        // True if barOpenEastern falls within NewsBlockMinutes of any qualifying news event
+        // on the same calendar date. Always on for EU2 - hardcoded, no checkbox (Steve,
+        // 2026-08-12: "it doesn't even need a switch for that").
+        private bool IsNewsBlocked(DateTime barOpenEastern)
+        {
+            EnsureNewsDatesInitialized(barOpenEastern);
+            if (!newsDatesAvailable)
+                return false;
+
+            for (int i = 0; i < NewsDates.Count; i++)
+            {
+                DateTime newsTime = NewsDates[i];
+                if (newsTime.Date != barOpenEastern.Date)
+                    continue;
+
+                DateTime windowStart = newsTime.AddMinutes(-NewsBlockMinutes);
+                DateTime windowEnd = newsTime.AddMinutes(NewsBlockMinutes);
+                if (barOpenEastern >= windowStart && barOpenEastern <= windowEnd)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void EnsureNewsDatesInitialized(DateTime barOpenEastern)
+        {
+            DateTime weekStartEt = GetWeekStart(barOpenEastern.Date);
+            lock (NewsDatesSync)
+            {
+                bool currentWeek = weekStartEt == GetWeekStart(GetCurrentEasternDate());
+                bool retryUnavailableCurrentWeek =
+                    newsDatesInitialized && newsDatesWeekStart == weekStartEt && !newsDatesAvailable
+                    && currentWeek && IsNewsFetchAllowed(weekStartEt);
+
+                if (newsDatesInitialized && newsDatesWeekStart == weekStartEt && !retryUnavailableCurrentWeek)
+                    return;
+
+                RefreshNewsDates(weekStartEt, currentWeek);
+            }
+        }
+
+        private void RefreshNewsDates(DateTime weekStartEt, bool currentWeek)
+        {
+            NewsDates.Clear();
+            newsDatesInitialized = true;
+            newsDatesAvailable = false;
+            newsDatesWeekStart = weekStartEt;
+
+            // Only ever fetch live for the current week - past/future weeks (backtests,
+            // Playback) always resolve from cache or the hardcoded fallback, never the network.
+            bool fetchAllowed = currentWeek && !IsHistoricalTradeSimulationContext() && IsNewsFetchAllowed(weekStartEt);
+
+            List<DateTime> loadedDates;
+            if (fetchAllowed && TryFetchWeeklyNewsDates(weekStartEt, out loadedDates))
+            {
+                MergeNewsDates(loadedDates);
+                newsDatesAvailable = true;
+                newsFetchBlockedWeekStart = DateTime.MinValue;
+                TryWriteNewsDatesCache(weekStartEt, loadedDates);
+            }
+            else
+            {
+                List<DateTime> cachedDates;
+                if (TryLoadNewsDatesCache(weekStartEt, out cachedDates))
+                {
+                    MergeNewsDates(cachedDates);
+                    newsDatesAvailable = true;
+                }
+                else
+                {
+                    List<DateTime> hardcodedDates;
+                    if (TryLoadHardcodedNewsDates(weekStartEt, out hardcodedDates))
+                    {
+                        MergeNewsDates(hardcodedDates);
+                        newsDatesAvailable = true;
+                    }
+                }
+            }
+
+            NewsDates.Sort();
+            Print(string.Format(
+                "EMAL news block: week {0:yyyy-MM-dd} resolved {1} event(s), available={2}",
+                weekStartEt, NewsDates.Count, newsDatesAvailable));
+        }
+
+        private static void MergeNewsDates(IEnumerable<DateTime> dates)
+        {
+            if (dates == null)
+                return;
+
+            foreach (DateTime date in dates)
+                AddUniqueNewsDate(NewsDates, date);
+        }
+
+        private static void AddUniqueNewsDate(List<DateTime> target, DateTime value)
+        {
+            if (target == null || value.TimeOfDay != new TimeSpan(8, 30, 0) || target.Contains(value))
+                return;
+
+            target.Add(value);
+        }
+
+        // Live weekly fetch. Failure of any kind (network, parse, rate limit) is caught and
+        // reported as a plain false - callers fall back to cache, then the hardcoded list.
+        // A 429 sets a cooldown so a bad connection doesn't hammer the feed every bar.
+        private bool TryFetchWeeklyNewsDates(DateTime weekStartEt, out List<DateTime> loadedDates)
+        {
+            loadedDates = new List<DateTime>();
+            try
+            {
+                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+                using (var client = new System.Net.WebClient())
+                {
+                    client.Encoding = System.Text.Encoding.UTF8;
+                    client.Headers[System.Net.HttpRequestHeader.UserAgent] =
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+                    client.Headers[System.Net.HttpRequestHeader.Accept] = "application/json,text/plain,*/*";
+
+                    string json = client.DownloadString(NewsWeeklyJsonUrl);
+                    var serializer = new JavaScriptSerializer();
+                    List<Dictionary<string, object>> rows = serializer.Deserialize<List<Dictionary<string, object>>>(json);
+                    DateTime weekEndEt = weekStartEt.AddDays(7);
+
+                    if (rows != null)
+                    {
+                        for (int i = 0; i < rows.Count; i++)
+                        {
+                            DateTime newsDate;
+                            if (!TryParseWeeklyNewsDate(rows[i], out newsDate))
+                                continue;
+                            if (newsDate < weekStartEt || newsDate >= weekEndEt)
+                                continue;
+
+                            string currency = GetNewsRowString(rows[i], "country");
+                            string impact = GetNewsRowString(rows[i], "impact");
+                            if (!string.Equals(currency, NewsTargetCurrency, StringComparison.OrdinalIgnoreCase) ||
+                                !string.Equals(impact, NewsTargetImpact, StringComparison.OrdinalIgnoreCase))
+                                continue;
+
+                            AddUniqueNewsDate(loadedDates, newsDate);
+                        }
+                    }
+
+                    return true;
+                }
+            }
+            catch (System.Net.WebException ex)
+            {
+                var response = ex.Response as System.Net.HttpWebResponse;
+                int cooldownMinutes = response != null && (int)response.StatusCode == 429 ? 15 : 2;
+                SetNewsFetchBlock(weekStartEt, TimeSpan.FromMinutes(cooldownMinutes));
+                Print("EMAL news fetch failed: " + ex.Message);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                SetNewsFetchBlock(weekStartEt, TimeSpan.FromMinutes(2));
+                Print("EMAL news fetch failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        private bool TryParseWeeklyNewsDate(Dictionary<string, object> row, out DateTime newsDate)
+        {
+            newsDate = DateTime.MinValue;
+            string rawDate = GetNewsRowString(row, "date");
+            if (string.IsNullOrWhiteSpace(rawDate))
+                return false;
+
+            DateTimeOffset timestamp;
+            if (!DateTimeOffset.TryParse(rawDate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out timestamp))
+                return false;
+
+            newsDate = timestamp.DateTime;
+            return true;
+        }
+
+        private static string GetNewsRowString(Dictionary<string, object> row, string key)
+        {
+            object raw;
+            if (row == null || string.IsNullOrWhiteSpace(key) || !row.TryGetValue(key, out raw) || raw == null)
+                return string.Empty;
+
+            return raw.ToString().Trim();
+        }
+
+        private string GetNewsCachePath(DateTime weekStartEt)
+        {
+            string fileName = string.Format(CultureInfo.InvariantCulture, "{0}{1:yyyy-MM-dd}.txt", NewsCacheFilePrefix, weekStartEt);
+            return Path.Combine(NinjaTrader.Core.Globals.UserDataDir, fileName);
+        }
+
+        private bool TryWriteNewsDatesCache(DateTime weekStartEt, List<DateTime> dates)
+        {
+            try
+            {
+                using (var writer = new StreamWriter(GetNewsCachePath(weekStartEt), false))
+                {
+                    writer.WriteLine(NewsCacheWeekPrefix + weekStartEt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                    foreach (DateTime d in dates)
+                        writer.WriteLine(d.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Print("EMAL news cache write failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        private bool TryLoadNewsDatesCache(DateTime weekStartEt, out List<DateTime> cachedDates)
+        {
+            cachedDates = new List<DateTime>();
+            string path = GetNewsCachePath(weekStartEt);
+            try
+            {
+                if (!File.Exists(path))
+                    return false;
+
+                foreach (string line in File.ReadAllLines(path))
+                {
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#", StringComparison.Ordinal))
+                        continue;
+
+                    DateTime parsed;
+                    if (DateTime.TryParseExact(line.Trim(), "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+                        AddUniqueNewsDate(cachedDates, parsed);
+                }
+
+                return cachedDates.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                Print("EMAL news cache read failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        // Fallback of last resort: the hardcoded list above. Covers through 2026-12-30;
+        // beyond that date this returns nothing and IsNewsBlocked simply never fires.
+        private bool TryLoadHardcodedNewsDates(DateTime weekStartEt, out List<DateTime> hardcodedDates)
+        {
+            hardcodedDates = new List<DateTime>();
+            DateTime weekEndEt = weekStartEt.AddDays(7);
+            string[] entries = NewsDatesRaw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+            for (int i = 0; i < entries.Length; i++)
+            {
+                string trimmed = entries[i] != null ? entries[i].Trim() : string.Empty;
+                if (string.IsNullOrWhiteSpace(trimmed))
+                    continue;
+
+                DateTime parsed;
+                if (!DateTime.TryParseExact(trimmed, "yyyy-MM-dd,HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+                    continue;
+
+                if (parsed >= weekStartEt && parsed < weekEndEt)
+                    AddUniqueNewsDate(hardcodedDates, parsed);
+            }
+
+            return true;   // always "available" even with zero matches for a quiet week
+        }
+
+        private static DateTime GetWeekStart(DateTime date)
+        {
+            int diff = (7 + (date.DayOfWeek - DayOfWeek.Sunday)) % 7;
+            return date.AddDays(-diff).Date;
+        }
+
+        private DateTime GetCurrentEasternDate()
+        {
+            if (easternZone == null)
+                return DateTime.UtcNow.Date;
+
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, easternZone).Date;
+        }
+
+        private static bool IsNewsFetchAllowed(DateTime weekStartEt)
+        {
+            return newsFetchBlockedWeekStart != weekStartEt || newsFetchBlockedUntilUtc <= DateTime.UtcNow;
+        }
+
+        private static void SetNewsFetchBlock(DateTime weekStartEt, TimeSpan cooldown)
+        {
+            newsFetchBlockedWeekStart = weekStartEt;
+            newsFetchBlockedUntilUtc = DateTime.UtcNow.Add(cooldown);
         }
 
         private static string N(double v)
@@ -927,10 +1461,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("      US 0928-0950       : {0}  slope {1}", Us0928Setting, Us0928MinimumSlope));
             Print(string.Format("      (block 0950-0955, no trade)"));
             Print(string.Format("      US 0955-1030       : {0}  slope {1}", Us0955Setting, Us0955MinimumSlope));
-            Print(string.Format("      Asia (hidden)       : enabled={0}  {1}-{2} ET  TP{3}/SL{4}  slope {5}  (no minute filter, no parity gate)",
-                AsiaEnabled, AsiaSessionStartMinute, AsiaSessionStopMinute, AsiaTakeProfitPoints, AsiaStopLossPoints, AsiaMinimumSlope));
+            Print(string.Format("      EU1 0400-0500      : {0}  slope {1}  (no minute/parity filter)", Eu0400Setting, eu0400Slope));
+            Print(string.Format("      EU2 0800-0928      : {0}  slope {1}  (no minute/parity filter)", Eu0800Setting, eu0800Slope));
+            Print(string.Format("      8:30 news block    : always on  (bars blocked: {0})", newsBlockedBarCount));
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  9:30 hard block     : bars blocked: {0}", hardBlockedMinuteBarCount));
+            Print(string.Format("  8:35 hard block     : bars blocked: {0}", hardBlocked0835MinuteBarCount));
             Print(string.Format("  minute filter       : 1a={0} 1b={1} 1c={2} 1d={3} 1e={4}  (bars blocked: {5})",
                 TradeMinute1a, TradeMinute1b, TradeMinute1c, TradeMinute1d, TradeMinute1e,
                 minuteFilterBlockedBarCount));
@@ -1108,13 +1644,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (IsHardBlockedMinute(ConvertToEastern(raw)))
                 return "9:30 block";
 
+            if (IsHardBlocked0835Minute(ConvertToEastern(raw)))
+                return "8:35 block";
+
             // Window gate is unconditional now, see IsEntryWindowOpen (Steve, 2026-08-06).
             int s = GetSessionIndex(raw);
             if (s < 0 || !IsSessionEnabled(s))
                 return "session gate";
 
-            // Asia (Steve, 2026-08-09): mirror IsEntryWindowOpen - neither gate below applies.
-            if (s != AsiaSessionIndex)
+            // Mirror IsEntryWindowOpen's 8:30 news block (Steve, 2026-08-12). Always on for
+            // EU2, no checkbox - see IsNewsBlocked's header comment.
+            if (s == Eu0800SessionIndex && IsNewsBlocked(ConvertToEastern(raw)))
+                return "news block";
+
+            // Both EU windows skip the minute/parity gates entirely, see IsEntryWindowOpen -
+            // falls through to the account-level checks below, which DO still apply.
+            if (s != Eu0400SessionIndex && s != Eu0800SessionIndex)
             {
                 // Mirror IsEntryWindowOpen's minute-of-5 filter (Steve, 2026-08-01).
                 if (!IsMinuteAllowed(ConvertToEastern(raw)))
@@ -1264,9 +1809,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 blockedValueLineIndices.Add(lines.Count);
             lines.Add(new KeyValuePair<string, string>("Trade:", tradeGateState));
 
-            // Asia (Steve, 2026-08-09): the minute-of-5 filter doesn't apply there, so this row
-            // never renders red while Asia is the active session - matches IsEntryWindowOpen.
-            if (session != AsiaSessionIndex && !IsMinuteAllowed(ConvertToEastern(raw)))
+            if (!IsMinuteAllowed(ConvertToEastern(raw)))
                 blockedValueLineIndices.Add(lines.Count);
             lines.Add(new KeyValuePair<string, string>("Trade Minute:", GetTradeMinuteLabel()));
 
@@ -1292,6 +1835,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else
             {
                 lines.Add(new KeyValuePair<string, string>("API Guard:", "Off"));
+            }
+
+            // News row (Steve, 2026-08-12), same position/convention as DUO-28.cs's info panel
+            // (after API Guard, before Session). Always on for EU2, hardcoded, no checkbox.
+            // Lists this week's qualifying 8:30 ET news date(s); red-flags the one currently
+            // inside its block window.
+            DateTime nowEastern = ConvertToEastern(raw);
+            EnsureNewsDatesInitialized(nowEastern);
+            if (!newsDatesAvailable || NewsDates.Count == 0)
+            {
+                lines.Add(new KeyValuePair<string, string>("News:", "none this week"));
+            }
+            else
+            {
+                for (int i = 0; i < NewsDates.Count; i++)
+                {
+                    DateTime newsTime = NewsDates[i];
+                    bool blocking = session == Eu0800SessionIndex
+                        && nowEastern >= newsTime.AddMinutes(-NewsBlockMinutes)
+                        && nowEastern <= newsTime.AddMinutes(NewsBlockMinutes);
+                    if (blocking)
+                        blockedValueLineIndices.Add(lines.Count);
+                    string newsLabel = newsTime.ToString("ddd h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
+                    lines.Add(new KeyValuePair<string, string>("News:", newsLabel));
+                }
             }
 
             string sessionName = SessionName(session);
@@ -1330,6 +1898,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 bool edge = i == 0 || i == lines.Count - 1;
                 bool isStatusRow = i == statusLineIndex;
+                bool isEmojiRow = i == slopeLineIndex && slopeValid.HasValue;
 
                 var text = new TextBlock
                 {
@@ -1350,6 +1919,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // path than every other row. DUO proves the actual fix doesn't touch
                 // TextFormattingMode at all.
                 TextOptions.SetTextFormattingMode(text, TextFormattingMode.Display);
+                // BUG FIX (Steve, 2026-08-10): the 2026-08-09 fix set TextRenderingMode.Grayscale
+                // on the emoji Run below but never on this TextBlock, so the row still rendered
+                // through WPF's default ClearType path - which is what actually blocks
+                // multi-layer COLR/CPAL color glyphs, producing the monochrome fallback dingbat
+                // seen live in NT8 (confirmed via screenshot, v1.0.3.3). DUO-21.cs's actual working
+                // code sets TextRenderingMode on the TextBlock too (BuildInfoRows, not just
+                // BuildInfoValueRun) - Grayscale only for the row carrying the emoji, ClearType
+                // (the existing default, made explicit) for every other row so nothing else
+                // changes. This was the missing half of the port; TextFormattingMode is still
+                // untouched, matching the comment above.
+                TextOptions.SetTextRenderingMode(text, isEmojiRow ? TextRenderingMode.Grayscale : TextRenderingMode.ClearType);
 
                 text.Inlines.Add(new Run(lines[i].Key)
                 {
@@ -1510,6 +2090,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return easternTime.Hour == 9 && easternTime.Minute == 30;
         }
 
+        // Hard block on the 08:35 ET minute within EU2 (Steve, 2026-08-12), unconditional and
+        // discretionary, same pattern as the 09:30 hard block above. TESTED: on the EU2 winning
+        // config (TP6/SL18/slope1.55), 08:35 is net-negative and below the 75% TP6/SL18
+        // breakeven WR in ALL FOUR of sequential-early/sequential-late/interleaved-odd/
+        // interleaved-even splits (WR 68.75%/56.25%/62.5%/62.5%, net -$519.60/-$1,514.60/
+        // -$989.60/-$1,044.60) - a clean replication, not a fluke concentrated in one stretch.
+        // Checked directly against the 8:30 news calendar: NOT news-driven (worse on quiet
+        // days, PF 0.449, than news days, PF 0.895) - whatever is wrong with this minute is
+        // independent of the 8:30 news block above. NOT mechanism-validated: flanked by two
+        // strong minutes (08:34 WR 87.9%, 08:36 WR 82.4%), the same "isolated bar, not a
+        // degraded neighborhood" signature that argued against a real market-structure
+        // explanation for 09:30. Kept anyway on Steve's explicit discretion, same basis as
+        // 09:30: cheap, deletes a minute with real replicated negative expectancy, not a
+        // validated causal story. Only ever fires within EU2 (08:00-09:28) in practice, but
+        // checked unconditionally like 09:30, not gated behind the session index.
+        private bool IsHardBlocked0835Minute(DateTime easternTime)
+        {
+            return easternTime.Hour == 8 && easternTime.Minute == 35;
+        }
+
         private bool IsEntryWindowOpen()
         {
             DateTime barOpenRaw = GetBarOpenRaw();
@@ -1519,6 +2119,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (IsHardBlockedMinute(barOpen))
             {
                 hardBlockedMinuteBarCount++;
+                return false;
+            }
+
+            // Checked unconditionally too - see IsHardBlocked0835Minute's comment.
+            if (IsHardBlocked0835Minute(barOpen))
+            {
+                hardBlocked0835MinuteBarCount++;
                 return false;
             }
 
@@ -1534,10 +2141,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (session < 0 || !IsSessionEnabled(session))
                 return false;
 
-            // Asia (Steve, 2026-08-09): neither gate applies. No minute-of-5 filter and no
-            // trade-parity gate - Asia takes every qualifying candle in its window, unlike the
-            // two NY sessions below.
-            if (session == AsiaSessionIndex)
+            // 8:30 news block (Steve, 2026-08-12): always on for EU2, no checkbox - hardcoded,
+            // see IsNewsBlocked's header comment. Checked before the Trade Minute/Parity bypass
+            // below since it's a stricter, EU2-only condition.
+            if (session == Eu0800SessionIndex && IsNewsBlocked(barOpen))
+            {
+                newsBlockedBarCount++;
+                return false;
+            }
+
+            if (session == Eu0400SessionIndex || session == Eu0800SessionIndex)
                 return true;
 
             if (!IsMinuteAllowed(barOpen))
@@ -4001,40 +4614,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Trade Parity", Description = "Reduce trade count by trading only alternate candles. Even = even-numbered minute; Odd = odd-numbered minute; Both = every candle (current behaviour).", GroupName = "B. Sessions", Order = 14)]
         public EMALTradeParity TradeParity { get; set; }
 
-        // ================================================================================
-        // Asia (hidden) (Steve, 2026-08-09) - single continuous session, off by default.
-        // Deliberately independent of everything above: does not use Trade Parity (that
-        // property stays NY-only, unchanged) and has no parity control of its own; does not use
-        // TradeMinute1a-1e. Shares the global EMA Period with NY - no separate Asia EMA period.
-        // Un-hidden 2026-08-09 (EMAL-1034) so Steve can set these from the NT8 Properties
-        // panel for the JPX-open Playback confirmation (Analysis Plan §15) -- was UI-hidden
-        // only pending that first real-fill check, per the original EMAL-1033 comment above
-        // (now stale, corrected here). CLI parameter ids unchanged either way.
-        // ================================================================================
+        [NinjaScriptProperty]
+        [Display(Name = "EU1 Session", Description = "Independent 4:00-5:00 AM ET window, playback-test only - FAILED the desk's significance check (EMAL_Analysis_Plan.md SS19), not adopted. Uses only Contracts and the shared EMA Period; Trade Minute and Trade Parity above do not apply to it. P1 raw engine stats: WR77.74% PF1.204 Net$8,386 MaxDD$1,385 Net/DD6.06 (n=611, 66 days).", GroupName = "B. Sessions", Order = 15)]
+        public EMALEu0400Setting Eu0400Setting { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia Enabled", Description = "Turn the Asia session on. Off by default - no Disabled-style preset, just this switch.", GroupName = "B. Sessions", Order = 15)]
-        public bool AsiaEnabled { get; set; }
-
-        [Range(0, 1439), NinjaScriptProperty]
-        [Display(Name = "Asia Session Start", Description = "Session start, minute-of-day in Eastern time (0-1439). Default 1185 = 19:45 ET (JPX futures open, 08:45 JST).", GroupName = "B. Sessions", Order = 16)]
-        public int AsiaSessionStartMinute { get; set; }
-
-        [Range(0, 1439), NinjaScriptProperty]
-        [Display(Name = "Asia Session Stop", Description = "Session stop, minute-of-day in Eastern time (0-1439), exclusive. Default 1230 = 20:30 ET (30 min past TSE cash open, 09:00 JST). Stop < Start means the window crosses midnight - see GetSessionIndex (the ORIGINAL EMAL-1033 default, 16:05-02:00 ET, was this case; the current 19:45-20:30 default is not).", GroupName = "B. Sessions", Order = 17)]
-        public int AsiaSessionStopMinute { get; set; }
-
-        [Range(0.0, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Asia Min Slope", Description = "Minimum completed-bar EMA slope required for an Asia entry. Default 2.5.", GroupName = "B. Sessions", Order = 18)]
-        public double AsiaMinimumSlope { get; set; }
-
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Asia Take Profit", Description = "Fixed take-profit distance in points for Asia entries. Default 4.", GroupName = "B. Sessions", Order = 19)]
-        public double AsiaTakeProfitPoints { get; set; }
-
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Display(Name = "Asia Stop Loss", Description = "Fixed stop-loss distance in points for Asia entries. Default 12.", GroupName = "B. Sessions", Order = 20)]
-        public double AsiaStopLossPoints { get; set; }
+        [Display(Name = "EU2 Session", Description = "Independent 8:00-9:28 AM ET window, playback-test only - FAILED the desk's significance check (EMAL_Analysis_Plan.md SS19), not adopted. Uses only Contracts and the shared EMA Period; Trade Minute and Trade Parity above do not apply to it. P1 raw engine stats: WR77.29% PF1.148 Net$20,537 MaxDD$3,585 Net/DD5.73 best-cell TP6/SL18/slope1.55 (n=2386, full search 217 cells, best raw Net/DD 6.18).", GroupName = "B. Sessions", Order = 16)]
+        public EMALEu0800Setting Eu0800Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "C. Risk", Order = 0)]
@@ -4153,10 +4739,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
         // Sessions 1m (Steve, 2026-08-01, EMAL-21; original Asia and US 10:30-17:00 removed
         // entirely 2026-08-06, Europe removed entirely 2026-08-02, Steve: "I never want to use
-        // this bot on London") - the two US morning windows below are the only VISIBLE sessions
-        // this strategy trades. A new, hidden Asia session was re-added 2026-08-09 (see the
-        // "Asia (hidden)" block after Trade Parity below) - unrelated to the old removed one:
-        // single continuous window, no minute filter, no parity gate, off by default.
+        // this bot on London") - the two US morning windows below are the only sessions this
+        // strategy trades. A single continuous Asia session existed EMAL-1033 through
+        // EMAL-1034 (hidden, off by default; re-added 2026-08-09, unhid 2026-08-09) and was
+        // removed again 2026-08-10 after both leads tested on it (a Sunday-only slope sweep and
+        // an MNQ out-of-sample proxy check on the JPX-open window) came up empty - see
+        // EMAL-1035-changelog.txt and Analysis_Plan §16 for the full record. No trace of it
+        // remains in this file; if it's ever revisited, EMAL-1033/1034 are the reference cuts.
         // ================================================================================
 
         [NinjaScriptProperty]
@@ -4259,8 +4848,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1033,
-        modified_2026_08_09
+        version_1036,
+        modified_2026_08_12
     }
 
     public enum EMALTradeParity
@@ -4283,6 +4872,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         P1_ENG_TP4_SL18_Slope2_75,
         P2_ENG_TP3_SL18_Slope2_75,
         P3_ENG_TP3_SL16_Slope2_75
+    }
+
+    // EU 4:00-5:00 (Steve, 2026-08-12). Playback-test-only - this candidate FAILED the desk's
+    // Gate 0/1 significance check (EMAL_Analysis_Plan.md SS19); P1 is not a validated finding,
+    // it is the engine sweep's raw coarse-to-fine winner, kept for NT8 Playback testing on
+    // Steve's explicit request. Disabled is the default.
+    public enum EMALEu0400Setting
+    {
+        Disabled,
+        P1_ENG_TP5_SL14_Slope3_95
+    }
+
+    // EU2 8:00-9:28 (Steve, 2026-08-12). Playback-test-only, same status as EU1 above - FAILED
+    // the desk's Gate 1 significance check (best raw net/DD across the full 217-cell search was
+    // 6.18, against a pre-committed floor of 20; EMAL_Analysis_Plan.md SS19). Not a validated
+    // finding. P1 is the search's overall winner, kept for NT8 Playback testing on Steve's
+    // explicit request.
+    public enum EMALEu0800Setting
+    {
+        Disabled,
+        P1_ENG_TP6_SL18_Slope1_55
     }
 
 }
