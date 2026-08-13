@@ -3,6 +3,7 @@ using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -160,8 +161,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double queuedStopLossPoints;
         private double queuedSignalPrice;
         private int queuedEntryBar = -1;
+        private long queuedSignalTimestamp;
+        private DateTime queuedSignalUtc = DateTime.MinValue;
 
         private bool entryCancelPending;
+
+        // Optional live latency instrumentation. Stopwatch is monotonic and is touched only
+        // while Execution Diagnostics is enabled, so the normal live path pays no timing or
+        // formatting cost. Diagnostic prints are deliberately emitted only after the relevant
+        // NT order/protection method has run.
+        private long entryLatencySignalTimestamp;
+        private long entryLatencySubmitStartTimestamp;
+        private DateTime entryLatencySignalUtc = DateTime.MinValue;
+        private DateTime entryLatencySubmitStartUtc = DateTime.MinValue;
+        private bool entryLatencyOrderStateLogged;
+        private bool entryLatencyExecutionLogged;
 
         // Execution-driven protection. Stops are validated against the live market before
         // submission so a replay gap cannot place a buy stop below market or a sell stop
@@ -351,7 +365,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 1;
 
-                Version = EMALVersion.version_1037;   // bump on every new cut; see enum comment
+                // Aug 13 live incident (3-lot Apex account): a manual broker-side flatten left a
+                // resting entry limit orphaned when the instance was disabled, and
+                // StartBehavior=WaitUntilFlat then refused to re-enable ("Unable to cancel out
+                // live orders. Strategy was not started."). Disabling now cancels the resting
+                // entry so it can't be orphaned at the broker.
+                CancelEntriesOnStrategyDisable = true;
+                // Deliberate safety invariant, pinned explicitly rather than left at NT's default:
+                // a disable must NEVER strip the stop/target off an open position. Keep false even
+                // if a future NT default or edit would otherwise change it silently.
+                CancelExitsOnStrategyDisable = false;
+
+                Version = EMALVersion.version_1039;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
 
@@ -432,6 +457,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 FeatureLogPath = string.Empty;   // blank -> version-named auto-path, see ResolveFeatureLogPath
                 EnablePathLog = false;   // research-only; never on for live trading
                 PathLogPath = string.Empty;
+                EnableExecutionDiagnostics = false;
             }
             else if (State == State.DataLoaded)
             {
@@ -927,12 +953,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             lastTickTime = e.Time;
             lastTickPrice = e.Price;
 
-            EvaluateGapLatch(e.Price);
+            // Keep the always-on tick clock above, but do not repeatedly enter five helper
+            // methods when their feature/state is inactive. With many instances on one NQ/MNQ
+            // feed this is the normal flat-state path for almost every tick.
+            if (gapLatchArmed)
+                EvaluateGapLatch(e.Price);
 
-            TrackExcursion();
-            UpdatePathRecorders();
-            EvaluateProjectXOrphanRecovery();
-            EvaluateTerminalExitRecovery();
+            if (EnableFeatureLog && pendingFillFeatures != null && pendingDirection != 0
+                && pendingFillPrice > 0.0)
+            {
+                TrackExcursion();
+            }
+
+            if (EnablePathLog && pathRecorders != null && pathRecorders.Count > 0)
+                UpdatePathRecorders();
+
+            if (projectXEntryMirrorActive && projectXOrphanRecoveryDueUtc != DateTime.MinValue)
+                EvaluateProjectXOrphanRecovery();
+
+            if (!string.IsNullOrWhiteSpace(terminalExitRetryReason))
+                EvaluateTerminalExitRecovery();
         }
 
         // ---- Research path log ----
@@ -1550,9 +1590,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (BarsInProgress != 0)
                 return;
 
-            // Keep the hosted EMA synchronized before any strategy gate can return.
-            // Update() is a no-op when the EMA is already current.
-            ema.Update();
+            bool firstTickOfBar = IsFirstTickOfBar;
+
+            // Entry logic reads only completed EMA values and only on the first tick of a new
+            // minute. Historical processing still updates on every historical callback so the
+            // hosted EMA remains fully warmed before realtime. This preserves the re-enable
+            // out-of-range fix without recalculating the EMA on every live tick.
+            if (State == State.Historical || firstTickOfBar)
+                ema.Update();
 
             // Historical bars warm Playback/live instances only. Strategy Analyzer retains
             // the complete historical order/fill path through the Backtest account.
@@ -1563,22 +1608,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // the panel so the top status line shows the user WHY it is disabled.
             if (configurationBlocked)
             {
-                if (IsFirstTickOfBar)
+                if (firstTickOfBar)
                     UpdateInfoText();
                 return;
             }
 
             // Evaluate on every tick so unrealized profit can flatten an open position
-            // immediately instead of waiting for the next one-minute bar.
-            if (IsAccountBalanceBlocked() || IsAccountDailyProfitBlocked())
+            // immediately instead of waiting for the next one-minute bar. When both guards
+            // are disabled (their default), bypass the guard methods entirely.
+            bool accountRiskEnabled = MaxAccountBalance > 0.0 || MaxDailyProfit > 0.0;
+            if (accountRiskEnabled && (IsAccountBalanceBlocked() || IsAccountDailyProfitBlocked()))
             {
                 // Keep drawing the info panel after the account-level latch is hit.
-                if (IsFirstTickOfBar)
+                if (firstTickOfBar)
                     UpdateInfoText();
                 return;
             }
 
-            if (!IsFirstTickOfBar)
+            if (!firstTickOfBar)
                 return;
 
             ClearQueuedEntry();
@@ -1637,6 +1684,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             queuedDirection = direction;
             queuedEntryBar = CurrentBar;
+            queuedSignalTimestamp = IsExecutionDiagnosticsActive()
+                ? Stopwatch.GetTimestamp()
+                : 0L;
+            queuedSignalUtc = queuedSignalTimestamp > 0L ? DateTime.UtcNow : DateTime.MinValue;
             signalCount++;
 
             // All bracket scaling (TP Atr/Slope 3.6, SL Atr 3.7) was tested and REJECTED:
@@ -1657,8 +1708,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // OnOrderUpdate can re-enter this method after an asynchronous cancellation.
             // Recheck the account latch here so no queued entry can escape the main gate.
             if (configurationBlocked
-                || IsAccountBalanceBlocked()
-                || IsAccountDailyProfitBlocked())
+                || ((MaxAccountBalance > 0.0 || MaxDailyProfit > 0.0)
+                    && (IsAccountBalanceBlocked() || IsAccountDailyProfitBlocked())))
             {
                 ClearQueuedEntry();
                 return;
@@ -1689,6 +1740,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double takeProfit = queuedTakeProfitPoints;
             double stopLoss = queuedStopLossPoints > 0.0 ? queuedStopLossPoints : DefaultSafetyStopLossPoints;
             double signalPrice = queuedSignalPrice;
+            long signalTimestamp = queuedSignalTimestamp;
+            DateTime signalUtc = queuedSignalUtc;
             ClearQueuedEntry();
 
             entryCancelPending = false;
@@ -1699,22 +1752,43 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             CaptureEntryFeatures(direction, signalPrice, takeProfit, stopLoss);
 
-            Print(string.Format(
-                "{0} | {1} Limit@BidAsk={2:F2} | target={3:F2} pts stop={4:F2} pts",
-                Time[0],
-                direction > 0 ? "LONG" : "SHORT",
-                limitPrice,
-                takeProfit,
-                stopLoss));
-
             SendPlannedProjectXEntry(direction, limitPrice, takeProfit, stopLoss);
 
             RecordNtOrderAction("entry");
+
+            bool diagnosticsActive = IsExecutionDiagnosticsActive();
+            entryLatencySignalTimestamp = diagnosticsActive ? signalTimestamp : 0L;
+            entryLatencySubmitStartTimestamp = diagnosticsActive ? Stopwatch.GetTimestamp() : 0L;
+            entryLatencySignalUtc = diagnosticsActive ? signalUtc : DateTime.MinValue;
+            entryLatencySubmitStartUtc = diagnosticsActive ? DateTime.UtcNow : DateTime.MinValue;
+            entryLatencyOrderStateLogged = false;
+            entryLatencyExecutionLogged = false;
 
             if (direction > 0)
                 EnterLongLimit(0, true, Contracts, limitPrice, LongEntrySignal);
             else
                 EnterShortLimit(0, true, Contracts, limitPrice, ShortEntrySignal);
+
+            // Formatting/Print used to run before EnterLongLimit/EnterShortLimit. With many
+            // same-instrument instances that serialized diagnostic work ahead of later
+            // accounts. Keep it optional and strictly after the NT submission call.
+            if (diagnosticsActive)
+            {
+                long submitReturnedTimestamp = Stopwatch.GetTimestamp();
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | EMAL EXECUTION | account={1} signal={2} limit={3:F2} tp={4:F2} sl={5:F2} "
+                    + "signalUtc={6:O} submitStartUtc={7:O} signalToSubmitStartMs={8:F3} submitCallMs={9:F3}",
+                    Time[0],
+                    Account != null ? Account.Name : "-",
+                    entrySignal,
+                    limitPrice,
+                    takeProfit,
+                    stopLoss,
+                    entryLatencySignalUtc,
+                    entryLatencySubmitStartUtc,
+                    ElapsedMilliseconds(entryLatencySignalTimestamp, entryLatencySubmitStartTimestamp),
+                    ElapsedMilliseconds(entryLatencySubmitStartTimestamp, submitReturnedTimestamp)));
+            }
         }
 
         // Passive: bid for longs, ask for shorts. Entry Order Type is fixed to Limit(BidAsk)
@@ -1866,6 +1940,79 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             queuedStopLossPoints = 0.0;
             queuedSignalPrice = 0.0;
             queuedEntryBar = -1;
+            queuedSignalTimestamp = 0L;
+            queuedSignalUtc = DateTime.MinValue;
+        }
+
+        private bool IsExecutionDiagnosticsActive()
+        {
+            return EnableExecutionDiagnostics && State == State.Realtime;
+        }
+
+        private static double ElapsedMilliseconds(long startTimestamp, long endTimestamp)
+        {
+            if (startTimestamp <= 0L || endTimestamp < startTimestamp)
+                return 0.0;
+
+            return (endTimestamp - startTimestamp) * 1000.0 / Stopwatch.Frequency;
+        }
+
+        private void LogFirstEntryOrderState(string orderName, OrderState orderState)
+        {
+            if (!IsExecutionDiagnosticsActive()
+                || entryLatencyOrderStateLogged
+                || entryLatencySubmitStartTimestamp <= 0L
+                || (orderState != OrderState.Submitted
+                    && orderState != OrderState.Accepted
+                    && orderState != OrderState.Working))
+            {
+                return;
+            }
+
+            entryLatencyOrderStateLogged = true;
+            long stateTimestamp = Stopwatch.GetTimestamp();
+            Print(string.Format(CultureInfo.InvariantCulture,
+                "{0} | EMAL EXECUTION | account={1} signal={2} firstOrderState={3} "
+                + "stateUtc={4:O} signalToStateMs={5:F3} submitStartToStateMs={6:F3}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                Account != null ? Account.Name : "-",
+                orderName,
+                orderState,
+                DateTime.UtcNow,
+                ElapsedMilliseconds(entryLatencySignalTimestamp, stateTimestamp),
+                ElapsedMilliseconds(entryLatencySubmitStartTimestamp, stateTimestamp)));
+        }
+
+        private void LogFirstEntryExecution(string orderName)
+        {
+            if (!IsExecutionDiagnosticsActive()
+                || entryLatencyExecutionLogged
+                || entryLatencySubmitStartTimestamp <= 0L)
+            {
+                return;
+            }
+
+            entryLatencyExecutionLogged = true;
+            long executionTimestamp = Stopwatch.GetTimestamp();
+            Print(string.Format(CultureInfo.InvariantCulture,
+                "{0} | EMAL EXECUTION | account={1} signal={2} firstFill "
+                + "fillCallbackUtc={3:O} signalToFillCallbackMs={4:F3} submitStartToFillCallbackMs={5:F3}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                Account != null ? Account.Name : "-",
+                orderName,
+                DateTime.UtcNow,
+                ElapsedMilliseconds(entryLatencySignalTimestamp, executionTimestamp),
+                ElapsedMilliseconds(entryLatencySubmitStartTimestamp, executionTimestamp)));
+        }
+
+        private void ResetEntryLatencyTracking()
+        {
+            entryLatencySignalTimestamp = 0L;
+            entryLatencySubmitStartTimestamp = 0L;
+            entryLatencySignalUtc = DateTime.MinValue;
+            entryLatencySubmitStartUtc = DateTime.MinValue;
+            entryLatencyOrderStateLogged = false;
+            entryLatencyExecutionLogged = false;
         }
 
         // Refuses to trade rather than throwing. An unhandled exception disables the strategy
@@ -1982,6 +2129,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (orderName != LongEntrySignal && orderName != ShortEntrySignal)
                 return;
 
+            LogFirstEntryOrderState(orderName, orderState);
+
             if (orderState != OrderState.Cancelled
                 && orderState != OrderState.Filled
                 && orderState != OrderState.Rejected)
@@ -2007,8 +2156,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 entryOrder = null;
                 ClearActiveEntryContext();
                 CancelProjectXEntryMirror(Position.MarketPosition == MarketPosition.Flat);
-                if (Position.MarketPosition == MarketPosition.Flat)
+                if (filled == 0 && Position.MarketPosition == MarketPosition.Flat)
+                {
                     ReleaseOrderRateReservation();
+                    ResetGapLatchTracking();
+                }
+                else if (Position.MarketPosition == MarketPosition.Flat)
+                {
+                    ReleaseOrderRateReservation();
+                }
+                ResetEntryLatencyTracking();
                 TrySubmitQueuedEntry();
             }
             else if (orderState == OrderState.Rejected)
@@ -2018,6 +2175,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ClearQueuedEntry();
                 CancelProjectXEntryMirror(true);
                 ReleaseOrderRateReservation();
+                if (filled == 0 && Position.MarketPosition == MarketPosition.Flat)
+                    ResetGapLatchTracking();
+                ResetEntryLatencyTracking();
                 Print(string.Format(
                     "{0} | {1} entry rejected | error={2} comment={3}",
                     time,
@@ -2063,6 +2223,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (maxAccountBalanceLimitReached || maxDailyProfitLimitReached)
                 {
                     TrySubmitTerminalExit(maxAccountBalanceLimitReached ? "MaxAccountBalance" : "MaxDailyProfit", orderName);
+                    LogFirstEntryExecution(orderName);
                     return;
                 }
 
@@ -2072,6 +2233,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     averageEntryPrice,
                     entryFilledQuantity,
                     time);
+                // Protection/terminal handling always wins the critical path; diagnostics are
+                // emitted only after the safety order method has completed.
+                LogFirstEntryExecution(orderName);
                 return;
             }
 
@@ -2600,7 +2764,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             terminalExitPending = false;
             ClearTerminalExitRetry();
             ReleaseOrderRateReservation();
+            ResetGapLatchTracking();
+            ResetEntryLatencyTracking();
+        }
+
+        private void ResetGapLatchTracking()
+        {
             gapLatchArmed = false;
+            gapLatchDirection = 0;
+            gapLatchTargetPrice = 0.0;
+            gapLatchStopPrice = 0.0;
             gapTargetBreached = false;
             gapStopBreached = false;
         }
@@ -4265,6 +4438,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Research Log", Description = "Research-only, leave OFF for live trading. Records per fill the first-touch time to a 0.5pt grid (+/-30pt, 300s horizon), tracked past the TP/SL exit, so any TP/SL can be reconstructed offline.", GroupName = "F. Logging", Order = 3)]
         public bool EnablePathLog { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Execution Diagnostics", Description = "Write per-entry timing for signal-to-submit, first order state, and first fill callback. Leave OFF for lowest live-path overhead; enable only for a short latency test.", GroupName = "F. Logging", Order = 5)]
+        public bool EnableExecutionDiagnostics { get; set; }
+
         [Browsable(false)]
         [Display(Name = "Path Log File", Description = "Full path to the research log CSV. Blank auto-names EMAL_v{version}_research_log.csv in Documents.", GroupName = "F. Logging", Order = 4)]
         public string PathLogPath { get; set; }
@@ -4276,7 +4453,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1037,
+        version_1039,
         modified_2026_08_13
     }
 
