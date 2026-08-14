@@ -37,6 +37,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string StopExitSignal = StrategySignalPrefix + "Stop";
         private const string TargetExitSignal = StrategySignalPrefix + "Target";
         private const string TerminalExitSignalPrefix = StrategySignalPrefix + "Exit";
+        // Deliberately NOT under TerminalExitSignalPrefix ("EMALExit...") - the touch watchdog's
+        // market exit is a distinct, non-retrying path (see EvaluateTargetTouchWatchdog /
+        // SubmitTargetTouchMarketExit) and must not be swept into IsTerminalExitOrderName's
+        // retry-loop handling, which is unrelated to why this fires.
+        private const string TargetTouchExitSignal = StrategySignalPrefix + "TouchExit";
 
         public enum WebhookProvider
         {
@@ -102,6 +107,71 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool suppressProjectXNextExecutionExit;
         private DateTime projectXOrphanRecoveryDueUtc = DateTime.MinValue;
         private int projectXOrphanRecoveryCount;
+
+        // EMAL-1041: async ProjectX/webhook dispatch. Every ProjectX HTTP round trip used to run
+        // synchronously on the strategy thread; measured in live logs, that delayed real order
+        // submission (EnterLongLimit/EnterShortLimit) by a median 0.49-0.50s on instances with
+        // ProjectX configured, and widened the fill->protection window inside OnExecutionUpdate
+        // that the gap-latch work (EMAL-1037/1038) exists to protect. All ProjectX/webhook HTTP
+        // now runs on a single dedicated per-instance worker thread, fed by a FIFO queue; the
+        // strategy thread only ever enqueues a plain-value work item and returns immediately.
+        //
+        // Threading contract (READ THIS before touching any ProjectX method):
+        //   - The six "mirror state" fields the strategy thread still reads for gating decisions
+        //     (projectXEntryMirrorActive, projectXLastSyncedStopPrice/TargetPrice,
+        //     suppressProjectXNextExecutionExit, projectXOrphanRecoveryDueUtc/Count) are guarded
+        //     by projectXStateLock. EVERY read and write of these six fields, on either thread,
+        //     must go through the lock. The worker mutates them itself, from each work item's
+        //     OnComplete callback, after the HTTP call resolves - this project chose "guard the
+        //     fields with a lock and keep the mutation in the worker" over marshaling results
+        //     back to the strategy thread, since NT8 strategies have no cheap "run on next
+        //     strategy event" primitive to marshal onto.
+        //   - The other ProjectX fields (session token, cached accounts/contract, last order ids)
+        //     need NO lock: RunProjectXStartupPreflight touches them synchronously on the
+        //     strategy thread once, BEFORE the worker thread is started (see State.Realtime); from
+        //     that point on, only the worker thread ever touches them, and it processes the FIFO
+        //     queue one item at a time, so there is never more than one thread in this group at
+        //     once. Do not call EnsureProjectXSession/TryLoadProjectXAccounts/
+        //     TryResolveProjectXContractId/ProjectXPlaceOrder/ProjectXCancelOrders/
+        //     ProjectXCancelEntryOrder from the strategy thread after the worker has started, or
+        //     this guarantee breaks.
+        //   - The worker must NEVER touch NT objects/methods (Instrument, Position, Account,
+        //     Order, Time[0]/Close[0], TickSize). Anything instrument- or position-derived a
+        //     worker-side method needs (instrument root/key/expiry, TickSize, position side) is
+        //     captured as a plain value on the strategy thread at enqueue time and carried on the
+        //     ProjectXWorkItem. Print()/ProjectXLog() are the one documented exception - NT8's
+        //     Print() is safe from any thread.
+        //   - Termination (State.Terminated) is the one place ProjectX HTTP still runs
+        //     synchronously: the worker is stopped and drained (bounded wait) first, then
+        //     CancelWorkingEntryOnTermination/FlattenProjectXOrphanOnTermination call the same
+        //     execution methods directly on the strategy thread, bypassing the queue entirely.
+        //     This is safe specifically because the worker has already been joined by that point
+        //     - no concurrent access - and keeps FlattenProjectXOrphanOnTermination's existing
+        //     bounded-timeout flatten-verification behavior intact.
+        private sealed class ProjectXWorkItem
+        {
+            public string EventType;                       // "buy"/"sell"/"exit"/"cancel"; null for a protection-sync item
+            public double EntryPrice;
+            public double TakeProfit;
+            public double StopLoss;
+            public bool IsMarketEntry;
+            public int Quantity;
+            public ProjectXProtectionOrderKind? ProtectionKind;   // set only for a protection-sync item
+            public double ProtectionPrice;
+            public string ProtectionReason;
+            public int ProtectionExpectedSide;             // 1 = long, 0 = short; captured from Position before enqueue
+            public int ProtectionFallbackSize;              // captured Math.Abs(Position.Quantity) fallback, before enqueue
+            public string InstrumentRoot;
+            public string InstrumentKey;
+            public DateTime InstrumentExpiry;
+            public bool HasInstrumentExpiry;
+            public double TickSizeSnapshot;
+            public Action<bool, string> OnComplete;          // (success, rawResponse) - runs on the worker thread
+        }
+
+        private readonly object projectXStateLock = new object();
+        private System.Collections.Concurrent.BlockingCollection<ProjectXWorkItem> projectXQueue;
+        private System.Threading.Thread projectXWorkerThread;
 
         // Emergency-exit recovery. A rejected market exit must release its latch; otherwise a
         // later partial entry fill can leave the existing stop sized for only part of the position.
@@ -198,6 +268,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double gapLatchStopPrice;
         private bool gapTargetBreached;
         private bool gapStopBreached;
+        // Target touch-then-convert watchdog (2026-08-14, Codex/Steve, live incident): five
+        // accounts had identical working EMALTarget limits at the same price; price traded at
+        // the level, only two filled, the other three rode a 20-point reversal into the stop.
+        // Sibling to the gap latch above, same tick-driven pattern, but post-fill: watches
+        // desiredProtectionTargetPrice (the actual working target order's price, not a
+        // recomputed level) for a touch while the target is still working, and converts to a
+        // market exit if it doesn't fill within TargetTouchGraceMs. See
+        // EvaluateTargetTouchWatchdog. One-shot per trade; all reset in ResetGapLatchTracking.
+        private DateTime targetTouchedUtc = DateTime.MinValue;
+        private bool targetTouchWatchdogFired;
+        private bool targetTouchWatchdogCancelPending;
+        // Deliberately NOT reset per-trade - "logging once" per the design means once per
+        // strategy instance, not once per trade, so this assumption-violated warning doesn't
+        // spam every trade once it has fired.
+        private bool targetTouchWatchdogScopeGuardLogged;
         // Per-window bracket presets, resolved from the Setting popups in DataLoaded.
         private double us0928Tp, us0928Sl, us0955Tp, us0955Sl;
         private double entryFillValue;
@@ -379,7 +464,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1039;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1041;   // bump on every new cut; see enum comment
 
                 TradeParity = EMALTradeParity.Both;   // trade every candle by default
 
@@ -389,8 +474,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 MaxAccountBalance = 0.0;
                 MaxDailyProfit = 0.0;
-                EnableOrderRateGuard = true;
-                CancelEntryOnGapBreach = false;   // opt-in; OFF preserves EMAL-1038 fill behavior
+                EnableTargetTouchWatchdog = true;   // see comment on the property below
+                TargetTouchGraceMs = 400;
                 OrderActionLimitPerHour = 1100;
 
                 WebhookUrl = string.Empty;
@@ -487,7 +572,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (State == State.Realtime)
             {
                 TransitionTrackedOrderReferencesToRealtime();
+                WarnIfHiddenGatesNonDefault();
+                // Preflight runs first, strategy thread only, and warms the session/account/
+                // contract cache; the worker starts only after it completes, so those cache
+                // fields never see the strategy and worker threads touch them at the same time
+                // (see the threading-contract comment above the ProjectXWorkItem class).
                 RunProjectXStartupPreflight();
+                StartProjectXWorker();
 
                 // Draw the panel the moment the strategy goes live, instead of waiting for
                 // OnBarUpdate's first tick of a bar - historical warmup skips OnBarUpdate's
@@ -498,6 +589,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.Terminated)
             {
+                // Stop and drain the worker BEFORE the two termination methods below run their
+                // own direct synchronous sends - otherwise those methods could read stale mirror
+                // state while the worker is still mid-flight on an earlier item.
+                StopProjectXWorker();
                 CancelWorkingEntryOnTermination();
                 FlattenProjectXOrphanOnTermination();
                 ReleaseOrderRateReservation();
@@ -506,6 +601,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CloseFeatureLog();
                 DisposeInfoBoxOverlay();
             }
+        }
+
+        // 2026-08-14 (Steve): TradeMinute1a-1e and TradeParity were hidden from the dialog
+        // ([Browsable(false)], see the properties themselves) - tuning-era controls always run
+        // at their defaults live. Hiding a property doesn't stop it from loading a saved
+        // non-default value from an old template/instance, and once hidden that value can no
+        // longer be seen or changed in the dialog while still silently blocking entries. This is
+        // the only surface for that state: one Print per offending property, at startup only, no
+        // per-bar spam. Called once from State.Realtime.
+        private void WarnIfHiddenGatesNonDefault()
+        {
+            if (!TradeMinute1a)
+                Print("EMAL WARNING: hidden entry gate active — TradeMinute1a=false");
+            if (!TradeMinute1b)
+                Print("EMAL WARNING: hidden entry gate active — TradeMinute1b=false");
+            if (!TradeMinute1c)
+                Print("EMAL WARNING: hidden entry gate active — TradeMinute1c=false");
+            if (!TradeMinute1d)
+                Print("EMAL WARNING: hidden entry gate active — TradeMinute1d=false");
+            if (!TradeMinute1e)
+                Print("EMAL WARNING: hidden entry gate active — TradeMinute1e=false");
+            if (TradeParity != EMALTradeParity.Both)
+                Print(string.Format("EMAL WARNING: hidden entry gate active — TradeParity={0}", TradeParity));
         }
 
         private void SetupTimeZones()
@@ -937,8 +1055,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 minuteFilterBlockedBarCount));
             Print(string.Format("  trade parity        : {0}  (bars blocked: {1})",
                 TradeParity, parityBlockedBarCount));
-            Print(string.Format("  order rate guard    : {0} / {1} actions (entries blocked: {2})",
-                EnableOrderRateGuard, OrderActionLimitPerHour, rateGuardBlockedEntryCount));
+            Print(string.Format("  order rate guard    : always on / {0} actions (entries blocked: {1})",
+                OrderActionLimitPerHour, rateGuardBlockedEntryCount));
             Print(string.Format("  signals generated   : {0}", signalCount));
             Print(string.Format("  filled              : {0}  ({1:F1}%)",
                 filledCount, 100.0 * filledCount / signalCount));
@@ -963,6 +1081,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (gapLatchArmed)
                 EvaluateGapLatch(e.Price);
 
+            if (EnableTargetTouchWatchdog && !targetTouchWatchdogFired
+                && Position.MarketPosition != MarketPosition.Flat)
+            {
+                EvaluateTargetTouchWatchdog(e.Price, e.Time);
+            }
+
             if (EnableFeatureLog && pendingFillFeatures != null && pendingDirection != 0
                 && pendingFillPrice > 0.0)
             {
@@ -972,7 +1096,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (EnablePathLog && pathRecorders != null && pathRecorders.Count > 0)
                 UpdatePathRecorders();
 
-            if (projectXEntryMirrorActive && projectXOrphanRecoveryDueUtc != DateTime.MinValue)
+            bool projectXOrphanCheckDue;
+            lock (projectXStateLock)
+                projectXOrphanCheckDue = projectXEntryMirrorActive && projectXOrphanRecoveryDueUtc != DateTime.MinValue;
+            if (projectXOrphanCheckDue)
                 EvaluateProjectXOrphanRecovery();
 
             if (!string.IsNullOrWhiteSpace(terminalExitRetryReason))
@@ -1596,12 +1723,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool firstTickOfBar = IsFirstTickOfBar;
 
-            // Entry logic reads only completed EMA values and only on the first tick of a new
-            // minute. Historical processing still updates on every historical callback so the
-            // hosted EMA remains fully warmed before realtime. This preserves the re-enable
-            // out-of-range fix without recalculating the EMA on every live tick.
-            if (State == State.Historical || firstTickOfBar)
-                ema.Update();
+            // Keep the hosted EMA synchronized before any strategy gate can return. Update() is
+            // a no-op when the EMA is already current, so this is cheap.
+            //
+            // REVERTED to unconditional (EMAL-1040, 2026-08-14): EMAL-1038 gated this to only
+            // State.Historical or firstTickOfBar, to skip supposedly-redundant work on
+            // mid-bar live ticks. That reopened the exact out-of-range bug this comment used to
+            // warn about: NT8 Playback (QSJAW Part B) threw "Indicator 'EMA': ... accessing a
+            // series [barsAgo] with a value of 5 when there are only 4 bars on the chart" - the
+            // hosted EMA's internal bar tracking fell behind the primary series between
+            // first-ticks (most likely across a data gap/multi-bar catch-up) and the gap was
+            // never observed until Update() ran again. The thing the gating optimized away was
+            // already a no-op most of the time per the original comment above, so there was no
+            // real performance problem to trade this correctness risk against. Does not affect
+            // any decision EMAL ever made: signal logic only reads completed EMA values on the
+            // first tick of a new bar, and Update() ran at that exact moment either way - see
+            // EMAL-VERSION-STATUS.md's EMAL-1038.cs entry for the full analysis of why prior
+            // Playback results (QSJAW Part A) are not affected by this bug.
+            ema.Update();
 
             // Historical bars warm Playback/live instances only. Strategy Analyzer retains
             // the complete historical order/fill path through the Backtest account.
@@ -1756,8 +1895,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             CaptureEntryFeatures(direction, signalPrice, takeProfit, stopLoss);
 
-            SendPlannedProjectXEntry(direction, limitPrice, takeProfit, stopLoss);
-
             RecordNtOrderAction("entry");
 
             bool diagnosticsActive = IsExecutionDiagnosticsActive();
@@ -1772,6 +1909,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EnterLongLimit(0, true, Contracts, limitPrice, LongEntrySignal);
             else
                 EnterShortLimit(0, true, Contracts, limitPrice, ShortEntrySignal);
+
+            // EMAL-1041: moved from before EnterLongLimit/EnterShortLimit, same reasoning as the
+            // diagnostics block below it (EMAL-1038) - measured in live logs, the old ordering
+            // delayed real order submission a median 0.49-0.50s on ProjectX-configured instances.
+            // The enqueue itself is now non-blocking either way (see SendPlannedProjectXEntry),
+            // but keeping it strictly after the NT submission call matches the same rationale and
+            // keeps every non-trading side effect grouped together, post-submission.
+            SendPlannedProjectXEntry(direction, limitPrice, takeProfit, stopLoss);
 
             // Formatting/Print used to run before EnterLongLimit/EnterShortLimit. With many
             // same-instrument instances that serialized diagnostic work ahead of later
@@ -1906,8 +2051,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (!gapTargetBreached && price >= gapLatchTargetPrice)
                     {
                         gapTargetBreached = true;
-                        if (CancelEntryOnGapBreach)
-                            CancelEntryOrderIfActive();
+                        CancelEntryOrderIfActive();
                     }
                 }
                 else
@@ -1917,8 +2061,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     if (!gapTargetBreached && price <= gapLatchTargetPrice)
                     {
                         gapTargetBreached = true;
-                        if (CancelEntryOnGapBreach)
-                            CancelEntryOrderIfActive();
+                        CancelEntryOrderIfActive();
                     }
                 }
             }
@@ -1926,6 +2069,98 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Print(string.Format("{0} | GAP LATCH ERROR | {1}", lastTickTime, ex.Message));
             }
+        }
+
+        // Post-fill sibling of EvaluateGapLatch, same tick-driven pattern - no timers/threads,
+        // just comparing the current tick against a latched timestamp. Reads
+        // desiredProtectionTargetPrice (the price the actual working EMALTarget order was
+        // submitted/last confirmed at), not a recomputed level, per the design's explicit
+        // requirement. Guarded from the caller (OnMarketData) on EnableTargetTouchWatchdog,
+        // !targetTouchWatchdogFired, and position-not-flat, so this only runs when it could
+        // possibly still do something.
+        private void EvaluateTargetTouchWatchdog(double price, DateTime tickTime)
+        {
+            if (price <= 0.0
+                || terminalExitPending
+                || !IsOrderActive(profitTargetOrder))
+            {
+                return;
+            }
+
+            // Scope guard: this strategy is 1-contract only by design. If that assumption is
+            // ever violated, disable the watchdog inertly rather than build partial-fill
+            // quantity reconciliation it was explicitly asked not to have. Logged once per
+            // instance (see the field comment), not once per trade.
+            if (Contracts != 1 || Math.Abs(Position.Quantity) > 1)
+            {
+                if (!targetTouchWatchdogScopeGuardLogged)
+                {
+                    targetTouchWatchdogScopeGuardLogged = true;
+                    Print(string.Format(
+                        "{0} | EMAL TARGET TOUCH WATCHDOG DISABLED | Contracts={1} Position.Quantity={2} - "
+                        + "only supports the 1-contract case, feature is inert until this instance is reconfigured",
+                        tickTime, Contracts, Position.Quantity));
+                }
+                return;
+            }
+
+            double targetPrice = desiredProtectionTargetPrice;
+            if (targetPrice <= 0.0)
+                return;
+
+            bool isLong = Position.MarketPosition == MarketPosition.Long;
+            bool touched = isLong ? price >= targetPrice : price <= targetPrice;
+
+            if (targetTouchedUtc == DateTime.MinValue)
+            {
+                if (!touched)
+                    return;
+                targetTouchedUtc = tickTime;
+                return;
+            }
+
+            // No un-latching if price trades back away from the target: the touch already
+            // happened, and the grace period is measured from the first touch, not from
+            // continuous presence at the level.
+            double elapsedMs = (tickTime - targetTouchedUtc).TotalMilliseconds;
+            if (elapsedMs < TargetTouchGraceMs)
+                return;
+
+            // Grace elapsed and the target is still working (re-checked via IsOrderActive at the
+            // top of this method on every call) - convert. One-shot: set both flags immediately,
+            // before the cancel outcome is known, so no later tick can re-enter this method for
+            // the same trade (guarded in OnMarketData via targetTouchWatchdogFired).
+            targetTouchWatchdogFired = true;
+            targetTouchWatchdogCancelPending = true;
+            RecordNtOrderAction("touch-watchdog-cancel-target");
+            Print(string.Format(
+                "{0} | EMAL TARGET TOUCH WATCHDOG | price traded through target and limit unfilled after {1}ms "
+                + "- cancelling target for market exit | target={2:F2} price={3:F2}",
+                tickTime, TargetTouchGraceMs, targetPrice, price));
+            CancelOrder(profitTargetOrder);
+        }
+
+        // Called only after the target order's own cancel is CONFIRMED (a terminal OrderState
+        // callback), never speculatively - a limit can fill between the cancel request and the
+        // broker processing it, and firing both would flip the position. See the OnOrderUpdate
+        // hook that calls this.
+        private void SubmitTargetTouchMarketExit(string entrySignal)
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            MarketPosition positionDirection = Position.MarketPosition;
+            string fromEntrySignal = string.IsNullOrEmpty(entrySignal) ? protectedEntrySignal : entrySignal;
+
+            RecordNtOrderAction("touch-watchdog-exit");
+            Print(string.Format(
+                "{0} | EMAL TARGET TOUCH WATCHDOG | target cancel confirmed unfilled - exiting at market | side={1} entry={2}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0], positionDirection, fromEntrySignal));
+
+            if (positionDirection == MarketPosition.Long)
+                ExitLong(TargetTouchExitSignal, fromEntrySignal);
+            else
+                ExitShort(TargetTouchExitSignal, fromEntrySignal);
         }
 
         private void TransitionTrackedOrderReferencesToRealtime()
@@ -2101,6 +2336,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 TrackProtectiveOrder(order, orderState);
 
+                // Target touch watchdog: this callback is the cancel confirmation the watchdog
+                // is waiting on. Handle it here, before the generic Rejected branch below, so a
+                // cancel that comes back Rejected (order already gone) doesn't ALSO trigger the
+                // generic ProtectiveReject terminal exit - this is the one and only place that
+                // decides the outcome of a watchdog-initiated cancel.
+                if (orderName == TargetExitSignal && targetTouchWatchdogCancelPending)
+                {
+                    bool watchdogTerminalState = orderState == OrderState.Cancelled
+                        || orderState == OrderState.Filled
+                        || orderState == OrderState.Rejected;
+                    if (watchdogTerminalState)
+                    {
+                        targetTouchWatchdogCancelPending = false;
+                        if (filled > 0)
+                        {
+                            // The limit won the race - do nothing further. Position is already
+                            // flattening (or flat) via the normal TargetExitSignal fill path.
+                            Print(string.Format(
+                                "{0} | EMAL TARGET TOUCH WATCHDOG | target filled before cancel confirmed - no market exit sent",
+                                time));
+                        }
+                        else
+                        {
+                            string watchdogEntrySignal = string.IsNullOrEmpty(order.FromEntrySignal)
+                                ? protectedEntrySignal
+                                : order.FromEntrySignal;
+                            SubmitTargetTouchMarketExit(watchdogEntrySignal);
+                        }
+                        return;
+                    }
+                    // Not yet terminal (e.g. still Working/PartFilled momentarily after the
+                    // cancel request) - fall through to normal handling below and wait for the
+                    // next callback.
+                }
+
                 if (orderState == OrderState.Rejected)
                 {
                     Print(string.Format(
@@ -2134,6 +2404,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             limitPrice > 0.0 ? limitPrice : order.LimitPrice, "nt8-target-update");
                 }
 
+                return;
+            }
+
+            if (orderName == TargetTouchExitSignal)
+            {
+                // Deliberately no retry loop, per the design: "if the market exit is rejected,
+                // log and leave the stop in place rather than retrying in a loop." The
+                // protective stop is still working (untouched by any of this), so the position
+                // remains protected either way.
+                if (orderState == OrderState.Rejected)
+                {
+                    Print(string.Format(
+                        "{0} | EMAL TARGET TOUCH WATCHDOG | market exit rejected | error={1} comment={2} | "
+                        + "leaving protective stop in place, not retrying",
+                        time, error, comment ?? string.Empty));
+                }
                 return;
             }
 
@@ -2295,34 +2581,55 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (orderName == StopExitSignal
                 || orderName == TargetExitSignal
+                || orderName == TargetTouchExitSignal
                 || IsTerminalExitOrderName(orderName))
             {
                 bool positionIsFlat = marketPosition == MarketPosition.Flat
                     || Position.MarketPosition == MarketPosition.Flat;
 
-                if (positionIsFlat && projectXEntryMirrorActive)
+                bool mirrorActiveSnapshot;
+                lock (projectXStateLock)
+                    mirrorActiveSnapshot = projectXEntryMirrorActive;
+
+                if (positionIsFlat && mirrorActiveSnapshot)
                 {
-                    if (suppressProjectXNextExecutionExit)
+                    bool suppressed;
+                    lock (projectXStateLock)
                     {
-                        suppressProjectXNextExecutionExit = false;
-                        projectXEntryMirrorActive = false;
-                    }
-                    else if (SendWebhook("exit", 0.0, 0.0, 0.0, true, Math.Abs(quantity)))
-                    {
-                        projectXEntryMirrorActive = false;
-                    }
-                    else
-                    {
-                        projectXOrphanRecoveryCount++;
-                        projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(5);
+                        suppressed = suppressProjectXNextExecutionExit;
+                        if (suppressed)
+                        {
+                            suppressProjectXNextExecutionExit = false;
+                            projectXEntryMirrorActive = false;
+                            projectXLastSyncedStopPrice = 0.0;
+                            projectXLastSyncedTargetPrice = 0.0;
+                            projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                            projectXOrphanRecoveryCount = 0;
+                        }
                     }
 
-                    if (!projectXEntryMirrorActive)
+                    if (!suppressed)
                     {
-                        projectXLastSyncedStopPrice = 0.0;
-                        projectXLastSyncedTargetPrice = 0.0;
-                        projectXOrphanRecoveryDueUtc = DateTime.MinValue;
-                        projectXOrphanRecoveryCount = 0;
+                        int quantitySnapshot = Math.Abs(quantity);
+                        DispatchProjectXSimpleEvent("exit", quantitySnapshot, false, (sent, response) =>
+                        {
+                            lock (projectXStateLock)
+                            {
+                                if (sent)
+                                {
+                                    projectXEntryMirrorActive = false;
+                                    projectXLastSyncedStopPrice = 0.0;
+                                    projectXLastSyncedTargetPrice = 0.0;
+                                    projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                                    projectXOrphanRecoveryCount = 0;
+                                }
+                                else
+                                {
+                                    projectXOrphanRecoveryCount++;
+                                    projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(5);
+                                }
+                            }
+                        });
                     }
                 }
 
@@ -2612,7 +2919,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (Account != null)
                     Account.Cancel(new[] { entryOrder });
 
-                CancelProjectXEntryMirror(Position.MarketPosition == MarketPosition.Flat);
+                // synchronousDirect: called from State.Terminated, after the worker has already
+                // been stopped/drained (see OnStateChange) - the queue is gone, so this must run
+                // directly or it would silently do nothing.
+                CancelProjectXEntryMirror(Position.MarketPosition == MarketPosition.Flat, synchronousDirect: true);
                 Print(string.Format(
                     "{0} | strategy termination safety | working entry cancellation requested; protective exits left working",
                     lastTickTime != DateTime.MinValue ? lastTickTime : DateTime.Now));
@@ -2625,17 +2935,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void FlattenProjectXOrphanOnTermination()
         {
-            if (!projectXEntryMirrorActive
+            bool mirrorActive;
+            lock (projectXStateLock)
+                mirrorActive = projectXEntryMirrorActive;
+
+            if (!mirrorActive
                 || WebhookProviderType != WebhookProvider.ProjectX
                 || Position.MarketPosition != MarketPosition.Flat)
             {
                 return;
             }
 
+            // Deliberately still synchronous here (via SendWebhook -> SendProjectXWork directly,
+            // bypassing the queue) - called from State.Terminated, after StopProjectXWorker has
+            // already stopped/drained the worker, so this is the one place ProjectX HTTP is meant
+            // to block: the strategy is already shutting down and the existing bounded-timeout
+            // flatten verification (ProjectXFlattenPosition's 4s waits) needs to complete before
+            // termination proceeds.
             if (!SendWebhook("exit"))
                 Print("EMAL CRITICAL: ProjectX mirror could not be verified flat during strategy termination.");
             else
-                projectXEntryMirrorActive = false;
+                lock (projectXStateLock)
+                    projectXEntryMirrorActive = false;
         }
 
         // Clears the open-entry snapshot (openEntryPrice/openEntryDirection, read by the
@@ -2830,12 +3151,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             gapLatchStopPrice = 0.0;
             gapTargetBreached = false;
             gapStopBreached = false;
+            // Target touch watchdog resets alongside the gap latch, per the design - both are
+            // per-trade state that must not survive into the next trade. Deliberately excludes
+            // targetTouchWatchdogScopeGuardLogged, which is an instance-lifetime "logged once"
+            // flag, not per-trade state.
+            targetTouchedUtc = DateTime.MinValue;
+            targetTouchWatchdogFired = false;
+            targetTouchWatchdogCancelPending = false;
         }
 
         private bool IsLiveOrderRateGuardActive()
         {
-            return EnableOrderRateGuard
-                && State == State.Realtime
+            return State == State.Realtime
                 && !IsPlaybackOrderContext();
         }
 
@@ -3134,6 +3461,125 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        // ---- ProjectX async worker lifecycle (EMAL-1041) ----
+
+        private void StartProjectXWorker()
+        {
+            if (WebhookProviderType != WebhookProvider.ProjectX || projectXWorkerThread != null)
+                return;
+
+            projectXQueue = new System.Collections.Concurrent.BlockingCollection<ProjectXWorkItem>();
+            projectXWorkerThread = new System.Threading.Thread(ProjectXWorkerLoop)
+            {
+                IsBackground = true,
+                Name = "EMAL-ProjectX-" + orderRateInstanceId
+            };
+            projectXWorkerThread.Start();
+        }
+
+        // Called once from State.Terminated, BEFORE CancelWorkingEntryOnTermination/
+        // FlattenProjectXOrphanOnTermination run their own direct synchronous sends. Stops new
+        // items being accepted and waits (bounded) for whatever is already queued to finish in
+        // order, so those two termination methods see up-to-date mirror state. If the drain times
+        // out, log it and proceed anyway - termination must not hang indefinitely on ProjectX.
+        private void StopProjectXWorker()
+        {
+            if (projectXQueue == null)
+                return;
+
+            try
+            {
+                projectXQueue.CompleteAdding();
+                if (projectXWorkerThread != null && !projectXWorkerThread.Join(5000))
+                    ProjectXLog("ProjectX worker did not drain within 5s at termination - proceeding anyway");
+            }
+            catch (Exception ex)
+            {
+                ProjectXLog("ProjectX worker shutdown error | error=" + ex.Message);
+            }
+            finally
+            {
+                projectXWorkerThread = null;
+                projectXQueue = null;
+            }
+        }
+
+        private void EnqueueProjectXWork(ProjectXWorkItem item)
+        {
+            if (projectXQueue == null || item == null)
+                return;
+            try
+            {
+                projectXQueue.Add(item);
+            }
+            catch (InvalidOperationException)
+            {
+                // CompleteAdding() already called (mid-shutdown) - drop it; termination's own
+                // direct synchronous sends are what handle ProjectX from this point on.
+            }
+        }
+
+        private void ProjectXWorkerLoop()
+        {
+            foreach (ProjectXWorkItem item in projectXQueue.GetConsumingEnumerable())
+            {
+                try
+                {
+                    ExecuteProjectXWorkItem(item);
+                }
+                catch (Exception ex)
+                {
+                    // Must never let one bad item kill the worker - RealtimeErrorHandling=
+                    // IgnoreAllErrors means nothing may throw silently anywhere near the strategy
+                    // thread, and an exception here would otherwise end the foreach and leave every
+                    // later queued item (and everything enqueued after) permanently stuck.
+                    try { ProjectXLog("ProjectX worker item failed unexpectedly | error=" + ex.Message); }
+                    catch { /* logging itself must never take the worker down either */ }
+                }
+            }
+        }
+
+        // Runs entirely on the worker thread (or, during termination, directly on the strategy
+        // thread after the worker has been joined - see StopProjectXWorker). Touches only the
+        // item's captured plain values and the worker-only cache fields documented above the
+        // ProjectXWorkItem class - no NT object, no NT method, anywhere in this call graph.
+        private void ExecuteProjectXWorkItem(ProjectXWorkItem item)
+        {
+            bool success;
+            string response = null;
+            if (item.ProtectionKind.HasValue)
+            {
+                success = ExecuteProjectXProtectionSync(item, out response);
+            }
+            else
+            {
+                success = SendProjectXWork(item, out response);
+            }
+
+            if (item.OnComplete != null)
+            {
+                try
+                {
+                    item.OnComplete(success, response);
+                }
+                catch (Exception ex)
+                {
+                    try { ProjectXLog("ProjectX work item OnComplete failed | error=" + ex.Message); }
+                    catch { }
+                }
+            }
+        }
+
+        // Strategy-thread only. Captures everything the worker will need about the current
+        // instrument as plain values, so no worker-side code ever has to touch Instrument.
+        private void CaptureProjectXInstrumentSnapshot(out string root, out string key,
+            out DateTime expiry, out bool hasExpiry)
+        {
+            root = GetProjectXInstrumentRoot();
+            key = GetProjectXInstrumentKey();
+            hasExpiry = TryGetInstrumentExpiry(out expiry) || TryParseInstrumentExpiryFromFullName(out expiry);
+        }
+
         private bool IsProjectXConfigured()
         {
             return WebhookProviderType == WebhookProvider.ProjectX
@@ -3143,6 +3589,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 && (ProjectXTradeAllAccounts || !string.IsNullOrWhiteSpace(ProjectXAccountId));
         }
 
+        // Prepares and enqueues the ProjectX entry mirror; does not block. Moved to run AFTER
+        // EnterLongLimit/EnterShortLimit in TrySubmitQueuedEntry (EMAL-1041) - previously ran
+        // before it, which is exactly the delay this whole change exists to remove, but the
+        // enqueue itself is cheap either way now; kept post-submission to match the diagnostics
+        // ordering already established in EMAL-1038 for the same reason.
         private void SendPlannedProjectXEntry(int direction, double plannedEntryPrice,
             double takeProfitPoints, double stopLossPoints)
         {
@@ -3156,110 +3607,215 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             double stop = Instrument.MasterInstrument.RoundToTickSize(
                 direction > 0 ? anchor - stopLossPoints : anchor + stopLossPoints);
 
-            bool hadUnresolvedMirror = projectXEntryMirrorActive;
-            bool sent = SendWebhook(
-                direction > 0 ? "buy" : "sell",
-                entry,
-                target,
-                stop,
-                false, // Entry Order Type is fixed to Limit (2026-08-06), never Market
-                Contracts);
+            string instrumentRoot, instrumentKey;
+            DateTime instrumentExpiry;
+            bool hasInstrumentExpiry;
+            CaptureProjectXInstrumentSnapshot(out instrumentRoot, out instrumentKey,
+                out instrumentExpiry, out hasInstrumentExpiry);
 
-            if (sent)
+            bool hadUnresolvedMirror;
+            lock (projectXStateLock)
+                hadUnresolvedMirror = projectXEntryMirrorActive;
+
+            var item = new ProjectXWorkItem
             {
-                projectXEntryMirrorActive = true;
-                suppressProjectXNextExecutionExit = false;
-                projectXLastSyncedStopPrice = stop;
-                projectXLastSyncedTargetPrice = target;
-                projectXOrphanRecoveryDueUtc = DateTime.MinValue;
-                projectXOrphanRecoveryCount = 0;
-            }
-            else if (hadUnresolvedMirror)
-            {
-                projectXEntryMirrorActive = true;
-                projectXOrphanRecoveryCount++;
-                projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(5);
-            }
+                EventType = direction > 0 ? "buy" : "sell",
+                EntryPrice = entry,
+                TakeProfit = target,
+                StopLoss = stop,
+                IsMarketEntry = false,   // Entry Order Type is fixed to Limit (2026-08-06), never Market
+                Quantity = Contracts,
+                InstrumentRoot = instrumentRoot,
+                InstrumentKey = instrumentKey,
+                InstrumentExpiry = instrumentExpiry,
+                HasInstrumentExpiry = hasInstrumentExpiry,
+                TickSizeSnapshot = TickSize,
+                OnComplete = (sent, response) =>
+                {
+                    lock (projectXStateLock)
+                    {
+                        if (sent)
+                        {
+                            projectXEntryMirrorActive = true;
+                            suppressProjectXNextExecutionExit = false;
+                            projectXLastSyncedStopPrice = stop;
+                            projectXLastSyncedTargetPrice = target;
+                            projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                            projectXOrphanRecoveryCount = 0;
+                        }
+                        else if (hadUnresolvedMirror)
+                        {
+                            projectXEntryMirrorActive = true;
+                            projectXOrphanRecoveryCount++;
+                            projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(5);
+                        }
+                    }
+                }
+            };
+
+            EnqueueProjectXWork(item);
         }
 
-        private void CancelProjectXEntryMirror(bool flattenIfOrphaned)
+        // synchronousDirect=true is for State.Terminated callers only (see StopProjectXWorker) -
+        // the worker has already been joined by then, so calling straight into
+        // ExecuteProjectXWorkItem here is safe and deliberately bypasses the queue.
+        private void CancelProjectXEntryMirror(bool flattenIfOrphaned, bool synchronousDirect = false)
         {
-            if (!projectXEntryMirrorActive || WebhookProviderType != WebhookProvider.ProjectX)
+            bool active;
+            lock (projectXStateLock)
+                active = projectXEntryMirrorActive;
+            if (!active || WebhookProviderType != WebhookProvider.ProjectX)
                 return;
 
-            if (flattenIfOrphaned)
+            if (!flattenIfOrphaned)
             {
-                if (SendWebhook("exit"))
+                // Original behavior: this "cancel" path never branched on the send result, and
+                // always cleared the synced prices immediately - neither depends on the HTTP
+                // outcome, so both can happen right here regardless of sync/async.
+                lock (projectXStateLock)
                 {
-                    projectXEntryMirrorActive = false;
-                    projectXOrphanRecoveryDueUtc = DateTime.MinValue;
-                    projectXOrphanRecoveryCount = 0;
+                    projectXLastSyncedStopPrice = 0.0;
+                    projectXLastSyncedTargetPrice = 0.0;
                 }
-                else
-                {
-                    projectXOrphanRecoveryCount++;
-                    projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(
-                        Math.Min(60, 5 * projectXOrphanRecoveryCount));
-                    ProjectXLog(string.Format(
-                        "ProjectX orphan flatten retry scheduled | attempt={0} due={1:HH:mm:ss} UTC",
-                        projectXOrphanRecoveryCount, projectXOrphanRecoveryDueUtc));
-                }
-            }
-            else
-            {
-                SendWebhook("cancel");
+                DispatchProjectXSimpleEvent("cancel", 0, synchronousDirect, null);
+                return;
             }
 
-            if (!projectXEntryMirrorActive || !flattenIfOrphaned)
+            DispatchProjectXSimpleEvent("exit", 0, synchronousDirect, (sent, response) =>
             {
-                projectXLastSyncedStopPrice = 0.0;
-                projectXLastSyncedTargetPrice = 0.0;
-            }
+                lock (projectXStateLock)
+                {
+                    if (sent)
+                    {
+                        projectXEntryMirrorActive = false;
+                        projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                        projectXOrphanRecoveryCount = 0;
+                        projectXLastSyncedStopPrice = 0.0;
+                        projectXLastSyncedTargetPrice = 0.0;
+                    }
+                    else
+                    {
+                        projectXOrphanRecoveryCount++;
+                        projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(
+                            Math.Min(60, 5 * projectXOrphanRecoveryCount));
+                        ProjectXLog(string.Format(
+                            "ProjectX orphan flatten retry scheduled | attempt={0} due={1:HH:mm:ss} UTC",
+                            projectXOrphanRecoveryCount, projectXOrphanRecoveryDueUtc));
+                    }
+                }
+            });
+        }
+
+        // Shared helper for the "exit"/"cancel" (no entry payload) ProjectX events: builds the
+        // work item, captures the instrument snapshot, and either enqueues it (normal trading
+        // path) or runs it immediately on the calling thread (termination path only - see
+        // synchronousDirect callers). quantityOverride 0 means "use Contracts", same default
+        // SendWebhook always used.
+        private void DispatchProjectXSimpleEvent(string eventType, int quantityOverride,
+            bool synchronousDirect, Action<bool, string> onComplete)
+        {
+            string instrumentRoot, instrumentKey;
+            DateTime instrumentExpiry;
+            bool hasInstrumentExpiry;
+            CaptureProjectXInstrumentSnapshot(out instrumentRoot, out instrumentKey,
+                out instrumentExpiry, out hasInstrumentExpiry);
+
+            var item = new ProjectXWorkItem
+            {
+                EventType = eventType,
+                Quantity = quantityOverride > 0 ? quantityOverride : Contracts,
+                IsMarketEntry = false,   // unused for "exit"/"cancel" downstream; matches SendWebhook's own default
+                InstrumentRoot = instrumentRoot,
+                InstrumentKey = instrumentKey,
+                InstrumentExpiry = instrumentExpiry,
+                HasInstrumentExpiry = hasInstrumentExpiry,
+                TickSizeSnapshot = TickSize,
+                OnComplete = onComplete
+            };
+
+            if (synchronousDirect)
+                ExecuteProjectXWorkItem(item);
+            else
+                EnqueueProjectXWork(item);
         }
 
         private void EvaluateProjectXOrphanRecovery()
         {
-            if (!projectXEntryMirrorActive
+            bool active;
+            DateTime dueUtc;
+            lock (projectXStateLock)
+            {
+                active = projectXEntryMirrorActive;
+                dueUtc = projectXOrphanRecoveryDueUtc;
+            }
+
+            if (!active
                 || WebhookProviderType != WebhookProvider.ProjectX
                 || Position.MarketPosition != MarketPosition.Flat
                 || IsOrderActive(entryOrder)
-                || projectXOrphanRecoveryDueUtc == DateTime.MinValue
-                || DateTime.UtcNow < projectXOrphanRecoveryDueUtc)
+                || dueUtc == DateTime.MinValue
+                || DateTime.UtcNow < dueUtc)
             {
                 return;
             }
 
-            if (SendWebhook("exit"))
+            DispatchProjectXSimpleEvent("exit", 0, false, (sent, response) =>
             {
-                projectXEntryMirrorActive = false;
-                projectXLastSyncedStopPrice = 0.0;
-                projectXLastSyncedTargetPrice = 0.0;
-                projectXOrphanRecoveryDueUtc = DateTime.MinValue;
-                projectXOrphanRecoveryCount = 0;
-                ProjectXLog("ProjectX orphan flatten recovery succeeded");
-            }
-            else
-            {
-                projectXOrphanRecoveryCount++;
-                projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(
-                    Math.Min(60, 5 * projectXOrphanRecoveryCount));
-            }
+                lock (projectXStateLock)
+                {
+                    if (sent)
+                    {
+                        projectXEntryMirrorActive = false;
+                        projectXLastSyncedStopPrice = 0.0;
+                        projectXLastSyncedTargetPrice = 0.0;
+                        projectXOrphanRecoveryDueUtc = DateTime.MinValue;
+                        projectXOrphanRecoveryCount = 0;
+                        ProjectXLog("ProjectX orphan flatten recovery succeeded");
+                    }
+                    else
+                    {
+                        projectXOrphanRecoveryCount++;
+                        projectXOrphanRecoveryDueUtc = DateTime.UtcNow.AddSeconds(
+                            Math.Min(60, 5 * projectXOrphanRecoveryCount));
+                    }
+                }
+            });
         }
 
         private void SendExplicitProjectXExit(string reason)
         {
-            if (!projectXEntryMirrorActive || WebhookProviderType != WebhookProvider.ProjectX)
+            bool active;
+            lock (projectXStateLock)
+                active = projectXEntryMirrorActive;
+            if (!active || WebhookProviderType != WebhookProvider.ProjectX)
                 return;
 
-            bool sent = SendWebhook("exit", 0.0, 0.0, 0.0, true, Math.Abs(Position.Quantity));
-            if (sent)
+            int quantitySnapshot = Math.Abs(Position.Quantity);
+            DispatchProjectXSimpleEvent("exit", quantitySnapshot, false, (sent, response) =>
             {
-                suppressProjectXNextExecutionExit = true;
-                Print(string.Format("{0} | ProjectX explicit exit sent | reason={1}",
-                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0], reason));
-            }
+                if (!sent)
+                    return;
+                lock (projectXStateLock)
+                    suppressProjectXNextExecutionExit = true;
+                // Time[0]/Close[0] are not valid off the strategy thread - unlike ProjectXLog
+                // (which already avoids Time[0]), this Print previously used it as a fallback;
+                // dropped here since this callback can run on the worker thread.
+                try
+                {
+                    Print(string.Format("{0} | ProjectX explicit exit sent | reason={1}",
+                        lastTickTime != DateTime.MinValue ? lastTickTime : DateTime.Now, reason));
+                }
+                catch { }
+            });
         }
 
+        // EMAL-1041: every trading-path ProjectX call site now builds a ProjectXWorkItem itself
+        // and either enqueues it or (termination only) executes it directly - see
+        // DispatchProjectXSimpleEvent/CancelProjectXEntryMirror's synchronousDirect parameter.
+        // The only remaining caller of this method is FlattenProjectXOrphanOnTermination, which
+        // is termination-only by design (runs on the strategy thread, after the worker has
+        // already been stopped/drained), so the ProjectX branch below still executes directly
+        // and synchronously - never through the queue - deliberately, not as an oversight.
         private bool SendWebhook(string eventType, double entryPrice = 0.0, double takeProfit = 0.0,
             double stopLoss = 0.0, bool isMarketEntry = false, int quantityOverride = 0)
         {
@@ -3268,8 +3824,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             int quantity = quantityOverride > 0 ? quantityOverride : Math.Max(1, Contracts);
             if (WebhookProviderType == WebhookProvider.ProjectX)
-                return IsProjectXConfigured()
-                    && SendProjectX(eventType, entryPrice, takeProfit, stopLoss, isMarketEntry, quantity);
+            {
+                if (!IsProjectXConfigured())
+                    return false;
+
+                string instrumentRoot, instrumentKey;
+                DateTime instrumentExpiry;
+                bool hasInstrumentExpiry;
+                CaptureProjectXInstrumentSnapshot(out instrumentRoot, out instrumentKey,
+                    out instrumentExpiry, out hasInstrumentExpiry);
+
+                var directItem = new ProjectXWorkItem
+                {
+                    EventType = eventType,
+                    EntryPrice = entryPrice,
+                    TakeProfit = takeProfit,
+                    StopLoss = stopLoss,
+                    IsMarketEntry = isMarketEntry,
+                    Quantity = quantity,
+                    InstrumentRoot = instrumentRoot,
+                    InstrumentKey = instrumentKey,
+                    InstrumentExpiry = instrumentExpiry,
+                    HasInstrumentExpiry = hasInstrumentExpiry,
+                    TickSizeSnapshot = TickSize
+                };
+                string projectXResponse;
+                return SendProjectXWork(directItem, out projectXResponse);
+            }
 
             if (string.IsNullOrWhiteSpace(WebhookUrl))
                 return false;
@@ -3312,9 +3893,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        private bool SendProjectX(string eventType, double entryPrice, double takeProfit,
-            double stopLoss, bool isMarketEntry, int quantity)
+        // Worker-thread body for an entry/exit/cancel item. Renamed from SendProjectX (EMAL-1041)
+        // to make clear this now only ever runs on the worker (or, during termination, directly
+        // on the strategy thread after the worker has been joined - see StopProjectXWorker).
+        // Touches only item.* and the worker-only session/account/contract cache.
+        private bool SendProjectXWork(ProjectXWorkItem item, out string response)
         {
+            response = null;
             if (!IsProjectXConfigured())
                 return false;
 
@@ -3323,9 +3908,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             List<ProjectXAccountInfo> targetAccounts;
             string contractId;
-            if (!TryGetProjectXTargets(out targetAccounts, out contractId))
+            if (!TryGetProjectXTargets(item.InstrumentRoot, item.InstrumentKey, item.InstrumentExpiry,
+                item.HasInstrumentExpiry, out targetAccounts, out contractId))
                 return false;
 
+            string eventType = item.EventType;
             bool sentAny = false;
             foreach (ProjectXAccountInfo account in targetAccounts)
             {
@@ -3336,8 +3923,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         case "buy":
                         case "sell":
                             if (ProjectXPrepareForEntry(account.Id, contractId)
-                                && ProjectXPlaceOrder(eventType, account.Id, contractId, entryPrice,
-                                    takeProfit, stopLoss, isMarketEntry, quantity))
+                                && ProjectXPlaceOrder(eventType, account.Id, contractId, item.EntryPrice,
+                                    item.TakeProfit, item.StopLoss, item.IsMarketEntry, item.Quantity,
+                                    item.TickSizeSnapshot))
                             {
                                 sentAny = true;
                             }
@@ -3365,6 +3953,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return sentAny;
         }
 
+        // Strategy-thread only, called once from State.Realtime, BEFORE the worker thread is
+        // started (see OnStateChange) - this is what makes it safe for the session/account/
+        // contract cache fields below to need no lock: this call and the worker's later calls
+        // never overlap.
         private void RunProjectXStartupPreflight()
         {
             if (WebhookProviderType != WebhookProvider.ProjectX)
@@ -3376,9 +3968,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
+            string instrumentRoot, instrumentKey;
+            DateTime instrumentExpiry;
+            bool hasInstrumentExpiry;
+            CaptureProjectXInstrumentSnapshot(out instrumentRoot, out instrumentKey,
+                out instrumentExpiry, out hasInstrumentExpiry);
+
             ProjectXLog(string.Format(
                 "ProjectX startup preflight begin | instrument={0} selectors={1}",
-                GetProjectXInstrumentKey(), ProjectXAccountId ?? string.Empty));
+                instrumentKey, ProjectXAccountId ?? string.Empty));
 
             if (!EnsureProjectXSession())
             {
@@ -3388,7 +3986,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             List<ProjectXAccountInfo> targets;
             string contractId;
-            if (!TryGetProjectXTargets(out targets, out contractId))
+            if (!TryGetProjectXTargets(instrumentRoot, instrumentKey, instrumentExpiry, hasInstrumentExpiry,
+                out targets, out contractId))
             {
                 ProjectXLog("ProjectX startup preflight failed | stage=targets");
                 return;
@@ -3431,11 +4030,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return true;
         }
 
-        private bool TryGetProjectXTargets(out List<ProjectXAccountInfo> targetAccounts, out string contractId)
+        private bool TryGetProjectXTargets(string instrumentRoot, string instrumentKey,
+            DateTime instrumentExpiry, bool hasInstrumentExpiry,
+            out List<ProjectXAccountInfo> targetAccounts, out string contractId)
         {
             targetAccounts = null;
             contractId = null;
-            if (!TryResolveProjectXContractId(out contractId))
+            if (!TryResolveProjectXContractId(instrumentRoot, instrumentKey, instrumentExpiry,
+                hasInstrumentExpiry, out contractId))
                 return false;
 
             List<ProjectXAccountInfo> accounts;
@@ -3494,7 +4096,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return accounts.Count > 0;
         }
 
-        private bool TryResolveProjectXContractId(out string contractId)
+        // instrumentRoot/instrumentKey/instrumentExpiry are captured on the strategy thread
+        // (CaptureProjectXInstrumentSnapshot) before this is ever called - no Instrument access
+        // here, so this is safe from the worker thread.
+        private bool TryResolveProjectXContractId(string instrumentRoot, string instrumentKey,
+            DateTime instrumentExpiry, bool hasInstrumentExpiry, out string contractId)
         {
             contractId = null;
             if (!string.IsNullOrWhiteSpace(ProjectXContractId))
@@ -3503,7 +4109,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return true;
             }
 
-            string instrumentKey = GetProjectXInstrumentKey();
             if (!string.IsNullOrWhiteSpace(projectXResolvedContractId)
                 && string.Equals(projectXResolvedInstrumentKey, instrumentKey, StringComparison.OrdinalIgnoreCase))
             {
@@ -3511,17 +4116,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return true;
             }
 
-            string root = GetProjectXInstrumentRoot();
-            if (string.IsNullOrWhiteSpace(root))
+            if (string.IsNullOrWhiteSpace(instrumentRoot))
                 return false;
 
-            DateTime expiry;
-            string suffix = TryGetInstrumentExpiry(out expiry) || TryParseInstrumentExpiryFromFullName(out expiry)
-                ? GetProjectXFuturesMonthCode(expiry.Month) + expiry.ToString("yy", CultureInfo.InvariantCulture)
+            string suffix = hasInstrumentExpiry
+                ? GetProjectXFuturesMonthCode(instrumentExpiry.Month)
+                    + instrumentExpiry.ToString("yy", CultureInfo.InvariantCulture)
                 : string.Empty;
 
             List<ProjectXContractInfo> contracts;
-            if (!TrySearchProjectXContracts(root, suffix, out contracts))
+            if (!TrySearchProjectXContracts(instrumentRoot, suffix, out contracts))
                 return false;
 
             ProjectXContractInfo selected = SelectProjectXContract(suffix, contracts);
@@ -3671,11 +4275,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 string.Format(CultureInfo.InvariantCulture, "{0}:{1}", a.Id, a.Name ?? string.Empty)).ToArray());
         }
 
+        // Strategy-thread only: all the cheap gating/dedup checks stay here (no HTTP, so no
+        // reason to touch the queue at all if nothing would actually change), then captures
+        // everything the worker needs and enqueues. The actual HTTP work happens in
+        // ExecuteProjectXProtectionSync, entirely on the worker thread. This is the call site
+        // v1037/1038's gap-latch work exists to keep clear of the fill callback - it runs from
+        // inside OnExecutionUpdate, and used to block on HTTP right there.
         private void SyncProjectXProtectionUpdate(ProjectXProtectionOrderKind kind, double price, string reason)
         {
+            bool mirrorActive;
+            lock (projectXStateLock)
+                mirrorActive = projectXEntryMirrorActive;
+
             if (State != State.Realtime
                 || !IsProjectXConfigured()
-                || !projectXEntryMirrorActive
+                || !mirrorActive
                 || Position.MarketPosition == MarketPosition.Flat)
             {
                 return;
@@ -3685,26 +4299,71 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (price <= 0.0 || double.IsNaN(price) || double.IsInfinity(price))
                 return;
 
-            double lastPrice = kind == ProjectXProtectionOrderKind.StopLoss
-                ? projectXLastSyncedStopPrice
-                : projectXLastSyncedTargetPrice;
+            double lastPrice;
+            lock (projectXStateLock)
+            {
+                lastPrice = kind == ProjectXProtectionOrderKind.StopLoss
+                    ? projectXLastSyncedStopPrice
+                    : projectXLastSyncedTargetPrice;
+            }
             if (lastPrice > 0.0 && Math.Abs(lastPrice - price) < TickSize / 2.0)
                 return;
 
+            string instrumentRoot, instrumentKey;
+            DateTime instrumentExpiry;
+            bool hasInstrumentExpiry;
+            CaptureProjectXInstrumentSnapshot(out instrumentRoot, out instrumentKey,
+                out instrumentExpiry, out hasInstrumentExpiry);
+
+            var item = new ProjectXWorkItem
+            {
+                ProtectionKind = kind,
+                ProtectionPrice = price,
+                ProtectionReason = reason ?? string.Empty,
+                ProtectionExpectedSide = Position.MarketPosition == MarketPosition.Long ? 1 : 0,
+                ProtectionFallbackSize = Math.Max(1, Math.Abs(Position.Quantity)),
+                InstrumentRoot = instrumentRoot,
+                InstrumentKey = instrumentKey,
+                InstrumentExpiry = instrumentExpiry,
+                HasInstrumentExpiry = hasInstrumentExpiry,
+                TickSizeSnapshot = TickSize,
+                OnComplete = (modifiedAny, response) =>
+                {
+                    if (!modifiedAny)
+                        return;
+                    lock (projectXStateLock)
+                    {
+                        if (kind == ProjectXProtectionOrderKind.StopLoss)
+                            projectXLastSyncedStopPrice = price;
+                        else
+                            projectXLastSyncedTargetPrice = price;
+                    }
+                }
+            };
+
+            EnqueueProjectXWork(item);
+        }
+
+        // Worker-thread body for a protection-sync item. Touches only item.* and the
+        // worker-only session/account/contract cache - no NT object, no NT method.
+        private bool ExecuteProjectXProtectionSync(ProjectXWorkItem item, out string response)
+        {
+            response = null;
             if (!EnsureProjectXSession())
-                return;
+                return false;
 
             List<ProjectXAccountInfo> targets;
             string contractId;
-            if (!TryGetProjectXTargets(out targets, out contractId))
-                return;
+            if (!TryGetProjectXTargets(item.InstrumentRoot, item.InstrumentKey, item.InstrumentExpiry,
+                item.HasInstrumentExpiry, out targets, out contractId))
+                return false;
 
+            ProjectXProtectionOrderKind kind = item.ProtectionKind.Value;
             bool modifiedAny = false;
-            int expectedSide = Position.MarketPosition == MarketPosition.Long ? 1 : 0;
             foreach (ProjectXAccountInfo account in targets)
             {
                 Dictionary<string, object> order = SelectProjectXProtectionOrder(
-                    account.Id, contractId, kind, expectedSide);
+                    account.Id, contractId, kind, item.ProtectionExpectedSide);
                 if (order == null)
                 {
                     ProjectXLog(string.Format(
@@ -3718,25 +4377,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (!TryGetProjectXOrderLong(order, "id", out orderId) || orderId <= 0)
                     continue;
                 if (!TryGetProjectXOrderInt(order, "size", out size) || size <= 0)
-                    size = Math.Max(1, Math.Abs(Position.Quantity));
+                    size = item.ProtectionFallbackSize;
 
-                string response = ProjectXModifyProtectionOrder(account.Id, orderId, size, kind, price);
+                response = ProjectXModifyProtectionOrder(account.Id, orderId, size, kind, item.ProtectionPrice);
                 bool success;
                 if (!TryGetJsonBool(response, "success", out success) || success)
                     modifiedAny = true;
                 else
                     ProjectXLog(string.Format(
                         "ProjectX protection sync failed | account={0} order={1} kind={2} price={3:0.00} reason={4}",
-                        account.Id, orderId, kind, price, reason));
+                        account.Id, orderId, kind, item.ProtectionPrice, item.ProtectionReason));
             }
 
-            if (modifiedAny)
-            {
-                if (kind == ProjectXProtectionOrderKind.StopLoss)
-                    projectXLastSyncedStopPrice = price;
-                else
-                    projectXLastSyncedTargetPrice = price;
-            }
+            return modifiedAny;
         }
 
         private Dictionary<string, object> SelectProjectXProtectionOrder(int accountId, string contractId,
@@ -3768,29 +4421,33 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private string ProjectXModifyProtectionOrder(int accountId, long orderId, int size,
             ProjectXProtectionOrderKind kind, double price)
         {
-            string limit = kind == ProjectXProtectionOrderKind.TakeProfit ? FormatProjectXPrice(price) : "null";
-            string stop = kind == ProjectXProtectionOrderKind.StopLoss ? FormatProjectXPrice(price) : "null";
+            string limit = kind == ProjectXProtectionOrderKind.TakeProfit ? FormatProjectXPriceRaw(price) : "null";
+            string stop = kind == ProjectXProtectionOrderKind.StopLoss ? FormatProjectXPriceRaw(price) : "null";
             string json = string.Format(CultureInfo.InvariantCulture,
                 "{{\"accountId\":{0},\"orderId\":{1},\"size\":{2},\"limitPrice\":{3},\"stopPrice\":{4},\"trailPrice\":null}}",
                 accountId, orderId, Math.Max(1, size), limit, stop);
             return ProjectXPost("/api/Order/modify", json, true);
         }
 
+        // entryPrice/takeProfit/stopLoss arrive already tick-rounded from SendPlannedProjectXEntry
+        // (strategy thread, before enqueue) - no Instrument access needed or wanted here.
+        // tickSize is the enqueue-time TickSize snapshot (ProjectXWorkItem.TickSizeSnapshot).
         private bool ProjectXPlaceOrder(string side, int accountId, string contractId,
-            double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity)
+            double entryPrice, double takeProfit, double stopLoss, bool isMarketEntry, int quantity,
+            double tickSize)
         {
             int orderSide = string.Equals(side, "buy", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             int orderType = isMarketEntry ? 2 : 1;
             int normalizedQuantity = Math.Max(1, quantity);
-            double entry = Instrument.MasterInstrument.RoundToTickSize(entryPrice);
+            double entry = entryPrice;
             bool isLong = orderSide == 0;
             int tpTicks = NormalizeProjectXBracketTicks(
-                PriceToTicks(takeProfit - entry), 4, isLong ? 1 : -1);
+                PriceToTicks(takeProfit - entry, tickSize), 4, isLong ? 1 : -1);
             int slTicks = NormalizeProjectXBracketTicks(
-                PriceToTicks(stopLoss - entry), 1, isLong ? -1 : 1);
+                PriceToTicks(stopLoss - entry, tickSize), 1, isLong ? -1 : 1);
             string limitPart = isMarketEntry
                 ? string.Empty
-                : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", FormatProjectXPrice(entry));
+                : string.Format(CultureInfo.InvariantCulture, ",\"limitPrice\":{0}", FormatProjectXPriceRaw(entry));
             string json = string.Format(CultureInfo.InvariantCulture,
                 "{{\"accountId\":{0},\"contractId\":\"{1}\",\"type\":{2},\"side\":{3},\"size\":{4}{5},\"takeProfitBracket\":{{\"quantity\":{6},\"type\":1,\"ticks\":{7}}},\"stopLossBracket\":{{\"quantity\":{6},\"type\":4,\"ticks\":{8}}}}}",
                 accountId, JsonEscape(contractId), orderType, orderSide, normalizedQuantity,
@@ -3984,16 +4641,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
         }
 
+        // Strategy-thread only (SendWebhook's TradersPost branch, the one ProjectX-unrelated
+        // caller) - touches Instrument, so must never be called from the worker.
         private string FormatProjectXPrice(double price)
         {
             return Instrument.MasterInstrument.RoundToTickSize(price)
                 .ToString("0.########", CultureInfo.InvariantCulture);
         }
 
-        private int PriceToTicks(double distance)
+        // Worker-safe: every ProjectX caller of this (ProjectXPlaceOrder, ProjectXModifyProtectionOrder)
+        // already receives a price rounded on the strategy thread before enqueue - no Instrument
+        // access needed or wanted here.
+        private string FormatProjectXPriceRaw(double alreadyRoundedPrice)
         {
-            return TickSize > 0.0
-                ? (int)Math.Round(distance / TickSize, MidpointRounding.AwayFromZero)
+            return alreadyRoundedPrice.ToString("0.########", CultureInfo.InvariantCulture);
+        }
+
+        // tickSize is captured on the strategy thread at enqueue time (ProjectXWorkItem.TickSizeSnapshot)
+        // rather than read from the NT TickSize property here, so this is safe on the worker thread.
+        private int PriceToTicks(double distance, double tickSize)
+        {
+            return tickSize > 0.0
+                ? (int)Math.Round(distance / tickSize, MidpointRounding.AwayFromZero)
                 : 0;
         }
 
@@ -4273,7 +4942,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return bool.TryParse(raw.ToString(), out value);
         }
 
+        // Hidden from the dialog (2026-08-14, Steve) - tuning-era control, always run at
+        // default (Both) live. [Browsable(false)] only; still [NinjaScriptProperty] so it keeps
+        // serializing/round-tripping exactly as before. See the startup non-default warning in
+        // OnStateChange (State.Realtime) if this is ever hidden AND non-default at the same time.
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Trade Parity", Description = "Reduce trade count by trading only alternate candles. Even = even-numbered minute; Odd = odd-numbered minute; Both = every candle (current behaviour).", GroupName = "B. Sessions", Order = 14)]
         public EMALTradeParity TradeParity { get; set; }
 
@@ -4290,23 +4964,44 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Max Daily Profit", Description = "Maximum daily account profit in currency, measured from the first tick's net liquidation each trading day (resets 18:00 ET). Reaching it cancels pending entries, flattens open positions, and blocks new entries for the rest of that trading day. 0 disables.", GroupName = "C. Risk", Order = 1)]
         public double MaxDailyProfit { get; set; }
 
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Order Rate Guard", Description = "Share a rolling EMAL order-action budget across all strategy instances on the same NT8 connection. Blocks new entries only; protection and exits are never blocked.", GroupName = "C. Risk", Order = 2)]
-        public bool EnableOrderRateGuard { get; set; }
-
+        // Order rate guard is always on (2026-08-14, Steve: "hard code to enabled state and
+        // remove the user option ... always on", same pattern as Cancel Entry On Gap Breach) -
+        // no property, no toggle. See IsLiveOrderRateGuardActive.
         [Range(NewTradeActionReserve, 5000), NinjaScriptProperty]
         [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "C. Risk", Order = 3)]
         public int OrderActionLimitPerHour { get; set; }
 
-        // Default OFF (2026-08-14, Steve): cancelling a still-working entry the moment its
-        // planned TP or SL is crossed avoids the fill-then-immediate-loss pattern Codex found in
-        // the Aug 13 live review, but it also gives up any trade that would have retraced back
-        // through the limit price and then run normally to target - a real cost, not just a
-        // safety fix. Off by default so this is a deliberate, testable choice, not a silent
-        // behavior change to every live instance.
+        // EMAL-1041 (2026-08-14, Steve): cancelling a still-working entry the moment its planned
+        // TP is crossed avoids the fill-then-immediate-loss pattern Codex found in the Aug 13
+        // live review. Was an OFF-by-default toggle (CancelEntryOnGapBreach) from EMAL-1039
+        // through the first cut of EMAL-1041, pending a real test; WFYKZ (NT8 Playback, v1040,
+        // full range, Part A+B+C, 4/27-8/13/2026, 76 days, 2,220 trades, matching QSJAW's full
+        // range exactly) confirmed it eliminates the fill-then-flatten scratch pattern completely
+        // (0/2220 exits via the gap latch, vs the same-range baseline's 682/2901) with WR/PF/
+        // expectancy up substantially and maxDD DOWN both overall (-$92.40) and in both windows
+        // individually (09:28 -$473.90, 09:55 -$41.70) - a clean win with no caveats. Results
+        // dramatically improved and this is now hardcoded ON unconditionally (Steve, same day,
+        // after seeing the full-range result): no toggle, no way to turn it off, one less
+        // failure mode than a user-editable safety behavior. See
+        // TraderTunerData/results/wfykz-2026-08-14/README.md and
+        // results/qsjaw-2026-08-13-full-range/ for QSJAW, the comparison baseline. The unconditional
+        // CancelEntryOrderIfActive() call is in EvaluateGapLatch above, both directions.
+
+        // Default ON (2026-08-14, Steve): live incident, five accounts with identical working
+        // EMALTarget limits at the same price, price traded at the level, only two filled, the
+        // other three rode a 20-point reversal into the stop - a queue-position asymmetry a
+        // passive limit target can't avoid on its own. OFF reverts to pure-limit behavior with
+        // no code change, for any single instance that wants it. Scoped to the strategy's
+        // 1-contract-only assumption - see EvaluateTargetTouchWatchdog's scope guard, which
+        // disables the feature inertly (logs once) rather than reconciling partial fills if that
+        // assumption is ever violated.
         [NinjaScriptProperty]
-        [Display(Name = "Cancel Entry On Gap Breach", Description = "When ON, cancels a still-working entry limit order the instant price crosses its planned take-profit level, instead of letting it fill later on a retracement (which the gap latch would then immediately flatten at a loss). Stop-side breach does not trigger a cancel - not a real pre-fill scenario for a passive resting entry. OFF preserves EMAL-1038 behavior exactly. The post-fill gap latch itself is unaffected either way.", GroupName = "C. Risk", Order = 4)]
-        public bool CancelEntryOnGapBreach { get; set; }
+        [Display(Name = "Enable Target Touch Watchdog", Description = "When ON, if price trades at or beyond the working target's limit price but the target hasn't filled within Target Touch Grace (ms), cancels the target and exits at market (signal EMALTouchExit) once the cancel confirms unfilled. Never fires a second exit if the target fills during or after the grace window - the cancel confirmation is always awaited first. OFF reverts to pure-limit target behavior, no code-level difference from a prior cut.", GroupName = "C. Risk", Order = 5)]
+        public bool EnableTargetTouchWatchdog { get; set; }
+
+        [Range(100, 5000), NinjaScriptProperty]
+        [Display(Name = "Target Touch Grace (ms)", Description = "How long the working target may sit unfilled after price first trades at or beyond its limit price before the watchdog cancels it and exits at market. Measured on live ticks, no timer thread. Default 400.", GroupName = "C. Risk", Order = 6)]
+        public int TargetTouchGraceMs { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -4414,7 +5109,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 WR88.95% PF1.7 Net$19,719 MaxDD$1,386 Net/DD14.23\n\nP2 WR92.01% PF1.797 Net$16,332 MaxDD$1,339 Net/DD12.2", GroupName = "B. Sessions", Order = 1)]
+        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 (NT8, WFYKZ Apr27-Aug13, gap-breach ON) WR91.00% PF2.356 Net$41,427 MaxDD$1,649 Net/DD25.13\n\nP2 WR92.01% PF1.797 Net$16,332 MaxDD$1,339 Net/DD12.2", GroupName = "B. Sessions", Order = 1)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -4423,7 +5118,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR86.99% PF1.413 Net$20,087 MaxDD$2,162 Net/DD9.29\n\nP2 WR89.96% PF1.403 Net$15,154 MaxDD$1,258 Net/DD12.05\n\nP3 WR88.89% PF1.4 Net$14,899 MaxDD$2,053 Net/DD7.26", GroupName = "B. Sessions", Order = 3)]
+        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR86.99% PF1.413 Net$20,087 MaxDD$2,162 Net/DD9.29\n\nP2 (NT8, WFYKZ Apr27-Aug13, gap-breach ON) WR93.61% PF2.530 Net$46,606 MaxDD$1,342 Net/DD34.73\n\nP3 WR88.89% PF1.4 Net$14,899 MaxDD$2,053 Net/DD7.26", GroupName = "B. Sessions", Order = 3)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -4459,23 +5154,34 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // applied to whichever sessions/windows are enabled - deliberately not per-window
         // (Us0928/Us0955 or otherwise). Only meaningful while the strategy evaluates 1-minute
         // bars; see IsMinuteAllowed().
+        //
+        // Hidden from the dialog (2026-08-14, Steve) - tuning-era controls, always run at their
+        // defaults (all true) live. [Browsable(false)] only, on all five; still
+        // [NinjaScriptProperty] on each so they keep serializing/round-tripping exactly as
+        // before. See the startup non-default warning in OnStateChange (State.Realtime) if any
+        // of these is ever hidden AND non-default at the same time.
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Trade Minute a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "B. Sessions", Order = 9)]
         public bool TradeMinute1a { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Trade Minute b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "B. Sessions", Order = 10)]
         public bool TradeMinute1b { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Trade Minute c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "B. Sessions", Order = 11)]
         public bool TradeMinute1c { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Trade Minute d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "B. Sessions", Order = 12)]
         public bool TradeMinute1d { get; set; }
 
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Trade Minute e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "B. Sessions", Order = 13)]
         public bool TradeMinute1e { get; set; }
 
@@ -4517,7 +5223,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1039,
+        version_1041,
         modified_2026_08_14
     }
 
