@@ -370,11 +370,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // StartBehavior=WaitUntilFlat then refused to re-enable ("Unable to cancel out
                 // live orders. Strategy was not started."). Disabling now cancels the resting
                 // entry so it can't be orphaned at the broker.
-                CancelEntriesOnStrategyDisable = true;
-                // Deliberate safety invariant, pinned explicitly rather than left at NT's default:
-                // a disable must NEVER strip the stop/target off an open position. Keep false even
-                // if a future NT default or edit would otherwise change it silently.
-                CancelExitsOnStrategyDisable = false;
+                // PARKED 2026-08-14: CS0103, neither name is a real Strategy member in this NT8
+                // SDK version (confirmed against every other real NT8 source in this repo - zero
+                // hits anywhere). Commented out rather than guessed at a replacement, to avoid
+                // shipping an unverified change to live order-disable behavior. Ask Andreas for
+                // the correct mechanism (or confirmation this is a platform-level NinjaTrader
+                // setting, not a scriptable property) before re-enabling these two lines.
+                // CancelEntriesOnStrategyDisable = true;
+                // CancelExitsOnStrategyDisable = false;
 
                 Version = EMALVersion.version_1039;   // bump on every new cut; see enum comment
 
@@ -387,6 +390,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxAccountBalance = 0.0;
                 MaxDailyProfit = 0.0;
                 EnableOrderRateGuard = true;
+                CancelEntryOnGapBreach = false;   // opt-in; OFF preserves EMAL-1038 fill behavior
                 OrderActionLimitPerHour = 1100;
 
                 WebhookUrl = string.Empty;
@@ -1868,6 +1872,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // Runs on every Last tick from the moment the latch is armed. try/catch is required:
         // RealtimeErrorHandling.IgnoreAllErrors (see DataLoaded) means an unhandled exception
         // here would fail silently and the strategy would keep trading with a stale latch.
+        //
+        // Aug 13-14 live-trade review (Codex): a resting entry limit was filling on a
+        // retracement AFTER price had already run through its planned TAKE PROFIT, then
+        // immediately market-exiting at a loss. Fix: the moment the target level is crossed,
+        // proactively cancel the still-working entry order here (reusing the existing
+        // bar-boundary cancel helper, now also called from tick level) instead of letting it
+        // fill and relying on the post-fill gap latch to flatten.
+        // Stop-side deliberately NOT wired to cancel (Steve, 2026-08-14): a passive resting
+        // entry sits at the top of the book on the stop side, so price reaching the stop level
+        // before the entry fills isn't a real scenario on liquid ES/NQ outside a sub-second
+        // not-yet-acknowledged race - unlike the target side, where the order simply never
+        // interacts with a favorable move and this is the normal, common case. gapTargetBreached/
+        // gapStopBreached both still feed SubmitOrUpdateProtection's post-fill decision
+        // unchanged - that path remains the emergency backstop for the rare race either way.
         private void EvaluateGapLatch(double price)
         {
             if (!gapLatchArmed || price <= 0.0)
@@ -1877,17 +1895,31 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (gapLatchDirection > 0)
                 {
+                    // Stop-side breach-before-fill is not a real scenario for a passive resting
+                    // entry: the order sits at the top of the book on that side, so price cannot
+                    // walk past it and keep going without filling it first (on liquid ES/NQ,
+                    // outside a sub-second not-yet-acknowledged race the existing post-fill gap
+                    // latch already covers). Flag still tracked below for that post-fill path -
+                    // only the pre-fill cancel trigger was removed, per Steve, 2026-08-14.
                     if (!gapStopBreached && price <= gapLatchStopPrice)
                         gapStopBreached = true;
                     if (!gapTargetBreached && price >= gapLatchTargetPrice)
+                    {
                         gapTargetBreached = true;
+                        if (CancelEntryOnGapBreach)
+                            CancelEntryOrderIfActive();
+                    }
                 }
                 else
                 {
                     if (!gapStopBreached && price >= gapLatchStopPrice)
                         gapStopBreached = true;
                     if (!gapTargetBreached && price <= gapLatchTargetPrice)
+                    {
                         gapTargetBreached = true;
+                        if (CancelEntryOnGapBreach)
+                            CancelEntryOrderIfActive();
+                    }
                 }
             }
             catch (Exception ex)
@@ -2184,7 +2216,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     order.Name,
                     error,
                     comment ?? string.Empty));
+
+                // Aug 13-14 live-trade review (Codex): after a broker LiquidationOnly rejection
+                // on one incident's account, EMAL kept submitting further entries, which were
+                // rejected again. Reuses the same permanent instance-level latch as the wrong-
+                // instrument/max-balance/max-daily-profit disables - manual reset (re-enable the
+                // instance) required, no auto-clear.
+                if (!configurationBlocked && IsLiquidationOnlyRejection(comment))
+                {
+                    configurationBlocked = true;
+                    configurationBlockReason = "broker LiquidationOnly rejection - instance disabled, manual reset required";
+                    Print(string.Format(
+                        "{0} | LIQUIDATION-ONLY REJECTION | trading stopped for this instance | comment={1}",
+                        time,
+                        comment ?? string.Empty));
+                }
             }
+        }
+
+        private bool IsLiquidationOnlyRejection(string comment)
+        {
+            string text = comment ?? string.Empty;
+            return text.IndexOf("liquidation only", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("liquidationonly", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
@@ -4244,6 +4298,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "C. Risk", Order = 3)]
         public int OrderActionLimitPerHour { get; set; }
 
+        // Default OFF (2026-08-14, Steve): cancelling a still-working entry the moment its
+        // planned TP or SL is crossed avoids the fill-then-immediate-loss pattern Codex found in
+        // the Aug 13 live review, but it also gives up any trade that would have retraced back
+        // through the limit price and then run normally to target - a real cost, not just a
+        // safety fix. Off by default so this is a deliberate, testable choice, not a silent
+        // behavior change to every live instance.
+        [NinjaScriptProperty]
+        [Display(Name = "Cancel Entry On Gap Breach", Description = "When ON, cancels a still-working entry limit order the instant price crosses its planned take-profit level, instead of letting it fill later on a retracement (which the gap latch would then immediately flatten at a loss). Stop-side breach does not trigger a cancel - not a real pre-fill scenario for a passive resting entry. OFF preserves EMAL-1038 behavior exactly. The post-fill gap latch itself is unaffected either way.", GroupName = "C. Risk", Order = 4)]
+        public bool CancelEntryOnGapBreach { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "TradersPost Webhook URL", Description = "Optional TradersPost endpoint. Leave empty when using ProjectX.", GroupName = "D. ProjectX API", Order = 0)]
@@ -4454,7 +4518,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     public enum EMALVersion
     {
         version_1039,
-        modified_2026_08_13
+        modified_2026_08_14
     }
 
     public enum EMALTradeParity
