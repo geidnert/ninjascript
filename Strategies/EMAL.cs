@@ -43,12 +43,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // retry-loop handling, which is unrelated to why this fires.
         private const string TargetTouchExitSignal = StrategySignalPrefix + "TouchExit";
 
-        public enum WebhookProvider
-        {
-            TradersPost,
-            ProjectX
-        }
-
         private enum ProjectXProtectionOrderKind
         {
             StopLoss,
@@ -93,8 +87,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // ProjectX session and mirror state. The actual entry/exit signal names remain stable
         // EMAL-prefixed names; the assembly version is used only for the strategy display name.
-        private string webhookUrl = string.Empty;
-        private string webhookTickerOverride = string.Empty;
         private string projectXSessionToken = string.Empty;
         private DateTime projectXTokenAcquiredUtc = DateTime.MinValue;
         private List<ProjectXAccountInfo> projectXAccounts;
@@ -272,10 +264,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // accounts had identical working EMALTarget limits at the same price; price traded at
         // the level, only two filled, the other three rode a 20-point reversal into the stop.
         // Sibling to the gap latch above, same tick-driven pattern, but post-fill: watches
-        // desiredProtectionTargetPrice (the actual working target order's price, not a
-        // recomputed level) for a touch while the target is still working, and converts to a
-        // market exit if it doesn't fill within TargetTouchGraceMs. See
-        // EvaluateTargetTouchWatchdog. One-shot per trade; all reset in ResetGapLatchTracking.
+        // plannedTargetTouchLevel (the shared planned target level every instance on the feed
+        // arms from - see the field comment below) for a touch while the target is still
+        // working, and converts to a market exit if it doesn't fill within TargetTouchGraceMs.
+        // See EvaluateTargetTouchWatchdog. One-shot per trade; all reset in
+        // ResetGapLatchTracking.
         private DateTime targetTouchedUtc = DateTime.MinValue;
         private bool targetTouchWatchdogFired;
         private bool targetTouchWatchdogCancelPending;
@@ -283,6 +276,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // strategy instance, not once per trade, so this assumption-violated warning doesn't
         // spam every trade once it has fired.
         private bool targetTouchWatchdogScopeGuardLogged;
+        // 2026-08-15 (EMAL-1042, Steve/Codex): the watchdog originally compared ticks against
+        // desiredProtectionTargetPrice, the actual working target order's price - which is
+        // anchored to THIS account's own fill (BeginProtectionTracking/SubmitOrUpdateProtection
+        // derive it from the fill, not the plan). Fills differ by a tick or two across accounts
+        // on the same signal, so their touch levels differed too, and on a touch-only high some
+        // accounts latched while others didn't - reproducing the exact cross-account divergence
+        // this watchdog exists to remove (live example: one box 2-of-5 targets filled, sibling
+        // box 0-of-6, same signal). Fix: latch the PLANNED target level - the planned entry
+        // limit price plus/minus TakeProfit points, same signal-tick data ArmGapLatch already
+        // captures - instead of any fill-dependent value. Every instance on the shared feed
+        // computes the identical number, because it derives from the plan, not the fill. Armed
+        // in ArmGapLatch alongside the gap latch levels; must NEVER be recomputed later from
+        // Position.AveragePrice, desiredProtectionTargetPrice, or any other fill-dependent
+        // value. 0.0 means "not armed" - EvaluateTargetTouchWatchdog falls back to the old
+        // fill-anchored desiredProtectionTargetPrice behavior for that trade in that case (e.g.
+        // a future market-entry mode with no planned limit price), and
+        // plannedTargetTouchLevelFallbackLogged (instance-lifetime, not reset per trade, same
+        // pattern as targetTouchWatchdogScopeGuardLogged above) makes sure that fallback prints
+        // once, not every trade. See EMAL-1042-changelog.txt for the full uniformity-over-
+        // optionality tradeoff this creates: an account whose real fill sits beyond the shared
+        // planned level may now convert a tick before ITS OWN limit price traded - intended,
+        // not a bug.
+        private double plannedTargetTouchLevel;
+        private bool plannedTargetTouchLevelFallbackLogged;
         // Per-window bracket presets, resolved from the Setting popups in DataLoaded.
         private double us0928Tp, us0928Sl, us0955Tp, us0955Sl;
         private double entryFillValue;
@@ -330,8 +347,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int filledCount;
         private int cancelBarEndCount;
         private int blockedBarCount;
-        private int parityBlockedBarCount;
-        private int minuteFilterBlockedBarCount;
         private int hardBlockedMinuteBarCount;
 
         // Feature logging. The entry-side fragment is built when the order is submitted, the
@@ -362,6 +377,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private List<PathRecorder> pathRecorders;
         private bool pathLogHeaderWritten;
         private int pathLogFailureCount;
+        // Caches ResolvePathLogPath()'s auto-generated path (with its creation-time
+        // timestamp) so the timestamp is fixed at first resolution instead of advancing on
+        // every WritePathRow call. Only used when PathLogPath is blank (auto-name mode).
+        private string resolvedPathLogPath;
 
         private sealed class PathRecorder
         {
@@ -464,12 +483,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1041;   // bump on every new cut; see enum comment
-
-                TradeParity = EMALTradeParity.Both;   // trade every candle by default
+                Version = EMALVersion.version_1043;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
-                MinimumEmaSlopePoints = 0.75;   // global fallback; unused while per-session is on
+                MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
                 Contracts = 1;
 
                 MaxAccountBalance = 0.0;
@@ -478,9 +495,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TargetTouchGraceMs = 400;
                 OrderActionLimitPerHour = 1100;
 
-                WebhookUrl = string.Empty;
-                WebhookTickerOverride = string.Empty;
-                WebhookProviderType = WebhookProvider.ProjectX;
                 ProjectXApiBaseUrl = "https://api.topstepx.com";
                 ProjectXTradeAllAccounts = false;
                 ProjectXUsername = string.Empty;
@@ -488,11 +502,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 ProjectXAccountId = string.Empty;
                 ProjectXContractId = string.Empty;
 
-                // Per-session settings. Defaults reproduce current behaviour exactly: all three
-                // sessions on, all thresholds equal to the global MinimumEmaSlopePoints.
-                // TP, SL and entry type stay GLOBAL by design - three independent copies of an
-                // interacting triple is where overfitting lives.
-                UsePerSessionSettings = true;
                 // Only the two US morning windows exist now (Steve, 2026-08-06); Asia and the
                 // US 10:30-17:00 session were removed entirely, not just defaulted off.
                 // Per-window bracket presets (Steve, 2026-07-30). Window 2 defaults to
@@ -512,36 +521,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0928Setting = EMALUs0928Setting.Disabled;
                 Us0955Setting = EMALUs0955Setting.Disabled;
 
-                // Free-tune escape hatch for the two NY windows (Steve, 2026-08-03). OFF by
-                // default - live behavior is byte-for-byte unchanged from EMAL-23. When on,
-                // ResolveWindowPresets() stops resolving Us0928Setting/Us0955Setting into
-                // TP/SL/slope and reads these four fields directly instead, and it stops
-                // overwriting Us0928MinimumSlope/Us0955MinimumSlope from the preset - closing
-                // the "slope field is inert while a preset is selected" trap. Defaults below
-                // reproduce the current TP5_SL18_Slope2_75 / TP4_SL18_Slope2_75 presets exactly,
-                // so flipping TuneUsWindowsFree on with no other changes is a no-op.
-                TuneUsWindowsFree = false;
-                Us0928TakeProfitPoints = 5.0;
-                Us0928StopLossPoints = 18.0;
-                Us0955TakeProfitPoints = 4.0;
-                Us0955StopLossPoints = 18.0;
-
-                Us0928MinimumSlope = 2.75;   // overwritten by ResolveWindowPresets from the Setting popup, unless TuneUsWindowsFree
+                Us0928MinimumSlope = 2.75;   // overwritten by ResolveWindowPresets from the Setting popup
                 Us0955MinimumSlope = 2.75;
 
-                // Minute-of-5 filter (Steve, 2026-08-01; master switch removed 2026-08-05,
-                // EMAL-1022). All five minutes enabled by default as of 2026-08-09 (Steve) -
-                // previously 1a/1d/1e on, 1b/1c off. There is no separate on/off switch; to
-                // narrow to specific minutes, uncheck boxes. One shared setting for whichever
-                // sessions/windows are enabled - deliberately not per-window (see
-                // EMAL-18-changelog.txt).
-                TradeMinute1a = true;
-                TradeMinute1b = true;
-                TradeMinute1c = true;
-                TradeMinute1d = true;
-                TradeMinute1e = true;
-
-                ShowInfoPanel = true;
                 EnableFeatureLog = false;   // logging OFF by default (Steve, 2026-07-31)
                 FeatureLogPath = string.Empty;   // blank -> version-named auto-path, see ResolveFeatureLogPath
                 EnablePathLog = false;   // research-only; never on for live trading
@@ -572,7 +554,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             else if (State == State.Realtime)
             {
                 TransitionTrackedOrderReferencesToRealtime();
-                WarnIfHiddenGatesNonDefault();
                 // Preflight runs first, strategy thread only, and warms the session/account/
                 // contract cache; the worker starts only after it completes, so those cache
                 // fields never see the strategy and worker threads touch them at the same time
@@ -601,29 +582,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 CloseFeatureLog();
                 DisposeInfoBoxOverlay();
             }
-        }
-
-        // 2026-08-14 (Steve): TradeMinute1a-1e and TradeParity were hidden from the dialog
-        // ([Browsable(false)], see the properties themselves) - tuning-era controls always run
-        // at their defaults live. Hiding a property doesn't stop it from loading a saved
-        // non-default value from an old template/instance, and once hidden that value can no
-        // longer be seen or changed in the dialog while still silently blocking entries. This is
-        // the only surface for that state: one Print per offending property, at startup only, no
-        // per-bar spam. Called once from State.Realtime.
-        private void WarnIfHiddenGatesNonDefault()
-        {
-            if (!TradeMinute1a)
-                Print("EMAL WARNING: hidden entry gate active — TradeMinute1a=false");
-            if (!TradeMinute1b)
-                Print("EMAL WARNING: hidden entry gate active — TradeMinute1b=false");
-            if (!TradeMinute1c)
-                Print("EMAL WARNING: hidden entry gate active — TradeMinute1c=false");
-            if (!TradeMinute1d)
-                Print("EMAL WARNING: hidden entry gate active — TradeMinute1d=false");
-            if (!TradeMinute1e)
-                Print("EMAL WARNING: hidden entry gate active — TradeMinute1e=false");
-            if (TradeParity != EMALTradeParity.Both)
-                Print(string.Format("EMAL WARNING: hidden entry gate active — TradeParity={0}", TradeParity));
         }
 
         private void SetupTimeZones()
@@ -769,13 +727,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
-        // Per-session slope threshold. Falls back to the global value when per-session
-        // settings are off, so the two cannot disagree silently.
+        // Per-session slope threshold. Falls back to the global value for a minute outside
+        // both tracked windows.
         private double GetConfiguredSlope(DateTime platformTime)
         {
-            if (!UsePerSessionSettings)
-                return Math.Abs(MinimumEmaSlopePoints);
-
             switch (GetSessionIndex(platformTime))
             {
                 case 3: return Math.Abs(Us0928MinimumSlope);
@@ -823,24 +778,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // Resolves each window's Setting popup into its TP / SL / slope. The slope is written
         // back into the per-window Us*MinimumSlope so GetConfiguredSlope keeps working unchanged.
-        //
-        // TuneUsWindowsFree (Steve, 2026-08-03): when on, skip preset resolution entirely and
-        // read TP/SL straight from Us0928TakeProfitPoints/Us0928StopLossPoints (and the 0955
-        // pair) - and, critically, do NOT touch Us0928MinimumSlope/Us0955MinimumSlope here, so
-        // whatever value the tuner set on those fields stands. In preset mode those two fields
-        // are the ones ResolveWindowPresets overwrites every DataLoaded, which is why sweeping
-        // them while a preset is selected is a no-op - closed for the free-tune path only.
         private void ResolveWindowPresets()
         {
-            if (TuneUsWindowsFree)
-            {
-                us0928Tp = Us0928TakeProfitPoints;
-                us0928Sl = Us0928StopLossPoints;
-                us0955Tp = Us0955TakeProfitPoints;
-                us0955Sl = Us0955StopLossPoints;
-                return;
-            }
-
             switch (Us0928Setting)
             {
                 case EMALUs0928Setting.Disabled:                   us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
@@ -877,9 +816,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!string.IsNullOrEmpty(FeatureLogPath))
                 return FeatureLogPath;
 
+            // Timestamped at first call only - this method only runs once per instance
+            // (guarded by featureWriter == null in WriteFeatureRow below), so the stamp is
+            // fixed at file-creation time, not recomputed on every row.
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                string.Format("EMAL_v{0}_log.csv", ResolveVersionNumberString()));
+                string.Format("EMAL_v{0}_log_{1}.csv", ResolveVersionNumberString(),
+                    DateTime.Now.ToString("yyyy-MM-dd hh-mm tt", CultureInfo.InvariantCulture)));
         }
 
         private void WriteFeatureRow(string row)
@@ -1044,17 +987,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int cancelled = cancelBarEndCount;
 
             Print("================ EMAL fill rate ================");
-            Print(string.Format("  per-session         : {0}", UsePerSessionSettings));
             Print(string.Format("      US 0928-0950       : {0}  slope {1}", Us0928Setting, Us0928MinimumSlope));
             Print(string.Format("      (block 0950-0955, no trade)"));
             Print(string.Format("      US 0955-1030       : {0}  slope {1}", Us0955Setting, Us0955MinimumSlope));
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  9:30 hard block     : bars blocked: {0}", hardBlockedMinuteBarCount));
-            Print(string.Format("  minute filter       : 1a={0} 1b={1} 1c={2} 1d={3} 1e={4}  (bars blocked: {5})",
-                TradeMinute1a, TradeMinute1b, TradeMinute1c, TradeMinute1d, TradeMinute1e,
-                minuteFilterBlockedBarCount));
-            Print(string.Format("  trade parity        : {0}  (bars blocked: {1})",
-                TradeParity, parityBlockedBarCount));
             Print(string.Format("  order rate guard    : always on / {0} actions (entries blocked: {1})",
                 OrderActionLimitPerHour, rateGuardBlockedEntryCount));
             Print(string.Format("  signals generated   : {0}", signalCount));
@@ -1185,8 +1122,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (!string.IsNullOrEmpty(PathLogPath))
                 return PathLogPath;
-            string dir = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-            return Path.Combine(dir, string.Format("EMAL_v{0}_research_log.csv", ResolveVersionNumberString()));
+
+            // Unlike ResolveFeatureLogPath, this method runs on every WritePathRow call, not
+            // just once - so the timestamp must be cached at first resolution, not
+            // recomputed per row (which would fragment the log across a new file per row).
+            if (resolvedPathLogPath == null)
+            {
+                string dir = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+                resolvedPathLogPath = Path.Combine(dir, string.Format("EMAL_v{0}_research_log_{1}.csv",
+                    ResolveVersionNumberString(),
+                    DateTime.Now.ToString("yyyy-MM-dd hh-mm tt", CultureInfo.InvariantCulture)));
+            }
+            return resolvedPathLogPath;
         }
 
         private void WritePathRow(string row)
@@ -1257,14 +1204,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (s < 0 || !IsSessionEnabled(s))
                 return "session gate";
 
-            // Mirror IsEntryWindowOpen's minute-of-5 filter (Steve, 2026-08-01).
-            if (!IsMinuteAllowed(ConvertToEastern(raw)))
-                return "minute block (" + MinutePositionLabel(ConvertToEastern(raw)) + ")";
-
-            // Mirror IsEntryWindowOpen's even/odd candle filter.
-            if (!IsParityAllowed(ConvertToEastern(raw)))
-                return TradeParity == EMALTradeParity.Even ? "odd bar (want even)" : "even bar (want odd)";
-
             if (maxDailyProfitLimitReached) return "daily profit cap";
             if (maxAccountBalanceLimitReached) return "balance cap";
 
@@ -1317,20 +1256,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             return null;
-        }
-
-        // Five-character minute-of-5 label: each position shows its own letter (a-e) if that
-        // TradeMinute flag is enabled, or 'x' if disabled. E.g. all five on -> "abcde"; only
-        // 1a/1d/1e on -> "axxde". (Steve, 2026-08-06, info panel addition.)
-        private string GetTradeMinuteLabel()
-        {
-            char[] label = new char[5];
-            label[0] = TradeMinute1a ? 'a' : 'x';
-            label[1] = TradeMinute1b ? 'b' : 'x';
-            label[2] = TradeMinute1c ? 'c' : 'x';
-            label[3] = TradeMinute1d ? 'd' : 'x';
-            label[4] = TradeMinute1e ? 'e' : 'x';
-            return new string(label);
         }
 
         // statusLineIndex (Steve, 2026-08-07): index of the status/error row within the
@@ -1404,10 +1329,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 blockedValueLineIndices.Add(lines.Count);
             lines.Add(new KeyValuePair<string, string>("Trade:", tradeGateState));
 
-            if (!IsMinuteAllowed(ConvertToEastern(raw)))
-                blockedValueLineIndices.Add(lines.Count);
-            lines.Add(new KeyValuePair<string, string>("Trade Minute:", GetTradeMinuteLabel()));
-
             if (maxAccountBalanceLimitReached)
                 blockedValueLineIndices.Add(lines.Count);
             lines.Add(new KeyValuePair<string, string>("Max Account Balance:",
@@ -1443,7 +1364,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void UpdateInfoText()
         {
-            if (!ShowInfoPanel || ChartControl == null || ChartControl.Dispatcher == null)
+            if (ChartControl == null || ChartControl.Dispatcher == null)
                 return;
 
             if (State != State.Realtime && State != State.Historical)
@@ -1612,36 +1533,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return version != null ? version.ToString() : "0.0.0.0";
         }
 
-        // Minute-of-5 filter (Steve, 2026-08-01). Applies to the underlying 1-minute signal
-        // regardless of which session/window is enabled - one shared setting, not per-window.
-        // Position is the bar-open minute's place within its nominal 5-minute grouping: 0=1a
-        // (1st minute), 1=1b, 2=1c, 3=1d, 4=1e.
-        private string MinutePositionLabel(DateTime easternTime)
-        {
-            switch (easternTime.Minute % 5)
-            {
-                case 0: return "1a";
-                case 1: return "1b";
-                case 2: return "1c";
-                case 3: return "1d";
-                default: return "1e";
-            }
-        }
-
-        private bool IsMinuteAllowed(DateTime easternTime)
-        {
-            switch (easternTime.Minute % 5)
-            {
-                case 0: return TradeMinute1a;
-                case 1: return TradeMinute1b;
-                case 2: return TradeMinute1c;
-                case 3: return TradeMinute1d;
-                default: return TradeMinute1e;
-            }
-        }
-
         // Hard block on the 09:30 ET minute (Steve, 2026-08-08): unconditional, independent of
-        // TradeMinute1a-1e, session enable/disable, TradeParity, or any other setting. TESTED
+        // session enable/disable or any other setting. TESTED
         // AND FAILED on drawdown grounds, kept on discretion (Analysis_Plan.md §12.16): as a
         // standalone pre-registered hypothesis (waiving the 57-minute multiplicity correction),
         // 09:30's bad win rate is real (n=29, WR 72.41%, PF 0.721, net -$814.90, permutation
@@ -1672,46 +1565,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
             }
 
-            // Window gate is unconditional now (Steve, 2026-08-06): the two US windows are the
-            // only sessions that exist, so entries are confined to them regardless of
-            // UsePerSessionSettings. That toggle now controls only which slope threshold
-            // GetConfiguredSlope uses (per-window vs the global MinimumEmaSlopePoints) - it no
-            // longer widens or removes the time-of-day gate itself. Previously this check ran
-            // only when UsePerSessionSettings was on, which let the strategy trade at any hour
-            // with the toggle off; that depended on the now-removed global TakeProfitPoints/
-            // StopLossPoints for the bracket, which no longer exist.
+            // Window gate is unconditional (Steve, 2026-08-06): the two US windows are the only
+            // sessions that exist, so entries are confined to them.
             int session = GetSessionIndex(barOpenRaw);
             if (session < 0 || !IsSessionEnabled(session))
                 return false;
 
-            if (!IsMinuteAllowed(barOpen))
-            {
-                minuteFilterBlockedBarCount++;
-                return false;
-            }
-
-            if (!IsParityAllowed(barOpen))
-            {
-                parityBlockedBarCount++;
-                return false;
-            }
-
             return true;
-        }
-
-        // Even/Odd candle filter. Candles are indexed from the top of the hour by minute-of-hour.
-        // Even = index 0,2,4... Odd = index 1,3,5... Both disables the filter. Minute-of-hour is
-        // timezone-invariant across whole-hour offsets, but eastern bar-open is passed for
-        // consistency with the gates.
-        private bool IsParityAllowed(DateTime barOpenEastern)
-        {
-            if (TradeParity == EMALTradeParity.Both)
-                return true;
-
-            int index = barOpenEastern.Minute;
-            bool isEven = (index % 2) == 0;
-
-            return TradeParity == EMALTradeParity.Even ? isEven : !isEven;
         }
 
 
@@ -1996,6 +1856,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (direction == 0 || limitPrice <= 0.0)
             {
                 gapLatchArmed = false;
+                // No planned limit price for this trade (e.g. a future market-entry code path) -
+                // the target touch watchdog falls back to its old fill-anchored behavior. Log
+                // once per instance lifetime, not once per trade, so this doesn't spam once it's
+                // fired for an instance that's always in this mode.
+                plannedTargetTouchLevel = 0.0;
+                if (!plannedTargetTouchLevelFallbackLogged)
+                {
+                    plannedTargetTouchLevelFallbackLogged = true;
+                    Print("EMAL TARGET TOUCH WATCHDOG: no planned limit price at arming time - "
+                        + "falling back to fill-anchored touch level for this and future trades on this instance.");
+                }
                 return;
             }
 
@@ -2012,6 +1883,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             gapTargetBreached = false;
             gapStopBreached = false;
             gapLatchArmed = true;
+
+            // Target touch watchdog's shared planned level - same signal-tick limit/TakeProfit
+            // data as gapLatchTargetPrice above, latched here (not recomputed later) so every
+            // instance on the feed arms from the identical number. See the field comment.
+            plannedTargetTouchLevel = gapLatchTargetPrice;
         }
 
         // Runs on every Last tick from the moment the latch is armed. try/catch is required:
@@ -2073,11 +1949,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // Post-fill sibling of EvaluateGapLatch, same tick-driven pattern - no timers/threads,
         // just comparing the current tick against a latched timestamp. Reads
-        // desiredProtectionTargetPrice (the price the actual working EMALTarget order was
-        // submitted/last confirmed at), not a recomputed level, per the design's explicit
-        // requirement. Guarded from the caller (OnMarketData) on EnableTargetTouchWatchdog,
-        // !targetTouchWatchdogFired, and position-not-flat, so this only runs when it could
-        // possibly still do something.
+        // plannedTargetTouchLevel (the SHARED planned target level, latched at arming time from
+        // the same signal-tick data every instance on the feed sees - see the field comment),
+        // not desiredProtectionTargetPrice (this account's own fill-anchored working target
+        // price) and not a recomputed level. EMAL-1042: this is the anchor change from
+        // EMAL-1041 - see EMAL-1042-changelog.txt for why. Falls back to
+        // desiredProtectionTargetPrice only when plannedTargetTouchLevel is unset (0.0), i.e.
+        // ArmGapLatch had no planned limit price for this trade. Guarded from the caller
+        // (OnMarketData) on EnableTargetTouchWatchdog, !targetTouchWatchdogFired, and
+        // position-not-flat, so this only runs when it could possibly still do something.
         private void EvaluateTargetTouchWatchdog(double price, DateTime tickTime)
         {
             if (price <= 0.0
@@ -2104,12 +1984,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            double targetPrice = desiredProtectionTargetPrice;
-            if (targetPrice <= 0.0)
+            // plannedTargetTouchLevel is the shared touch level; desiredProtectionTargetPrice
+            // (this account's own working target price) is retained here only as the fallback
+            // source and for diagnostics - never as the primary comparison. See field comments.
+            double ownWorkingTargetPrice = desiredProtectionTargetPrice;
+            double touchLevel = plannedTargetTouchLevel > 0.0 ? plannedTargetTouchLevel : ownWorkingTargetPrice;
+            if (touchLevel <= 0.0)
                 return;
 
             bool isLong = Position.MarketPosition == MarketPosition.Long;
-            bool touched = isLong ? price >= targetPrice : price <= targetPrice;
+            bool touched = isLong ? price >= touchLevel : price <= touchLevel;
 
             if (targetTouchedUtc == DateTime.MinValue)
             {
@@ -2135,8 +2019,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             RecordNtOrderAction("touch-watchdog-cancel-target");
             Print(string.Format(
                 "{0} | EMAL TARGET TOUCH WATCHDOG | price traded through target and limit unfilled after {1}ms "
-                + "- cancelling target for market exit | target={2:F2} price={3:F2}",
-                tickTime, TargetTouchGraceMs, targetPrice, price));
+                + "- cancelling target for market exit | plannedTargetTouchLevel={2:F2} ownWorkingTargetPrice={3:F2} price={4:F2}",
+                tickTime, TargetTouchGraceMs, plannedTargetTouchLevel, ownWorkingTargetPrice, price));
             CancelOrder(profitTargetOrder);
         }
 
@@ -2940,7 +2824,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 mirrorActive = projectXEntryMirrorActive;
 
             if (!mirrorActive
-                || WebhookProviderType != WebhookProvider.ProjectX
                 || Position.MarketPosition != MarketPosition.Flat)
             {
                 return;
@@ -3153,11 +3036,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             gapStopBreached = false;
             // Target touch watchdog resets alongside the gap latch, per the design - both are
             // per-trade state that must not survive into the next trade. Deliberately excludes
-            // targetTouchWatchdogScopeGuardLogged, which is an instance-lifetime "logged once"
-            // flag, not per-trade state.
+            // targetTouchWatchdogScopeGuardLogged and plannedTargetTouchLevelFallbackLogged,
+            // both instance-lifetime "logged once" flags, not per-trade state.
             targetTouchedUtc = DateTime.MinValue;
             targetTouchWatchdogFired = false;
             targetTouchWatchdogCancelPending = false;
+            plannedTargetTouchLevel = 0.0;
         }
 
         private bool IsLiveOrderRateGuardActive()
@@ -3465,7 +3349,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void StartProjectXWorker()
         {
-            if (WebhookProviderType != WebhookProvider.ProjectX || projectXWorkerThread != null)
+            if (projectXWorkerThread != null)
                 return;
 
             projectXQueue = new System.Collections.Concurrent.BlockingCollection<ProjectXWorkItem>();
@@ -3582,8 +3466,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool IsProjectXConfigured()
         {
-            return WebhookProviderType == WebhookProvider.ProjectX
-                && !string.IsNullOrWhiteSpace(ProjectXApiBaseUrl)
+            return !string.IsNullOrWhiteSpace(ProjectXApiBaseUrl)
                 && !string.IsNullOrWhiteSpace(ProjectXUsername)
                 && !string.IsNullOrWhiteSpace(ProjectXApiKey)
                 && (ProjectXTradeAllAccounts || !string.IsNullOrWhiteSpace(ProjectXAccountId));
@@ -3664,7 +3547,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool active;
             lock (projectXStateLock)
                 active = projectXEntryMirrorActive;
-            if (!active || WebhookProviderType != WebhookProvider.ProjectX)
+            if (!active)
                 return;
 
             if (!flattenIfOrphaned)
@@ -3750,7 +3633,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             if (!active
-                || WebhookProviderType != WebhookProvider.ProjectX
                 || Position.MarketPosition != MarketPosition.Flat
                 || IsOrderActive(entryOrder)
                 || dueUtc == DateTime.MinValue
@@ -3787,7 +3669,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             bool active;
             lock (projectXStateLock)
                 active = projectXEntryMirrorActive;
-            if (!active || WebhookProviderType != WebhookProvider.ProjectX)
+            if (!active)
                 return;
 
             int quantitySnapshot = Math.Abs(Position.Quantity);
@@ -3814,83 +3696,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // DispatchProjectXSimpleEvent/CancelProjectXEntryMirror's synchronousDirect parameter.
         // The only remaining caller of this method is FlattenProjectXOrphanOnTermination, which
         // is termination-only by design (runs on the strategy thread, after the worker has
-        // already been stopped/drained), so the ProjectX branch below still executes directly
-        // and synchronously - never through the queue - deliberately, not as an oversight.
+        // already been stopped/drained), so the body below still executes directly and
+        // synchronously - never through the queue - deliberately, not as an oversight.
         private bool SendWebhook(string eventType, double entryPrice = 0.0, double takeProfit = 0.0,
             double stopLoss = 0.0, bool isMarketEntry = false, int quantityOverride = 0)
         {
             if (State != State.Realtime && State != State.Terminated)
                 return false;
 
+            if (!IsProjectXConfigured())
+                return false;
+
             int quantity = quantityOverride > 0 ? quantityOverride : Math.Max(1, Contracts);
-            if (WebhookProviderType == WebhookProvider.ProjectX)
+            string instrumentRoot, instrumentKey;
+            DateTime instrumentExpiry;
+            bool hasInstrumentExpiry;
+            CaptureProjectXInstrumentSnapshot(out instrumentRoot, out instrumentKey,
+                out instrumentExpiry, out hasInstrumentExpiry);
+
+            var directItem = new ProjectXWorkItem
             {
-                if (!IsProjectXConfigured())
-                    return false;
-
-                string instrumentRoot, instrumentKey;
-                DateTime instrumentExpiry;
-                bool hasInstrumentExpiry;
-                CaptureProjectXInstrumentSnapshot(out instrumentRoot, out instrumentKey,
-                    out instrumentExpiry, out hasInstrumentExpiry);
-
-                var directItem = new ProjectXWorkItem
-                {
-                    EventType = eventType,
-                    EntryPrice = entryPrice,
-                    TakeProfit = takeProfit,
-                    StopLoss = stopLoss,
-                    IsMarketEntry = isMarketEntry,
-                    Quantity = quantity,
-                    InstrumentRoot = instrumentRoot,
-                    InstrumentKey = instrumentKey,
-                    InstrumentExpiry = instrumentExpiry,
-                    HasInstrumentExpiry = hasInstrumentExpiry,
-                    TickSizeSnapshot = TickSize
-                };
-                string projectXResponse;
-                return SendProjectXWork(directItem, out projectXResponse);
-            }
-
-            if (string.IsNullOrWhiteSpace(WebhookUrl))
-                return false;
-
-            try
-            {
-                string ticker = !string.IsNullOrWhiteSpace(WebhookTickerOverride)
-                    ? WebhookTickerOverride.Trim()
-                    : (Instrument != null && Instrument.MasterInstrument != null
-                        ? Instrument.MasterInstrument.Name
-                        : "UNKNOWN");
-                string action = (eventType ?? string.Empty).ToLowerInvariant();
-                string json;
-                if (action == "buy" || action == "sell")
-                {
-                    json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\",\"orderType\":\"{2}\",\"quantityType\":\"fixed_quantity\",\"quantity\":{3},\"signalPrice\":{4},\"takeProfit\":{{\"limitPrice\":{5}}},\"stopLoss\":{{\"type\":\"stop\",\"stopPrice\":{6}}}}}",
-                        JsonEscape(ticker), action, isMarketEntry ? "market" : "limit", quantity,
-                        FormatProjectXPrice(entryPrice), FormatProjectXPrice(takeProfit), FormatProjectXPrice(stopLoss));
-                }
-                else
-                {
-                    string tpAction = action == "cancel" ? "cancel" : "exit";
-                    json = string.Format(CultureInfo.InvariantCulture,
-                        "{{\"ticker\":\"{0}\",\"action\":\"{1}\"}}",
-                        JsonEscape(ticker), tpAction);
-                }
-
-                using (var client = new System.Net.WebClient())
-                {
-                    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
-                    client.UploadString(WebhookUrl, "POST", json);
-                }
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Print("EMAL webhook error: " + ex.Message);
-                return false;
-            }
+                EventType = eventType,
+                EntryPrice = entryPrice,
+                TakeProfit = takeProfit,
+                StopLoss = stopLoss,
+                IsMarketEntry = isMarketEntry,
+                Quantity = quantity,
+                InstrumentRoot = instrumentRoot,
+                InstrumentKey = instrumentKey,
+                InstrumentExpiry = instrumentExpiry,
+                HasInstrumentExpiry = hasInstrumentExpiry,
+                TickSizeSnapshot = TickSize
+            };
+            string projectXResponse;
+            return SendProjectXWork(directItem, out projectXResponse);
         }
 
         // Worker-thread body for an entry/exit/cancel item. Renamed from SendProjectX (EMAL-1041)
@@ -3959,9 +3798,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // never overlap.
         private void RunProjectXStartupPreflight()
         {
-            if (WebhookProviderType != WebhookProvider.ProjectX)
-                return;
-
             if (!IsProjectXConfigured())
             {
                 ProjectXLog("ProjectX inactive | configure Username, API and Accounts to enable");
@@ -4641,14 +4477,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return string.Format(CultureInfo.InvariantCulture, "{0}|{1}", accountId, contractId ?? string.Empty);
         }
 
-        // Strategy-thread only (SendWebhook's TradersPost branch, the one ProjectX-unrelated
-        // caller) - touches Instrument, so must never be called from the worker.
-        private string FormatProjectXPrice(double price)
-        {
-            return Instrument.MasterInstrument.RoundToTickSize(price)
-                .ToString("0.########", CultureInfo.InvariantCulture);
-        }
-
         // Worker-safe: every ProjectX caller of this (ProjectXPlaceOrder, ProjectXModifyProtectionOrder)
         // already receives a price rounded on the strategy thread before enqueue - no Instrument
         // access needed or wanted here.
@@ -4723,10 +4551,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void ProjectXLog(string message)
         {
-            if (WebhookProviderType == WebhookProvider.ProjectX)
-                Print(string.Format("{0} | EMAL | {1}",
-                    lastTickTime != DateTime.MinValue ? lastTickTime : DateTime.Now,
-                    message ?? string.Empty));
+            Print(string.Format("{0} | EMAL | {1}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : DateTime.Now,
+                message ?? string.Empty));
         }
 
         private string JsonEscape(string value)
@@ -4942,15 +4769,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return bool.TryParse(raw.ToString(), out value);
         }
 
-        // Hidden from the dialog (2026-08-14, Steve) - tuning-era control, always run at
-        // default (Both) live. [Browsable(false)] only; still [NinjaScriptProperty] so it keeps
-        // serializing/round-tripping exactly as before. See the startup non-default warning in
-        // OnStateChange (State.Realtime) if this is ever hidden AND non-default at the same time.
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Trade Parity", Description = "Reduce trade count by trading only alternate candles. Even = even-numbered minute; Odd = odd-numbered minute; Both = every candle (current behaviour).", GroupName = "B. Sessions", Order = 14)]
-        public EMALTradeParity TradeParity { get; set; }
-
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Display(Name = "Max Account Balance", Description = "When account net liquidation, including unrealized P&L, reaches this value, pending entries are cancelled, open positions are flattened, and new entries remain blocked. 0 disables.", GroupName = "C. Risk", Order = 0)]
         public double MaxAccountBalance { get; set; }
@@ -5002,29 +4820,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(100, 5000), NinjaScriptProperty]
         [Display(Name = "Target Touch Grace (ms)", Description = "How long the working target may sit unfilled after price first trades at or beyond its limit price before the watchdog cancels it and exits at market. Measured on live ticks, no timer thread. Default 400.", GroupName = "C. Risk", Order = 6)]
         public int TargetTouchGraceMs { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "TradersPost Webhook URL", Description = "Optional TradersPost endpoint. Leave empty when using ProjectX.", GroupName = "D. ProjectX API", Order = 0)]
-        public string WebhookUrl
-        {
-            get { return webhookUrl ?? string.Empty; }
-            set { webhookUrl = value ?? string.Empty; }
-        }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Webhook Ticker Override", Description = "Optional TradersPost ticker override. Leave empty to use the chart instrument.", GroupName = "D. ProjectX API", Order = 1)]
-        public string WebhookTickerOverride
-        {
-            get { return webhookTickerOverride ?? string.Empty; }
-            set { webhookTickerOverride = value ?? string.Empty; }
-        }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Webhook Provider", Description = "Select TradersPost or direct ProjectX order routing.", GroupName = "D. ProjectX API", Order = 2)]
-        public WebhookProvider WebhookProviderType { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -5081,22 +4876,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
 
         // ================================================================================
-        // Advanced (Steve, 2026-08-01, EMAL-21) - moved out of Sessions 1m into their own
-        // section, even though both remain hidden. Both apply regardless of Time Frame
-        // (unchanged behavior) - not 1m-specific despite where they used to live.
-        // ================================================================================
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Use Per-Session Settings", Description = "Enable the per-window split (US 09:28-09:50, US 09:55-10:30). When off, the global Minimum EMA Slope applies to both windows.", GroupName = "Advanced", Order = 0)]
-        public bool UsePerSessionSettings { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Tune US Windows Free", Description = "Research-only escape hatch (EMAL-24, Steve 2026-08-03). When on, ResolveWindowPresets() ignores Us0928Setting/Us0955Setting and reads TP/SL directly from Us0928TakeProfitPoints/Us0928StopLossPoints/Us0955TakeProfitPoints/Us0955StopLossPoints, and stops overwriting Us0928MinimumSlope/Us0955MinimumSlope - making all six fields freely tunable instead of preset-locked. OFF by default; live behavior unchanged.", GroupName = "Advanced", Order = 1)]
-        public bool TuneUsWindowsFree { get; set; }
-
-        // ================================================================================
         // Sessions 1m (Steve, 2026-08-01, EMAL-21; original Asia and US 10:30-17:00 removed
         // entirely 2026-08-06, Europe removed entirely 2026-08-02, Steve: "I never want to use
         // this bot on London") - the two US morning windows below are the only sessions this
@@ -5126,82 +4905,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 4)]
         public double Us0955MinimumSlope { get; set; }
 
-        // Free TP/SL fields (EMAL-24, Steve 2026-08-03). Inert unless TuneUsWindowsFree is on -
-        // see ResolveWindowPresets(). Hidden from the live UI like the preset/slope fields above;
-        // reachable through the CLI tuner via their parameter ids.
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:28-09:50 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "B. Sessions", Order = 5)]
-        public double Us0928TakeProfitPoints { get; set; }
-
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:28-09:50 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:28-09:50 Setting preset.", GroupName = "B. Sessions", Order = 6)]
-        public double Us0928StopLossPoints { get; set; }
-
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Take Profit (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "B. Sessions", Order = 7)]
-        public double Us0955TakeProfitPoints { get; set; }
-
-        [Range(0.01, double.MaxValue), NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Stop Loss (free)", Description = "Only used when Tune US Windows Free is on; otherwise driven by the US 09:55-10:30 Setting preset.", GroupName = "B. Sessions", Order = 8)]
-        public double Us0955StopLossPoints { get; set; }
-
-        // Minute-of-5 filter (Steve, 2026-08-01; master switch removed 2026-08-05, EMAL-1022 -
-        // relies solely on which of the five boxes below are checked). One shared setting
-        // applied to whichever sessions/windows are enabled - deliberately not per-window
-        // (Us0928/Us0955 or otherwise). Only meaningful while the strategy evaluates 1-minute
-        // bars; see IsMinuteAllowed().
-        //
-        // Hidden from the dialog (2026-08-14, Steve) - tuning-era controls, always run at their
-        // defaults (all true) live. [Browsable(false)] only, on all five; still
-        // [NinjaScriptProperty] on each so they keep serializing/round-tripping exactly as
-        // before. See the startup non-default warning in OnStateChange (State.Realtime) if any
-        // of these is ever hidden AND non-default at the same time.
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Trade Minute a", Description = "Allow entries on the 1st minute of each 5-minute grouping (bar-open minute % 5 == 0).", GroupName = "B. Sessions", Order = 9)]
-        public bool TradeMinute1a { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Trade Minute b", Description = "Allow entries on the 2nd minute of each 5-minute grouping (bar-open minute % 5 == 1).", GroupName = "B. Sessions", Order = 10)]
-        public bool TradeMinute1b { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Trade Minute c", Description = "Allow entries on the 3rd minute of each 5-minute grouping (bar-open minute % 5 == 2).", GroupName = "B. Sessions", Order = 11)]
-        public bool TradeMinute1c { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Trade Minute d", Description = "Allow entries on the 4th minute of each 5-minute grouping (bar-open minute % 5 == 3).", GroupName = "B. Sessions", Order = 12)]
-        public bool TradeMinute1d { get; set; }
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Trade Minute e", Description = "Allow entries on the 5th minute of each 5-minute grouping (bar-open minute % 5 == 4).", GroupName = "B. Sessions", Order = 13)]
-        public bool TradeMinute1e { get; set; }
 
 
-
-
-
-
-
-        [NinjaScriptProperty]
-        [Browsable(false)]
-        [Display(Name = "Show Info Panel", Description = "Draw the strategy status panel in the lower-left of the chart.", GroupName = "F. Logging", Order = 2)]
-        public bool ShowInfoPanel { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Log", Description = "Write one CSV row per completed trade containing the entry context: slope, the previous three bars OHLCV, fill delay and outcome. Turn off to disable all file writing.", GroupName = "F. Logging", Order = 0)]
         public bool EnableFeatureLog { get; set; }
 
         [Browsable(false)]
-        [Display(Name = "Log File Path", Description = "Full path to the CSV. Leave blank to auto-name EMAL_v{version}_log.csv in Documents. Appends if the file already exists. Ignored when Log is off.", GroupName = "F. Logging", Order = 1)]
+        [Display(Name = "Log File Path", Description = "Full path to the CSV. Leave blank to auto-name EMAL_v{version}_log_{yyyy-MM-dd hh-mm tt}.csv in Documents, stamped at file-creation time. Appends if the file already exists. Ignored when Log is off.", GroupName = "F. Logging", Order = 1)]
         public string FeatureLogPath { get; set; }
 
         [NinjaScriptProperty]
@@ -5213,7 +4925,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool EnableExecutionDiagnostics { get; set; }
 
         [Browsable(false)]
-        [Display(Name = "Path Log File", Description = "Full path to the research log CSV. Blank auto-names EMAL_v{version}_research_log.csv in Documents.", GroupName = "F. Logging", Order = 4)]
+        [Display(Name = "Path Log File", Description = "Full path to the research log CSV. Blank auto-names EMAL_v{version}_research_log_{yyyy-MM-dd hh-mm tt}.csv in Documents, stamped at file-creation time.", GroupName = "F. Logging", Order = 4)]
         public string PathLogPath { get; set; }
     }
 
@@ -5223,15 +4935,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1041,
-        modified_2026_08_14
-    }
-
-    public enum EMALTradeParity
-    {
-        Both,
-        Even,
-        Odd
+        version_1043,
+        modified_2026_08_16
     }
 
     public enum EMALUs0928Setting
