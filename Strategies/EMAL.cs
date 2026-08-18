@@ -227,6 +227,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime queuedSignalUtc = DateTime.MinValue;
 
         private bool entryCancelPending;
+        // EMAL-1044: reason recorded at the moment a cancel is requested (set in
+        // CancelEntryOrderIfActive), read back when the confirmation/fill callback lands so
+        // the transition trace can tag a gap-breach cancel distinctly from a routine
+        // bar-boundary/window/warmup cancel. Diagnostic-only - never read by any live decision.
+        private string entryCancelReason = string.Empty;
 
         // Optional live latency instrumentation. Stopwatch is monotonic and is touched only
         // while Execution Diagnostics is enabled, so the normal live path pays no timing or
@@ -238,6 +243,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime entryLatencySubmitStartUtc = DateTime.MinValue;
         private bool entryLatencyOrderStateLogged;
         private bool entryLatencyExecutionLogged;
+        // EMAL-1044: monotonic counter for the full entry-order transition trace (see
+        // LogEntryOrderTransition), gated on the same EnableExecutionDiagnostics toggle as the
+        // existing latency instrumentation above. Not reset per trade - a running sequence
+        // across the whole instance lifetime makes it trivial to spot a dropped/reordered
+        // callback when reading the Output log linearly.
+        private long entryOrderTransitionSequence;
 
         // Execution-driven protection. Stops are validated against the live market before
         // submission so a replay gap cannot place a buy stop below market or a sell stop
@@ -272,6 +283,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime targetTouchedUtc = DateTime.MinValue;
         private bool targetTouchWatchdogFired;
         private bool targetTouchWatchdogCancelPending;
+        // EMAL-1045: which market data channel produced the first touch (Last/Bid/Ask) under
+        // TouchDetectionMode.QuoteOrLast - diagnostic only, printed at conversion time so an
+        // export shows whether quote-based detection is what caught a given touch. Meaningless
+        // until targetTouchedUtc is set; reset alongside it.
+        private MarketDataType targetTouchSource = MarketDataType.Last;
         // Deliberately NOT reset per-trade - "logging once" per the design means once per
         // strategy instance, not once per trade, so this assumption-violated warning doesn't
         // spam every trade once it has fired.
@@ -340,6 +356,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private DateTime lastTickTime = DateTime.MinValue;
         private double lastTickPrice;
         private bool sawMarketData;
+        // EMAL-1045: latest quote, updated on every Bid/Ask OnMarketData callback regardless of
+        // TouchDetectionMode (so a live mode switch never starts from stale zeros). Only read by
+        // EvaluateGapLatch/EvaluateTargetTouchWatchdog when TouchDetectionMode is QuoteOrLast.
+        // Reset to 0 in ResetGapLatchTracking so a stale quote from the previous trade can never
+        // be evaluated against a freshly armed latch before a new quote tick arrives.
+        private double lastBidPrice;
+        private double lastAskPrice;
 
         // Fill-rate accounting. Filled trades are the only thing the performance report
         // shows, so signals that never became trades have to be counted here.
@@ -483,7 +506,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1043;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1045;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -493,6 +516,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxDailyProfit = 0.0;
                 EnableTargetTouchWatchdog = true;   // see comment on the property below
                 TargetTouchGraceMs = 400;
+                TouchDetectionMode = EMALTouchDetectionMode.QuoteOrLast;   // see comment on the property below
                 OrderActionLimitPerHour = 1100;
 
                 ProjectXApiBaseUrl = "https://api.topstepx.com";
@@ -1005,6 +1029,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnMarketData(MarketDataEventArgs e)
         {
+            // EMAL-1045: Bid/Ask ticks are handled separately from the Last-tick path below -
+            // they never touch sawMarketData/lastTickTime/lastTickPrice (that clock stays
+            // Last-only, unchanged) and only feed the new quote-based touch/breach detection,
+            // itself gated on TouchDetectionMode inside HandleQuoteTick.
+            if (e.MarketDataType == MarketDataType.Bid || e.MarketDataType == MarketDataType.Ask)
+            {
+                HandleQuoteTick(e);
+                return;
+            }
+
             if (e.MarketDataType != MarketDataType.Last)
                 return;
 
@@ -1016,12 +1050,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // methods when their feature/state is inactive. With many instances on one NQ/MNQ
             // feed this is the normal flat-state path for almost every tick.
             if (gapLatchArmed)
-                EvaluateGapLatch(e.Price);
+                EvaluateGapLatch(MarketDataType.Last, e.Price, e.Time);
 
             if (EnableTargetTouchWatchdog && !targetTouchWatchdogFired
                 && Position.MarketPosition != MarketPosition.Flat)
             {
-                EvaluateTargetTouchWatchdog(e.Price, e.Time);
+                EvaluateTargetTouchWatchdog(MarketDataType.Last, e.Price, e.Time);
             }
 
             if (EnableFeatureLog && pendingFillFeatures != null && pendingDirection != 0
@@ -1041,6 +1075,42 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (!string.IsNullOrWhiteSpace(terminalExitRetryReason))
                 EvaluateTerminalExitRecovery();
+        }
+
+        // EMAL-1045: Bid/Ask dispatch. Stores the latest quote unconditionally (so a live mode
+        // switch never starts from stale zeros), then - only under TouchDetectionMode.QuoteOrLast
+        // - feeds the same two evaluators the Last path already uses. RealtimeErrorHandling is
+        // IgnoreAllErrors, so this is wrapped explicitly rather than letting a fault vanish
+        // silently (see class-level remarks on that setting).
+        private void HandleQuoteTick(MarketDataEventArgs e)
+        {
+            try
+            {
+                if (e.MarketDataType == MarketDataType.Bid)
+                    lastBidPrice = e.Price;
+                else if (e.MarketDataType == MarketDataType.Ask)
+                    lastAskPrice = e.Price;
+                else
+                    return;
+
+                if (TouchDetectionMode != EMALTouchDetectionMode.QuoteOrLast)
+                    return;
+
+                if (gapLatchArmed)
+                    EvaluateGapLatch(e.MarketDataType, e.Price, e.Time);
+
+                if (EnableTargetTouchWatchdog && !targetTouchWatchdogFired
+                    && Position.MarketPosition != MarketPosition.Flat)
+                {
+                    EvaluateTargetTouchWatchdog(e.MarketDataType, e.Price, e.Time);
+                }
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | QUOTE HANDLING ERROR | type={1} price={2:F2} | {3}",
+                    e.Time, e.MarketDataType, e.Price, ex.Message));
+            }
         }
 
         // ---- Research path log ----
@@ -1637,14 +1707,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition != MarketPosition.Flat)
             {
-                CancelEntryOrderIfActive();
+                CancelEntryOrderIfActive("position-open");
                 return;
             }
 
             // 20 covers the AvgVolume20 lookback used by the feature log.
             if (CurrentBar < Math.Max(EmaPeriod, 20) + 2)
             {
-                CancelEntryOrderIfActive();
+                CancelEntryOrderIfActive("warmup");
                 return;
             }
 
@@ -1653,7 +1723,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!IsEntryWindowOpen())
             {
                 blockedBarCount++;
-                CancelEntryOrderIfActive();
+                CancelEntryOrderIfActive("window-closed");
                 return;
             }
 
@@ -1676,7 +1746,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (IsOrderActive(entryOrder))
             {
-                CancelEntryOrderIfActive();
+                CancelEntryOrderIfActive("signal-replace");
                 return;
             }
 
@@ -1812,7 +1882,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Instrument.MasterInstrument.RoundToTickSize(price);
         }
 
-        private void CancelEntryOrderIfActive()
+        // EMAL-1044: reason is diagnostic-only (feeds entryCancelReason / LogEntryOrderTransition
+        // below), defaults to "unspecified" for any call site not updated to pass one. No live
+        // decision reads this string; CancelOrder(entryOrder) below is unchanged from EMAL-1043.
+        private void CancelEntryOrderIfActive(string reason = "unspecified")
         {
             if (!IsOrderActive(entryOrder)
                 || entryCancelPending
@@ -1823,6 +1896,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             cancelBarEndCount++;
             entryCancelPending = true;
+            entryCancelReason = reason ?? "unspecified";
+            if (IsExecutionDiagnosticsActive())
+            {
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | EMAL ENTRY TRACE | cancel requested | reason={1} orderName={2} limit={3:F2} bid={4:F2} ask={5:F2}",
+                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                    entryCancelReason,
+                    entryOrder != null ? entryOrder.Name : "-",
+                    entryOrder != null ? entryOrder.LimitPrice : 0.0,
+                    GetCurrentBid(),
+                    GetCurrentAsk()));
+            }
             RecordNtOrderAction("cancel-entry-bar-end");
             CancelOrder(entryOrder);
         }
@@ -1907,9 +1992,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // interacts with a favorable move and this is the normal, common case. gapTargetBreached/
         // gapStopBreached both still feed SubmitOrUpdateProtection's post-fill decision
         // unchanged - that path remains the emergency backstop for the rare race either way.
-        private void EvaluateGapLatch(double price)
+        // EMAL-1045: source is Last, Bid, or Ask - Bid/Ask only arrive here when
+        // TouchDetectionMode is QuoteOrLast (gated in HandleQuoteTick). tickTime is the tick's
+        // own timestamp (not the possibly-stale lastTickTime global, which only advances on Last
+        // ticks) so a quote-triggered diagnostic print carries an accurate time.
+        private void EvaluateGapLatch(MarketDataType source, double price, DateTime tickTime)
         {
             if (!gapLatchArmed || price <= 0.0)
+                return;
+
+            // Quote-side filtering: a Long position's target is a sell limit resting ABOVE
+            // entry (ExitLongLimit - confirmed against SubmitOrUpdateProfitTarget below), which
+            // fills as the market trades UP into it, so Bid is the side that matters; a Short's
+            // target is a buy limit resting BELOW entry (ExitShortLimit), which fills as the
+            // market trades DOWN into it, so Ask is the side that matters. This mirrors the
+            // existing Long-uses-Bid/Short-uses-Ask convention already used elsewhere in this
+            // file (GetPassiveLimitPrice, GetProtectiveReferencePrice) and is applied uniformly
+            // to the stop-side flag below too, for the same reference-price reason, not because
+            // the stop order itself is quoted on that side. Last is always relevant regardless
+            // of direction; the "wrong" quote side for this direction carries no new information
+            // and is skipped rather than mismatched.
+            if (source == MarketDataType.Bid && gapLatchDirection <= 0)
+                return;
+            if (source == MarketDataType.Ask && gapLatchDirection >= 0)
                 return;
 
             try
@@ -1923,27 +2028,56 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     // latch already covers). Flag still tracked below for that post-fill path -
                     // only the pre-fill cancel trigger was removed, per Steve, 2026-08-14.
                     if (!gapStopBreached && price <= gapLatchStopPrice)
+                    {
                         gapStopBreached = true;
+                        if (IsExecutionDiagnosticsActive())
+                        {
+                            Print(string.Format(CultureInfo.InvariantCulture,
+                                "{0} | EMAL GAP BREACH DETECTED | side=Long level=stop source={1} stop={2:F2} price={3:F2}",
+                                tickTime, source, gapLatchStopPrice, price));
+                        }
+                    }
                     if (!gapTargetBreached && price >= gapLatchTargetPrice)
                     {
                         gapTargetBreached = true;
-                        CancelEntryOrderIfActive();
+                        if (IsExecutionDiagnosticsActive())
+                        {
+                            Print(string.Format(CultureInfo.InvariantCulture,
+                                "{0} | EMAL GAP BREACH DETECTED | side=Long level=target source={1} target={2:F2} price={3:F2}",
+                                tickTime, source, gapLatchTargetPrice, price));
+                        }
+                        CancelEntryOrderIfActive("gap-breach-target");
                     }
                 }
                 else
                 {
                     if (!gapStopBreached && price >= gapLatchStopPrice)
+                    {
                         gapStopBreached = true;
+                        if (IsExecutionDiagnosticsActive())
+                        {
+                            Print(string.Format(CultureInfo.InvariantCulture,
+                                "{0} | EMAL GAP BREACH DETECTED | side=Short level=stop source={1} stop={2:F2} price={3:F2}",
+                                tickTime, source, gapLatchStopPrice, price));
+                        }
+                    }
                     if (!gapTargetBreached && price <= gapLatchTargetPrice)
                     {
                         gapTargetBreached = true;
-                        CancelEntryOrderIfActive();
+                        if (IsExecutionDiagnosticsActive())
+                        {
+                            Print(string.Format(CultureInfo.InvariantCulture,
+                                "{0} | EMAL GAP BREACH DETECTED | side=Short level=target source={1} target={2:F2} price={3:F2}",
+                                tickTime, source, gapLatchTargetPrice, price));
+                        }
+                        CancelEntryOrderIfActive("gap-breach-target");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Print(string.Format("{0} | GAP LATCH ERROR | {1}", lastTickTime, ex.Message));
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | GAP LATCH ERROR | source={1} | {2}", tickTime, source, ex.Message));
             }
         }
 
@@ -1958,7 +2092,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ArmGapLatch had no planned limit price for this trade. Guarded from the caller
         // (OnMarketData) on EnableTargetTouchWatchdog, !targetTouchWatchdogFired, and
         // position-not-flat, so this only runs when it could possibly still do something.
-        private void EvaluateTargetTouchWatchdog(double price, DateTime tickTime)
+        // EMAL-1045: source is Last, Bid, or Ask - Bid/Ask only arrive here when
+        // TouchDetectionMode is QuoteOrLast (gated in HandleQuoteTick).
+        private void EvaluateTargetTouchWatchdog(MarketDataType source, double price, DateTime tickTime)
         {
             if (price <= 0.0
                 || terminalExitPending
@@ -1984,6 +2120,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
+            bool isLong = Position.MarketPosition == MarketPosition.Long;
+
+            // Quote-side filtering - same Long-uses-Bid/Short-uses-Ask convention as
+            // EvaluateGapLatch (see its comment for the order-object confirmation). Last is
+            // always relevant; the "wrong" quote side for this position carries no new
+            // information about whether the resting target has been reached and is skipped.
+            if (source == MarketDataType.Bid && !isLong)
+                return;
+            if (source == MarketDataType.Ask && isLong)
+                return;
+
             // plannedTargetTouchLevel is the shared touch level; desiredProtectionTargetPrice
             // (this account's own working target price) is retained here only as the fallback
             // source and for diagnostics - never as the primary comparison. See field comments.
@@ -1992,7 +2139,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (touchLevel <= 0.0)
                 return;
 
-            bool isLong = Position.MarketPosition == MarketPosition.Long;
             bool touched = isLong ? price >= touchLevel : price <= touchLevel;
 
             if (targetTouchedUtc == DateTime.MinValue)
@@ -2000,6 +2146,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (!touched)
                     return;
                 targetTouchedUtc = tickTime;
+                targetTouchSource = source;
+                if (IsExecutionDiagnosticsActive())
+                {
+                    Print(string.Format(CultureInfo.InvariantCulture,
+                        "{0} | EMAL TARGET TOUCH WATCHDOG | first touch | source={1} plannedTargetTouchLevel={2:F2} "
+                        + "ownWorkingTargetPrice={3:F2} price={4:F2}",
+                        tickTime, source, plannedTargetTouchLevel, ownWorkingTargetPrice, price));
+                }
                 return;
             }
 
@@ -2019,8 +2173,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             RecordNtOrderAction("touch-watchdog-cancel-target");
             Print(string.Format(
                 "{0} | EMAL TARGET TOUCH WATCHDOG | price traded through target and limit unfilled after {1}ms "
-                + "- cancelling target for market exit | plannedTargetTouchLevel={2:F2} ownWorkingTargetPrice={3:F2} price={4:F2}",
-                tickTime, TargetTouchGraceMs, plannedTargetTouchLevel, ownWorkingTargetPrice, price));
+                + "- cancelling target for market exit | touchSource={2} plannedTargetTouchLevel={3:F2} "
+                + "ownWorkingTargetPrice={4:F2} price={5:F2}",
+                tickTime, TargetTouchGraceMs, targetTouchSource, plannedTargetTouchLevel, ownWorkingTargetPrice, price));
             CancelOrder(profitTargetOrder);
         }
 
@@ -2132,6 +2287,50 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 DateTime.UtcNow,
                 ElapsedMilliseconds(entryLatencySignalTimestamp, stateTimestamp),
                 ElapsedMilliseconds(entryLatencySubmitStartTimestamp, stateTimestamp)));
+        }
+
+        // EMAL-1044: full entry-order lifecycle trace, every callback (not just the first),
+        // gated on the same EnableExecutionDiagnostics toggle as the latency instrumentation
+        // above - OFF by default, no live-path change. Added for Playback-only diagnosis of the
+        // remaining engine/NT8 order-state-sequencing divergence (see PARITY-NOTES.md); not
+        // intended to reach a live account. cancelWasPending/entryCancelReason are snapshotted by
+        // the caller before this method runs, since ClearActiveEntryContext (called later in the
+        // same OnOrderUpdate branch) resets entryCancelPending.
+        private void LogEntryOrderTransition(Order order, OrderState orderState, int filled,
+            double averageFillPrice, DateTime time, bool cancelWasPending)
+        {
+            if (!IsExecutionDiagnosticsActive() || order == null)
+                return;
+
+            entryOrderTransitionSequence++;
+            Print(string.Format(CultureInfo.InvariantCulture,
+                "{0} | EMAL ENTRY TRACE | seq={1} state={2} orderName={3} limit={4:F2} bid={5:F2} "
+                + "ask={6:F2} last={7:F2} filled={8} avgFill={9:F2} cancelPending={10} cancelReason={11}",
+                time,
+                entryOrderTransitionSequence,
+                orderState,
+                order.Name,
+                order.LimitPrice,
+                GetCurrentBid(),
+                GetCurrentAsk(),
+                lastTickPrice,
+                filled,
+                averageFillPrice,
+                cancelWasPending,
+                cancelWasPending ? entryCancelReason : "-"));
+
+            if (orderState == OrderState.Filled && cancelWasPending)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | EMAL GAP RACE | entry filled before cancel confirmed | cancelReason={1} fill={2:F2}",
+                    time, entryCancelReason, averageFillPrice));
+            }
+            else if (orderState == OrderState.Cancelled && cancelWasPending)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | EMAL ENTRY TRACE | cancel confirmed | reason={1}",
+                    time, entryCancelReason));
+            }
         }
 
         private void LogFirstEntryExecution(string orderName)
@@ -2332,6 +2531,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             LogFirstEntryOrderState(orderName, orderState);
+            bool entryCancelWasPending = entryCancelPending;
+            LogEntryOrderTransition(order, orderState, filled, averageFillPrice, time, entryCancelWasPending);
 
             if (orderState != OrderState.Cancelled
                 && orderState != OrderState.Filled
@@ -3042,6 +3243,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             targetTouchWatchdogFired = false;
             targetTouchWatchdogCancelPending = false;
             plannedTargetTouchLevel = 0.0;
+            // EMAL-1045: per-trade quote state. Zeroing the bid/ask fields means a stale quote
+            // from the previous trade can never be evaluated against a freshly armed latch
+            // before a fresh Bid/Ask tick arrives (both evaluators already guard on price > 0).
+            // targetTouchSource is diagnostic-only and meaningless until targetTouchedUtc is set
+            // again, but reset here anyway so a stale value never appears in a print by accident.
+            lastBidPrice = 0.0;
+            lastAskPrice = 0.0;
+            targetTouchSource = MarketDataType.Last;
         }
 
         private bool IsLiveOrderRateGuardActive()
@@ -4821,6 +5030,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Target Touch Grace (ms)", Description = "How long the working target may sit unfilled after price first trades at or beyond its limit price before the watchdog cancels it and exits at market. Measured on live ticks, no timer thread. Default 400.", GroupName = "C. Risk", Order = 6)]
         public int TargetTouchGraceMs { get; set; }
 
+        // EMAL-1045 (2026-08-18, Steve): live incident, Aug 17 09:43 - the target level printed
+        // on Last for a fraction of a second then reversed; boxes whose feed processed that one
+        // Last tick converted via the watchdog, boxes that didn't rode a 20+ point reversal into
+        // the stop, purely on per-feed Last-tick timing/queue position, not a real difference in
+        // what the market did. QuoteOrLast keys the same touch/breach test on the resting order's
+        // own fillable side (Bid for a Long's target, Ask for a Short's - see EvaluateGapLatch's
+        // comment) in addition to Last, so a touch the quote reached is caught even if no Last
+        // trade happened to print exactly there. LastOnly reproduces the exact prior-cut
+        // behavior for instant A/B comparison or rollback without a recompile. Tradeoff:
+        // QuoteOrLast is more sensitive and will convert on some touches LastOnly would have let
+        // resolve as a later clean target fill - trading a bit more ~1-tick haircut for
+        // cross-box uniformity and fewer rides-to-the-stop. Applies to both the gap latch's
+        // breach detection and the target touch watchdog; independent of Enable Target Touch
+        // Watchdog for the gap latch half (the gap latch itself has no on/off toggle - see its
+        // own comment), but the watchdog half also still requires that toggle ON.
+        [NinjaScriptProperty]
+        [Display(Name = "Touch Detection Mode", Description = "QuoteOrLast (default): the target-touch watchdog and gap latch trigger on either a Last trade AT the level or the relevant quote (Bid for Long, Ask for Short) reaching it - catches a fleeting one-tick touch even with no Last print exactly there. LastOnly: Last-trade detection only, byte-identical to the prior cut, for A/B comparison or rollback.", GroupName = "C. Risk", Order = 7)]
+        public EMALTouchDetectionMode TouchDetectionMode { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "ProjectX API Base URL", GroupName = "D. ProjectX API", Order = 3)]
@@ -4921,7 +5149,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public bool EnablePathLog { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Execution Diagnostics", Description = "Write per-entry timing for signal-to-submit, first order state, and first fill callback. Leave OFF for lowest live-path overhead; enable only for a short latency test.", GroupName = "F. Logging", Order = 5)]
+        [Display(Name = "Execution Diagnostics", Description = "Write per-entry timing for signal-to-submit, first order state, and first fill callback, plus (EMAL-1044) a full entry-order transition trace and gap-breach/cancel-race detail. Leave OFF for lowest live-path overhead and for any live account; enable only for a short latency test or a Playback diagnostic run.", GroupName = "F. Logging", Order = 5)]
         public bool EnableExecutionDiagnostics { get; set; }
 
         [Browsable(false)]
@@ -4935,8 +5163,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1043,
-        modified_2026_08_16
+        version_1045,
+        modified_2026_08_18
+    }
+
+    // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
+    // QuoteOrLast (default) additionally triggers on the relevant quote reaching the level. See
+    // the Touch Detection Mode property comment for the full rationale/tradeoff.
+    public enum EMALTouchDetectionMode
+    {
+        LastOnly,
+        QuoteOrLast
     }
 
     public enum EMALUs0928Setting
