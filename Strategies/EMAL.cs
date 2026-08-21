@@ -8,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
 using System.Xml.Serialization;
@@ -324,6 +325,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int desiredProtectionQuantity;
         private bool terminalExitPending;
 
+        // Multi-contract protection reconciliation (Steve, 2026-08-18). Off by default; Auto
+        // only does anything once Position.Quantity > 1 - the reconciliation method's own
+        // inertness guard is what enforces that, not these fields. Per-trade state, reset in
+        // both BeginProtectionTracking and ResetProtectionTracking alongside the other
+        // protection fields above so a retry count never survives into the next trade.
+        private int stopReconcileAttempts;
+        private int targetReconcileAttempts;
+        private const int MaxReconcileAttempts = 3;
+
         // Account-level profit guard. Once net liquidation reaches the configured
         // ceiling, the latch remains set for the lifetime of this strategy instance.
         private bool maxAccountBalanceLimitReached;
@@ -371,6 +381,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int cancelBarEndCount;
         private int blockedBarCount;
         private int hardBlockedMinuteBarCount;
+        // EMAL-1050: counts bars blocked by the new optional 09:31-09:35 & 9:43 block, separate
+        // from hardBlockedMinuteBarCount (the always-on 09:30 block) so the fill-rate summary
+        // can report them independently.
+        private int additionalBlockedMinuteBarCount;
 
         // Feature logging. The entry-side fragment is built when the order is submitted, the
         // fill fragment when it fills, and the row is written when the position closes.
@@ -385,6 +399,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int pendingDirection;
         private int pendingEntryBar;
         private int loggedRowCount;
+
+        // ---- Per-tick diagnostic logger (Steve, 2026-08-18) ----
+        // Captures the exact tick stream (Last/Bid/Ask) the strategy computes on, so two boxes
+        // can be diffed after a divergent trade. Replaces relying on NT8's own Market Replay/
+        // Historical recording, which proved unreliable (recorded the wrong instrument / cached
+        // backfill instead of the live RTH window). Pure observer: never touches signal logic,
+        // the watchdog, the gap latch, protection, or orders - read-only in OnMarketData, one
+        // extra branch, no effect on anything else. OFF by default; only turned on when hunting
+        // a divergence. Realtime-only by construction (LogTick checks State itself), so a
+        // Playback/Historical/Analyzer run with this on writes nothing - the diagnostic is for
+        // live/paper boxes only, where a Market Replay recording isn't available or trustworthy.
+        private StreamWriter tickLogWriter;
+        private string resolvedTickLogPath;
+        private readonly List<string> tickLogBuffer = new List<string>();
+        // MinValue = "no flush yet this instance"; set to UtcNow on the first buffered row so
+        // the interval clock starts from first activity, not from a stale prior value.
+        private DateTime tickLogLastFlushUtc = DateTime.MinValue;
+        private bool tickLogDisabledAfterError;
+        private const int TickLogFlushRowCount = 500;
+        private const double TickLogFlushIntervalSeconds = 5.0;
+        private const string TickLogHeader = "Timestamp,MarketDataType,Price,Volume,Instrument";
 
         // ---- Research path log (Steve, 2026-07-29) ----
         // For each fill, record the first-touch elapsed seconds to a grid of favourable /
@@ -506,7 +541,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1045;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1050;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -517,6 +552,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EnableTargetTouchWatchdog = true;   // see comment on the property below
                 TargetTouchGraceMs = 400;
                 TouchDetectionMode = EMALTouchDetectionMode.QuoteOrLast;   // see comment on the property below
+                MultiContractProtectionFix = EMALMultiContractProtectionFix.Off;   // see comment on the property below
+                Block0931To0935 = false;   // OFF by default; see comment on the property below
                 OrderActionLimitPerHour = 1100;
 
                 ProjectXApiBaseUrl = "https://api.topstepx.com";
@@ -553,6 +590,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 EnablePathLog = false;   // research-only; never on for live trading
                 PathLogPath = string.Empty;
                 EnableExecutionDiagnostics = false;
+
+                EnableTickLogging = false;   // diagnostic OFF by default; only for divergence hunting
+                TickLogTag = string.Empty;
+                TickLogFolder = string.Empty;   // blank -> NinjaTrader.Core.Globals.UserDataDir\ticklogs
             }
             else if (State == State.DataLoaded)
             {
@@ -568,6 +609,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 pathRecorders = new List<PathRecorder>();
                 pathLogHeaderWritten = false;
                 pathLogFailureCount = 0;
+
+                // Fresh instance (or a re-enable) starts the tick logger clean: unresolved path,
+                // no error latch carried over, empty buffer, flush clock reset.
+                resolvedTickLogPath = null;
+                tickLogDisabledAfterError = false;
+                tickLogBuffer.Clear();
+                tickLogLastFlushUtc = DateTime.MinValue;
 
                 // Bind explicitly to the primary Close series. Combined with the Update()
                 // call in OnBarUpdate, this prevents a re-enabled Playback/chart instance
@@ -604,6 +652,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 FlushAllPathRecorders();
                 PrintFillRateSummary();
                 CloseFeatureLog();
+                CloseTickLog();
                 DisposeInfoBoxOverlay();
             }
         }
@@ -1016,6 +1065,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("      US 0955-1030       : {0}  slope {1}", Us0955Setting, Us0955MinimumSlope));
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  9:30 hard block     : bars blocked: {0}", hardBlockedMinuteBarCount));
+            Print(string.Format("  9:31-9:35 & 9:43 block : enabled={0}  bars blocked: {1}", Block0931To0935, additionalBlockedMinuteBarCount));
             Print(string.Format("  order rate guard    : always on / {0} actions (entries blocked: {1})",
                 OrderActionLimitPerHour, rateGuardBlockedEntryCount));
             Print(string.Format("  signals generated   : {0}", signalCount));
@@ -1029,6 +1079,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         protected override void OnMarketData(MarketDataEventArgs e)
         {
+            // EMAL-1046: pure observer, first thing in the method, ahead of every dispatch
+            // branch below - never returns early, never mutates anything the rest of this
+            // method reads, so its presence cannot change signal/order behavior whether
+            // EnableTickLogging is true or false. See the field-block comment above for scope.
+            if (EnableTickLogging)
+                LogTick(e);
+
             // EMAL-1045: Bid/Ask ticks are handled separately from the Last-tick path below -
             // they never touch sawMarketData/lastTickTime/lastTickPrice (that clock stays
             // Last-only, unchanged) and only feed the new quote-based touch/breach detection,
@@ -1111,6 +1168,161 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     "{0} | QUOTE HANDLING ERROR | type={1} price={2:F2} | {3}",
                     e.Time, e.MarketDataType, e.Price, ex.Message));
             }
+        }
+
+        // ---- Per-tick diagnostic logger ----
+        // Called once per OnMarketData invocation, for Last/Bid/Ask only (see the field-block
+        // comment for scope/rationale). Buffers rows in memory; never writes to disk per tick -
+        // FlushTickLog is only called from here when a threshold is crossed, and from
+        // CloseTickLog at State.Terminated. Any failure disables further logging for the rest
+        // of this instance's life rather than retrying or throwing - RealtimeErrorHandling is
+        // IgnoreAllErrors for the strategy as a whole, so this diagnostic path is not allowed to
+        // rely on that; it catches its own faults explicitly.
+        private void LogTick(MarketDataEventArgs e)
+        {
+            if (State != State.Realtime || tickLogDisabledAfterError)
+                return;
+
+            string typeLabel;
+            if (e.MarketDataType == MarketDataType.Last) typeLabel = "Last";
+            else if (e.MarketDataType == MarketDataType.Bid) typeLabel = "Bid";
+            else if (e.MarketDataType == MarketDataType.Ask) typeLabel = "Ask";
+            else return;   // this diagnostic only cares about the three trade/quote types above
+
+            try
+            {
+                DateTime stamp = e.Time == DateTime.MinValue ? DateTime.Now : e.Time;
+                string instrumentName = Instrument == null ? string.Empty : Instrument.FullName;
+
+                tickLogBuffer.Add(string.Format(CultureInfo.InvariantCulture,
+                    "{0},{1},{2:F2},{3},{4}",
+                    stamp.ToString("yyyyMMdd HHmmss.fff", CultureInfo.InvariantCulture),
+                    typeLabel, e.Price, e.Volume, instrumentName));
+
+                if (tickLogLastFlushUtc == DateTime.MinValue)
+                    tickLogLastFlushUtc = DateTime.UtcNow;   // start the interval clock from first activity
+
+                bool rowThresholdHit = tickLogBuffer.Count >= TickLogFlushRowCount;
+                bool timeThresholdHit = (DateTime.UtcNow - tickLogLastFlushUtc).TotalSeconds >= TickLogFlushIntervalSeconds;
+
+                if (rowThresholdHit || timeThresholdHit)
+                    FlushTickLog();
+            }
+            catch (Exception ex)
+            {
+                Print("Tick log error, disabling further tick logging: " + ex.Message);
+                tickLogDisabledAfterError = true;
+                tickLogBuffer.Clear();
+            }
+        }
+
+        private string ResolveTickLogFolder()
+        {
+            string folder = TickLogFolder;
+            if (string.IsNullOrWhiteSpace(folder))
+                folder = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "ticklogs");
+
+            if (!Directory.Exists(folder))
+                Directory.CreateDirectory(folder);
+
+            return folder;
+        }
+
+        // Timestamped-by-day, tagged, resolved once per instance (guarded by
+        // resolvedTickLogPath == null, reset in State.DataLoaded) so a mid-session flush never
+        // recomputes the date and silently starts writing to a different file.
+        private string ResolveTickLogPath()
+        {
+            if (resolvedTickLogPath != null)
+                return resolvedTickLogPath;
+
+            string folder = ResolveTickLogFolder();
+            string instrumentName = Instrument == null ? "UNKNOWN" : Instrument.FullName;
+
+            resolvedTickLogPath = Path.Combine(folder, string.Format(CultureInfo.InvariantCulture,
+                "{0}_{1}_{2}.csv",
+                SanitizeForFileName(instrumentName),
+                SanitizeForFileName(TickLogTag),
+                DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture)));
+
+            return resolvedTickLogPath;
+        }
+
+        // Instrument full names contain spaces/slashes (e.g. "NQ 12-26"); the tag is
+        // user-typed. Replace anything that isn't legal in a filename rather than reject it.
+        private static string SanitizeForFileName(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
+
+            char[] invalid = Path.GetInvalidFileNameChars();
+            var sb = new StringBuilder(value.Length);
+            foreach (char c in value)
+                sb.Append(Array.IndexOf(invalid, c) >= 0 ? '-' : c);
+            return sb.ToString();
+        }
+
+        // Opens the StreamWriter once (append mode - a restart mid-session continues the same
+        // day's file rather than truncating it) and reuses it across flushes; never opened or
+        // closed per row. Writes the header only when the file didn't already exist.
+        private void FlushTickLog()
+        {
+            if (tickLogBuffer.Count == 0)
+            {
+                tickLogLastFlushUtc = DateTime.UtcNow;
+                return;
+            }
+
+            try
+            {
+                if (tickLogWriter == null)
+                {
+                    string path = ResolveTickLogPath();
+                    bool isNew = !File.Exists(path);
+
+                    tickLogWriter = new StreamWriter(path, true);
+
+                    if (isNew)
+                        tickLogWriter.WriteLine(TickLogHeader);
+
+                    Print("Tick log -> " + path);
+                }
+
+                for (int i = 0; i < tickLogBuffer.Count; i++)
+                    tickLogWriter.WriteLine(tickLogBuffer[i]);
+
+                tickLogWriter.Flush();
+                tickLogBuffer.Clear();
+                tickLogLastFlushUtc = DateTime.UtcNow;
+            }
+            catch (Exception ex)
+            {
+                Print("Tick log flush failed, disabling further tick logging: " + ex.Message);
+                tickLogDisabledAfterError = true;
+                tickLogBuffer.Clear();
+            }
+        }
+
+        // Called from State.Terminated so a partially-filled buffer at shutdown isn't lost.
+        private void CloseTickLog()
+        {
+            if (tickLogBuffer.Count > 0)
+                FlushTickLog();
+
+            if (tickLogWriter == null)
+                return;
+
+            try
+            {
+                tickLogWriter.Flush();
+                tickLogWriter.Close();
+            }
+            catch (Exception ex)
+            {
+                Print("Tick log close failed: " + ex.Message);
+            }
+
+            tickLogWriter = null;
         }
 
         // ---- Research path log ----
@@ -1623,6 +1835,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return easternTime.Hour == 9 && easternTime.Minute == 30;
         }
 
+        // EMAL-1050 (Steve, 2026-08-21; extended same day to add 09:43): optional additional
+        // block on 09:31-09:35 inclusive AND 09:43, both gated on the single Block0931To0935
+        // toggle - OFF by default. Independent of, and evaluated after, the always-on 09:30
+        // hard block above - the two are separate mechanisms and this one is user-toggleable
+        // where the 09:30 one is not. Does NOT touch 09:28/09:29, 09:36-09:42, or 09:44 onward -
+        // those minutes are unaffected whether this toggle is on or off, per spec. With this
+        // enabled, 09:36 becomes the first minute a new entry can fire following the 09:28
+        // window's open (09:30 always, 09:31-09:35 via this toggle, both blocked in between),
+        // and 09:43 is blocked as a separate standalone minute later in the same window. Note
+        // for context (Analysis_Plan §12.16): the 09:30 hard-block research found 09:29 and
+        // 09:31-09:33 specifically strong/profitable in that same study, in NT8 Playback - this
+        // toggle responds to a live-vs-Playback divergence Steve has observed (see project
+        // memory `live-open-erratic-minutes.md`), not a contradiction of that finding.
+        private bool IsAdditionalBlockedMinute(DateTime easternTime)
+        {
+            if (!Block0931To0935 || easternTime.Hour != 9)
+                return false;
+
+            int minute = easternTime.Minute;
+            return (minute >= 31 && minute <= 35) || minute == 43;
+        }
+
         private bool IsEntryWindowOpen()
         {
             DateTime barOpenRaw = GetBarOpenRaw();
@@ -1632,6 +1866,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (IsHardBlockedMinute(barOpen))
             {
                 hardBlockedMinuteBarCount++;
+                return false;
+            }
+
+            // EMAL-1050: checked next, before the session/window gate below - same "no matter
+            // what the settings are" placement as the 09:30 block, just gated on its own toggle
+            // instead of being unconditional.
+            if (IsAdditionalBlockedMinute(barOpen))
+            {
+                additionalBlockedMinuteBarCount++;
                 return false;
             }
 
@@ -1930,6 +2173,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             protectiveStopOrder = null;
             profitTargetOrder = null;
             terminalExitPending = false;
+            stopReconcileAttempts = 0;
+            targetReconcileAttempts = 0;
             ArmGapLatch(direction, limitPrice, activeTakeProfitPoints, activeStopLossPoints);
         }
 
@@ -2487,6 +2732,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                             limitPrice > 0.0 ? limitPrice : order.LimitPrice, "nt8-target-update");
                 }
 
+                // EMAL-1046: gated no-op at Off/1-lot Auto - see the method's own inertness
+                // guard. This is the Working/Accepted transition the fix specifically targets -
+                // a resize attempted before the order reaches this state is what gets rejected
+                // and dropped today. Fires on either sibling's transition and reconciles both.
+                if (orderState == OrderState.Accepted || orderState == OrderState.Working)
+                {
+                    ReconcileMultiContractProtection(
+                        orderName == StopExitSignal ? "stop-working" : "target-working", time);
+                }
+
                 return;
             }
 
@@ -2658,6 +2913,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     averageEntryPrice,
                     entryFilledQuantity,
                     time);
+                // EMAL-1046: gated no-op at Off/1-lot Auto - see the method's own inertness
+                // guard. Runs after SubmitOrUpdateProtection, which is unchanged above.
+                ReconcileMultiContractProtection("entry-fill", time);
                 // Protection/terminal handling always wins the critical path; diagnostics are
                 // emitted only after the safety order method has completed.
                 LogFirstEntryExecution(orderName);
@@ -2909,6 +3167,130 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 TrySubmitTerminalExit("MissingTarget", protectedEntrySignal);
             }
+        }
+
+        // ---- Multi-contract protection reconciliation (EMAL-1046, Steve, 2026-08-18) ----
+        // Fixes an observed multi-lot bug (account 1367, 2026-08-13 and 2026-08-17): on a
+        // partial-filled multi-contract entry, a stop/target resize ChangeOrder can reach the
+        // broker before the protective order is in Working state, get rejected by Tradovate,
+        // and be silently dropped (RealtimeErrorHandling = IgnoreAllErrors covers the strategy
+        // as a whole). Result: protection ends up under-sized for the position (e.g. a 3-lot
+        // position left with a 1-lot stop). Single-contract accounts never partial-fill this
+        // way and are unaffected - confirmed by the inertness guard below, not by assumption.
+        //
+        // This does NOT modify SubmitOrUpdateProtection/SubmitOrUpdateProfitTarget above (the
+        // existing single-fill placement path, unchanged) - it is a separate, gated,
+        // additional reconciliation step called after that path from two points: an entry
+        // execution fill (OnExecutionUpdate) and a stop/target order's transition to
+        // Accepted/Working (OnOrderUpdate). It only ever resizes an existing protective order
+        // to match Position.Quantity - it never creates a second stop/target, never changes a
+        // price, and never touches the gap latch or the touch watchdog.
+        //
+        // HARD INERTNESS GUARD: these two lines are the first executable statements in this
+        // method. Nothing above them allocates, subscribes, or places/modifies/cancels an
+        // order. At Off (the default) or at Auto with a 1-lot position, the method enters and
+        // returns immediately - zero effect, on every account, matching the prior cut's
+        // behavior exactly.
+        private void ReconcileMultiContractProtection(string trigger, DateTime time)
+        {
+            if (MultiContractProtectionFix == EMALMultiContractProtectionFix.Off)
+                return;
+            if (MultiContractProtectionFix == EMALMultiContractProtectionFix.Auto && Position.Quantity <= 1)
+                return;
+
+            try
+            {
+                // Position.Quantity is the source of truth for what is actually filled - never
+                // resize a protective order above this, even transiently during an in-flight
+                // partial fill.
+                int positionQuantity = Position.Quantity;
+                if (positionQuantity <= 0)
+                    return;
+
+                ReconcileProtectiveStopQuantity(positionQuantity, trigger, time);
+                ReconcileProtectiveTargetQuantity(positionQuantity, trigger, time);
+            }
+            catch (Exception ex)
+            {
+                // Must never propagate into the trading path - this is a diagnostic/safety
+                // add-on, not allowed to rely on RealtimeErrorHandling.IgnoreAllErrors to
+                // contain a fault here.
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | MULTI-CONTRACT PROTECTION FIX ERROR | trigger={1} | {2}",
+                    time, trigger, ex.Message));
+            }
+        }
+
+        private void ReconcileProtectiveStopQuantity(int positionQuantity, string trigger, DateTime time)
+        {
+            if (!IsOrderActive(protectiveStopOrder))
+                return;   // nothing to resize - order placement itself is unchanged, above
+
+            // Resizing before the order is Working/Accepted is exactly the failure mode being
+            // fixed (a resize submitted too early is what Tradovate rejects and drops today) -
+            // wait for a real Working/Accepted callback rather than attempting one blind.
+            if (protectiveStopOrder.OrderState != OrderState.Working
+                && protectiveStopOrder.OrderState != OrderState.Accepted)
+            {
+                return;
+            }
+
+            int resizeQuantity = Math.Min(positionQuantity, Position.Quantity);
+            if (resizeQuantity <= 0 || protectiveStopOrder.Quantity == resizeQuantity)
+                return;   // already matches - no ChangeOrder, no log line
+
+            if (stopReconcileAttempts >= MaxReconcileAttempts)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | MULTI-CONTRACT PROTECTION FIX | stop still mismatched after {1} attempts | "
+                    + "orderQty={2} positionQty={3} trigger={4}",
+                    time, MaxReconcileAttempts, protectiveStopOrder.Quantity, resizeQuantity, trigger));
+                return;
+            }
+
+            stopReconcileAttempts++;
+            Print(string.Format(CultureInfo.InvariantCulture,
+                "{0} | MULTI-CONTRACT PROTECTION FIX | resizing stop | orderQty={1} -> {2} | trigger={3} attempt={4}/{5}",
+                time, protectiveStopOrder.Quantity, resizeQuantity, trigger, stopReconcileAttempts, MaxReconcileAttempts));
+            RecordNtOrderAction("multicontract-resize-stop");
+            ChangeOrder(protectiveStopOrder, resizeQuantity, 0.0, protectiveStopOrder.StopPrice);
+            // A rejection of this ChangeOrder surfaces through the existing OnOrderUpdate
+            // Rejected branch for StopExitSignal/TargetExitSignal orders (prints and flattens
+            // via TrySubmitTerminalExit("ProtectiveReject", ...)) - not swallowed, reuses the
+            // same visible/safe path every other protective-order rejection already takes.
+        }
+
+        private void ReconcileProtectiveTargetQuantity(int positionQuantity, string trigger, DateTime time)
+        {
+            if (!IsOrderActive(profitTargetOrder))
+                return;   // nothing to resize - order placement itself is unchanged, above
+
+            if (profitTargetOrder.OrderState != OrderState.Working
+                && profitTargetOrder.OrderState != OrderState.Accepted)
+            {
+                return;
+            }
+
+            int resizeQuantity = Math.Min(positionQuantity, Position.Quantity);
+            if (resizeQuantity <= 0 || profitTargetOrder.Quantity == resizeQuantity)
+                return;   // already matches - no ChangeOrder, no log line
+
+            if (targetReconcileAttempts >= MaxReconcileAttempts)
+            {
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | MULTI-CONTRACT PROTECTION FIX | target still mismatched after {1} attempts | "
+                    + "orderQty={2} positionQty={3} trigger={4}",
+                    time, MaxReconcileAttempts, profitTargetOrder.Quantity, resizeQuantity, trigger));
+                return;
+            }
+
+            targetReconcileAttempts++;
+            Print(string.Format(CultureInfo.InvariantCulture,
+                "{0} | MULTI-CONTRACT PROTECTION FIX | resizing target | orderQty={1} -> {2} | trigger={3} attempt={4}/{5}",
+                time, profitTargetOrder.Quantity, resizeQuantity, trigger, targetReconcileAttempts, MaxReconcileAttempts));
+            RecordNtOrderAction("multicontract-resize-target");
+            ChangeOrder(profitTargetOrder, resizeQuantity, profitTargetOrder.LimitPrice, 0.0);
+            // Rejection handling: see the identical comment in ReconcileProtectiveStopQuantity.
         }
 
         private double GetProtectiveReferencePrice(MarketPosition positionDirection)
@@ -3221,6 +3603,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             protectiveStopOrder = null;
             profitTargetOrder = null;
             terminalExitPending = false;
+            stopReconcileAttempts = 0;
+            targetReconcileAttempts = 0;
             ClearTerminalExitRetry();
             ReleaseOrderRateReservation();
             ResetGapLatchTracking();
@@ -5049,6 +5433,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Touch Detection Mode", Description = "QuoteOrLast (default): the target-touch watchdog and gap latch trigger on either a Last trade AT the level or the relevant quote (Bid for Long, Ask for Short) reaching it - catches a fleeting one-tick touch even with no Last print exactly there. LastOnly: Last-trade detection only, byte-identical to the prior cut, for A/B comparison or rollback.", GroupName = "C. Risk", Order = 7)]
         public EMALTouchDetectionMode TouchDetectionMode { get; set; }
 
+        // EMAL-1046 (2026-08-18, Steve): fixes an observed multi-lot bug where a partial-filled
+        // entry's stop/target resize can reach the broker before the protective order is
+        // Working, get rejected, and be silently dropped - leaving protection under-sized for
+        // the position (account 1367, 2026-08-13 and 2026-08-17 incidents). Off is byte-
+        // identical to the prior cut on every account, including multi-contract ones - the
+        // reconciliation method's own first-lines inertness guard is what enforces this, not
+        // this property alone. Auto is the recommended live setting for Steve's ~2 multi-
+        // contract accounts; the guard means it does nothing at qty 1, so it is safe to leave
+        // set even if an account is temporarily trading 1 lot. On exists to test the
+        // reconciliation logic itself at qty 1, where it still no-ops harmlessly (quantities
+        // already match).
+        [NinjaScriptProperty]
+        [Display(Name = "Multi-Contract Protection Fix", Description = "Off (default): no effect, byte-identical to the prior cut on every account. Auto: reconciles the stop/target order quantity to Position.Quantity whenever they differ, but ONLY once position quantity exceeds 1 - single-contract accounts are unaffected even when this is set. On: same reconciliation, active at any quantity (for testing; harmless no-op at qty 1). Fixes a partial-fill resize race where Tradovate can reject a resize submitted before the protective order reaches Working state.", GroupName = "C. Risk", Order = 8)]
+        public EMALMultiContractProtectionFix MultiContractProtectionFix { get; set; }
+
+        // EMAL-1050 (Steve, 2026-08-21; extended same day to also cover 09:43): OFF by default -
+        // byte-identical to EMAL-1046 behavior on every account until explicitly turned on. Does
+        // not touch the always-on 09:30 hard block above, and does not affect 09:28/09:29,
+        // 09:36-09:42, or 09:44-onward - see IsAdditionalBlockedMinute's comment for the full
+        // detail. Last setting in this group.
+        [NinjaScriptProperty]
+        [Display(Name = "Block 9:31-9:35 & 9:43", Description = "When ON, additionally blocks entries during the 09:31-09:35 ET minutes AND the 09:43 ET minute (09:30 is already always blocked regardless of this setting), so 09:36 becomes the first possible entry minute after 09:28/09:29. Does not affect 09:28/09:29, 09:36-09:42, or any minute from 09:44 onward. OFF by default - byte-identical to the prior cut when off.", GroupName = "C. Risk", Order = 9)]
+        public bool Block0931To0935 { get; set; }
+
         [NinjaScriptProperty]
         [Browsable(false)]
         [Display(Name = "ProjectX API Base URL", GroupName = "D. ProjectX API", Order = 3)]
@@ -5155,6 +5563,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Browsable(false)]
         [Display(Name = "Path Log File", Description = "Full path to the research log CSV. Blank auto-names EMAL_v{version}_research_log_{yyyy-MM-dd hh-mm tt}.csv in Documents, stamped at file-creation time.", GroupName = "F. Logging", Order = 4)]
         public string PathLogPath { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Tick Logging", Description = "Diagnostic only, OFF by default - enable only when hunting a cross-box divergence. Realtime-only: writes nothing during Playback/Historical/Analyzer. Records the exact Last/Bid/Ask tick stream this instance computes on, buffered and periodically flushed, so two boxes' files can be diffed after a divergent trade. Never affects signal logic, the watchdog, the gap latch, protection, or orders.", GroupName = "F. Logging", Order = 6)]
+        public bool EnableTickLogging { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Tick Log Tag", Description = "Written into the tick log filename so files from different boxes/instances don't collide, e.g. \"box227\", \"box107\". Leave blank on a single-box setup.", GroupName = "F. Logging", Order = 7)]
+        public string TickLogTag { get; set; }
+
+        [Browsable(false)]
+        [Display(Name = "Tick Log Folder", Description = "Folder for tick log CSVs, one file per instrument per day per tag, filename {instrument}_{tag}_{yyyyMMdd}.csv. Created if missing. Leave blank for NinjaTrader's user data folder \\ticklogs.", GroupName = "F. Logging", Order = 8)]
+        public string TickLogFolder { get; set; }
     }
 
     // Version stamp (Steve, 2026-08-05). Purely informational, no effect on strategy
@@ -5163,8 +5583,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1045,
-        modified_2026_08_18
+        version_1050,
+        modified_2026_08_21
     }
 
     // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
@@ -5174,6 +5594,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     {
         LastOnly,
         QuoteOrLast
+    }
+
+    // EMAL-1046: Off is the previous cut's exact behavior on every account. Auto is what
+    // Steve runs on his ~2 multi-contract accounts - the reconciliation method's own inertness
+    // guard means it only ever does anything once Position.Quantity > 1. On exists for testing
+    // the reconciliation logic itself at qty 1, where it still no-ops harmlessly since there's
+    // nothing to reconcile (quantities already match at 1).
+    public enum EMALMultiContractProtectionFix
+    {
+        Off,
+        On,
+        Auto
     }
 
     public enum EMALUs0928Setting
