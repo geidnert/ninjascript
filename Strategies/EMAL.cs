@@ -319,6 +319,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool plannedTargetTouchLevelFallbackLogged;
         // Per-window bracket presets, resolved from the Setting popups in DataLoaded.
         private double us0928Tp, us0928Sl, us0955Tp, us0955Sl;
+        // EMAL-1051: same pattern, one pair per new session, resolved from that session's own
+        // Setting popup in ResolveWindowPresets.
+        private double asiaTp, asiaSl, europeTp, europeSl, preMarketTp, preMarketSl, usMiddayTp, usMiddaySl;
         private double entryFillValue;
         private int entryFilledQuantity;
         private double desiredProtectionTargetPrice;
@@ -385,6 +388,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // from hardBlockedMinuteBarCount (the always-on 09:30 block) so the fill-rate summary
         // can report them independently.
         private int additionalBlockedMinuteBarCount;
+        // EMAL-1051: counts bars blocked by the unconditional 08:28-08:32 news-release block.
+        private int newsBlockedMinuteBarCount;
+        // EMAL-1051 (second change, 2026-08-22): counts bars blocked by the unconditional
+        // 16:55-17:00 pre-close block. See IsPreCloseWindow's comment.
+        private int preCloseBlockedMinuteBarCount;
 
         // Feature logging. The entry-side fragment is built when the order is submitted, the
         // fill fragment when it fills, and the row is written when the position closes.
@@ -427,10 +435,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // TP and any SL (wider OR tighter) be reconstructed offline with correct first-touch
         // ordering - a stopgap for tuning while the r45 CLI is out of parity. OFF by default;
         // it never affects live trading and only runs when EnablePathLog is set for a research
-        // playback. Grid: 0.5-pt steps to 30 pts each side; 300s horizon.
-        private const double PathLogStepPoints = 0.5;
+        // playback. Grid: 0.25-pt (1 NQ tick) steps to 30 pts each side; 300s horizon. Changed
+        // from 0.5 (2 ticks) to 0.25 (2026-08-22, Steve) so TP/SL can be reconstructed at 1-tick
+        // granularity - every downstream consumer (array sizing, CSV header column names, the
+        // per-tick touch-check loop below) derives from this constant and PathLogLevels, so
+        // this is the only line that needed to change. Doubles the research-log CSV's column
+        // count (124 -> 244) and the per-tick loop's iteration count, both harmless: the log is
+        // research-only (never runs live) and still just a few MB per run.
+        private const double PathLogStepPoints = 0.25;
         private const double PathLogMaxPoints = 30.0;
-        private const double PathLogHorizonSeconds = 300.0;
+        // Raised 300 -> 1800 (2026-08-22, Steve): the SL-sweep question for Asia/Europe/US
+        // Pre-Market (whether a tighter stop than each session's current SL20 improves
+        // net/maxDD) turned out to be genuinely undecided by the 300s-horizon reconstruction -
+        // roughly 400 trades across those three sessions go adverse far enough to matter but
+        // never touch either level within 300s, so their true outcome is unknown and the
+        // SL-sweep's conclusion flips sign depending on how they're valued (see the chat record
+        // for the full analysis). 1800s (30 min) should resolve nearly all of that censored
+        // cohort directly from a fresh Playback capture, since EMAL's median trade duration is
+        // well under 2 minutes even in its widest-bracket sessions (Europe/Pre-Market). Same
+        // per-tick loop, same array sizing - only how long each PathRecorder stays tracked
+        // before flushing changes, so concurrent open recorders grow proportionally with trade
+        // frequency, not with grid resolution; harmless at EMAL's actual trade rate.
+        private const double PathLogHorizonSeconds = 1800.0;
         private static readonly int PathLogLevels = (int)(PathLogMaxPoints / PathLogStepPoints);
         private List<PathRecorder> pathRecorders;
         private bool pathLogHeaderWritten;
@@ -521,11 +547,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Calculate = Calculate.OnEachTick;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
-                IsExitOnSessionCloseStrategy = false;
+                // EMAL-1051 (sixth change, 2026-08-22, Steve): defaulted ON. Note this is a
+                // NinjaTrader-native flatten, governed by the CHART'S Trading Hours Template, not
+                // by EMAL's own session windows or the new EODForceCloseTime property above - it
+                // is a second, independent flatten mechanism, not a replacement for either. If the
+                // assigned template's session-end time doesn't line up with 17:00 ET, this can
+                // fire at a different time than EODForceCloseTime, and if the template treats
+                // Asia/Europe's overnight hours as outside its "session," this could flatten those
+                // positions early. Confirm the chart's Trading Hours Template before relying on
+                // this for any overnight session.
+                IsExitOnSessionCloseStrategy = true;
                 IsInstantiatedOnEachOptimizationIteration = false;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
-                BarsRequiredToTrade = 1;
+                // EMAL-1051 (seventh change, 2026-08-22, Steve): raised from 1 to 22 to match
+                // OnBarUpdate's own internal warmup guard exactly (Math.Max(EmaPeriod, 20) + 2 =
+                // Math.Max(9, 20) + 2 = 22 at today's defaults) - NinjaTrader itself now withholds
+                // OnBarUpdate calls until that many bars exist, instead of calling in from bar 1
+                // and relying solely on the internal check to no-op each time. Does not change
+                // trading behavior - the internal check was, and remains, the actual gate. Tied
+                // to today's EmaPeriod default: if EmaPeriod is ever raised above 20, the internal
+                // check's own threshold moves with it automatically, but this hardcoded 22 would
+                // not - same situation as before this change, just shifted, and EmaPeriod is
+                // Browsable(false) so not something a user is expected to touch.
+                BarsRequiredToTrade = 22;
 
                 // Aug 13 live incident (3-lot Apex account): a manual broker-side flatten left a
                 // resting entry limit orphaned when the instance was disabled, and
@@ -541,7 +586,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1050;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1051;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -553,7 +598,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TargetTouchGraceMs = 400;
                 TouchDetectionMode = EMALTouchDetectionMode.QuoteOrLast;   // see comment on the property below
                 MultiContractProtectionFix = EMALMultiContractProtectionFix.Off;   // see comment on the property below
-                Block0931To0935 = false;   // OFF by default; see comment on the property below
+                Block0931To0935 = true;   // ALWAYS ON, hidden; see comment on the property below
+
+                // EMAL-1051 (corrected 2026-08-22, Steve): all four new sessions default to
+                // Disabled, same as the original two sessions (Us0928Setting/Us0955Setting
+                // below) - a fresh instance takes zero trades on any of the six sessions until a
+                // preset is explicitly chosen. *MinimumSlope defaults are overwritten by
+                // ResolveWindowPresets from each session's own Setting popup once a non-Disabled
+                // preset is selected, same as the original two sessions' pattern.
+                AsiaSetting = EMALAsiaSetting.Disabled;
+                AsiaMinimumSlope = 2.75;
+
+                EuropeSetting = EMALEuropeSetting.Disabled;
+                EuropeMinimumSlope = 2.75;
+
+                PreMarketSetting = EMALPreMarketSetting.Disabled;
+                PreMarketMinimumSlope = 2.75;
+
+                USMiddaySetting = EMALUSMiddaySetting.Disabled;
+                USMiddayMinimumSlope = 2.75;
+                EODForceCloseTime = new TimeSpan(16, 55, 0);   // see comment on the property below
                 OrderActionLimitPerHour = 1100;
 
                 ProjectXApiBaseUrl = "https://api.topstepx.com";
@@ -764,8 +828,52 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Time[0].AddMinutes(-BarsPeriod.Value);
         }
 
-        // 3 = US 09:28-09:50, 5 = US 09:55-10:30, -1 = outside both windows (the two windows
-        // are contiguous, no gap between them - see the boundary comment above).
+        // 3 = US 09:28-09:50, 5 = US 09:55-10:30 (both UNCHANGED, untouched, never tuned - see
+        // EMAL-1051-changelog.txt). EMAL-1051 adds four MORE sessions, found and validated from
+        // the EMAL-1049 QNRVX full-day research log (Apr26-Aug21): 10 = Asia, 11 = Europe,
+        // 12 = US Pre-Market, 13 = US Midday. These four use the SAME preset-popup mechanism as
+        // the original two (a single "Setting" enum per session, "Disabled" first, TP/SL/slope
+        // bundled into the chosen preset - no separate editable TP/SL/slope fields, no exposed
+        // start/stop time properties either; those are fixed consts below, same as the original
+        // two sessions' Us0928StartMinute/Us0928EndMinute). Asia's window (18:00-03:00) crosses
+        // midnight; IsInMinuteWindow below handles that with plain minute-of-day int arithmetic,
+        // matching this file's existing style rather than introducing TimeSpan comparisons.
+        // -1 = outside every window.
+        private const int AsiaStartMinute = 18 * 60;         // 18:00 ET
+        private const int AsiaStopMinute = 3 * 60;           // 03:00 ET (wraps past midnight)
+        private const int EuropeStartMinute = 3 * 60;        // 03:00 ET
+        private const int EuropeStopMinute = 6 * 60 + 30;    // 06:30 ET
+        private const int PreMarketStartMinute = 8 * 60;     // 08:00 ET
+        private const int PreMarketStopMinute = Us0928StartMinute; // 09:28 ET - butts directly against the existing session, no gap, no overlap
+        private const int USMiddayStartMinute = Us0955EndMinute;   // 10:30 ET - butts directly against the existing session, no gap, no overlap
+        private const int USMiddayStopMinute = 17 * 60;      // 17:00 ET, immediately before the CME daily maintenance break
+
+        // EMAL-1051 (second change, 2026-08-22, Steve): standing, UNCONDITIONAL block on new
+        // entries AND flatten of any open position from the configurable EOD Force Close time
+        // up to the 17:00 ET CME daily maintenance halt - no toggle to turn the FEATURE off, but
+        // the exact clock time is user-editable (see EODForceCloseTime property below), because
+        // different prop firms enforce different cutoffs (Topstep requires flat by 16:00 ET;
+        // Steve's own default is 16:55, 5 minutes ahead of the halt). Motivated by the
+        // daily-reopen gap-risk analysis (chat record, EMAL_Analysis_Plan.md): of trades entered
+        // 16:00-17:00, a real share were still open when the exchange halted, riding an
+        // unmonitored hour with no working stop able to react before the 18:00 reopen. This
+        // closes that exposure structurally (flatten before the halt) rather than trusting TP/SL
+        // to resolve in time. Only US Midday can realistically still be open this late (every
+        // other session has already closed or not yet opened by 16:55), but the check is
+        // intentionally unconditional on session identity, same reasoning as the news block: a
+        // standing risk rule, not something scoped to one session's tuning. The 17:00 upper bound
+        // is NOT user-editable - it is a real CME market fact (the daily halt itself), not a risk
+        // preference - only how far ahead of it to start closing is configurable. Setting
+        // EODForceCloseTime at or after 17:00 leaves an empty window, i.e. disables the feature;
+        // this is accepted, not guarded against, same as any other property that can be set to a
+        // no-op value.
+        private bool IsPreCloseWindow(DateTime easternTime)
+        {
+            int minuteOfDay = easternTime.Hour * 60 + easternTime.Minute;
+            int eodForceCloseMinute = (int)EODForceCloseTime.TotalMinutes;
+            return minuteOfDay >= eodForceCloseMinute && minuteOfDay < USMiddayStopMinute;
+        }
+
         private int GetSessionIndex(DateTime platformTime)
         {
             DateTime ny = ConvertToZone(platformTime, easternZone);
@@ -777,7 +885,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (nyMinute >= Us0955StartMinute && nyMinute < Us0955EndMinute)
                 return 5;
 
+            if (AsiaSetting != EMALAsiaSetting.Disabled && IsInMinuteWindow(nyMinute, AsiaStartMinute, AsiaStopMinute))
+                return 10;
+
+            if (EuropeSetting != EMALEuropeSetting.Disabled && IsInMinuteWindow(nyMinute, EuropeStartMinute, EuropeStopMinute))
+                return 11;
+
+            if (PreMarketSetting != EMALPreMarketSetting.Disabled && IsInMinuteWindow(nyMinute, PreMarketStartMinute, PreMarketStopMinute))
+                return 12;
+
+            if (USMiddaySetting != EMALUSMiddaySetting.Disabled && IsInMinuteWindow(nyMinute, USMiddayStartMinute, USMiddayStopMinute))
+                return 13;
+
             return -1;
+        }
+
+        // EMAL-1051: shared by the four new sessions only - the original two use their own plain
+        // `nyMinute >= Start && nyMinute < End` comparison above, untouched, since neither of
+        // their windows crosses midnight. Handles a window that DOES cross midnight (start >
+        // stop, e.g. Asia's 18:00-03:00 -> 1080 > 180) by splitting into "from start to end of
+        // day" OR "from start of day to stop". A same-day window (start <= stop) is the ordinary
+        // case. Stop is exclusive either way, matching the original two sessions' convention.
+        private static bool IsInMinuteWindow(int nyMinute, int startMinute, int stopMinute)
+        {
+            if (startMinute <= stopMinute)
+                return nyMinute >= startMinute && nyMinute < stopMinute;
+            return nyMinute >= startMinute || nyMinute < stopMinute;
         }
 
         private static string SessionName(int index)
@@ -786,6 +919,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return "9:28-9:50";
                 case 5: return "9:55-10:30";
+                case 10: return "18:00-3:00";
+                case 11: return "3:00-6:30";
+                case 12: return "8:00-9:28";
+                case 13: return "10:30-17:00";
                 default: return "Halt";
             }
         }
@@ -796,18 +933,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return Us0928Setting != EMALUs0928Setting.Disabled;
                 case 5: return Us0955Setting != EMALUs0955Setting.Disabled;
+                case 10: return AsiaSetting != EMALAsiaSetting.Disabled;
+                case 11: return EuropeSetting != EMALEuropeSetting.Disabled;
+                case 12: return PreMarketSetting != EMALPreMarketSetting.Disabled;
+                case 13: return USMiddaySetting != EMALUSMiddaySetting.Disabled;
                 default: return false;
             }
         }
 
         // Per-session slope threshold. Falls back to the global value for a minute outside
-        // both tracked windows.
+        // every tracked window.
         private double GetConfiguredSlope(DateTime platformTime)
         {
             switch (GetSessionIndex(platformTime))
             {
                 case 3: return Math.Abs(Us0928MinimumSlope);
                 case 5: return Math.Abs(Us0955MinimumSlope);
+                case 10: return Math.Abs(AsiaMinimumSlope);
+                case 11: return Math.Abs(EuropeMinimumSlope);
+                case 12: return Math.Abs(PreMarketMinimumSlope);
+                case 13: return Math.Abs(USMiddayMinimumSlope);
                 default: return Math.Abs(MinimumEmaSlopePoints);
             }
         }
@@ -821,20 +966,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         // Fallback stop distance if a computed stop is ever unexpectedly zero (Steve, 2026-08-06,
         // replacing the removed global StopLossPoints property). Should never actually engage -
-        // both window presets always specify a real SL - this exists only so a bug produces a
+        // every session preset always specifies a real SL - this exists only so a bug produces a
         // safe, known-sane stop instead of a zero-distance one.
         private const double DefaultSafetyStopLossPoints = 18.0;
 
-        // Per-window brackets (Steve, 2026-07-30). The two US windows each pick a preset
-        // (TP/SL/slope) via a popup. There is no global TP/SL anymore (removed 2026-08-06, see
-        // EMAL-1023-changelog.txt) - outside both windows there is nothing to configure, so these
-        // return NaN and callers (currently only the info panel) must handle that as "n/a".
+        // Per-session brackets (Steve, 2026-07-30; extended to four more sessions 2026-08-22).
+        // Every session (all six) picks a preset (TP/SL/slope) via a single popup - no separate
+        // editable TP/SL/slope fields anywhere. Outside every window there is nothing to
+        // configure, so these return NaN and callers (currently only the info panel) must handle
+        // that as "n/a".
         private double GetConfiguredTakeProfit()
         {
             switch (GetSessionIndex(GetBarOpenRaw()))
             {
                 case 3: return us0928Tp;
                 case 5: return us0955Tp;
+                case 10: return asiaTp;
+                case 11: return europeTp;
+                case 12: return preMarketTp;
+                case 13: return usMiddayTp;
                 default: return double.NaN;
             }
         }
@@ -845,12 +995,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 case 3: return us0928Sl;
                 case 5: return us0955Sl;
+                case 10: return asiaSl;
+                case 11: return europeSl;
+                case 12: return preMarketSl;
+                case 13: return usMiddaySl;
                 default: return double.NaN;
             }
         }
 
-        // Resolves each window's Setting popup into its TP / SL / slope. The slope is written
-        // back into the per-window Us*MinimumSlope so GetConfiguredSlope keeps working unchanged.
+        // Resolves each session's Setting popup into its TP / SL / slope. The slope is written
+        // back into the per-session *MinimumSlope property so GetConfiguredSlope keeps working
+        // unchanged. Each of the four new sessions has exactly one real preset (found on the
+        // QNRVX full-day scan) plus Disabled - unlike the original two sessions, which offer a
+        // short list of alternatives, these were only validated at one bracket each so far.
         private void ResolveWindowPresets()
         {
             switch (Us0928Setting)
@@ -867,6 +1024,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case EMALUs0955Setting.P2_ENG_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
                 case EMALUs0955Setting.P3_ENG_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
                 default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
+            }
+            switch (AsiaSetting)
+            {
+                case EMALAsiaSetting.Disabled:                        asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
+                case EMALAsiaSetting.Asia_TP4_SL20_Slope2_75:         asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;
+                default: /* Asia_TP4_SL20_Slope2_75 */                asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;
+            }
+            switch (EuropeSetting)
+            {
+                case EMALEuropeSetting.Disabled:                      europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
+                case EMALEuropeSetting.Europe_TP8_5_SL20_Slope2_75:   europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
+                default:                                              europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
+            }
+            switch (PreMarketSetting)
+            {
+                case EMALPreMarketSetting.Disabled:                       preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
+                case EMALPreMarketSetting.PreMarket_TP11_SL20_Slope2_75:  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
+                default:                                                  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
+            }
+            switch (USMiddaySetting)
+            {
+                case EMALUSMiddaySetting.Disabled:                      usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
+                case EMALUSMiddaySetting.USMidday_TP3_SL13_Slope2_75:   usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
+                default:                                                usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
             }
         }
 
@@ -996,6 +1177,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             });
         }
 
+        // EMAL-1051 (Steve, 2026-08-21): StartPathRecorder's call moved OUT of this method - see
+        // the OnOrderUpdate entry-fill call site, which now calls it directly and unconditionally
+        // (StartPathRecorder has its own correct EnablePathLog gate). Previously it lived here,
+        // which meant Research Log (EnablePathLog) silently never recorded anything unless Log
+        // (EnableFeatureLog) was ALSO on - the two toggles are meant to be independent (Research
+        // Log's own description says nothing about depending on Feature Log), and this method
+        // returns immediately above when EnableFeatureLog is off, so StartPathRecorder was never
+        // reached. Found 2026-08-21 when Steve had Research Log on, Log off, ran a full-day
+        // Playback for an hour (~1 month of simulated trades), and no research-log file was ever
+        // created - not a settings mistake, a real defect in this coupling.
         private void CaptureFillFeatures(double fillPrice, DateTime fillTime)
         {
             if (!EnableFeatureLog || pendingEntryFeatures == null)
@@ -1013,8 +1204,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // as positive point distances, matching NinjaTrader's MAE/MFE convention.
             tradeMaePoints = 0.0;
             tradeMfePoints = 0.0;
-
-            StartPathRecorder(fillPrice, pendingDirection, fillTime);
 
             pendingFillFeatures = string.Join(",", new string[]
             {
@@ -1066,6 +1255,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  9:30 hard block     : bars blocked: {0}", hardBlockedMinuteBarCount));
             Print(string.Format("  9:31-9:35 & 9:43 block : enabled={0}  bars blocked: {1}", Block0931To0935, additionalBlockedMinuteBarCount));
+            Print(string.Format("  8:28-8:32 news block : always on  bars blocked: {0}", newsBlockedMinuteBarCount));
+            Print(string.Format("  EOD Force Close ({0:hh\\:mm}-17:00) block/flatten : always on  bars blocked: {1}", EODForceCloseTime, preCloseBlockedMinuteBarCount));
+            Print(string.Format("      Asia 18:00-3:00     : {0}  slope {1}", AsiaSetting, AsiaMinimumSlope));
+            Print(string.Format("      Europe 3:00-6:30    : {0}  slope {1}", EuropeSetting, EuropeMinimumSlope));
+            Print(string.Format("      US Pre-Mkt 8:00-9:28: {0}  slope {1}", PreMarketSetting, PreMarketMinimumSlope));
+            Print(string.Format("      US Midday 10:30-17:00: {0}  slope {1}", USMiddaySetting, USMiddayMinimumSlope));
             Print(string.Format("  order rate guard    : always on / {0} actions (entries blocked: {1})",
                 OrderActionLimitPerHour, rateGuardBlockedEntryCount));
             Print(string.Format("  signals generated   : {0}", signalCount));
@@ -1857,6 +2052,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return (minute >= 31 && minute <= 35) || minute == 43;
         }
 
+        // EMAL-1051 (Steve, 2026-08-22): standing, UNCONDITIONAL block on 08:28-08:32 ET - no
+        // toggle, matching the 09:30 hard block's own always-on treatment, not
+        // IsAdditionalBlockedMinute's gated pattern. Steve's stated reason: avoids the 08:30 ET
+        // high-impact economic news release slot (CPI, jobs report, etc.), and he wants it
+        // blocked "even when there is not news" - a standing risk rule, not something to be
+        // discovered or overridden by what the QNRVX data showed for that window. Applies
+        // regardless of which session (if any) is active, same placement as the other two
+        // unconditional/gated blocks below.
+        private bool IsNewsReleaseBlockedMinute(DateTime easternTime)
+        {
+            return easternTime.Hour == 8 && easternTime.Minute >= 28 && easternTime.Minute < 32;
+        }
+
         private bool IsEntryWindowOpen()
         {
             DateTime barOpenRaw = GetBarOpenRaw();
@@ -1878,8 +2086,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return false;
             }
 
-            // Window gate is unconditional (Steve, 2026-08-06): the two US windows are the only
-            // sessions that exist, so entries are confined to them.
+            // EMAL-1051: unconditional, same placement as the two blocks above - see
+            // IsNewsReleaseBlockedMinute's comment.
+            if (IsNewsReleaseBlockedMinute(barOpen))
+            {
+                newsBlockedMinuteBarCount++;
+                return false;
+            }
+
+            // EMAL-1051 (second change, 2026-08-22): unconditional, same placement as the blocks
+            // above - see IsPreCloseWindow's comment. A fresh entry this late would just have to
+            // be flattened again minutes later by the check in OnBarUpdate below, so it is blocked
+            // here rather than opened and immediately closed.
+            if (IsPreCloseWindow(barOpen))
+            {
+                preCloseBlockedMinuteBarCount++;
+                return false;
+            }
+
+            // Window gate is unconditional (Steve, 2026-08-06): entries are confined to whichever
+            // sessions are enabled - originally just the two US windows, now up to six with
+            // EMAL-1051's four additions.
             int session = GetSessionIndex(barOpenRaw);
             if (session < 0 || !IsSessionEnabled(session))
                 return false;
@@ -1950,6 +2177,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (Position.MarketPosition != MarketPosition.Flat)
             {
+                // EMAL-1051 (second change, 2026-08-22): flatten any position still open in the
+                // 5 minutes before the 17:00 ET CME daily halt - see IsPreCloseWindow's comment.
+                // Checked before the ordinary "position open, do nothing but cancel a stray entry
+                // order" path below, since this is the one case where an open position DOES need
+                // to be acted on directly rather than left to its own stop/target.
+                if (IsPreCloseWindow(ConvertToEastern(GetBarOpenRaw())))
+                {
+                    TrySubmitTerminalExit("PreCloseFlatten", protectedEntrySignal);
+                    return;
+                }
+
                 CancelEntryOrderIfActive("position-open");
                 return;
             }
@@ -2804,6 +3042,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // logging off.
                 openEntryPrice = averageFillPrice;
                 openEntryDirection = order.Name == LongEntrySignal ? 1 : -1;
+
+                // EMAL-1051: called unconditionally, same reasoning as openEntryDirection above -
+                // Research Log (EnablePathLog) must work independently of Log (EnableFeatureLog).
+                // StartPathRecorder has its own correct EnablePathLog/direction/price guard, so
+                // this is a no-op whenever Research Log is off, regardless of Feature Log's state.
+                StartPathRecorder(averageFillPrice, openEntryDirection, time);
 
                 CaptureFillFeatures(averageFillPrice, time);
                 ClearActiveEntryContext();
@@ -5448,14 +5692,84 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Multi-Contract Protection Fix", Description = "Off (default): no effect, byte-identical to the prior cut on every account. Auto: reconciles the stop/target order quantity to Position.Quantity whenever they differ, but ONLY once position quantity exceeds 1 - single-contract accounts are unaffected even when this is set. On: same reconciliation, active at any quantity (for testing; harmless no-op at qty 1). Fixes a partial-fill resize race where Tradovate can reject a resize submitted before the protective order reaches Working state.", GroupName = "C. Risk", Order = 8)]
         public EMALMultiContractProtectionFix MultiContractProtectionFix { get; set; }
 
-        // EMAL-1050 (Steve, 2026-08-21; extended same day to also cover 09:43): OFF by default -
-        // byte-identical to EMAL-1046 behavior on every account until explicitly turned on. Does
-        // not touch the always-on 09:30 hard block above, and does not affect 09:28/09:29,
-        // 09:36-09:42, or 09:44-onward - see IsAdditionalBlockedMinute's comment for the full
-        // detail. Last setting in this group.
+        // EMAL-1050 (Steve, 2026-08-21; extended same day to also cover 09:43): originally an
+        // OFF-by-default optional toggle. CHANGED 2026-08-22 (Steve): now defaults ON and hidden
+        // from the property grid - same "hardcode to enabled, remove the user option" treatment
+        // this file already gives the order rate guard and the gap-breach entry cancellation.
+        // The property/field itself is left in place (not deleted) so IsAdditionalBlockedMinute,
+        // PrintFillRateSummary, and the bar-count tracking below all keep working unchanged -
+        // only the default value and its visibility changed. Does not touch the always-on 09:30
+        // hard block above, and does not affect 09:28/09:29, 09:36-09:42, or 09:44-onward - see
+        // IsAdditionalBlockedMinute's comment for the full detail.
         [NinjaScriptProperty]
-        [Display(Name = "Block 9:31-9:35 & 9:43", Description = "When ON, additionally blocks entries during the 09:31-09:35 ET minutes AND the 09:43 ET minute (09:30 is already always blocked regardless of this setting), so 09:36 becomes the first possible entry minute after 09:28/09:29. Does not affect 09:28/09:29, 09:36-09:42, or any minute from 09:44 onward. OFF by default - byte-identical to the prior cut when off.", GroupName = "C. Risk", Order = 9)]
+        [Browsable(false)]
+        [Display(Name = "Block 9:31-9:35 & 9:43", Description = "Additionally blocks entries during the 09:31-09:35 ET minutes AND the 09:43 ET minute (09:30 is already always blocked regardless of this setting), so 09:36 becomes the first possible entry minute after 09:28/09:29. Does not affect 09:28/09:29, 09:36-09:42, or any minute from 09:44 onward. Always on, hidden - see the field comment above.", GroupName = "C. Risk", Order = 9)]
         public bool Block0931To0935 { get; set; }
+
+        // ================================================================================
+        // EMAL-1051 (Steve, 2026-08-22): four new sessions, found and validated from the
+        // EMAL-1049 QNRVX full-day research log (26,620 trades, Apr26-Aug21) via offline
+        // path-log reconstruction, four-halves validated (sequential + interleaved), on
+        // live-vs-Playback-adjusted numbers (measured stop-slippage and touch-exit-shortfall
+        // biases applied before selection - not raw Playback-optimistic numbers). Each is a
+        // single "Setting" popup, "Disabled" first, exactly like the original two US
+        // sessions' Us0928Setting/Us0955Setting - Steve's explicit instruction: 6 popups
+        // total (2 original + 4 new), no separate editable TP/SL/slope fields, no exposed
+        // start/stop time properties either (those are fixed consts, same as the original
+        // two sessions' Us0928StartMinute/Us0928EndMinute). The original two sessions are
+        // completely UNCHANGED and were never tuned as part of this work. Slope is fixed at
+        // 2.75 for all four new sessions, baked into each one's only real preset, same as
+        // how the original two sessions bake their slope into their presets.
+        // Two gaps found in the data and deliberately left uncovered by any session:
+        // 06:30-08:00 ET (a real, decisive failure in the QNRVX scan, not a marginal one) and
+        // 17:00-18:00 ET (the CME daily maintenance break - no trade data exists there at all).
+        // Full detail, including the four-halves numbers and the judgment calls behind each
+        // window's exact boundaries: EMAL-1051-changelog.txt.
+        // ================================================================================
+
+        [NinjaScriptProperty]
+        [Display(Name = "Asia Setting", Description = "Asia_TP4_SL20_Slope2_75 (Playback-reconstruction, QNRVX Apr26-Aug21, live-vs-Playback adjusted): WR88.23% PF1.443 Net$157,884 MaxDD$2,962 Net/DD53.30", GroupName = "B. Sessions", Order = 1)]
+        public EMALAsiaSetting AsiaSetting { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Asia Min Slope", Description = "Driven by the Asia Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 2)]
+        public double AsiaMinimumSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Europe Setting", Description = "Europe_TP8_5_SL20_Slope2_75 (Playback-reconstruction, QNRVX Apr26-Aug21, live-vs-Playback adjusted): WR77.04% PF1.383 Net$86,793 MaxDD$2,918 Net/DD29.75 - notably wider TP than the NY sessions' TP4/TP3; validated smooth and monotonic across neighboring TP values on the QNRVX scan, not an isolated spike.", GroupName = "B. Sessions", Order = 7)]
+        public EMALEuropeSetting EuropeSetting { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "Europe Min Slope", Description = "Driven by the Europe Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 8)]
+        public double EuropeMinimumSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "US Pre-Market Setting", Description = "PreMarket_TP11_SL20_Slope2_75 (Playback-reconstruction, QNRVX Apr26-Aug21, live-vs-Playback adjusted): WR73.86% PF1.508 Net$75,046 MaxDD$2,814 Net/DD26.67 - notably wider TP than the NY sessions; validated smooth and monotonic across neighboring TP values on the QNRVX scan, not an isolated spike.", GroupName = "B. Sessions", Order = 13)]
+        public EMALPreMarketSetting PreMarketSetting { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US Pre-Market Min Slope", Description = "Driven by the US Pre-Market Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 14)]
+        public double PreMarketMinimumSlope { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "US Midday Setting", Description = "USMidday_TP3_SL13_Slope2_75 (Playback-reconstruction, QNRVX Apr26-Aug21, live-vs-Playback adjusted): WR86.38% PF1.384 Net$139,280 MaxDD$2,983 Net/DD46.69 - notably tighter SL than the NY sessions' SL18; needed to bring this high-volume 6.5-hour session's max drawdown under the $3,000 cap at all.", GroupName = "B. Sessions", Order = 23)]
+        public EMALUSMiddaySetting USMiddaySetting { get; set; }
+
+        [Range(0.0, double.MaxValue), NinjaScriptProperty]
+        [Browsable(false)]
+        [Display(Name = "US Midday Min Slope", Description = "Driven by the US Midday Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 24)]
+        public double USMiddayMinimumSlope { get; set; }
+
+        // EMAL-1051 (fifth change, 2026-08-22, Steve): last setting in the group, below all six
+        // sessions. See IsPreCloseWindow's comment for the full rationale. Default 16:55 ET (5
+        // minutes ahead of the 17:00 CME halt); lower it for prop firms with a stricter
+        // requirement (e.g. Topstep enforces flat by 16:00 ET).
+        [NinjaScriptProperty]
+        [Display(Name = "EOD Force Close", Description = "All entries are blocked and any open position is force-flattened at market from this time until the 17:00 ET CME daily maintenance halt. Default 16:55 (5 minutes ahead of the halt). Lower it for prop firms with a stricter flat-by requirement, e.g. Topstep enforces 16:00 ET.", GroupName = "B. Sessions", Order = 29)]
+        public TimeSpan EODForceCloseTime { get; set; }
 
         [NinjaScriptProperty]
         [Browsable(false)]
@@ -5524,21 +5838,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 (NT8, WFYKZ Apr27-Aug13, gap-breach ON) WR91.00% PF2.356 Net$41,427 MaxDD$1,649 Net/DD25.13\n\nP2 WR92.01% PF1.797 Net$16,332 MaxDD$1,339 Net/DD12.2", GroupName = "B. Sessions", Order = 1)]
+        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 (NT8, WFYKZ Apr27-Aug13, gap-breach ON) WR91.00% PF2.356 Net$41,427 MaxDD$1,649 Net/DD25.13\n\nP2 WR92.01% PF1.797 Net$16,332 MaxDD$1,339 Net/DD12.2", GroupName = "B. Sessions", Order = 19)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:28-09:50 Min Slope", Description = "Driven by the US 09:28-09:50 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 2)]
+        [Display(Name = "US 09:28-09:50 Min Slope", Description = "Driven by the US 09:28-09:50 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 20)]
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR86.99% PF1.413 Net$20,087 MaxDD$2,162 Net/DD9.29\n\nP2 (NT8, WFYKZ Apr27-Aug13, gap-breach ON) WR93.61% PF2.530 Net$46,606 MaxDD$1,342 Net/DD34.73\n\nP3 WR88.89% PF1.4 Net$14,899 MaxDD$2,053 Net/DD7.26", GroupName = "B. Sessions", Order = 3)]
+        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR86.99% PF1.413 Net$20,087 MaxDD$2,162 Net/DD9.29\n\nP2 (NT8, WFYKZ Apr27-Aug13, gap-breach ON) WR93.61% PF2.530 Net$46,606 MaxDD$1,342 Net/DD34.73\n\nP3 WR88.89% PF1.4 Net$14,899 MaxDD$2,053 Net/DD7.26", GroupName = "B. Sessions", Order = 21)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 4)]
+        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 22)]
         public double Us0955MinimumSlope { get; set; }
 
 
@@ -5583,8 +5897,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1050,
-        modified_2026_08_21
+        version_1051,
+        modified_2026_08_22
     }
 
     // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
@@ -5621,6 +5935,32 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         P1_ENG_TP4_SL18_Slope2_75,
         P2_ENG_TP3_SL18_Slope2_75,
         P3_ENG_TP3_SL16_Slope2_75
+    }
+
+    // EMAL-1051: four new sessions' presets, same shape as the two above - Disabled first,
+    // one real preset each (found and validated on the EMAL-1049 QNRVX full-day scan).
+    public enum EMALAsiaSetting
+    {
+        Disabled,
+        Asia_TP4_SL20_Slope2_75
+    }
+
+    public enum EMALEuropeSetting
+    {
+        Disabled,
+        Europe_TP8_5_SL20_Slope2_75
+    }
+
+    public enum EMALPreMarketSetting
+    {
+        Disabled,
+        PreMarket_TP11_SL20_Slope2_75
+    }
+
+    public enum EMALUSMiddaySetting
+    {
+        Disabled,
+        USMidday_TP3_SL13_Slope2_75
     }
 
 }
