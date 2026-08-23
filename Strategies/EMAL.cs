@@ -586,7 +586,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1051;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1053;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -1013,40 +1013,40 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             switch (Us0928Setting)
             {
                 case EMALUs0928Setting.Disabled:                   us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALUs0928Setting.P1_ENG_TP4_SL18_Slope2_75:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
-                case EMALUs0928Setting.P2_ENG_TP3_SL18_Slope2_75:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                case EMALUs0928Setting.S1_TP4_SL18_Slope2_75:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                case EMALUs0928Setting.S2_TP3_SL18_Slope2_75:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
                 default: /* TP4_SL18_Slope2_75 */          us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
             }
             switch (Us0955Setting)
             {
                 case EMALUs0955Setting.Disabled:                   us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALUs0955Setting.P1_ENG_TP4_SL18_Slope2_75:  us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.P2_ENG_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.P3_ENG_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.S1_TP4_SL18_Slope2_75:  us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.S2_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.S3_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
                 default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
             }
             switch (AsiaSetting)
             {
                 case EMALAsiaSetting.Disabled:                        asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALAsiaSetting.Asia_TP4_SL20_Slope2_75:         asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;
-                default: /* Asia_TP4_SL20_Slope2_75 */                asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;
+                case EMALAsiaSetting.TP4_SL20_Slope2_75:         asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;
+                default: /* TP4_SL20_Slope2_75 */                asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;
             }
             switch (EuropeSetting)
             {
                 case EMALEuropeSetting.Disabled:                      europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
-                case EMALEuropeSetting.Europe_TP8_5_SL20_Slope2_75:   europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
+                case EMALEuropeSetting.TP8_5_SL20_Slope2_75:   europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
                 default:                                              europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
             }
             switch (PreMarketSetting)
             {
                 case EMALPreMarketSetting.Disabled:                       preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
-                case EMALPreMarketSetting.PreMarket_TP11_SL20_Slope2_75:  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
+                case EMALPreMarketSetting.TP11_SL20_Slope2_75:  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
                 default:                                                  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
             }
             switch (USMiddaySetting)
             {
                 case EMALUSMiddaySetting.Disabled:                      usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
-                case EMALUSMiddaySetting.USMidday_TP3_SL13_Slope2_75:   usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
+                case EMALUSMiddaySetting.TP3_SL13_Slope2_75:   usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
                 default:                                                usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
             }
         }
@@ -5650,11 +5650,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // 1-contract-only assumption - see EvaluateTargetTouchWatchdog's scope guard, which
         // disables the feature inertly (logs once) rather than reconciling partial fills if that
         // assumption is ever violated.
+        // EMAL-1052 (Steve, 2026-08-23): hidden from the property grid. Default stays true
+        // (unchanged) - visibility only, no behavior change.
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Enable Target Touch Watchdog", Description = "When ON, if price trades at or beyond the working target's limit price but the target hasn't filled within Target Touch Grace (ms), cancels the target and exits at market (signal EMALTouchExit) once the cancel confirms unfilled. Never fires a second exit if the target fills during or after the grace window - the cancel confirmation is always awaited first. OFF reverts to pure-limit target behavior, no code-level difference from a prior cut.", GroupName = "C. Risk", Order = 5)]
         public bool EnableTargetTouchWatchdog { get; set; }
 
+        // EMAL-1052 (Steve, 2026-08-23): hidden from the property grid. Default stays 400
+        // (unchanged) - visibility only, no behavior change.
         [Range(100, 5000), NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Target Touch Grace (ms)", Description = "How long the working target may sit unfilled after price first trades at or beyond its limit price before the watchdog cancels it and exits at market. Measured on live ticks, no timer thread. Default 400.", GroupName = "C. Risk", Order = 6)]
         public int TargetTouchGraceMs { get; set; }
 
@@ -5673,7 +5679,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // breach detection and the target touch watchdog; independent of Enable Target Touch
         // Watchdog for the gap latch half (the gap latch itself has no on/off toggle - see its
         // own comment), but the watchdog half also still requires that toggle ON.
+        // EMAL-1052 (Steve, 2026-08-23): hidden from the property grid, fixed at QuoteOrLast.
+        // Default unchanged - visibility only, no behavior change.
         [NinjaScriptProperty]
+        [Browsable(false)]
         [Display(Name = "Touch Detection Mode", Description = "QuoteOrLast (default): the target-touch watchdog and gap latch trigger on either a Last trade AT the level or the relevant quote (Bid for Long, Ask for Short) reaching it - catches a fleeting one-tick touch even with no Last print exactly there. LastOnly: Last-trade detection only, byte-identical to the prior cut, for A/B comparison or rollback.", GroupName = "C. Risk", Order = 7)]
         public EMALTouchDetectionMode TouchDetectionMode { get; set; }
 
@@ -5689,7 +5698,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // reconciliation logic itself at qty 1, where it still no-ops harmlessly (quantities
         // already match).
         [NinjaScriptProperty]
-        [Display(Name = "Multi-Contract Protection Fix", Description = "Off (default): no effect, byte-identical to the prior cut on every account. Auto: reconciles the stop/target order quantity to Position.Quantity whenever they differ, but ONLY once position quantity exceeds 1 - single-contract accounts are unaffected even when this is set. On: same reconciliation, active at any quantity (for testing; harmless no-op at qty 1). Fixes a partial-fill resize race where Tradovate can reject a resize submitted before the protective order reaches Working state.", GroupName = "C. Risk", Order = 8)]
+        [Display(Name = "Multi-Contract Protection Fix", Description = "Off (default): no effect, byte-identical to the prior cut on every account. Auto: reconciles the stop/target order quantity to Position.Quantity whenever they differ, but ONLY once position quantity exceeds 1 - single-contract accounts are unaffected even when this is set. On: same reconciliation, active at any quantity (for testing; harmless no-op at qty 1). Fixes a partial-fill resize race where Tradovate can reject a resize submitted before the protective order reaches Working state.", GroupName = "B. Sessions", Order = 1)]
         public EMALMultiContractProtectionFix MultiContractProtectionFix { get; set; }
 
         // EMAL-1050 (Steve, 2026-08-21; extended same day to also cover 09:43): originally an
@@ -5728,16 +5737,24 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia Setting", Description = "Asia_TP4_SL20_Slope2_75 (Playback-reconstruction, QNRVX Apr26-Aug21, live-vs-Playback adjusted): WR88.23% PF1.443 Net$157,884 MaxDD$2,962 Net/DD53.30", GroupName = "B. Sessions", Order = 1)]
+        [Display(Name = "Asia 18:00-3:00 Setting", Description = "TP4_SL20_Slope2_75 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted): WR86.17% PF1.200 Net$89,088 MaxDD$3,815 Net/DD23.35", GroupName = "B. Sessions", Order = 2)]
         public EMALAsiaSetting AsiaSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Asia Min Slope", Description = "Driven by the Asia Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 2)]
+        [Display(Name = "Asia Min Slope", Description = "Driven by the Asia Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 3)]
         public double AsiaMinimumSlope { get; set; }
 
+        // EMAL-1052 (Steve, 2026-08-23): hidden from the property grid. Default stays Disabled
+        // (unchanged) - this is a visibility change only, not a behavior change. Motivated by
+        // the CVYFX SL-sweep (Analysis_Plan §31): Europe's shipped bracket has no statistically
+        // established edge net of commission (day-level t=0.40, vs 2.91-9.18 for every other
+        // session) and the worst Net/MaxDD of any session (1.52). Not deleted - the property,
+        // its enum, and ResolveWindowPresets' case for it are all untouched, so it can be made
+        // visible again with a one-line revert if the edge question is ever resolved.
         [NinjaScriptProperty]
-        [Display(Name = "Europe Setting", Description = "Europe_TP8_5_SL20_Slope2_75 (Playback-reconstruction, QNRVX Apr26-Aug21, live-vs-Playback adjusted): WR77.04% PF1.383 Net$86,793 MaxDD$2,918 Net/DD29.75 - notably wider TP than the NY sessions' TP4/TP3; validated smooth and monotonic across neighboring TP values on the QNRVX scan, not an isolated spike.", GroupName = "B. Sessions", Order = 7)]
+        [Browsable(false)]
+        [Display(Name = "Europe 3:00-6:30 Setting", Description = "TP8_5_SL20_Slope2_75 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted): WR71.73% PF1.045 Net$12,838 MaxDD$3,252 Net/DD3.95 - notably wider TP than the NY sessions' TP4/TP3 (smoothness originally validated on the QNRVX scan). Hidden 2026-08-23 (EMAL-1052): net of the standard $3.10/trade commission this edge is not statistically distinguishable from zero (day-level t=0.40) and carries the worst Net/MaxDD of any session - see Analysis_Plan §31.", GroupName = "B. Sessions", Order = 7)]
         public EMALEuropeSetting EuropeSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5746,7 +5763,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double EuropeMinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US Pre-Market Setting", Description = "PreMarket_TP11_SL20_Slope2_75 (Playback-reconstruction, QNRVX Apr26-Aug21, live-vs-Playback adjusted): WR73.86% PF1.508 Net$75,046 MaxDD$2,814 Net/DD26.67 - notably wider TP than the NY sessions; validated smooth and monotonic across neighboring TP values on the QNRVX scan, not an isolated spike.", GroupName = "B. Sessions", Order = 13)]
+        [Display(Name = "US Pre-Market 8:00-9:28 Setting", Description = "TP11_SL20_Slope2_75 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted): WR69.96% PF1.244 Net$37,645 MaxDD$2,842 Net/DD13.25 - notably wider TP than the NY sessions (smoothness originally validated on the QNRVX scan).\n\nBlocked times 8:28-8:32 (unconditional news-release block, applies regardless of session).", GroupName = "B. Sessions", Order = 13)]
         public EMALPreMarketSetting PreMarketSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5755,7 +5772,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double PreMarketMinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US Midday Setting", Description = "USMidday_TP3_SL13_Slope2_75 (Playback-reconstruction, QNRVX Apr26-Aug21, live-vs-Playback adjusted): WR86.38% PF1.384 Net$139,280 MaxDD$2,983 Net/DD46.69 - notably tighter SL than the NY sessions' SL18; needed to bring this high-volume 6.5-hour session's max drawdown under the $3,000 cap at all.", GroupName = "B. Sessions", Order = 23)]
+        [Display(Name = "US Midday 10:30-17:00 Setting", Description = "TP3_SL13_Slope2_75 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted): WR86.39% PF1.385 Net$136,872 MaxDD$2,831 Net/DD48.35 - notably tighter SL than the NY sessions' SL18; needed to bring this high-volume 6.5-hour session's max drawdown under the $3,000 cap at all.\n\nBlocked times 16:55-17:00 (EOD Force Close - see that setting below; entries blocked and any open position flattened from the configured time up to the CME daily halt).", GroupName = "B. Sessions", Order = 23)]
         public EMALUSMiddaySetting USMiddaySetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5838,7 +5855,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:28-09:50 Setting", Description = "P1 (NT8, WFYKZ Apr27-Aug13, gap-breach ON) WR91.00% PF2.356 Net$41,427 MaxDD$1,649 Net/DD25.13\n\nP2 WR92.01% PF1.797 Net$16,332 MaxDD$1,339 Net/DD12.2", GroupName = "B. Sessions", Order = 19)]
+        [Display(Name = "US 9:28-9:50 Setting", Description = "P1 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted) WR89.85% PF1.888 Net$23,975 MaxDD$1,401 Net/DD17.11\n\nP2 WR93.05% PF2.131 Net$20,920 MaxDD$756 Net/DD27.66\n\nBlocked times 9:30-9:35 & 9:43 (9:30 unconditional hard block plus the hardcoded 9:31-9:35/9:43 block, both always on).", GroupName = "B. Sessions", Order = 19)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5847,7 +5864,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 09:55-10:30 Setting", Description = "P1 WR86.99% PF1.413 Net$20,087 MaxDD$2,162 Net/DD9.29\n\nP2 (NT8, WFYKZ Apr27-Aug13, gap-breach ON) WR93.61% PF2.530 Net$46,606 MaxDD$1,342 Net/DD34.73\n\nP3 WR88.89% PF1.4 Net$14,899 MaxDD$2,053 Net/DD7.26", GroupName = "B. Sessions", Order = 21)]
+        [Display(Name = "US 9:55-10:30 Setting", Description = "P1 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted) WR89.92% PF1.902 Net$49,079 MaxDD$1,322 Net/DD37.12\n\nP2 WR93.62% PF2.337 Net$46,021 MaxDD$1,051 Net/DD43.78\n\nP3 WR92.59% PF2.232 Net$43,907 MaxDD$1,179 Net/DD37.25", GroupName = "B. Sessions", Order = 21)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5897,8 +5914,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1051,
-        modified_2026_08_22
+        version_1053,
+        modified_2026_08_23
     }
 
     // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
@@ -5925,16 +5942,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     public enum EMALUs0928Setting
     {
         Disabled,
-        P1_ENG_TP4_SL18_Slope2_75,
-        P2_ENG_TP3_SL18_Slope2_75
+        S1_TP4_SL18_Slope2_75,
+        S2_TP3_SL18_Slope2_75
     }
 
     public enum EMALUs0955Setting
     {
         Disabled,
-        P1_ENG_TP4_SL18_Slope2_75,
-        P2_ENG_TP3_SL18_Slope2_75,
-        P3_ENG_TP3_SL16_Slope2_75
+        S1_TP4_SL18_Slope2_75,
+        S2_TP3_SL18_Slope2_75,
+        S3_TP3_SL16_Slope2_75
     }
 
     // EMAL-1051: four new sessions' presets, same shape as the two above - Disabled first,
@@ -5942,25 +5959,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     public enum EMALAsiaSetting
     {
         Disabled,
-        Asia_TP4_SL20_Slope2_75
+        TP4_SL20_Slope2_75
     }
 
     public enum EMALEuropeSetting
     {
         Disabled,
-        Europe_TP8_5_SL20_Slope2_75
+        TP8_5_SL20_Slope2_75
     }
 
     public enum EMALPreMarketSetting
     {
         Disabled,
-        PreMarket_TP11_SL20_Slope2_75
+        TP11_SL20_Slope2_75
     }
 
     public enum EMALUSMiddaySetting
     {
         Disabled,
-        USMidday_TP3_SL13_Slope2_75
+        TP3_SL13_Slope2_75
     }
 
 }
