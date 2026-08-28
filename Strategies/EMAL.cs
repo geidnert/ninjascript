@@ -383,10 +383,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int filledCount;
         private int cancelBarEndCount;
         private int blockedBarCount;
-        private int hardBlockedMinuteBarCount;
-        // EMAL-1050: counts bars blocked by the new optional 09:31-09:35 & 9:43 block, separate
-        // from hardBlockedMinuteBarCount (the always-on 09:30 block) so the fill-rate summary
-        // can report them independently.
+        // EMAL-1050: counts bars blocked by the 09:43 block (Block0943 - originally also covered
+        // 09:31-09:35, and the file also had a separate always-on 09:30 hard block; both retired
+        // 2026-08-28 when the US 09:36-09:50 window's start moved to 09:36, since no session opens
+        // before then any more and neither block had anything left to protect).
         private int additionalBlockedMinuteBarCount;
         // EMAL-1051: counts bars blocked by the unconditional 08:28-08:32 news-release block.
         private int newsBlockedMinuteBarCount;
@@ -497,9 +497,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // window" throughout the source.
         // NY-anchored boundaries. Globex reopen and the US cash session never drift, because
         // CME (Chicago) and New York share the same DST dates.
-        // US 09:28-09:50 window (Steve, 2026-08-02: start moved to 09:28, the real researched
-        // start - see below).
-        private const int Us0928StartMinute = 9 * 60 + 28; // 09:28 ET, US 09:28-09:50 opens
+        // US 09:36-09:50 window (Steve, 2026-08-02: start moved to 09:28, the real researched
+        // start - see below). CHANGED 2026-08-28 (Steve): moved again to 09:36. The 09:28-09:35
+        // span no longer needs the 09:30 hard block (removed - see the old IsHardBlockedMinute
+        // history in EMAL-1053.cs and earlier) or the 09:31-09:35 portion of the old
+        // Block0931To0935 toggle (now Block0943, 09:43-only - see IsAdditionalBlockedMinute),
+        // since no session opens before 09:36 any more. See PreMarketStopMinute below, now a
+        // separate literal deliberately NOT tied to this constant, so Pre-Market's own window
+        // (still ending 09:28) does not silently extend when this one moves.
+        private const int Us0928StartMinute = 9 * 60 + 36; // 09:36 ET, US 09:36-09:50 opens
         private const int Us0928EndMinute = 9 * 60 + 50;   // 09:50 ET (exclusive)
         private const int Us0955StartMinute = 9 * 60 + 55; // 09:55 ET, US 09:55-10:30 opens - the
                                                              // 09:50-09:54 gap between the windows
@@ -586,7 +592,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1053;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1054;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -598,7 +604,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TargetTouchGraceMs = 400;
                 TouchDetectionMode = EMALTouchDetectionMode.QuoteOrLast;   // see comment on the property below
                 MultiContractProtectionFix = EMALMultiContractProtectionFix.Off;   // see comment on the property below
-                Block0931To0935 = true;   // ALWAYS ON, hidden; see comment on the property below
+                Block0943 = true;   // ALWAYS ON, hidden; see comment on the property below
 
                 // EMAL-1051 (corrected 2026-08-22, Steve): all four new sessions default to
                 // Disabled, same as the original two sessions (Us0928Setting/Us0955Setting
@@ -844,7 +850,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const int EuropeStartMinute = 3 * 60;        // 03:00 ET
         private const int EuropeStopMinute = 6 * 60 + 30;    // 06:30 ET
         private const int PreMarketStartMinute = 8 * 60;     // 08:00 ET
-        private const int PreMarketStopMinute = Us0928StartMinute; // 09:28 ET - butts directly against the existing session, no gap, no overlap
+        private const int PreMarketStopMinute = 9 * 60 + 28; // 09:28 ET - CHANGED 2026-08-28: deliberately a
+            // separate literal now, NOT "= Us0928StartMinute" any more. That equality held only while the
+            // next session opened immediately at 09:28; now it opens at 09:36, and this constant must stay at
+            // 09:28 regardless, leaving an intentional 09:28-09:36 no-trade gap between the two sessions
+            // (see Us0928StartMinute's own comment above).
         private const int USMiddayStartMinute = Us0955EndMinute;   // 10:30 ET - butts directly against the existing session, no gap, no overlap
         private const int USMiddayStopMinute = 17 * 60;      // 17:00 ET, immediately before the CME daily maintenance break
 
@@ -917,7 +927,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             switch (index)
             {
-                case 3: return "9:28-9:50";
+                case 3: return "9:36-9:50";
                 case 5: return "9:55-10:30";
                 case 10: return "18:00-3:00";
                 case 11: return "3:00-6:30";
@@ -1253,8 +1263,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             Print(string.Format("      (block 0950-0955, no trade)"));
             Print(string.Format("      US 0955-1030       : {0}  slope {1}", Us0955Setting, Us0955MinimumSlope));
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
-            Print(string.Format("  9:30 hard block     : bars blocked: {0}", hardBlockedMinuteBarCount));
-            Print(string.Format("  9:31-9:35 & 9:43 block : enabled={0}  bars blocked: {1}", Block0931To0935, additionalBlockedMinuteBarCount));
+            Print(string.Format("  9:43 block          : enabled={0}  bars blocked: {1}", Block0943, additionalBlockedMinuteBarCount));
             Print(string.Format("  8:28-8:32 news block : always on  bars blocked: {0}", newsBlockedMinuteBarCount));
             Print(string.Format("  EOD Force Close ({0:hh\\:mm}-17:00) block/flatten : always on  bars blocked: {1}", EODForceCloseTime, preCloseBlockedMinuteBarCount));
             Print(string.Format("      Asia 18:00-3:00     : {0}  slope {1}", AsiaSetting, AsiaMinimumSlope));
@@ -1673,9 +1682,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             DateTime raw = GetBarOpenRaw();
 
-            if (IsHardBlockedMinute(ConvertToEastern(raw)))
-                return "9:30 block";
-
             // Window gate is unconditional now, see IsEntryWindowOpen (Steve, 2026-08-06).
             int s = GetSessionIndex(raw);
             if (s < 0 || !IsSessionEnabled(s))
@@ -2010,46 +2016,25 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return version != null ? version.ToString() : "0.0.0.0";
         }
 
-        // Hard block on the 09:30 ET minute (Steve, 2026-08-08): unconditional, independent of
-        // session enable/disable or any other setting. TESTED
-        // AND FAILED on drawdown grounds, kept on discretion (Analysis_Plan.md §12.16): as a
-        // standalone pre-registered hypothesis (waiving the 57-minute multiplicity correction),
-        // 09:30's bad win rate is real (n=29, WR 72.41%, PF 0.721, net -$814.90, permutation
-        // p=0.011) - but blocking it makes the worst drawdown WORSE in 2 of 4 four-halves folds,
-        // a composition-matched random deletion beats its drawdown improvement ~30% of the time,
-        // the bad stretch was May-June only (Jul/Aug profitable, a held-out fortnight went 6-for-6),
-        // and the neighboring minutes (09:29, 09:31-09:33) are all strong - contradicting the
-        // cash-open-volatility mechanism's own prediction of a dangerous neighborhood, not one
-        // isolated bar. Kept anyway on Steve's discretion: cheap (~1% of the book, ~$11/session,
-        // deletes losing not winning trades), NOT because it is a validated drawdown reduction.
-        // Only ever fires within the US 09:28-09:50 window (09:30 doesn't occur in the 09:55-10:30
-        // window or in any other session), but checked unconditionally rather than gated behind
-        // the session index, matching Steve's "no matter what the settings are" instruction.
-        private bool IsHardBlockedMinute(DateTime easternTime)
-        {
-            return easternTime.Hour == 9 && easternTime.Minute == 30;
-        }
+        // RETIRED 2026-08-28 (Steve): the always-on 09:30 hard block (formerly IsHardBlockedMinute,
+        // Steve 2026-08-08, kept on discretion per Analysis_Plan.md §12.16 despite testing negative
+        // on drawdown grounds) is deleted outright, not just disabled. It only ever fired inside the
+        // US 09:28-09:50 window, and that window now opens at 09:36 - 09:30 is structurally
+        // unreachable by any session (Pre-Market still stops at 09:28, nothing opens again until
+        // 09:36), so the block had nothing left to protect. See Us0928StartMinute's comment.
 
-        // EMAL-1050 (Steve, 2026-08-21; extended same day to add 09:43): optional additional
-        // block on 09:31-09:35 inclusive AND 09:43, both gated on the single Block0931To0935
-        // toggle - OFF by default. Independent of, and evaluated after, the always-on 09:30
-        // hard block above - the two are separate mechanisms and this one is user-toggleable
-        // where the 09:30 one is not. Does NOT touch 09:28/09:29, 09:36-09:42, or 09:44 onward -
-        // those minutes are unaffected whether this toggle is on or off, per spec. With this
-        // enabled, 09:36 becomes the first minute a new entry can fire following the 09:28
-        // window's open (09:30 always, 09:31-09:35 via this toggle, both blocked in between),
-        // and 09:43 is blocked as a separate standalone minute later in the same window. Note
-        // for context (Analysis_Plan §12.16): the 09:30 hard-block research found 09:29 and
-        // 09:31-09:33 specifically strong/profitable in that same study, in NT8 Playback - this
-        // toggle responds to a live-vs-Playback divergence Steve has observed (see project
-        // memory `live-open-erratic-minutes.md`), not a contradiction of that finding.
+        // EMAL-1050 (Steve, 2026-08-21; extended same day to add 09:43). CHANGED 2026-08-28 (Steve):
+        // the 09:31-09:35 portion is deleted for the same reason as the 09:30 hard block above - that
+        // span is structurally unreachable now that the window opens at 09:36, not 09:28. Renamed
+        // Block0931To0935 -> Block0943 to match: this toggle now covers ONLY the 09:43 minute, still
+        // always-on/hidden per the 2026-08-22 change. Does NOT touch 09:28/09:29 (now pre-session,
+        // never reachable), 09:30-09:35 (ditto), 09:36-09:42, or 09:44 onward.
         private bool IsAdditionalBlockedMinute(DateTime easternTime)
         {
-            if (!Block0931To0935 || easternTime.Hour != 9)
+            if (!Block0943 || easternTime.Hour != 9)
                 return false;
 
-            int minute = easternTime.Minute;
-            return (minute >= 31 && minute <= 35) || minute == 43;
+            return easternTime.Minute == 43;
         }
 
         // EMAL-1051 (Steve, 2026-08-22): standing, UNCONDITIONAL block on 08:28-08:32 ET - no
@@ -2070,16 +2055,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime barOpenRaw = GetBarOpenRaw();
             DateTime barOpen = ConvertToEastern(barOpenRaw);
 
-            // Checked first, unconditionally - see IsHardBlockedMinute's comment.
-            if (IsHardBlockedMinute(barOpen))
-            {
-                hardBlockedMinuteBarCount++;
-                return false;
-            }
-
-            // EMAL-1050: checked next, before the session/window gate below - same "no matter
-            // what the settings are" placement as the 09:30 block, just gated on its own toggle
-            // instead of being unconditional.
+            // EMAL-1050: checked first, before the session/window gate below - "no matter what
+            // the settings are" placement, gated on its own toggle (Block0943).
             if (IsAdditionalBlockedMinute(barOpen))
             {
                 additionalBlockedMinuteBarCount++;
@@ -5702,18 +5679,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public EMALMultiContractProtectionFix MultiContractProtectionFix { get; set; }
 
         // EMAL-1050 (Steve, 2026-08-21; extended same day to also cover 09:43): originally an
-        // OFF-by-default optional toggle. CHANGED 2026-08-22 (Steve): now defaults ON and hidden
-        // from the property grid - same "hardcode to enabled, remove the user option" treatment
-        // this file already gives the order rate guard and the gap-breach entry cancellation.
-        // The property/field itself is left in place (not deleted) so IsAdditionalBlockedMinute,
-        // PrintFillRateSummary, and the bar-count tracking below all keep working unchanged -
-        // only the default value and its visibility changed. Does not touch the always-on 09:30
-        // hard block above, and does not affect 09:28/09:29, 09:36-09:42, or 09:44-onward - see
-        // IsAdditionalBlockedMinute's comment for the full detail.
+        // OFF-by-default optional toggle covering 09:31-09:35 AND 09:43. CHANGED 2026-08-22
+        // (Steve): defaults ON and hidden from the property grid - same "hardcode to enabled,
+        // remove the user option" treatment this file already gives the order rate guard and the
+        // gap-breach entry cancellation. CHANGED AGAIN 2026-08-28 (Steve): the US 09:36-09:50
+        // window's start moved to 09:36, making 09:31-09:35 structurally unreachable by any
+        // session (nothing opens before 09:36 any more) - that portion is deleted from
+        // IsAdditionalBlockedMinute, and this property is renamed Block0931To0935 -> Block0943
+        // to match; it now covers ONLY 09:43. The always-on 09:30 hard block that used to sit
+        // above this one in IsEntryWindowOpen is deleted outright for the same reason.
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Block 9:31-9:35 & 9:43", Description = "Additionally blocks entries during the 09:31-09:35 ET minutes AND the 09:43 ET minute (09:30 is already always blocked regardless of this setting), so 09:36 becomes the first possible entry minute after 09:28/09:29. Does not affect 09:28/09:29, 09:36-09:42, or any minute from 09:44 onward. Always on, hidden - see the field comment above.", GroupName = "C. Risk", Order = 9)]
-        public bool Block0931To0935 { get; set; }
+        [Display(Name = "Block 9:43", Description = "Blocks entries during the 09:43 ET minute. Always on, hidden - see the field comment above.", GroupName = "C. Risk", Order = 9)]
+        public bool Block0943 { get; set; }
 
         // ================================================================================
         // EMAL-1051 (Steve, 2026-08-22): four new sessions, found and validated from the
@@ -5855,12 +5833,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 9:28-9:50 Setting", Description = "P1 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted) WR89.85% PF1.888 Net$23,975 MaxDD$1,401 Net/DD17.11\n\nP2 WR93.05% PF2.131 Net$20,920 MaxDD$756 Net/DD27.66\n\nBlocked times 9:30-9:35 & 9:43 (9:30 unconditional hard block plus the hardcoded 9:31-9:35/9:43 block, both always on).", GroupName = "B. Sessions", Order = 19)]
+        [Display(Name = "US 9:36-9:50 Setting", Description = "P1 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted, RECOMPUTED 2026-08-28 for the 9:36-9:50 window - drops 48 trades that filled at 9:28/9:29 under the old 9:28-9:50 window) WR89.27% PF1.775 Net$20,635 MaxDD$1,401 Net/DD14.73\n\nP2 WR93.05% PF2.131 Net$20,920 MaxDD$756 Net/DD27.66 (not recomputed - this preset was never captured in the CVYFX run, which only exercised the live P1 preset; figure carried over unchanged from the prior 9:28-9:50 window and should not be trusted for the new window until it is)\n\nBlocked times 9:43 (always on). Window starts 9:36 - 9:28-9:35 no longer trades or needs blocking (2026-08-28).", GroupName = "B. Sessions", Order = 19)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:28-09:50 Min Slope", Description = "Driven by the US 09:28-09:50 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 20)]
+        [Display(Name = "US 09:36-09:50 Min Slope", Description = "Driven by the US 09:36-09:50 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 20)]
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
@@ -5914,8 +5892,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1053,
-        modified_2026_08_23
+        version_1054,
+        modified_2026_08_28
     }
 
     // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
