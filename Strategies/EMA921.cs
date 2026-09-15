@@ -258,7 +258,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private EMA slEma;      // stop EMA for the CURRENT bar's active session, same as above
 
         // EMA921-1002: per-session cascade-tuned presets. One EMA(Close, period) instance is
-        // pre-created per DISTINCT period actually used by any session (Disabled or CascadeTuned)
+        // pre-created per DISTINCT period actually used by any session (Disabled or the session's
+        // one cascade-tuned preset)
         // during DataLoaded - never created dynamically mid-run - and looked up here every bar.
         private Dictionary<int, EMA> emaSeriesByPeriod;
         private int warmupMaxPeriod;   // max entry/stop period across every session; see GetWarmupBars
@@ -714,14 +715,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // calling OnBarUpdate before every session's indicator is fully warmed.
                 BarsRequiredToTrade = 23;
 
-                Version = EMA921Version.version_1004;   // bump on every new cut; see enum comment
+                Version = EMA921Version.version_1005;   // bump on every new cut; see enum comment
 
                 // ---- EMA921 rules (Steve, 2026-09-11; re-tuned 2026-09-12 per
                 // EMA921_Tuning_Plan.md Phase 4/5). SUPERSEDED 2026-09-14 (EMA921-1002): these
                 // ten fields are no longer independently user-editable. Every session now picks
                 // its own preset via a single "Setting" popup, EMAL style (see the C. Sessions
-                // group below) - Disabled first, one CascadeTuned preset per session, found by
-                // the full-cascade tuning campaign (CASCADE_CHECKPOINT.md) on the entire research
+                // group below) - Disabled first, one value-encoded preset per session (EMA921-1005:
+                // renamed from the generic "CascadeTuned" label to spell out the actual values in
+                // the dropdown itself, EMAL style), found by the full-cascade tuning campaign
+                // (CASCADE_CHECKPOINT.md) on the entire research
                 // store, selected purely on that session's own Net/MaxIDD. Values below are just
                 // the inert pre-DataLoaded default; ResolveSessionPresets() (called from
                 // DataLoaded) and ResolveActiveSessionValues() (called once per bar from the
@@ -837,7 +840,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // there is no longer one fixed pair of indicator instances bound once here.
                 // ResolveSessionPresets() reads every session's Setting popup; BuildEmaSeriesCache()
                 // then pre-creates one EMA(Close, period) instance per DISTINCT period actually
-                // needed (across all five sessions, Disabled or CascadeTuned) - never created
+                // needed (across all five sessions, Disabled or the session's cascade-tuned preset) - never created
                 // dynamically mid-run. ema/slEma are re-pointed into this cache once per bar by
                 // ResolveActiveSessionValues() (called from the top of OnBarUpdate), so they
                 // reference the LATCHED active session's own series (see that method's own
@@ -1110,7 +1113,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             switch (AsiaSetting)
             {
-                case EMA921AsiaSetting.CascadeTuned:
+                case EMA921AsiaSetting.S1_EMA9_Pad0_5_Slope2_25_Body1_0_RR2_0_Seq2_StopEMA14_StopPad0_0_MinSL3_MaxSL30:
                     asiaEntryEma = 9; asiaStopEma = 14; asiaEntryPad = 0.5; asiaStopPad = 0.0;
                     asiaSlope = 2.25; asiaRr = 2.0; asiaSeq = 2; asiaBody = 1.0;
                     asiaMinSl = 3.0; asiaMaxSl = 30.0; asiaMinTp = 4.0;
@@ -1123,7 +1126,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             switch (EuropeSetting)
             {
-                case EMA921EuropeSetting.CascadeTuned:
+                case EMA921EuropeSetting.S1_EMA6_Pad2_0_Slope1_5_Body0_25_RR2_0_Seq4_StopEMA17_StopPad0_75_MinSL5_MaxSL20:
                     europeEntryEma = 6; europeStopEma = 17; europeEntryPad = 2.0; europeStopPad = 0.75;
                     europeSlope = 1.5; europeRr = 2.0; europeSeq = 4; europeBody = 0.25;
                     europeMinSl = 5.0; europeMaxSl = 20.0; europeMinTp = 4.0;
@@ -1136,7 +1139,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             switch (PreMarketSetting)
             {
-                case EMA921PreMarketSetting.CascadeTuned:
+                case EMA921PreMarketSetting.S1_EMA5_Pad0_5_Slope1_5_Body0_5_RR1_0_Seq4_StopEMA21_StopPad0_25_MinSL7_MaxSL30:
                     preMarketEntryEma = 5; preMarketStopEma = 21; preMarketEntryPad = 0.5; preMarketStopPad = 0.25;
                     preMarketSlope = 1.5; preMarketRr = 1.0; preMarketSeq = 4; preMarketBody = 0.5;
                     preMarketMinSl = 7.0; preMarketMaxSl = 30.0; preMarketMinTp = 4.0;
@@ -1149,7 +1152,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             switch (Us0936Setting)
             {
-                case EMA921Us0936Setting.CascadeTuned:
+                case EMA921Us0936Setting.S1_EMA4_Pad3_0_Slope3_0_Body2_0_RR2_0_Seq4_StopEMA21_StopPad0_0_MinSL5_MaxSL30:
                     us0936EntryEma = 4; us0936StopEma = 21; us0936EntryPad = 3.0; us0936StopPad = 0.0;
                     us0936Slope = 3.0; us0936Rr = 2.0; us0936Seq = 4; us0936Body = 2.0;
                     us0936MinSl = 5.0; us0936MaxSl = 30.0; us0936MinTp = 4.0;
@@ -1162,7 +1165,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             switch (USMiddaySetting)
             {
-                case EMA921USMiddaySetting.CascadeTuned:
+                case EMA921USMiddaySetting.S1_EMA7_Pad0_25_Slope3_5_Body2_0_RR2_0_Seq2_StopEMA18_StopPad2_0_MinSL5_MaxSL20:
                     usMiddayEntryEma = 7; usMiddayStopEma = 18; usMiddayEntryPad = 0.25; usMiddayStopPad = 2.0;
                     usMiddaySlope = 3.5; usMiddayRr = 2.0; usMiddaySeq = 2; usMiddayBody = 2.0;
                     usMiddayMinSl = 5.0; usMiddayMaxSl = 20.0; usMiddayMinTp = 4.0;
@@ -6860,10 +6863,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int Contracts { get; set; }
 
         // ================================================================================
-        // C. Sessions (EMA921-1002). Five popups, EMAL's exact style: "Disabled" first and
-        // selected by default, one "CascadeTuned" preset per session found by the full-cascade
-        // tuning campaign (CASCADE_CHECKPOINT.md) on the ENTIRE research store (no derive/holdout
-        // split, no significance testing) - selected purely on that session's own Net/MaxIDD.
+        // C. Sessions (EMA921-1002; option naming corrected EMA921-1005). Five popups, EMAL's
+        // exact style: "Disabled" first and selected by default, one preset per session found by
+        // the full-cascade tuning campaign (CASCADE_CHECKPOINT.md) on the ENTIRE research store
+        // (no derive/holdout split, no significance testing) - selected purely on that session's
+        // own Net/MaxIDD. EMA921-1005: the preset's dropdown option name itself now spells out
+        // every tuned value (e.g. "S1_EMA9_Pad0.5_Slope2.25_..."), matching EMAL's convention,
+        // instead of the generic "CascadeTuned" label 1002-1004 shipped.
         // The original 09:36-09:55 / 09:55-10:30 split is MERGED into one 09:36-10:30 popup: the
         // cascade found both individually too thin to tune reliably (P1 alone never converged in
         // 3 passes) and recommended merging - see CASCADE_CHECKPOINT.md "Follow-up 2 RESULTS".
@@ -7026,8 +7032,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // (IST) on every edit, even within the same cut.
     public enum EMA921Version
     {
-        version_1004,
-        modified_2026_09_14
+        version_1005,
+        modified_2026_09_15
     }
 
     // EMAL-1045: LastOnly = Last-trade-only detection; QuoteOrLast (default) also triggers on
@@ -7047,36 +7053,37 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     }
 
     // EMA921-1002: per-session presets, EMAL style - Disabled first (and default), one
-    // CascadeTuned preset per session. See the C. Sessions property group's Description
+    // preset per session, named after its own tuned values (EMA921-1005, was the generic
+    // "CascadeTuned" label in 1002-1004). See the C. Sessions property group's Description
     // tooltips (or CASCADE_CHECKPOINT.md) for the full parameter set and stats behind each.
     public enum EMA921AsiaSetting
     {
         Disabled,
-        CascadeTuned
+        S1_EMA9_Pad0_5_Slope2_25_Body1_0_RR2_0_Seq2_StopEMA14_StopPad0_0_MinSL3_MaxSL30
     }
 
     public enum EMA921EuropeSetting
     {
         Disabled,
-        CascadeTuned
+        S1_EMA6_Pad2_0_Slope1_5_Body0_25_RR2_0_Seq4_StopEMA17_StopPad0_75_MinSL5_MaxSL20
     }
 
     public enum EMA921PreMarketSetting
     {
         Disabled,
-        CascadeTuned
+        S1_EMA5_Pad0_5_Slope1_5_Body0_5_RR1_0_Seq4_StopEMA21_StopPad0_25_MinSL7_MaxSL30
     }
 
     // Merged 09:36-10:30 window (EMA921-1002) - replaces the old separate Us0936/Us0955 enums.
     public enum EMA921Us0936Setting
     {
         Disabled,
-        CascadeTuned
+        S1_EMA4_Pad3_0_Slope3_0_Body2_0_RR2_0_Seq4_StopEMA21_StopPad0_0_MinSL5_MaxSL30
     }
 
     public enum EMA921USMiddaySetting
     {
         Disabled,
-        CascadeTuned
+        S1_EMA7_Pad0_25_Slope3_5_Body2_0_RR2_0_Seq2_StopEMA18_StopPad2_0_MinSL5_MaxSL20
     }
 }
