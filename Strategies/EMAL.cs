@@ -271,6 +271,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private double gapLatchTargetPrice;
         private double gapLatchStopPrice;
         private bool gapTargetBreached;
+        // EMAL-1070: set on EVERY target breach regardless of EnableGapTargetLatch, so the
+        // one-shot and the A/B counter still work with the latch off. gapTargetBreached itself
+        // is set ONLY when the latch is enabled, because it is what drives both the pre-fill
+        // cancel and SubmitOrUpdateProtection's post-fill flatten.
+        private bool gapTargetBreachObserved;
         private bool gapStopBreached;
         // Target touch-then-convert watchdog (2026-08-14, Codex/Steve, live incident): five
         // accounts had identical working EMALTarget limits at the same price; price traded at
@@ -328,11 +333,66 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int desiredProtectionQuantity;
         private bool terminalExitPending;
 
+        // EMAL-1062 (Steve, 2026-09-04): terminal-exit cancel-then-confirm state, same pattern
+        // already proven by the target-touch watchdog's own targetTouchWatchdogCancelPending -
+        // see TrySubmitTerminalExit's comment for the root-cause incident this fixes. Per-trade
+        // state, reset in ResetProtectionTracking alongside the watchdog's own fields.
+        private bool terminalExitCancelPending;
+        // EMAL-1069 (2026-09-09): when the cancel-then-confirm window OPENED. The window is a
+        // DELIBERATE naked interval - EMAL-1062 cancels both protective orders and waits for
+        // confirmations before firing the market exit, so from CancelOrder until that exit
+        // fills the position has no protection. Before 1062 a failed terminal exit left the
+        // position fully protected; after it, a LOST CANCEL CONFIRMATION latches
+        // terminalExitCancelPending true FOREVER - there was no timeout anywhere in the file.
+        // Stuck, it silently no-ops EVERY emergency exit through TrySubmitTerminalExit's first
+        // guard: GapStop, GapTarget, MissingStop, MissingTarget, ProtectiveReject,
+        // PreCloseFlatten, NewsBlockFlatten, CashOpenFlatten, MaxAccountBalance,
+        // MaxDailyProfit. MissingStop no-op means a position that failed to get a stop has
+        // nothing left to flatten it. Identified by the 2026-09-09 code audit as the leading
+        // candidate for the naked positions Steve still sees post-1062.
+        private DateTime terminalExitCancelPendingSinceUtc = DateTime.MinValue;
+        // Generous: a cancel confirmation is normally sub-second. This is a stuck-state
+        // breaker, not a latency budget - it must never fire on a healthy round trip.
+        private const int TerminalExitCancelTimeoutSeconds = 30;
+        // After retry exhaustion we stop attempting EXITS but must keep restoring PROTECTION.
+        private const int TerminalExitExhaustedRestoreSeconds = 300;
+        private string terminalExitCancelReason = string.Empty;
+        private string terminalExitCancelEntrySignal = string.Empty;
+        private MarketPosition terminalExitCancelDirection = MarketPosition.Flat;
+        private bool terminalExitStopCancelDone;
+        private bool terminalExitTargetCancelDone;
+        private bool terminalExitStopFilled;
+        private bool terminalExitTargetFilled;
+
         // Multi-contract protection reconciliation (Steve, 2026-08-18). Off by default; Auto
         // only does anything once Position.Quantity > 1 - the reconciliation method's own
         // inertness guard is what enforces that, not these fields. Per-trade state, reset in
         // both BeginProtectionTracking and ResetProtectionTracking alongside the other
         // protection fields above so a retry count never survives into the next trade.
+        // EMAL-1067 (Steve, 2026-09-09): RECURRING naked-position audit. The existing
+        // MissingStop/MissingTarget checks are EVENT-DRIVEN - they live inside
+        // SubmitOrUpdateProtection, which is only reached from the entry-fill path in
+        // OnExecutionUpdate and from the terminal-exit retry. They therefore cover
+        // "protection failed to attach at fill" but NOT "protection attached, was accepted,
+        // and later went away" (broker-side cancel, connection blip, order pulled). In that
+        // second case nothing re-checks and the position sits unprotected until some other
+        // event happens to fire. Steve reported seeing exactly that. This audit closes it.
+        //
+        // Anchored on when protection was first observed INCOMPLETE, and reset the moment it
+        // is observed complete again. NOT anchored on position-open: that was the first
+        // draft and it was wrong twice over - it could not debounce a transient (30 minutes
+        // into a healthy position the grace has long elapsed, so ANY momentary gap would fire
+        // instantly), and it tied the clock to the wrong event. NOTE, corrected 2026-09-09:
+        // the EMAL-1046 multi-contract resize was cited as that transient and it is NOT one -
+        // ReconcileMultiContractProtection and SubmitOrUpdateProtection both use ChangeOrder,
+        // an IN-PLACE amend, so the Order reference survives, IsOrderActive stays true, and no
+        // protection gap opens. The debounce is still required for genuine transients; only
+        // the example was wrong. Anchoring on the fault itself both debounces and
+        // still covers "protection never attached at all", since that is simply a fault
+        // observed on the first sighting.
+        private DateTime unprotectedSinceUtc = DateTime.MinValue;
+        private int nakedAuditFirings;
+
         private int stopReconcileAttempts;
         private int targetReconcileAttempts;
         private const int MaxReconcileAttempts = 3;
@@ -382,10 +442,29 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private int signalCount;
         private int filledCount;
         private int cancelBarEndCount;
+        // EMAL-1070 (2026-09-10): cancelBarEndCount counts EVERY entry cancel regardless of
+        // reason - one unconditional ++ - so the summary's total and its per-reason breakdown
+        // must not be read as a partition. This breaks out the gap-latch (EMAL-1041) share.
+        // WHY: `EMAL GAP BREACH DETECTED` and `ENTRY TRACE | cancel requested` are BOTH behind
+        // IsExecutionDiagnosticsActive(), so the live cancel rate was observable only on the
+        // single diagnostics-enabled account - 6 cancels against 34 signals on 2026-09-09, too
+        // thin to score TNVQZ's P-58-3 with. Putting the count in the ALWAYS-ON summary gives
+        // it from every account without enabling execution diagnostics fleet-wide.
+        // NOTE the two are not the same event: GAP BREACH DETECTED fires whenever the latch
+        // condition is met (26 times that day), while a cancel is only logged when an entry
+        // order is still active to cancel - CancelEntryOrderIfActive early-returns otherwise.
+        private int gapBreachCancelCount;
+        // EMAL-1070 (2026-09-10): counts target breaches that occurred while a live working
+        // entry existed - i.e. exactly what the latch would have acted on - and counts them
+        // WHETHER OR NOT the latch is enabled. That makes it the live A/B's cohort measurement:
+        // with the latch OFF it is the suppressed cohort; with it ON it should track
+        // gapBreachCancelCount. It is the direct measurement of the size the tick
+        // reconstruction could only estimate, and over-stated ~2x (P-58-3).
+        private int gapLatchTargetBreachCount;
         private int blockedBarCount;
         // EMAL-1050: counts bars blocked by the 09:43 block (Block0943 - originally also covered
         // 09:31-09:35, and the file also had a separate always-on 09:30 hard block; both retired
-        // 2026-08-28 when the US 09:36-09:50 window's start moved to 09:36, since no session opens
+        // 2026-08-28 when the US 09:36-09:55 window's start moved to 09:36, since no session opens
         // before then any more and neither block had anything left to protect).
         private int additionalBlockedMinuteBarCount;
         // EMAL-1051: counts bars blocked by the unconditional 08:28-08:32 news-release block.
@@ -493,11 +572,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // finding on real NT8 Playback data (five-min-bucket-stats.csv, different single global
         // bracket) that the old 09:50 bucket ran weaker than its neighbors (83.33% WR vs
         // ~88.5-88.6% either side). Reverted back to the original gapped boundary accordingly.
+        // EMAL-1065 (Steve, 2026-09-07): the 09:50-09:54 gap was retested properly on EMAL-1064
+        // (capture PXHRV, 2,659 trades, full four-halves methodology) and the two arms came back
+        // a WASH - independently audited by emal-analyst (Analysis_Plan §48.5), no measured
+        // basis for either choice. Steve decided to close the gap anyway, matching EMAL-1064's
+        // shipped default - a judgment call, not a data-backed finding (TUNING-HANDOFF.md,
+        // 2026-09-07 entries; Analysis_Plan §48.6). P1 now runs straight through to 09:55 with
+        // no gap, under its own bracket/slope, same as P1's normal course.
         // Constant names (Us0928.../Us0955...) still identify "the first window" / "the second
         // window" throughout the source.
         // NY-anchored boundaries. Globex reopen and the US cash session never drift, because
         // CME (Chicago) and New York share the same DST dates.
-        // US 09:36-09:50 window (Steve, 2026-08-02: start moved to 09:28, the real researched
+        // US 09:36-09:55 window (Steve, 2026-08-02: start moved to 09:28, the real researched
         // start - see below). CHANGED 2026-08-28 (Steve): moved again to 09:36. The 09:28-09:35
         // span no longer needs the 09:30 hard block (removed - see the old IsHardBlockedMinute
         // history in EMAL-1053.cs and earlier) or the 09:31-09:35 portion of the old
@@ -505,12 +591,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // since no session opens before 09:36 any more. See PreMarketStopMinute below, now a
         // separate literal deliberately NOT tied to this constant, so Pre-Market's own window
         // (still ending 09:28) does not silently extend when this one moves.
-        private const int Us0928StartMinute = 9 * 60 + 36; // 09:36 ET, US 09:36-09:50 opens
-        private const int Us0928EndMinute = 9 * 60 + 50;   // 09:50 ET (exclusive)
-        private const int Us0955StartMinute = 9 * 60 + 55; // 09:55 ET, US 09:55-10:30 opens - the
-                                                             // 09:50-09:54 gap between the windows
-                                                             // is a deliberate, measured no-trade
-                                                             // block (see comment block above)
+        private const int Us0928StartMinute = 9 * 60 + 36; // 09:36 ET, US 09:36-09:55 opens
+        private const int Us0928EndMinute = 9 * 60 + 55;   // 09:55 ET (exclusive) - EMAL-1065:
+                                                             // moved from 09:50, closing the old
+                                                             // 09:50-09:54 gap (see comment above)
+        private const int Us0955StartMinute = 9 * 60 + 55; // 09:55 ET, US 09:55-10:30 opens -
+                                                             // now equal to Us0928EndMinute above,
+                                                             // no gap and no overlap
         private const int Us0955EndMinute = 10 * 60 + 30;  // 10:30 ET
 
         // 09:28 is a real researched boundary (Steve, 2026-08-01), from the per-minute scan of
@@ -592,7 +679,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1054;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1072;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -602,7 +689,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MaxDailyProfit = 0.0;
                 EnableTargetTouchWatchdog = true;   // see comment on the property below
                 TargetTouchGraceMs = 400;
-                TouchDetectionMode = EMALTouchDetectionMode.QuoteOrLast;   // see comment on the property below
+                TouchDetectionMode = EMALTouchDetectionMode.QuoteOrLast;
+                EnableNakedPositionAudit = true;   // EMAL-1067: safety net, ON by default
+                NakedPositionGraceSeconds = 10;    // EMAL-1067: see the property comment
                 MultiContractProtectionFix = EMALMultiContractProtectionFix.Off;   // see comment on the property below
                 Block0943 = true;   // ALWAYS ON, hidden; see comment on the property below
 
@@ -624,7 +713,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 USMiddaySetting = EMALUSMiddaySetting.Disabled;
                 USMiddayMinimumSlope = 2.75;
                 EODForceCloseTime = new TimeSpan(16, 55, 0);   // see comment on the property below
-                OrderActionLimitPerHour = 1100;
+                EnableGapTargetLatch = false;   // EMAL-1070: ships OFF for the live A/B
+                OrderActionLimitPerHour = 4000;   // EMAL-1070: was 1100; see the property's comment
 
                 ProjectXApiBaseUrl = "https://api.topstepx.com";
                 ProjectXTradeAllAccounts = false;
@@ -834,7 +924,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return Time[0].AddMinutes(-BarsPeriod.Value);
         }
 
-        // 3 = US 09:28-09:50, 5 = US 09:55-10:30 (both UNCHANGED, untouched, never tuned - see
+        // 3 = US 09:28-09:55, 5 = US 09:55-10:30 (both UNCHANGED, untouched, never tuned - see
         // EMAL-1051-changelog.txt). EMAL-1051 adds four MORE sessions, found and validated from
         // the EMAL-1049 QNRVX full-day research log (Apr26-Aug21): 10 = Asia, 11 = Europe,
         // 12 = US Pre-Market, 13 = US Midday. These four use the SAME preset-popup mechanism as
@@ -927,7 +1017,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             switch (index)
             {
-                case 3: return "9:36-9:50";
+                case 3: return "9:36-9:55";
                 case 5: return "9:55-10:30";
                 case 10: return "18:00-3:00";
                 case 11: return "3:00-6:30";
@@ -1025,6 +1115,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case EMALUs0928Setting.Disabled:                   us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
                 case EMALUs0928Setting.S1_TP4_SL18_Slope2_75:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
                 case EMALUs0928Setting.S2_TP3_SL18_Slope2_75:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                case EMALUs0928Setting.S3_TP4_SL16_Slope4_25:  us0928Tp = 4; us0928Sl = 16; Us0928MinimumSlope = 4.25; break;
                 default: /* TP4_SL18_Slope2_75 */          us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
             }
             switch (Us0955Setting)
@@ -1033,6 +1124,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case EMALUs0955Setting.S1_TP4_SL18_Slope2_75:  us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
                 case EMALUs0955Setting.S2_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
                 case EMALUs0955Setting.S3_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.S4_TP3_5_SL12_Slope4_25: us0955Tp = 3.5; us0955Sl = 12; Us0955MinimumSlope = 4.25; break;
+                case EMALUs0955Setting.S5_TP3_SL13_Slope3_5:   us0955Tp = 3; us0955Sl = 13; Us0955MinimumSlope = 3.5; break;
+                case EMALUs0955Setting.S6_TP3_SL22_Slope4_5:   us0955Tp = 3; us0955Sl = 22; Us0955MinimumSlope = 4.5; break;
+                case EMALUs0955Setting.S7_TP3_SL14_Slope3_5:   us0955Tp = 3; us0955Sl = 14; Us0955MinimumSlope = 3.5; break;
                 default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
             }
             switch (AsiaSetting)
@@ -1237,7 +1332,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 pendingEntryFeatures,
                 pendingFillFeatures,
-                exitTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                // EMAL-1070: ".fff" added 2026-09-10. Whole-second ExitTime made trade HOLD TIME
+                // unmeasurable - computed holds came out NEGATIVE (min -2.48s) against a
+                // sub-second fill clock (EntryTimeET + FillDelaySec), which left TNVQZ's
+                // prediction P-58-2 untestable. Logging format only: no logic, no order path.
+                exitTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
                 N(exitPrice),
                 exitReason ?? string.Empty,
                 N(profitPoints),
@@ -1259,12 +1358,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             int cancelled = cancelBarEndCount;
 
             Print("================ EMAL fill rate ================");
-            Print(string.Format("      US 0928-0950       : {0}  slope {1}", Us0928Setting, Us0928MinimumSlope));
-            Print(string.Format("      (block 0950-0955, no trade)"));
+            Print(string.Format("      US 0928-0955       : {0}  slope {1}", Us0928Setting, Us0928MinimumSlope));
             Print(string.Format("      US 0955-1030       : {0}  slope {1}", Us0955Setting, Us0955MinimumSlope));
             Print(string.Format("  bars blocked        : {0}  (session gate)", blockedBarCount));
             Print(string.Format("  9:43 block          : enabled={0}  bars blocked: {1}", Block0943, additionalBlockedMinuteBarCount));
             Print(string.Format("  8:28-8:32 news block : always on  bars blocked: {0}", newsBlockedMinuteBarCount));
+            Print("  8:29 news flatten : always on");
+            Print("  9:29 cash-open force close : always on");
             Print(string.Format("  EOD Force Close ({0:hh\\:mm}-17:00) block/flatten : always on  bars blocked: {1}", EODForceCloseTime, preCloseBlockedMinuteBarCount));
             Print(string.Format("      Asia 18:00-3:00     : {0}  slope {1}", AsiaSetting, AsiaMinimumSlope));
             Print(string.Format("      Europe 3:00-6:30    : {0}  slope {1}", EuropeSetting, EuropeMinimumSlope));
@@ -1277,7 +1377,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 filledCount, 100.0 * filledCount / signalCount));
             Print(string.Format("  cancelled           : {0}  ({1:F1}%)",
                 cancelled, 100.0 * cancelled / signalCount));
-            Print(string.Format("      at bar end      : {0}", cancelBarEndCount));
+            // EMAL-1070: relabelled from "at bar end". cancelBarEndCount is incremented on
+            // EVERY cancel reason, so with the gap-latch line below it the two sub-lines would
+            // read as a partition that does not sum. See the field comment.
+            Print(string.Format("      total (all reasons): {0}", cancelBarEndCount));
+            Print(string.Format("      gap-latch cancels: {0}  ({1:F1}% of signals)  [target latch {2}]",
+                gapBreachCancelCount, 100.0 * gapBreachCancelCount / signalCount,
+                EnableGapTargetLatch ? "ON" : "OFF"));
+            Print(string.Format("      gap-latch target breaches w/ live entry: {0}  ({1:F1}% of signals)",
+                gapLatchTargetBreachCount,
+                100.0 * gapLatchTargetBreachCount / signalCount));
             Print("===============================================");
         }
 
@@ -1334,7 +1443,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (projectXOrphanCheckDue)
                 EvaluateProjectXOrphanRecovery();
 
-            if (!string.IsNullOrWhiteSpace(terminalExitRetryReason))
+            // EMAL-1069: ALSO enter when a cancel-then-confirm window is open, not only when a
+            // retry is already scheduled. The stuck-latch case this breaker exists for happens
+            // on a FIRST-attempt exit, where terminalExitRetryReason is still empty - so the
+            // original guard alone made the breaker unreachable in precisely the scenario it
+            // was written for. (Caught before release; the method's own internal guards still
+            // short-circuit every healthy path immediately.)
+            if (!string.IsNullOrWhiteSpace(terminalExitRetryReason) || terminalExitCancelPending)
                 EvaluateTerminalExitRecovery();
         }
 
@@ -2045,9 +2160,41 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // discovered or overridden by what the QNRVX data showed for that window. Applies
         // regardless of which session (if any) is active, same placement as the other two
         // unconditional/gated blocks below.
+        // EMAL-1059 (Steve, 2026-08-31): this window's ENTRY-BLOCKING behavior is unchanged, but
+        // see IsNewsFlattenMinute below for the separate flatten this block gained the same day -
+        // an already-open position is no longer left to ride its own TP/SL through the 08:30
+        // spike untouched.
         private bool IsNewsReleaseBlockedMinute(DateTime easternTime)
         {
             return easternTime.Hour == 8 && easternTime.Minute >= 28 && easternTime.Minute < 32;
+        }
+
+        // EMAL-1061 (Steve, 2026-09-03): standing, UNCONDITIONAL flatten-only window at 08:29 ET -
+        // deliberately DECOUPLED from IsNewsReleaseBlockedMinute's 08:28-08:31 entry-blocking
+        // window (which is unchanged and still governs new entries), same pattern as
+        // IsCashOpenForceCloseMinute below. CHANGED from firing at 08:28 (this window's original
+        // open) to its own dedicated 08:29 check, per Steve: still comfortably ahead of the 08:30
+        // news slot, but gives an open trade one more minute of its own TP/SL before being forced
+        // out, same reasoning already applied to the 09:29 cash-open flatten.
+        private bool IsNewsFlattenMinute(DateTime easternTime)
+        {
+            return easternTime.Hour == 8 && easternTime.Minute == 29;
+        }
+
+        // EMAL-1061 (Steve, 2026-09-03): standing, UNCONDITIONAL flatten-only window at 09:29 ET -
+        // no entry-blocking companion needed, since no session is enterable in the 09:28-09:36 gap
+        // between Pre-Market's stop and the US 09:36-09:55 window's start (see PreMarketStopMinute/
+        // Us0928StartMinute above). Steve's stated reason: any position still open going into the
+        // 09:30 cash-open volatility spike should be closed first, regardless of which session
+        // opened it - same category of standing risk rule as the 08:28 news block and EOD Force
+        // Close, not scoped to Pre-Market specifically (Pre-Market is simply the only session whose
+        // trades can realistically still be open this close to 09:30, since every prior session has
+        // already fully closed and no new position exists yet from a session that hasn't opened).
+        // A single minute is sufficient: OnBarUpdate's flatten fires an immediate market exit the
+        // instant the 09:29 bar opens, well before 09:30:00.
+        private bool IsCashOpenForceCloseMinute(DateTime easternTime)
+        {
+            return easternTime.Hour == 9 && easternTime.Minute == 29;
         }
 
         private bool IsEntryWindowOpen()
@@ -2097,6 +2244,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (BarsInProgress != 0)
                 return;
+
+            // EMAL-1067: FIRST thing after the series guard, deliberately ahead of every
+            // strategy gate below (warmup, window-closed, blocked-minute, position-open).
+            // A naked position must be caught even when the strategy would otherwise return
+            // early - e.g. outside a session window, which is exactly when an unattended
+            // position is most dangerous and least likely to be noticed.
+            AuditNakedPosition();
 
             bool firstTickOfBar = IsFirstTickOfBar;
 
@@ -2162,6 +2316,35 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (IsPreCloseWindow(ConvertToEastern(GetBarOpenRaw())))
                 {
                     TrySubmitTerminalExit("PreCloseFlatten", protectedEntrySignal);
+                    return;
+                }
+
+                // EMAL-1059 (Steve, 2026-08-31): flatten any position still open ahead of the
+                // 08:30 news slot, same treatment as PreCloseFlatten above - before this cut, the
+                // 08:28-08:31 news block only gated NEW entries, and a position opened earlier
+                // just rode its own TP/SL through the 08:30 spike with no forced exit.
+                // CHANGED 2026-09-03 (EMAL-1061, Steve): now checks the dedicated
+                // IsNewsFlattenMinute (08:29) instead of the entry-block's own
+                // IsNewsReleaseBlockedMinute (08:28-08:31) - decoupling the flatten from the
+                // wider entry-block window gives an already-open trade one more minute of its own
+                // TP/SL before being forced out, same reasoning as the 09:29 cash-open flatten
+                // below. Still comfortably ahead of 08:30:00. If TrySubmitTerminalExit's first
+                // attempt doesn't confirm flat, EvaluateTerminalExitRecovery retries on its own
+                // real-time backoff schedule (2s/5s/15s/... up to 300s) - independent of this
+                // window's width, so narrowing it to a single minute does not weaken the retry.
+                if (IsNewsFlattenMinute(ConvertToEastern(GetBarOpenRaw())))
+                {
+                    TrySubmitTerminalExit("NewsBlockFlatten", protectedEntrySignal);
+                    return;
+                }
+
+                // EMAL-1061 (Steve, 2026-09-03): flatten any position still open at 09:29 ET, to
+                // avoid riding into the 09:30 cash-open volatility spike. Same mechanism/
+                // placement as the two flattens above - see IsCashOpenForceCloseMinute's comment
+                // for why this is unconditional rather than scoped to Pre-Market.
+                if (IsCashOpenForceCloseMinute(ConvertToEastern(GetBarOpenRaw())))
+                {
+                    TrySubmitTerminalExit("CashOpenFlatten", protectedEntrySignal);
                     return;
                 }
 
@@ -2353,6 +2536,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
 
             cancelBarEndCount++;
+            if (string.Equals(reason, "gap-breach-target", StringComparison.Ordinal))
+                gapBreachCancelCount++;   // EMAL-1070: see the field comment
             entryCancelPending = true;
             entryCancelReason = reason ?? "unspecified";
             if (IsExecutionDiagnosticsActive())
@@ -2387,6 +2572,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             desiredProtectionQuantity = 0;
             protectiveStopOrder = null;
             profitTargetOrder = null;
+            unprotectedSinceUtc = DateTime.MinValue;   // EMAL-1068 finding 5: reset with the rest of the per-trade protection state, not only via the audit's own Flat branch
             terminalExitPending = false;
             stopReconcileAttempts = 0;
             targetReconcileAttempts = 0;
@@ -2426,6 +2612,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             gapLatchTargetPrice = Instrument.MasterInstrument.RoundToTickSize(targetPrice);
             gapLatchStopPrice = Instrument.MasterInstrument.RoundToTickSize(stopPrice);
             gapTargetBreached = false;
+            gapTargetBreachObserved = false;   // EMAL-1070
             gapStopBreached = false;
             gapLatchArmed = true;
 
@@ -2449,9 +2636,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // entry sits at the top of the book on the stop side, so price reaching the stop level
         // before the entry fills isn't a real scenario on liquid ES/NQ outside a sub-second
         // not-yet-acknowledged race - unlike the target side, where the order simply never
-        // interacts with a favorable move and this is the normal, common case. gapTargetBreached/
-        // gapStopBreached both still feed SubmitOrUpdateProtection's post-fill decision
-        // unchanged - that path remains the emergency backstop for the rare race either way.
+        // interacts with a favorable move and this is the normal, common case.
+        // EMAL-1070 CORRECTION: gapStopBreached still feeds SubmitOrUpdateProtection's post-fill
+        // decision unchanged, but gapTargetBreached now does so ONLY when EnableGapTargetLatch is
+        // true - with the latch off it is never set and the target-side post-fill backstop does
+        // not exist. The stop-side backstop remains for the rare race either way.
         // EMAL-1045: source is Last, Bid, or Ask - Bid/Ask only arrive here when
         // TouchDetectionMode is QuoteOrLast (gated in HandleQuoteTick). tickTime is the tick's
         // own timestamp (not the possibly-stale lastTickTime global, which only advances on Last
@@ -2497,16 +2686,36 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                                 tickTime, source, gapLatchStopPrice, price));
                         }
                     }
-                    if (!gapTargetBreached && price >= gapLatchTargetPrice)
+                    if (!gapTargetBreachObserved && price >= gapLatchTargetPrice)
                     {
-                        gapTargetBreached = true;
-                        if (IsExecutionDiagnosticsActive())
+                        // EMAL-1070: OBSERVATION is unconditional and drives only the counter,
+                        // so the live A/B measures its own cohort whether the latch is on or off.
+                        gapTargetBreachObserved = true;
+                        if (IsOrderActive(entryOrder) && !entryCancelPending)
+                            gapLatchTargetBreachCount++;
+
+                        // EMAL-1070: the TARGET-side latch is gated AS A WHOLE - the flag, the
+                        // pre-fill cancel, and (via gapTargetBreached) the post-fill "target
+                        // crossed before protection | flattening" branch in
+                        // SubmitOrUpdateProtection. **Gating only the cancel was the first
+                        // draft and was WRONG**: every suppressed entry would still have filled
+                        // and then been market-flattened for a guaranteed scratch, which is the
+                        // opposite of the arm WBGQF measured (EMAL-1066 gates the FLAG - see
+                        // 1066:2691/2715 - which is why its cohort got a normal bracket and ran
+                        // to target). The STOP side above is deliberately NOT gated: a fill into
+                        // an already-breached stop is the genuinely dangerous case and keeps its
+                        // emergency flatten.
+                        if (EnableGapTargetLatch)
                         {
-                            Print(string.Format(CultureInfo.InvariantCulture,
-                                "{0} | EMAL GAP BREACH DETECTED | side=Long level=target source={1} target={2:F2} price={3:F2}",
-                                tickTime, source, gapLatchTargetPrice, price));
+                            gapTargetBreached = true;
+                            if (IsExecutionDiagnosticsActive())
+                            {
+                                Print(string.Format(CultureInfo.InvariantCulture,
+                                    "{0} | EMAL GAP BREACH DETECTED | side=Long level=target source={1} target={2:F2} price={3:F2}",
+                                    tickTime, source, gapLatchTargetPrice, price));
+                            }
+                            CancelEntryOrderIfActive("gap-breach-target");
                         }
-                        CancelEntryOrderIfActive("gap-breach-target");
                     }
                 }
                 else
@@ -2521,16 +2730,36 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                                 tickTime, source, gapLatchStopPrice, price));
                         }
                     }
-                    if (!gapTargetBreached && price <= gapLatchTargetPrice)
+                    if (!gapTargetBreachObserved && price <= gapLatchTargetPrice)
                     {
-                        gapTargetBreached = true;
-                        if (IsExecutionDiagnosticsActive())
+                        // EMAL-1070: OBSERVATION is unconditional and drives only the counter,
+                        // so the live A/B measures its own cohort whether the latch is on or off.
+                        gapTargetBreachObserved = true;
+                        if (IsOrderActive(entryOrder) && !entryCancelPending)
+                            gapLatchTargetBreachCount++;
+
+                        // EMAL-1070: the TARGET-side latch is gated AS A WHOLE - the flag, the
+                        // pre-fill cancel, and (via gapTargetBreached) the post-fill "target
+                        // crossed before protection | flattening" branch in
+                        // SubmitOrUpdateProtection. **Gating only the cancel was the first
+                        // draft and was WRONG**: every suppressed entry would still have filled
+                        // and then been market-flattened for a guaranteed scratch, which is the
+                        // opposite of the arm WBGQF measured (EMAL-1066 gates the FLAG - see
+                        // 1066:2691/2715 - which is why its cohort got a normal bracket and ran
+                        // to target). The STOP side above is deliberately NOT gated: a fill into
+                        // an already-breached stop is the genuinely dangerous case and keeps its
+                        // emergency flatten.
+                        if (EnableGapTargetLatch)
                         {
-                            Print(string.Format(CultureInfo.InvariantCulture,
-                                "{0} | EMAL GAP BREACH DETECTED | side=Short level=target source={1} target={2:F2} price={3:F2}",
-                                tickTime, source, gapLatchTargetPrice, price));
+                            gapTargetBreached = true;
+                            if (IsExecutionDiagnosticsActive())
+                            {
+                                Print(string.Format(CultureInfo.InvariantCulture,
+                                    "{0} | EMAL GAP BREACH DETECTED | side=Short level=target source={1} target={2:F2} price={3:F2}",
+                                    tickTime, source, gapLatchTargetPrice, price));
+                            }
+                            CancelEntryOrderIfActive("gap-breach-target");
                         }
-                        CancelEntryOrderIfActive("gap-breach-target");
                     }
                 }
             }
@@ -2912,6 +3141,65 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     // Not yet terminal (e.g. still Working/PartFilled momentarily after the
                     // cancel request) - fall through to normal handling below and wait for the
                     // next callback.
+                }
+
+                // EMAL-1062: terminal-exit cancel confirmation - same placement/reasoning as the
+                // watchdog block above (before the generic Rejected branch, so a cancel that
+                // comes back Rejected doesn't ALSO trigger a second terminal exit). Both the stop
+                // and the target may need to confirm (whichever were active when
+                // TrySubmitTerminalExit ran) before the market exit is allowed to fire.
+                if (terminalExitCancelPending
+                    && (orderName == StopExitSignal || orderName == TargetExitSignal))
+                {
+                    bool cancelTerminalState = orderState == OrderState.Cancelled
+                        || orderState == OrderState.Filled
+                        || orderState == OrderState.Rejected;
+                    if (cancelTerminalState)
+                    {
+                        if (orderName == StopExitSignal)
+                        {
+                            terminalExitStopCancelDone = true;
+                            if (filled > 0)
+                                terminalExitStopFilled = true;
+                        }
+                        else
+                        {
+                            terminalExitTargetCancelDone = true;
+                            if (filled > 0)
+                                terminalExitTargetFilled = true;
+                        }
+
+                        if (terminalExitStopCancelDone && terminalExitTargetCancelDone)
+                        {
+                            bool eitherFilled = terminalExitStopFilled || terminalExitTargetFilled;
+                            string pendingReason = terminalExitCancelReason;
+                            MarketPosition pendingDirection = terminalExitCancelDirection;
+                            string pendingEntrySignal = terminalExitCancelEntrySignal;
+                            terminalExitCancelPending = false;
+                            terminalExitCancelPendingSinceUtc = DateTime.MinValue;   // EMAL-1069
+
+                            if (eitherFilled)
+                            {
+                                // A resting protective order won the race - the position is
+                                // already flattening (or flat) via its own normal fill path.
+                                // Submitting the market exit too would be the exact double-fire
+                                // this cut exists to prevent.
+                                Print(string.Format(
+                                    "{0} | EMAL EXIT TRACE | protective order filled during "
+                                    + "terminal-exit cancel race - no market exit sent | reason={1} "
+                                    + "stopFilled={2} targetFilled={3}",
+                                    time, pendingReason, terminalExitStopFilled, terminalExitTargetFilled));
+                            }
+                            else
+                            {
+                                SubmitTerminalExitMarketOrder(pendingReason, pendingDirection,
+                                    pendingEntrySignal);
+                            }
+                        }
+                        return;
+                    }
+                    // Not yet terminal - fall through and wait for the next callback, same as
+                    // the watchdog block above.
                 }
 
                 if (orderState == OrderState.Rejected)
@@ -3544,22 +3832,213 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 profitTargetOrder = terminalState ? null : order;
         }
 
+        // EMAL-1067/1068: runs from OnBarUpdate on every tick (Calculate.OnEachTick) - cheap,
+        // every early-out is a field read. FLATTENS WHEN EITHER LEG IS MISSING - stop OR
+        // target - once the fault has PERSISTED for NakedPositionGraceSeconds.
+        //
+        // Both legs are required because EMAL's edge IS the bracket geometry: breakeven is
+        // 81.8% at TP4/SL18, so a position that has lost its target can no longer take the
+        // +TP and can only exit at the full stop or an EOD/session flatten. Its favourable
+        // outcome is gone while the unfavourable one remains - that is not "capped and safe",
+        // it is a position with only downside left. This also matches the file's own
+        // event-driven MissingTarget, which flattens. (An earlier draft flattened only on a
+        // missing stop, on a "capped, not endangered" argument; Steve overruled it 2026-09-09
+        // and was right.)
+        //
+        // Routes through TrySubmitTerminalExit, never a bare ExitLong/ExitShort: protective
+        // orders in this file are NEVER OCO-linked, so a market exit racing a live protective
+        // order is exactly how the 2026-09-03 naked positions were created. When both legs
+        // are already gone that method fires immediately (nothing to race); when only one is
+        // missing it cancels the survivor first and fires on confirmation.
+        //
+        // SCOPE LIMIT, stated so this is not mistaken for full coverage: this reads Position
+        // (the STRATEGY's position), not PositionAccount. With StartBehavior WaitUntilFlat
+        // that is correct on disable/re-enable - an adopted account position is not flattened.
+        // But an account position that has drifted OUT of the strategy's own tracking is
+        // invisible here, and "position/order-state desync" is one of the two candidate root
+        // causes of the defect this audit mitigates. It may not cover the case it is aimed at.
+        private void AuditNakedPosition()
+        {
+            if (!EnableNakedPositionAudit)
+                return;
+
+            // EMAL-1068: REALTIME ONLY. This is a wall-clock timer (DateTime.UtcNow); running
+            // it over historically-simulated bars would make output machine-speed dependent -
+            // a GC pause or a loaded machine could change the trade book from identical
+            // inputs. Harmless on a live/Playback warmup (no orders, Position is Flat, the
+            // audit no-ops) but NOT harmless in a Strategy Analyzer backtest, where
+            // IsHistoricalTradeSimulationContext() is true and orders do flow. The mitigation
+            // is only meaningful in real time anyway.
+            if (State != State.Realtime)
+            {
+                unprotectedSinceUtc = DateTime.MinValue;
+                return;
+            }
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                unprotectedSinceUtc = DateTime.MinValue;
+                return;
+            }
+
+            // An exit is already in flight - do not stack another.
+            if (terminalExitPending || terminalExitCancelPending
+                || targetTouchWatchdogCancelPending || IsTerminalExitRetryWaiting())
+            {
+                return;
+            }
+
+            bool stopActive = IsOrderActive(protectiveStopOrder);
+            bool targetActive = IsOrderActive(profitTargetOrder);
+
+            // FULLY protected = BOTH a working stop AND a working target. A stop alone is not
+            // enough (Steve, 2026-09-09, and he is right): EMAL's edge IS the bracket geometry
+            // - breakeven is 81.8% at TP4/SL18 - so a position that has lost its target can no
+            // longer take the +TP and can only exit at the full stop or at an EOD/session
+            // flatten. Its favourable outcome has been deleted while the unfavourable one
+            // remains. That is not "capped and safe", it is a position with only downside
+            // left. It also matches the file's own long-standing MissingTarget behaviour,
+            // which flattens.
+            if (stopActive && targetActive)
+            {
+                // EMAL-1068: log the CLEAR with elapsed duration - this is the measurement.
+                if (unprotectedSinceUtc != DateTime.MinValue)
+                {
+                    Print(string.Format(CultureInfo.InvariantCulture,
+                        "{0} | EMAL NAKED AUDIT | fault clock CLEAR after {1:F2}s (no flatten) "
+                        + "| position={2} qty={3}",
+                        lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                        (DateTime.UtcNow - unprotectedSinceUtc).TotalSeconds,
+                        Position.MarketPosition, Position.Quantity));
+                }
+                unprotectedSinceUtc = DateTime.MinValue;
+                return;
+            }
+
+            // First observation of the fault - start the clock, decide nothing yet. This is
+            // what debounces a genuine momentary gap. (The EMAL-1046 multi-contract resize was
+            // originally cited here as that transient; it is NOT one - it uses ChangeOrder, an
+            // in-place amend, so no gap opens. Corrected 2026-09-09.)
+            if (unprotectedSinceUtc == DateTime.MinValue)
+            {
+                unprotectedSinceUtc = DateTime.UtcNow;
+                // EMAL-1068: log the clock START, not just the firing. Without this a run with
+                // zero firings cannot distinguish "worst fault lasted 0.2s, 50x margin" from
+                // "worst fault lasted 9.8s and nearly fired" - so it could not validate the
+                // grace period at all. With it, the start/clear pair yields the observed
+                // fault-duration distribution, which is the only thing that can set the grace
+                // on evidence rather than judgement.
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | EMAL NAKED AUDIT | fault clock START | stopActive={1} targetActive={2} "
+                    + "position={3} qty={4} grace={5}s",
+                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                    stopActive, targetActive, Position.MarketPosition, Position.Quantity,
+                    NakedPositionGraceSeconds));
+                return;
+            }
+
+            // The fault must PERSIST for the whole grace window, uninterrupted.
+            if ((DateTime.UtcNow - unprotectedSinceUtc).TotalSeconds < NakedPositionGraceSeconds)
+                return;
+
+            nakedAuditFirings++;
+            Print(string.Format(CultureInfo.InvariantCulture,
+                "{0} | EMAL NAKED AUDIT | protection INCOMPLETE for {1}s - FLATTENING | "
+                + "stopActive={2} targetActive={3} position={4} qty={5} entry={6:F2} firing#{7}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                NakedPositionGraceSeconds, stopActive, targetActive,
+                Position.MarketPosition, Position.Quantity,
+                openEntryPrice > 0.0 ? openEntryPrice : Position.AveragePrice,
+                nakedAuditFirings));
+
+            TrySubmitTerminalExit("NakedPositionAudit", protectedEntrySignal);
+        }
+
+        // EMAL-1062 (Steve, 2026-09-04): ROOT-CAUSE FIX for the 2026-09-03 live-account naked-
+        // position incident (three accounts, three separate firings: 18:00:00 EMALExitGapTarget,
+        // 16:55:00 EMALExitPreCloseFlatten, 11:04 an unnamed order alongside a legitimate entry -
+        // all the same underlying defect). Before this cut, every reason string routed through
+        // here (GapStop, GapTarget, PreCloseFlatten, NewsBlockFlatten, CashOpenFlatten,
+        // MaxAccountBalance, MaxDailyProfit, MissingStop, MissingTarget, ProtectiveReject)
+        // submitted its market ExitLong/ExitShort IMMEDIATELY, while the position's own resting
+        // protectiveStopOrder and profitTargetOrder were STILL WORKING at the broker (this file
+        // has never OCO-linked them - confirmed by grep, zero hits for "Oco" anywhere in this
+        // source). If the market order and a resting protective order both filled - the market
+        // order flattening the position, then the resting order filling moments later against an
+        // already-flat book - NinjaTrader's managed engine has nothing left to net against and
+        // opens a BRAND NEW position in the opposite direction, with no stop/target attached
+        // (SubmitOrUpdateProtection only arms protection from the normal entry-fill path, which
+        // this new position never went through). This is the exact race the target-touch
+        // watchdog's own SubmitTargetTouchMarketExit comment already names: "a limit can fill
+        // between the cancel request and the broker processing it, and firing both would flip
+        // the position." That fix was applied to the watchdog's one call site in EMAL-1045 and
+        // never generalized to this method's nine. This cut generalizes it: cancel any resting
+        // protective order FIRST, wait for CONFIRMED terminal state on each (via OnOrderUpdate,
+        // mirroring the watchdog's own targetTouchWatchdogCancelPending handling), and only THEN
+        // submit the market exit - and only if neither resting order filled during the race. If
+        // nothing is resting (already cancelled/never armed), the market exit still fires
+        // immediately, same as before.
         private void TrySubmitTerminalExit(string reason, string entrySignal)
         {
-            if (terminalExitPending || IsTerminalExitRetryWaiting())
+            if (terminalExitPending || terminalExitCancelPending
+                || targetTouchWatchdogCancelPending || IsTerminalExitRetryWaiting())
+            {
                 return;
+            }
 
             MarketPosition positionDirection = Position.MarketPosition;
             if (positionDirection == MarketPosition.Flat)
                 return;
 
+            string fromEntrySignal = string.IsNullOrEmpty(entrySignal)
+                ? protectedEntrySignal
+                : entrySignal;
+
+            bool stopActive = IsOrderActive(protectiveStopOrder);
+            bool targetActive = IsOrderActive(profitTargetOrder);
+
+            Print(string.Format(
+                "{0} | EMAL EXIT TRACE | terminal exit requested | reason={1} position={2} qty={3} "
+                + "entry={4} stopActive={5} targetActive={6}",
+                lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                reason ?? string.Empty, positionDirection, Position.Quantity, fromEntrySignal,
+                stopActive, targetActive));
+
+            if (!stopActive && !targetActive)
+            {
+                // Nothing resting to race against - safe to fire immediately.
+                SubmitTerminalExitMarketOrder(reason, positionDirection, fromEntrySignal);
+                return;
+            }
+
+            terminalExitCancelPending = true;
+            terminalExitCancelPendingSinceUtc = DateTime.UtcNow;   // EMAL-1069: starts the breaker
+            terminalExitCancelReason = reason ?? string.Empty;
+            terminalExitCancelEntrySignal = fromEntrySignal;
+            terminalExitCancelDirection = positionDirection;
+            terminalExitStopCancelDone = !stopActive;
+            terminalExitTargetCancelDone = !targetActive;
+            terminalExitStopFilled = false;
+            terminalExitTargetFilled = false;
+
+            RecordNtOrderAction("terminal-exit-cancel-protective-" + (reason ?? string.Empty));
+            if (stopActive)
+                CancelOrder(protectiveStopOrder);
+            if (targetActive)
+                CancelOrder(profitTargetOrder);
+        }
+
+        // Called only once BOTH resting protective orders (whichever were active) have reached a
+        // CONFIRMED terminal OrderState - see the OnOrderUpdate hook that drives
+        // terminalExitCancelPending. Mirrors SubmitTargetTouchMarketExit's own placement and
+        // reasoning exactly.
+        private void SubmitTerminalExitMarketOrder(string reason, MarketPosition positionDirection,
+            string fromEntrySignal)
+        {
             terminalExitPending = true;
             CancelRemainingEntryAfterExit();
 
             string exitSignal = TerminalExitSignalPrefix + reason;
-            string fromEntrySignal = string.IsNullOrEmpty(entrySignal)
-                ? protectedEntrySignal
-                : entrySignal;
 
             Print(string.Format(
                 "{0} | emergency market exit | reason={1} side={2} entry={3}",
@@ -3823,7 +4302,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             desiredProtectionQuantity = 0;
             protectiveStopOrder = null;
             profitTargetOrder = null;
+            unprotectedSinceUtc = DateTime.MinValue;   // EMAL-1068 finding 5: reset with the rest of the per-trade protection state, not only via the audit's own Flat branch
             terminalExitPending = false;
+            // EMAL-1062: per-trade state, must not survive into the next trade, same reasoning
+            // as ResetGapLatchTracking's own comment on the watchdog fields below.
+            terminalExitCancelPending = false;
+            terminalExitCancelPendingSinceUtc = DateTime.MinValue;   // EMAL-1069
+            terminalExitCancelReason = string.Empty;
+            terminalExitCancelEntrySignal = string.Empty;
+            terminalExitCancelDirection = MarketPosition.Flat;
+            terminalExitStopCancelDone = false;
+            terminalExitTargetCancelDone = false;
+            terminalExitStopFilled = false;
+            terminalExitTargetFilled = false;
             stopReconcileAttempts = 0;
             targetReconcileAttempts = 0;
             ClearTerminalExitRetry();
@@ -3839,6 +4330,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             gapLatchTargetPrice = 0.0;
             gapLatchStopPrice = 0.0;
             gapTargetBreached = false;
+            gapTargetBreachObserved = false;   // EMAL-1070
             gapStopBreached = false;
             // Target touch watchdog resets alongside the gap latch, per the design - both are
             // per-trade state that must not survive into the next trade. Deliberately excludes
@@ -4050,10 +4542,21 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 comment ?? string.Empty));
         }
 
+        // EMAL-1070: the "1500 requests" literal was the SECOND site sized against the refuted
+        // 1500 figure, and the more consequential one - this method is the ONLY trigger for
+        // MarkProviderRateLimit, i.e. the only thing that arms the one-hour entry cooldown the
+        // raised ceiling's safety margin depends on. If Tradovate's rejection text quotes the
+        // real number ("Exceeded 5000 requests per hour") and happens not to contain
+        // "rate limit" or "too many requests", detection would fail silently and EMAL would
+        // keep submitting entries into a rejecting endpoint. Both numeric literals are kept:
+        // they are independent belt-and-braces matches, and the 1500 one costs nothing if the
+        // provider never emits it. ANY FUTURE CHANGE TO THE PROVIDER LIMIT MUST UPDATE THIS
+        // LIST as well as the default and the hover text - all three are the same fact.
         private bool IsProviderRateLimitRejection(string comment)
         {
             string text = comment ?? string.Empty;
             return text.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("5000 requests", StringComparison.OrdinalIgnoreCase) >= 0
                 || text.IndexOf("1500 requests", StringComparison.OrdinalIgnoreCase) >= 0
                 || text.IndexOf("too many requests", StringComparison.OrdinalIgnoreCase) >= 0;
         }
@@ -4103,7 +4606,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             if (terminalExitRetryCount > MaxTerminalExitRetries)
             {
-                terminalExitRetryDueUtc = DateTime.MaxValue;
+                // EMAL-1069: was DateTime.MaxValue, which made IsTerminalExitRetryWaiting()
+                // true FOREVER - and that gate sits BEFORE the SubmitOrUpdateProtection restore
+                // in EvaluateTerminalExitRecovery, so exhaustion permanently prevented
+                // protection from ever being re-armed, not merely further exit attempts.
+                //
+                // BEHAVIOURAL CHANGE, STATED EXPLICITLY (do not describe this as "exits stay
+                // stopped" - that is false). TrySubmitTerminalExit's own guard checks
+                // terminalExitPending / terminalExitCancelPending / targetTouchWatchdogCancelPending
+                // / IsTerminalExitRetryWaiting() - it does NOT check terminalExitRetryCount. So
+                // once the due time lands in the past, ALL terminal-exit call sites reopen for
+                // that tick, not just the one inside EvaluateTerminalExitRecovery (whose own
+                // retryCount check at the bottom of this method guards only itself). Under 1068
+                // exhaustion killed every emergency exit permanently; under 1069 they become
+                // reachable roughly once per TerminalExitExhaustedRestoreSeconds.
+                //
+                // That is judged the safer state - 1068's alternative was a position that could
+                // never be exited by any mechanism, ever - and every such exit still routes
+                // through cancel-then-confirm, so no naked-position path is added. But it IS a
+                // change on a safety-critical path and Andreas must review it as such.
+                terminalExitRetryDueUtc = DateTime.UtcNow.AddSeconds(TerminalExitExhaustedRestoreSeconds);
                 if (!terminalExitRetryExhaustedLogged)
                 {
                     terminalExitRetryExhaustedLogged = true;
@@ -4134,9 +4656,96 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             if (Position.MarketPosition == MarketPosition.Flat)
             {
+                // EMAL-1069: also drop a still-open cancel-then-confirm window when we observe
+                // FLAT. ResetProtectionTracking is the only other place this clears, and it has
+                // exactly one caller which fires only when the position goes flat via one of
+                // four recognised order names (EMALStop/EMALTarget/EMALTouchExit/EMALExit*).
+                // NT8's OWN session-close flatten (IsExitOnSessionCloseStrategy is a shipped
+                // default, governed by the CHART'S Trading Hours Template, not EMAL's sessions)
+                // uses none of those names - nor does a manual or broker-side flatten. So the
+                // latch survived into the NEXT trade and silently no-opped every emergency exit
+                // there, including MissingStop. The 2026-09-09 audit identified this as a
+                // second, independent route to the same stuck latch, and as the one that best
+                // explains why the fault is intermittent and self-clearing. Clearing per-trade
+                // state while FLAT cannot endanger an open position - there isn't one.
+                if (terminalExitCancelPending)
+                {
+                    Print(string.Format(CultureInfo.InvariantCulture,
+                        "{0} | EMAL-1069 | clearing stale terminal-exit cancel window observed while FLAT "
+                        + "| reason={1} - position closed by a path that does not reach ResetProtectionTracking",
+                        lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                        terminalExitCancelReason));
+                }
+                terminalExitCancelPending = false;
+                terminalExitCancelPendingSinceUtc = DateTime.MinValue;
+                terminalExitStopCancelDone = false;
+                terminalExitTargetCancelDone = false;
+                terminalExitStopFilled = false;
+                terminalExitTargetFilled = false;
+
                 ClearTerminalExitRetry();
                 return;
             }
+
+            // ---- EMAL-1069 BREAKER: bound the cancel-then-confirm window --------------------
+            // Deliberately BEFORE the terminalExitRetryReason guard below: on a first-attempt
+            // exit that reason is still empty, so a stuck cancel would never be reached by any
+            // code path at all. That is the permanent-latch case.
+            //
+            // On timeout we do NOT fire a market exit. At least one cancel confirmation never
+            // arrived, so we cannot know whether that protective order is genuinely cancelled
+            // or still working at the broker - and firing a market order against a live
+            // protective order with no OCO is exactly the 2026-09-03 mechanism. Instead we
+            // clear the latch and hand over to ScheduleTerminalExitRetry, the existing tested
+            // path.
+            //
+            // WHAT THIS ACTUALLY ACHIEVES - stated precisely, because "it restores protection"
+            // is NOT true in the common case. The stuck state IS "CancelOrder was sent and the
+            // confirming OnOrderUpdate never arrived", so the local Order object never left
+            // Working/CancelPending and IsOrderActive still reports TRUE. SubmitOrUpdateProtection
+            // therefore takes its ChangeOrder branch with unchanged price and quantity, which is
+            // a no-op. Control then reaches TrySubmitTerminalExit, which sees the leg still
+            // active, re-latches, and re-issues CancelOrder on the same stuck order.
+            //
+            // So the real effect is: a PERMANENT latch becomes a BOUNDED ladder of at most 8
+            // re-cancel attempts (2/5/15/30/60/120/300/300s, each preceded by a 30s stuck
+            // window, ~18 minutes total) plus a CRITICAL log line naming the condition.
+            // Protection is genuinely re-armed only in the PARTIAL subcase - one leg confirmed
+            // terminal, the other lost - where IsOrderActive is false for that leg and a fresh
+            // order is submitted safely against a terminal reference.
+            //
+            // Resubmitting a protective order against an apparently-LIVE one is deliberately
+            // refused: that risks two working stops and is the wrong trade-off when the broker
+            // state is unknown.
+            if (terminalExitCancelPending
+                && terminalExitCancelPendingSinceUtc != DateTime.MinValue
+                && Position.MarketPosition != MarketPosition.Flat
+                && (DateTime.UtcNow - terminalExitCancelPendingSinceUtc).TotalSeconds
+                       >= TerminalExitCancelTimeoutSeconds)
+            {
+                string stuckReason = terminalExitCancelReason;
+                string stuckEntrySignal = terminalExitCancelEntrySignal;
+                Print(string.Format(CultureInfo.InvariantCulture,
+                    "{0} | CRITICAL: terminal-exit cancel confirmation NOT received in {1}s - "
+                    + "breaking stuck latch and restoring protection | reason={2} stopDone={3} "
+                    + "targetDone={4} stopActive={5} targetActive={6} position={7} qty={8}",
+                    lastTickTime != DateTime.MinValue ? lastTickTime : Time[0],
+                    TerminalExitCancelTimeoutSeconds, stuckReason,
+                    terminalExitStopCancelDone, terminalExitTargetCancelDone,
+                    IsOrderActive(protectiveStopOrder), IsOrderActive(profitTargetOrder),
+                    Position.MarketPosition, Position.Quantity));
+
+                terminalExitCancelPending = false;
+                terminalExitCancelPendingSinceUtc = DateTime.MinValue;
+                terminalExitStopCancelDone = false;
+                terminalExitTargetCancelDone = false;
+                terminalExitStopFilled = false;
+                terminalExitTargetFilled = false;
+
+                ScheduleTerminalExitRetry(stuckReason, stuckEntrySignal, false);
+                return;
+            }
+            // ---- end EMAL-1069 breaker ------------------------------------------------------
 
             if (terminalExitPending || string.IsNullOrWhiteSpace(terminalExitRetryReason))
                 return;
@@ -4156,6 +4765,13 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!terminalExitPending && terminalExitRetryCount <= MaxTerminalExitRetries)
             {
                 TrySubmitTerminalExit(terminalExitRetryReason, terminalExitRetryEntrySignal);
+            }
+            else if (terminalExitRetryCount > MaxTerminalExitRetries)
+            {
+                // EMAL-1069: exits are exhausted and stay exhausted - but keep waking so the
+                // protection restore above continues to run. Without this the due time would
+                // stay in the past and the restore would re-run on every tick.
+                terminalExitRetryDueUtc = DateTime.UtcNow.AddSeconds(TerminalExitExhaustedRestoreSeconds);
             }
         }
 
@@ -5599,8 +6215,94 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // Order rate guard is always on (2026-08-14, Steve: "hard code to enabled state and
         // remove the user option ... always on", same pattern as Cancel Entry On Gap Breach) -
         // no property, no toggle. See IsLiveOrderRateGuardActive.
+        // EMAL-1070 (2026-09-10, Steve): default raised 1100 -> 4000. The old default and its
+        // hover text were sized against an "observed 1500-request" Tradovate limit; the actual
+        // Apex/Tradovate ceiling is 5000 PER HOUR (rolling, 60-minute cool-down), so 1100 was
+        // throttling EMAL ~4.5x below the real constraint. 4000 keeps a 1000-request margin.
+        //
+        // MEASURED, not assumed (NT8 Output, 2026-09-09, 14 concurrent accounts, one Tradovate
+        // connection): the shared counter reached 1102 by 10:17:59 and blocked 93 entries
+        // across 17 instances still on the 1100 default, while 4 instances already set to 3000
+        // blocked NONE. Adding the blocked entries back gives ~1660 actions/hour for 14
+        // accounts, ~119 per account. Scaled to 20 accounts that is ~2370/hour - so at 4000
+        // the guard is a genuine anomaly backstop, not a working limit. Zero provider-side
+        // rejections were observed.
+        //
+        // WHY THE MARGIN BELOW 5000 IS THE SAFETY-CRITICAL PART, and why this must NOT be
+        // raised further: Apex and Tradovate both state that reaching the PROVIDER limit does
+        // NOT flatten open positions, and that while limited you may be unable to place,
+        // modify, cancel or exit an order or position - for up to a 60-minute cool-down. That
+        // is an externally-imposed naked-position hazard EMAL cannot defend against, because
+        // SubmitOrUpdateProtection's own calls are what get rejected. The two failure modes
+        // are therefore NOT symmetrical:
+        //   LOCAL ceiling  -> blocks only the marginal ENTRY, bumps rateGuardBlockedEntryCount.
+        //   PROVIDER limit -> MarkProviderRateLimit blocks every EMAL entry on the connection
+        //                     for a FULL HOUR (DateTime.UtcNow.AddHours(1)), AND the broker may
+        //                     refuse the protective/exit orders EMAL needs to stay safe.
+        // The local guard exists to keep EMAL away from that cliff. Range still caps at 5000;
+        // a user who types 5000 has zero headroom by construction. Note also that Tradovate
+        // enforces the limit BY IP, and additionally at minute and second resolution - EMAL
+        // has no brake at those resolutions, and this hourly ceiling does not create or
+        // mitigate that exposure, which scales with ACCOUNT COUNT, not with this value.
+        //
+        // **OPERATIONAL RULE - DIVIDE THIS SETTING BY THE NUMBER OF TRADOVATE CONNECTIONS ON
+        // THIS IP.** GetOrderRateGuardKey() keys the shared counter on Account.Connection, but
+        // Tradovate enforces the 5000/hour BY IP. Two NT8 connections from one machine are two
+        // independent local counters spending one shared provider budget: at 4000 that is 8000
+        // against 5000, i.e. over the cliff with the guard never firing. The 1100 default was
+        // accidentally safe under this (2 x 1100 = 2200); 4000 is not.
+        //
+        // ---------------------------------------------------------------------------------
+        // The block below documents a DIFFERENT property (EnableGapTargetLatch, declared after
+        // OrderActionLimitPerHour). Everything above this line describes Order Actions / Hour.
+        // ---------------------------------------------------------------------------------
+        // EMAL-1070 (2026-09-10, Steve's explicit decision): the EMAL-1041 pre-fill entry-cancel
+        // gap latch becomes user-controllable and SHIPS OFF, so it can be A/B tested live.
+        //
+        // **THIS IS A SAFETY MECHANISM AND IT NOW DEFAULTS TO DISABLED. READ BEFORE CHANGING.**
+        // 1041 made this mandatory because of a fill-then-immediate-loss pattern found in the
+        // 2026-08-13 LIVE review: a still-working entry whose target the market has already
+        // passed can fill at a price the move has left, leaving only the stop ahead of it.
+        //
+        // WHY IT SHIPS OFF ANYWAY: WBGQF (Analysis_Plan §59) measured the cancelled cohort as
+        // the BEST in the book on every metric - net, win rate and drawdown all improve
+        // monotonically as the latch is loosened, with no interior optimum and the maximum at
+        // "do not cancel". Steve's decision, taken 2026-09-10 with the counter-argument stated:
+        // the cohort wins 98-99% of the time, which is the signature of an ENGINE FILL ARTIFACT
+        // rather than an edge, and TNVQZ has already shown the engine's exit fills are fictional
+        // (0 of 43 funded target exits filled through live, against ~4 expected). The entry leg
+        // is untested and this live A/B is how it gets tested.
+        //
+        // SCOPE - CORRECTED 2026-09-10 after review; an earlier draft of this comment said the
+        // opposite and was wrong. With this FALSE, gapTargetBreached is NEVER SET, so BOTH the
+        // pre-fill entry cancel AND SubmitOrUpdateProtection's post-fill "target crossed before
+        // protection | flattening" branch are inert. **The post-fill TARGET backstop is GONE,
+        // not unchanged.** That is deliberate and is the whole point: gating only the cancel
+        // left every suppressed entry filling and then being market-flattened for a guaranteed
+        // scratch, which is not the arm WBGQF measured (EMAL-1066 gates the FLAG - 1066:2691/2715).
+        //
+        // THE STOP SIDE IS UNAFFECTED. gapStopBreached is still set unconditionally and
+        // TrySubmitTerminalExit("GapStop") still fires. That is the genuinely dangerous case -
+        // a fill into an already-breached stop triggers immediately and can fill well beyond the
+        // 18 points sized for. The target side is benign by comparison: the position gets a
+        // NORMAL stop+target bracket and is bounded by its ordinary stop.
+        //
+        // KNOWN CONSEQUENCE, not covered by WBGQF: plannedTargetTouchLevel is limit +/- TP and
+        // has ALREADY been crossed at fill time for this whole cohort, so EvaluateTargetTouchWatchdog
+        // latches immediately and, if the (marketable) target limit has not filled inside
+        // TargetTouchGraceMs, cancels it and routes to SubmitTargetTouchMarketExit. In 1069 this
+        // cohort could never reach that path. It is NOT a naked-position path (the stop is still
+        // working and the exit fires from the target's confirmed terminal-cancel callback), but it
+        // is the path with the open JVKTX <=0 touch-exit defect, and its LIVE rate is unknown -
+        // Playback fills first-touch-wins and will essentially never trigger it.
+        //
+        // SET IT BACK TO TRUE TO RESTORE EMAL-1069 BEHAVIOUR - no rebuild needed.
+        [NinjaScriptProperty]
+        [Display(Name = "Gap Latch: Target Side (1041)", Description = "TRUE = 1069 behaviour: cancel a still-working entry the moment the market passes its planned target, and flatten post-fill if it filled anyway. FALSE = take the trade with a NORMAL stop+target bracket. The STOP-side gap protection is unaffected either way. Ships FALSE for the 2026-09-10 live A/B - set TRUE to restore 1069.", GroupName = "C. Risk", Order = 12)]
+        public bool EnableGapTargetLatch { get; set; }
+
         [Range(NewTradeActionReserve, 5000), NinjaScriptProperty]
-        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection. Default 1100 leaves headroom below Tradovate's observed 1500-request provider limit.", GroupName = "C. Risk", Order = 3)]
+        [Display(Name = "Order Actions / Hour", Description = "Conservative local EMAL action ceiling per NT8 connection (shared across every strategy instance on it). Default 4000 leaves headroom below Tradovate's 5000-per-hour provider limit. Exceeding the PROVIDER limit blocks all entries for a 60-minute cool-down AND can leave you unable to modify or exit open positions, which Tradovate does NOT auto-flatten - so keep a wide margin and never set this at or near 5000.", GroupName = "C. Risk", Order = 3)]
         public int OrderActionLimitPerHour { get; set; }
 
         // EMAL-1041 (2026-08-14, Steve): cancelling a still-working entry the moment its planned
@@ -5663,6 +6365,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Display(Name = "Touch Detection Mode", Description = "QuoteOrLast (default): the target-touch watchdog and gap latch trigger on either a Last trade AT the level or the relevant quote (Bid for Long, Ask for Short) reaching it - catches a fleeting one-tick touch even with no Last print exactly there. LastOnly: Last-trade detection only, byte-identical to the prior cut, for A/B comparison or rollback.", GroupName = "C. Risk", Order = 7)]
         public EMALTouchDetectionMode TouchDetectionMode { get; set; }
 
+        // ================================================================================
+        // EMAL-1067 (Steve, 2026-09-09) - RECURRING NAKED-POSITION AUDIT
+        // ================================================================================
+
+        [NinjaScriptProperty]
+        [Display(Name = "Naked Position Audit", Description = "EMAL-1068. Recurring safety net: if an OPEN position is missing EITHER its working stop OR its working target continuously for the grace period below, flatten it. Closes the gap left by the existing MissingStop/MissingTarget checks, which only run when protection is first submitted and therefore cannot catch an order that was accepted and later vanished (broker cancel, connection blip, order pulled). BOTH legs are required because EMAL's edge is the bracket geometry: a position that has lost its target can no longer take the +TP and can only exit at the full stop or an EOD flatten, i.e. its favourable outcome is gone while the unfavourable one remains. Leave ON.", GroupName = "C. Risk", Order = 10)]
+        public bool EnableNakedPositionAudit { get; set; }
+
+        [Range(3, 300), NinjaScriptProperty]
+        [Display(Name = "Naked Position Grace (seconds)", Description = "EMAL-1068. How long protection must be CONTINUOUSLY incomplete before the audit flattens. The clock starts when the fault is first OBSERVED and resets the moment both legs are seen working again, so a genuine momentary gap is debounced rather than acted on, while protection that never attached at all still fires (that is simply a fault seen on first sighting). Must exceed a normal broker acknowledgement. 10s is a JUDGEMENT CALL, not a measurement - the fault clock START/CLEAR lines in the Output window record the observed fault-duration distribution, and the default should be reset to a large multiple of the observed maximum once that data exists. Realtime only.", GroupName = "C. Risk", Order = 11)]
+        public int NakedPositionGraceSeconds { get; set; }
+
         // EMAL-1046 (2026-08-18, Steve): fixes an observed multi-lot bug where a partial-filled
         // entry's stop/target resize can reach the broker before the protective order is
         // Working, get rejected, and be silently dropped - leaving protection under-sized for
@@ -5682,7 +6396,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // OFF-by-default optional toggle covering 09:31-09:35 AND 09:43. CHANGED 2026-08-22
         // (Steve): defaults ON and hidden from the property grid - same "hardcode to enabled,
         // remove the user option" treatment this file already gives the order rate guard and the
-        // gap-breach entry cancellation. CHANGED AGAIN 2026-08-28 (Steve): the US 09:36-09:50
+        // gap-breach entry cancellation. CHANGED AGAIN 2026-08-28 (Steve): the US 09:36-09:55
         // window's start moved to 09:36, making 09:31-09:35 structurally unreachable by any
         // session (nothing opens before 09:36 any more) - that portion is deleted from
         // IsAdditionalBlockedMinute, and this property is renamed Block0931To0935 -> Block0943
@@ -5715,7 +6429,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 18:00-3:00 Setting", Description = "TP4_SL20_Slope2_75 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted): WR86.17% PF1.200 Net$89,088 MaxDD$3,815 Net/DD23.35", GroupName = "B. Sessions", Order = 2)]
+        [Display(Name = "Asia 18:00-3:00 Setting", Description = "TP4_SL20_Slope2_75 WR86.17% PF1.200 Net$89,088 MaxDD$3,815 Net/DD23.35", GroupName = "B. Sessions", Order = 2)]
         public EMALAsiaSetting AsiaSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5732,7 +6446,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // visible again with a one-line revert if the edge question is ever resolved.
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Europe 3:00-6:30 Setting", Description = "TP8_5_SL20_Slope2_75 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted): WR71.73% PF1.045 Net$12,838 MaxDD$3,252 Net/DD3.95 - notably wider TP than the NY sessions' TP4/TP3 (smoothness originally validated on the QNRVX scan). Hidden 2026-08-23 (EMAL-1052): net of the standard $3.10/trade commission this edge is not statistically distinguishable from zero (day-level t=0.40) and carries the worst Net/MaxDD of any session - see Analysis_Plan §31.", GroupName = "B. Sessions", Order = 7)]
+        [Display(Name = "Europe 3:00-6:30 Setting", Description = "TP8_5_SL20_Slope2_75 WR71.73% PF1.045 Net$12,838 MaxDD$3,252 Net/DD3.95 - notably wider TP than the NY sessions' TP4/TP3 (smoothness originally validated on the QNRVX scan). Hidden 2026-08-23 (EMAL-1052): net of the standard $3.10/trade commission this edge is not statistically distinguishable from zero (day-level t=0.40) and carries the worst Net/MaxDD of any session - see Analysis_Plan §31.", GroupName = "B. Sessions", Order = 7)]
         public EMALEuropeSetting EuropeSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5741,7 +6455,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double EuropeMinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US Pre-Market 8:00-9:28 Setting", Description = "TP11_SL20_Slope2_75 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted): WR69.96% PF1.244 Net$37,645 MaxDD$2,842 Net/DD13.25 - notably wider TP than the NY sessions (smoothness originally validated on the QNRVX scan).\n\nBlocked times 8:28-8:32 (unconditional news-release block, applies regardless of session).", GroupName = "B. Sessions", Order = 13)]
+        [Display(Name = "US Pre-Market 8:00-9:28 Setting", Description = "TP11_SL20_Slope2_75 WR69.96% PF1.244 Net$37,645 MaxDD$2,842 Net/DD13.25\n\nBlocked times 8:28-8:32 (unconditional news-release block, applies regardless of session). Any open position force-closed at 8:29 and again at 9:29 (both unconditional, apply regardless of session).", GroupName = "B. Sessions", Order = 13)]
         public EMALPreMarketSetting PreMarketSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5750,7 +6464,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double PreMarketMinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US Midday 10:30-17:00 Setting", Description = "TP3_SL13_Slope2_75 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted): WR86.39% PF1.385 Net$136,872 MaxDD$2,831 Net/DD48.35 - notably tighter SL than the NY sessions' SL18; needed to bring this high-volume 6.5-hour session's max drawdown under the $3,000 cap at all.\n\nBlocked times 16:55-17:00 (EOD Force Close - see that setting below; entries blocked and any open position flattened from the configured time up to the CME daily halt).", GroupName = "B. Sessions", Order = 23)]
+        [Display(Name = "US Midday 10:30-17:00 Setting", Description = "TP3_SL13_Slope2_75 WR86.39% PF1.385 Net$136,872 MaxDD$2,831 Net/DD48.35\n\nBlocked times 16:55-17:00.", GroupName = "B. Sessions", Order = 23)]
         public EMALUSMiddaySetting USMiddaySetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5833,16 +6547,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 9:36-9:50 Setting", Description = "P1 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted, RECOMPUTED 2026-08-28 for the 9:36-9:50 window - drops 48 trades that filled at 9:28/9:29 under the old 9:28-9:50 window) WR89.27% PF1.775 Net$20,635 MaxDD$1,401 Net/DD14.73\n\nP2 WR93.05% PF2.131 Net$20,920 MaxDD$756 Net/DD27.66 (not recomputed - this preset was never captured in the CVYFX run, which only exercised the live P1 preset; figure carried over unchanged from the prior 9:28-9:50 window and should not be trusted for the new window until it is)\n\nBlocked times 9:43 (always on). Window starts 9:36 - 9:28-9:35 no longer trades or needs blocking (2026-08-28).", GroupName = "B. Sessions", Order = 19)]
+        [Display(Name = "US 9:36-9:55 Setting", Description = "P1 (S1_TP4_SL18_Slope2_75) RR4.50 WR89.27% PF1.775 Net$20,635 MaxDD$1,401 Net/DD14.73\nP2 (S2_TP3_SL18_Slope2_75) RR6.00 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum - WR93.05% PF2.131 Net$20,920 MaxDD$756 Net/DD27.66\n\n--- New below (EMAL-1071) ---\nP3 (S3_TP4_SL16_Slope4_25) RR4.00 WR86.21% PF1.488 Net$5,671 MaxDD$1,108 Net/DD5.12 *\n\nBlocked time 9:43 (always on).\n\n* Tuned against the full ZQMFH research capture (0.25 slope step), no derive/holdout split, swept around the shipped setting - see EMAL-1071-changelog.txt for full methodology and caveats.", GroupName = "B. Sessions", Order = 19)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:36-09:50 Min Slope", Description = "Driven by the US 09:36-09:50 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 20)]
+        [Display(Name = "US 09:36-09:55 Min Slope", Description = "Driven by the US 09:36-09:55 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 20)]
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 9:55-10:30 Setting", Description = "P1 (Playback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted) WR89.92% PF1.902 Net$49,079 MaxDD$1,322 Net/DD37.12\n\nP2 WR93.62% PF2.337 Net$46,021 MaxDD$1,051 Net/DD43.78\n\nP3 WR92.59% PF2.232 Net$43,907 MaxDD$1,179 Net/DD37.25", GroupName = "B. Sessions", Order = 21)]
+        [Display(Name = "US 9:55-10:30 Setting", Description = "P1 (S1_TP4_SL18_Slope2_75) RR4.50 WR89.92% PF1.902 Net$49,079 MaxDD$1,322 Net/DD37.12\nP2 (S2_TP3_SL18_Slope2_75) RR6.00 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum - WR93.62% PF2.337 Net$46,021 MaxDD$1,051 Net/DD43.78\nP3 (S3_TP3_SL16_Slope2_75) RR5.33 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum - WR92.59% PF2.232 Net$43,907 MaxDD$1,179 Net/DD37.25\n\n--- New below (EMAL-1071) ---\nP4 (S4_TP3_5_SL12_Slope4_25) RR3.43 WR83.46% PF1.389 Net$8,037 MaxDD$1,419 Net/DD5.66 *\nP5 (S5_TP3_SL13_Slope3_5) RR4.33 WR86.49% PF1.384 Net$7,579 MaxDD$1,713 Net/DD4.43 *\nP6 (S6_TP3_SL22_Slope4_5) RR7.33 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum - WR93.81% PF1.945 Net$11,719 MaxDD$1,203 Net/DD9.74 *\nP7 (S7_TP3_SL14_Slope3_5) RR4.67 WR88.13% PF1.492 Net$9,196 MaxDD$2,133 Net/DD4.31 *\n\n* Tuned against the full ZQMFH research capture (0.25 slope step), no derive/holdout split, swept around the shipped setting - see EMAL-1071-changelog.txt for full methodology and caveats.", GroupName = "B. Sessions", Order = 21)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -5892,8 +6606,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1054,
-        modified_2026_08_28
+        version_1072,
+        modified_2026_09_15
     }
 
     // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
@@ -5917,19 +6631,30 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         Auto
     }
 
+    // EMAL-1071: S3 added below the original two - full-data-store sweep centered on the
+    // shipped setting, ZQMFH capture (0.25 slope step). See EMAL-1071-changelog.txt.
     public enum EMALUs0928Setting
     {
         Disabled,
         S1_TP4_SL18_Slope2_75,
-        S2_TP3_SL18_Slope2_75
+        S2_TP3_SL18_Slope2_75,
+        S3_TP4_SL16_Slope4_25
     }
 
+    // EMAL-1071: S4-S7 added below the original three - full-data-store sweep centered on the
+    // shipped setting, ZQMFH capture (0.25 slope step), constrained to RR (SL/TP) <= 5.0 except
+    // S6, kept for eval accounts only (RR 7.33, predates the RR<=5 funded-account rule). See
+    // EMAL-1071-changelog.txt.
     public enum EMALUs0955Setting
     {
         Disabled,
         S1_TP4_SL18_Slope2_75,
         S2_TP3_SL18_Slope2_75,
-        S3_TP3_SL16_Slope2_75
+        S3_TP3_SL16_Slope2_75,
+        S4_TP3_5_SL12_Slope4_25,
+        S5_TP3_SL13_Slope3_5,
+        S6_TP3_SL22_Slope4_5,
+        S7_TP3_SL14_Slope3_5
     }
 
     // EMAL-1051: four new sessions' presets, same shape as the two above - Disabled first,
