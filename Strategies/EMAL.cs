@@ -462,6 +462,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // reconstruction could only estimate, and over-stated ~2x (P-58-3).
         private int gapLatchTargetBreachCount;
         private int blockedBarCount;
+
+        // EMAL-1073 (Steve, 2026-09-19): the P1 5-minute opening-range gate + continuous
+        // directional bias (fields, UpdateUs0928OpeningRangeState, IsUs0928OpeningRangeConditionMet,
+        // and their two call sites) was REMOVED entirely after emal-analyst tested every variant
+        // of the underlying hypothesis (daily gate, gate+bias, per-signal 5-min block, per-signal
+        // 15-min block, on both ZQMFH and real-fill MXQFL data) and rejected all of them - see
+        // emal-work/EMAL_Analysis_Plan.md §62/§63/§65. The core claim ("trades while price sits
+        // inside the opening range are meaningfully worse") was tested directly and did not
+        // survive: the effect reverses sign under interleaved-half testing and flips entirely
+        // backwards at the 15-minute range. Opening-range/bias mechanisms are 0-for-11 in this
+        // project's history as of this cut.
         // EMAL-1050: counts bars blocked by the 09:43 block (Block0943 - originally also covered
         // 09:31-09:35, and the file also had a separate always-on 09:30 hard block; both retired
         // 2026-08-28 when the US 09:36-09:55 window's start moved to 09:36, since no session opens
@@ -679,7 +690,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1072;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1073;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -713,7 +724,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 USMiddaySetting = EMALUSMiddaySetting.Disabled;
                 USMiddayMinimumSlope = 2.75;
                 EODForceCloseTime = new TimeSpan(16, 55, 0);   // see comment on the property below
-                EnableGapTargetLatch = false;   // EMAL-1070: ships OFF for the live A/B
+                EnableGapTargetLatch = true;   // EMAL-1073 (Steve, 2026-09-18): the 2026-09-10/
+                    // 09-11 live A/B this was shipped OFF for has already run and closed out -
+                    // restored to TRUE (the 1069 safety behaviour) as the new standing default.
                 OrderActionLimitPerHour = 4000;   // EMAL-1070: was 1100; see the property's comment
 
                 ProjectXApiBaseUrl = "https://api.topstepx.com";
@@ -1115,7 +1128,6 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case EMALUs0928Setting.Disabled:                   us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
                 case EMALUs0928Setting.S1_TP4_SL18_Slope2_75:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
                 case EMALUs0928Setting.S2_TP3_SL18_Slope2_75:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
-                case EMALUs0928Setting.S3_TP4_SL16_Slope4_25:  us0928Tp = 4; us0928Sl = 16; Us0928MinimumSlope = 4.25; break;
                 default: /* TP4_SL18_Slope2_75 */          us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
             }
             switch (Us0955Setting)
@@ -1124,10 +1136,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 case EMALUs0955Setting.S1_TP4_SL18_Slope2_75:  us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
                 case EMALUs0955Setting.S2_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
                 case EMALUs0955Setting.S3_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.S4_TP3_5_SL12_Slope4_25: us0955Tp = 3.5; us0955Sl = 12; Us0955MinimumSlope = 4.25; break;
-                case EMALUs0955Setting.S5_TP3_SL13_Slope3_5:   us0955Tp = 3; us0955Sl = 13; Us0955MinimumSlope = 3.5; break;
-                case EMALUs0955Setting.S6_TP3_SL22_Slope4_5:   us0955Tp = 3; us0955Sl = 22; Us0955MinimumSlope = 4.5; break;
-                case EMALUs0955Setting.S7_TP3_SL14_Slope3_5:   us0955Tp = 3; us0955Sl = 14; Us0955MinimumSlope = 3.5; break;
+                case EMALUs0955Setting.S4_TP3_75_SL18_Slope2_75: us0955Tp = 3.75; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
                 default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
             }
             switch (AsiaSetting)
@@ -6298,7 +6307,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         //
         // SET IT BACK TO TRUE TO RESTORE EMAL-1069 BEHAVIOUR - no rebuild needed.
         [NinjaScriptProperty]
-        [Display(Name = "Gap Latch: Target Side (1041)", Description = "TRUE = 1069 behaviour: cancel a still-working entry the moment the market passes its planned target, and flatten post-fill if it filled anyway. FALSE = take the trade with a NORMAL stop+target bracket. The STOP-side gap protection is unaffected either way. Ships FALSE for the 2026-09-10 live A/B - set TRUE to restore 1069.", GroupName = "C. Risk", Order = 12)]
+        [Display(Name = "Gap Latch: Target Side (1041)", Description = "TRUE = 1069 behaviour: cancel a still-working entry the moment the market passes its planned target, and flatten post-fill if it filled anyway. FALSE = take the trade with a NORMAL stop+target bracket. The STOP-side gap protection is unaffected either way. EMAL-1073: ships TRUE (1069 behaviour restored as the standing default) - the 2026-09-10/09-11 live A/B this shipped FALSE for has already run and closed out. Set FALSE only to re-run that A/B intentionally.", GroupName = "C. Risk", Order = 12)]
         public bool EnableGapTargetLatch { get; set; }
 
         [Range(NewTradeActionReserve, 5000), NinjaScriptProperty]
@@ -6429,7 +6438,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "Asia 18:00-3:00 Setting", Description = "TP4_SL20_Slope2_75 WR86.17% PF1.200 Net$89,088 MaxDD$3,815 Net/DD23.35", GroupName = "B. Sessions", Order = 2)]
+        [Display(Name = "Asia 18:00-3:00 Setting", Description = "TP4_SL20_Slope2_75 WR86.17% PF1.200 Net$89,088 MaxDD$3,815 Net/DD23.35\n\nPlayback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted.", GroupName = "B. Sessions", Order = 2)]
         public EMALAsiaSetting AsiaSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -6446,7 +6455,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // visible again with a one-line revert if the edge question is ever resolved.
         [NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "Europe 3:00-6:30 Setting", Description = "TP8_5_SL20_Slope2_75 WR71.73% PF1.045 Net$12,838 MaxDD$3,252 Net/DD3.95 - notably wider TP than the NY sessions' TP4/TP3 (smoothness originally validated on the QNRVX scan). Hidden 2026-08-23 (EMAL-1052): net of the standard $3.10/trade commission this edge is not statistically distinguishable from zero (day-level t=0.40) and carries the worst Net/MaxDD of any session - see Analysis_Plan §31.", GroupName = "B. Sessions", Order = 7)]
+        [Display(Name = "Europe 3:00-6:30 Setting", Description = "TP8_5_SL20_Slope2_75 WR71.73% PF1.045 Net$12,838 MaxDD$3,252 Net/DD3.95 - notably wider TP than the NY sessions' TP4/TP3 (smoothness originally validated on the QNRVX scan). Hidden 2026-08-23 (EMAL-1052): net of the standard $3.10/trade commission this edge is not statistically distinguishable from zero (day-level t=0.40) and carries the worst Net/MaxDD of any session - see Analysis_Plan §31.\n\nPlayback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted.", GroupName = "B. Sessions", Order = 7)]
         public EMALEuropeSetting EuropeSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -6455,7 +6464,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double EuropeMinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US Pre-Market 8:00-9:28 Setting", Description = "TP11_SL20_Slope2_75 WR69.96% PF1.244 Net$37,645 MaxDD$2,842 Net/DD13.25\n\nBlocked times 8:28-8:32 (unconditional news-release block, applies regardless of session). Any open position force-closed at 8:29 and again at 9:29 (both unconditional, apply regardless of session).", GroupName = "B. Sessions", Order = 13)]
+        [Display(Name = "US Pre-Market 8:00-9:28 Setting", Description = "TP11_SL20_Slope2_75 WR69.96% PF1.244 Net$37,645 MaxDD$2,842 Net/DD13.25\n\nBlocked times 8:28-8:32 (unconditional news-release block, applies regardless of session). Any open position force-closed at 8:29 and again at 9:29 (both unconditional, apply regardless of session).\n\nPlayback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted.", GroupName = "B. Sessions", Order = 13)]
         public EMALPreMarketSetting PreMarketSetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -6464,7 +6473,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double PreMarketMinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US Midday 10:30-17:00 Setting", Description = "TP3_SL13_Slope2_75 WR86.39% PF1.385 Net$136,872 MaxDD$2,831 Net/DD48.35\n\nBlocked times 16:55-17:00.", GroupName = "B. Sessions", Order = 23)]
+        [Display(Name = "US Midday 10:30-17:00 Setting", Description = "TP3_SL13_Slope2_75 WR86.39% PF1.385 Net$136,872 MaxDD$2,831 Net/DD48.35\n\nBlocked times 16:55-17:00.\n\nPlayback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted.", GroupName = "B. Sessions", Order = 23)]
         public EMALUSMiddaySetting USMiddaySetting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -6547,7 +6556,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 9:36-9:55 Setting", Description = "P1 (S1_TP4_SL18_Slope2_75) RR4.50 WR89.27% PF1.775 Net$20,635 MaxDD$1,401 Net/DD14.73\nP2 (S2_TP3_SL18_Slope2_75) RR6.00 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum - WR93.05% PF2.131 Net$20,920 MaxDD$756 Net/DD27.66\n\n--- New below (EMAL-1071) ---\nP3 (S3_TP4_SL16_Slope4_25) RR4.00 WR86.21% PF1.488 Net$5,671 MaxDD$1,108 Net/DD5.12 *\n\nBlocked time 9:43 (always on).\n\n* Tuned against the full ZQMFH research capture (0.25 slope step), no derive/holdout split, swept around the shipped setting - see EMAL-1071-changelog.txt for full methodology and caveats.", GroupName = "B. Sessions", Order = 19)]
+        [Display(Name = "US 9:36-9:55 Setting", Description = "S1_TP4_SL18_Slope2_75, RR4.50\nWR89.27% PF1.775 Net$20,635 MaxDD$1,401 Net/DD14.73\n\nS2_TP3_SL18_Slope2_75, RR6.00 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum\nWR93.05% PF2.131 Net$20,920 MaxDD$756 Net/DD27.66\n\nBlocked time 9:43 (always on).\n\nPlayback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted.", GroupName = "B. Sessions", Order = 19)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -6556,7 +6565,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 9:55-10:30 Setting", Description = "P1 (S1_TP4_SL18_Slope2_75) RR4.50 WR89.92% PF1.902 Net$49,079 MaxDD$1,322 Net/DD37.12\nP2 (S2_TP3_SL18_Slope2_75) RR6.00 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum - WR93.62% PF2.337 Net$46,021 MaxDD$1,051 Net/DD43.78\nP3 (S3_TP3_SL16_Slope2_75) RR5.33 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum - WR92.59% PF2.232 Net$43,907 MaxDD$1,179 Net/DD37.25\n\n--- New below (EMAL-1071) ---\nP4 (S4_TP3_5_SL12_Slope4_25) RR3.43 WR83.46% PF1.389 Net$8,037 MaxDD$1,419 Net/DD5.66 *\nP5 (S5_TP3_SL13_Slope3_5) RR4.33 WR86.49% PF1.384 Net$7,579 MaxDD$1,713 Net/DD4.43 *\nP6 (S6_TP3_SL22_Slope4_5) RR7.33 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum - WR93.81% PF1.945 Net$11,719 MaxDD$1,203 Net/DD9.74 *\nP7 (S7_TP3_SL14_Slope3_5) RR4.67 WR88.13% PF1.492 Net$9,196 MaxDD$2,133 Net/DD4.31 *\n\n* Tuned against the full ZQMFH research capture (0.25 slope step), no derive/holdout split, swept around the shipped setting - see EMAL-1071-changelog.txt for full methodology and caveats.", GroupName = "B. Sessions", Order = 21)]
+        [Display(Name = "US 9:55-10:30 Setting", Description = "S1_TP4_SL18_Slope2_75, RR4.50\nWR89.92% PF1.902 Net$49,079 MaxDD$1,322 Net/DD37.12\n\nS2_TP3_SL18_Slope2_75, RR6.00 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum\nWR93.62% PF2.337 Net$46,021 MaxDD$1,051 Net/DD43.78\n\nS3_TP3_SL16_Slope2_75, RR5.33 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum\nWR92.59% PF2.232 Net$43,907 MaxDD$1,179 Net/DD37.25\n\nS4_TP3_75_SL18_Slope2_75, RR4.80\nWR89.35% PF1.72 Net$82,259 MaxDD$2,357 Net/DD34.90 - MXQFL real-fill capture, Apr27-Sep18 2026, 105 days (NOT the same capture as S1-S3 above, which are CVYFX Apr26-Aug21 - do not compare absolute Net/MaxDD across the two). vs S1 measured on this SAME MXQFL capture: Net$83,151 MaxDD$3,391 - so S4 is Net-$892 (~1.1%) and MaxDD-$1,034 (~30% lower) vs S1, not the higher-looking numbers directly above. Full emal-analyst adoption-gate validation (Analysis_Plan §67); not a discovered edge over S1 (the net difference is within noise, 2/4 halves) - a deliberate risk/reward trade, chosen for the drawdown reduction.\n\nPlayback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted (S1-S3 only).", GroupName = "B. Sessions", Order = 21)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
@@ -6606,8 +6615,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1072,
-        modified_2026_09_15
+        version_1073,
+        modified_2026_09_19
     }
 
     // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
@@ -6631,30 +6640,36 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         Auto
     }
 
-    // EMAL-1071: S3 added below the original two - full-data-store sweep centered on the
-    // shipped setting, ZQMFH capture (0.25 slope step). See EMAL-1071-changelog.txt.
+    // EMAL-1073 (Steve, 2026-09-19): S3 (P1) REMOVED - EMAL-1071 added it based on a cascade
+    // sweep later found to have scored candidates on a censoring-bug-corrupted Net/MaxIDD
+    // objective (see emal-work/EMAL_Analysis_Plan.md §64). Corrected, full-book, real-fill
+    // re-run found S3 net -$5,618 vs shipped, 0/4 halves - not an improvement, a loss. Reverted
+    // to the pre-1071 two-preset list. See EMAL-1071-changelog.txt for S3's original (now
+    // superseded) rationale.
     public enum EMALUs0928Setting
     {
         Disabled,
         S1_TP4_SL18_Slope2_75,
-        S2_TP3_SL18_Slope2_75,
-        S3_TP4_SL16_Slope4_25
+        S2_TP3_SL18_Slope2_75
     }
 
-    // EMAL-1071: S4-S7 added below the original three - full-data-store sweep centered on the
-    // shipped setting, ZQMFH capture (0.25 slope step), constrained to RR (SL/TP) <= 5.0 except
-    // S6, kept for eval accounts only (RR 7.33, predates the RR<=5 funded-account rule). See
-    // EMAL-1071-changelog.txt.
+    // EMAL-1073 (Steve, 2026-09-19): S4-S7 (P2) REMOVED - same §64 finding as P1's S3 above.
+    // Corrected re-run: S4 -$15,400, S5 -$11,722, S6 -$6,485, S7 -$8,911 vs shipped, all 0/4
+    // halves. Reverted to the pre-1071 three-preset list. See EMAL-1071-changelog.txt for
+    // S4-S7's original (now superseded) rationale.
+    // EMAL-1073 (Steve, 2026-09-19): S4_TP3_75_SL18_Slope2_75 ADDED - funded-legal (RR4.80 <=
+    // 5.00) alternative to S1 that trades ~1% of net profit for ~30% lower max drawdown.
+    // Full emal-analyst adoption-gate validation on the MXQFL real-fill capture (105 days) -
+    // see Analysis_Plan §67. Not a discovered edge, a deliberate risk/reward choice: rejected
+    // under the "beats the field" adoption bar but adopted here on Steve's explicit instruction
+    // as a genuine, reproducible bracket-geometry trade-off, not noise.
     public enum EMALUs0955Setting
     {
         Disabled,
         S1_TP4_SL18_Slope2_75,
         S2_TP3_SL18_Slope2_75,
         S3_TP3_SL16_Slope2_75,
-        S4_TP3_5_SL12_Slope4_25,
-        S5_TP3_SL13_Slope3_5,
-        S6_TP3_SL22_Slope4_5,
-        S7_TP3_SL14_Slope3_5
+        S4_TP3_75_SL18_Slope2_75
     }
 
     // EMAL-1051: four new sessions' presets, same shape as the two above - Disabled first,
