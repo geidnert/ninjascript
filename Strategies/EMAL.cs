@@ -647,7 +647,47 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 Description = "EMA direction strategy for NQ (1-minute bars) with market or passive "
                     + "bid/ask limit entries and fixed take-profit and stop-loss brackets.";
-                Name = "EMAL";
+                // EMAL-1075 (Steve, 2026-09-22): changed from "EMAL" per Steve's explicit request
+                // to stop that literal string reaching the broker/account order report's Text/Name
+                // column. See this file's changelog for the full investigation - short version:
+                // every managed order call in this file (EnterLongLimit/EnterShort/ExitLong/
+                // ExitShort) passes NT8 an internal signalName built from StrategySignalPrefix
+                // ("EMALLong", "EMALStop", etc, always WITH a suffix), and the ProjectX REST order
+                // JSON (ProjectXPlaceOrder) carries no name/tag/text field at all - neither matches
+                // the reported symptom (bare "EMAL", no suffix, every order type). This Name
+                // property is the one remaining plausible source: it's the strategy's own
+                // registered display name, and NinjaTrader's native broker order-routing (the
+                // Tradovate connection, not ProjectX) is documented to use it when constructing
+                // outbound order tags for MANAGED orders - which is architecture inside NT8's
+                // closed-source connection adapter, invisible to this file, so this could NOT be
+                // verified by static reading alone.
+                //
+                // Set to "v1075", NOT left blank - code review caught that blank is the WEAKER of
+                // the two options for the actual test this exists to run. If the broker report
+                // shows "v1075", Name is confirmed to be the channel and Steve owns the lever from
+                // here. If it still shows "EMAL", Name is DEFINITIVELY ruled out (no NT8 fallback
+                // can turn a non-blank, non-"EMAL" string into "EMAL") and the real source is
+                // outside this file entirely. A blank Name can't discriminate those two cases: if
+                // "EMAL" still showed up, there'd be no way to tell whether NT8 quietly fell back
+                // to the class name (also "EMAL") on a blank Name, or whether Name was never the
+                // channel at all - and NEITHER interpretation would be provable from this file.
+                //
+                // ALSO: blanking Name would have blanked the strategy's own identity everywhere
+                // NT8 itself displays it - the Strategies dialog, Control Center's Strategies tab,
+                // Chart Trader's strategy label, saved templates - all of which key off Name per
+                // NT8 convention. "v1075" keeps a real, if generic, identity there instead of
+                // erasing it. NOTE this is SEPARATE from NT8's own native per-instance "Label"
+                // field (Setup group, between Calculate and Maximum bars look back) that Steve
+                // already uses for his own tracking (e.g. "Funded Group MW", showing in the
+                // Strategies tab's Strategy column) - that field is native NT8 UI, not anything
+                // in this source file, unaffected by this change, and Steve wants to keep using
+                // it as-is. This Name change targets a DIFFERENT, separate field: the broker/
+                // account report's own Text column, which Steve confirmed shows something
+                // distinct from that native Strategy column.
+                //
+                // TEST THIS WITH A LIVE/SIM ORDER before trusting it - flagged explicitly per
+                // Steve's own instruction not to claim a fix that only appears to work.
+                Name = "v1075";
                 Calculate = Calculate.OnEachTick;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.UniqueEntries;
@@ -690,7 +730,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1073;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1076;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -6615,8 +6655,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1073,
-        modified_2026_09_19
+        version_1076,
+        modified_2026_09_24
     }
 
     // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
