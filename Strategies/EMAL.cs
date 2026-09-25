@@ -730,7 +730,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 // CancelEntriesOnStrategyDisable = true;
                 // CancelExitsOnStrategyDisable = false;
 
-                Version = EMALVersion.version_1076;   // bump on every new cut; see enum comment
+                Version = EMALVersion.version_1077;   // bump on every new cut; see enum comment
 
                 EmaPeriod = 9;
                 MinimumEmaSlopePoints = 0.75;   // fallback for a minute outside both tracked windows
@@ -795,8 +795,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Us0928Setting = EMALUs0928Setting.Disabled;
                 Us0955Setting = EMALUs0955Setting.Disabled;
 
-                Us0928MinimumSlope = 2.75;   // overwritten by ResolveWindowPresets from the Setting popup
-                Us0955MinimumSlope = 2.75;
+                Us0928MinimumSlope = 5.25;   // overwritten by ResolveWindowPresets from the Setting popup
+                Us0955MinimumSlope = 3.50;
 
                 EnableFeatureLog = false;   // logging OFF by default (Steve, 2026-07-31)
                 FeatureLogPath = string.Empty;   // blank -> version-named auto-path, see ResolveFeatureLogPath
@@ -1094,6 +1094,63 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
         }
 
+        // EMAL-1077: per-session slope-calculation WINDOW, the companion to the per-session
+        // threshold below. `ema[1] - ema[N]` where N is this value: N=2 is the one-bar slope every
+        // cut through EMAL-1076 hardcoded, N=3 spans two bar intervals. N is the INDEX of the older
+        // EMA bar, not the interval count - the span is N-1 intervals. P1 and P2 run N=3 as of this
+        // cut (Analysis_Plan §72.10/§75); every other session stays at the shipped N=2.
+        private int us0928SlopeWindow = DefaultSlopeWindowBars;
+        private int us0955SlopeWindow = DefaultSlopeWindowBars;
+        private int asiaSlopeWindow = DefaultSlopeWindowBars;
+        private int europeSlopeWindow = DefaultSlopeWindowBars;
+        private int preMarketSlopeWindow = DefaultSlopeWindowBars;
+        private int usMiddaySlopeWindow = DefaultSlopeWindowBars;
+
+        // The shipped one-bar slope. Also the fallback for any minute outside every tracked window.
+        private const int DefaultSlopeWindowBars = 2;
+
+        // Warmup must cover the WIDEST window any session could ask for, because warmup is global
+        // while the window is per-session - sizing it to the active session would under-warm the
+        // bar on which a wider-window session first opens.
+        private int MaxConfiguredSlopeWindow
+        {
+            get
+            {
+                int m = DefaultSlopeWindowBars;
+                if (us0928SlopeWindow > m) m = us0928SlopeWindow;
+                if (us0955SlopeWindow > m) m = us0955SlopeWindow;
+                if (asiaSlopeWindow > m) m = asiaSlopeWindow;
+                if (europeSlopeWindow > m) m = europeSlopeWindow;
+                if (preMarketSlopeWindow > m) m = preMarketSlopeWindow;
+                if (usMiddaySlopeWindow > m) m = usMiddaySlopeWindow;
+                return m;
+            }
+        }
+
+        // Mirrors GetConfiguredSlope's session dispatch exactly - same cases, same fallback - so the
+        // threshold and the window a bar is judged by can never come from different sessions.
+        private int GetConfiguredSlopeWindow(DateTime platformTime)
+        {
+            switch (GetSessionIndex(platformTime))
+            {
+                case 3: return us0928SlopeWindow;
+                case 5: return us0955SlopeWindow;
+                case 10: return asiaSlopeWindow;
+                case 11: return europeSlopeWindow;
+                case 12: return preMarketSlopeWindow;
+                case 13: return usMiddaySlopeWindow;
+                default: return DefaultSlopeWindowBars;
+            }
+        }
+
+        // Signed completed-bar slope for the session that owns `platformTime`, guarding the bar
+        // count so a wide window can never read past the start of the series.
+        private double GetSessionSlope(DateTime platformTime)
+        {
+            int n = GetConfiguredSlopeWindow(platformTime);
+            return CurrentBar >= n ? ema[1] - ema[n] : double.NaN;
+        }
+
         // Per-session slope threshold. Falls back to the global value for a minute outside
         // every tracked window.
         private double GetConfiguredSlope(DateTime platformTime)
@@ -1165,43 +1222,59 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             switch (Us0928Setting)
             {
-                case EMALUs0928Setting.Disabled:                   us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALUs0928Setting.S1_TP4_SL18_Slope2_75:  us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
-                case EMALUs0928Setting.S2_TP3_SL18_Slope2_75:  us0928Tp = 3; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
-                default: /* TP4_SL18_Slope2_75 */          us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 2.75; break;
+                case EMALUs0928Setting.Disabled:                     us0928Tp = 5; us0928Sl = 18; Us0928MinimumSlope = 5.25; us0928SlopeWindow = 3; break;   // window is off; values are inert, see IsSessionEnabled
+                case EMALUs0928Setting.S1_TP4_SL18_Slope5_25_Win3:   us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 5.25; us0928SlopeWindow = 3; break;
+                // Legacy names from saved templates all resolve to the single live preset - AND the
+                // property is rewritten to that member. Without the rewrite the popup would keep
+                // displaying the legacy name while the strategy ran the new gate, which would make
+                // the changelog's own install check ("confirm both popups read the new preset")
+                // report a FALSE NEGATIVE on a correct install. Also makes the next workspace save clean.
+                case EMALUs0928Setting.S1_TP4_SL18_Slope2_75:
+                case EMALUs0928Setting.S2_TP3_SL18_Slope2_75:
+                    Print(string.Format("EMAL CONFIG REMAP | US 09:36-09:55 legacy preset '{0}' from a saved template -> S1_TP4_SL18_Slope5_25_Win3 (slope 5.25, 3-bar window)", Us0928Setting));
+                    Us0928Setting = EMALUs0928Setting.S1_TP4_SL18_Slope5_25_Win3;
+                    goto default;
+                default: /* S1_TP4_SL18_Slope5_25_Win3 */            us0928Tp = 4; us0928Sl = 18; Us0928MinimumSlope = 5.25; us0928SlopeWindow = 3; break;
             }
             switch (Us0955Setting)
             {
-                case EMALUs0955Setting.Disabled:                   us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALUs0955Setting.S1_TP4_SL18_Slope2_75:  us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.S2_TP3_SL18_Slope2_75:  us0955Tp = 3; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.S3_TP3_SL16_Slope2_75:  us0955Tp = 3; us0955Sl = 16; Us0955MinimumSlope = 2.75; break;
-                case EMALUs0955Setting.S4_TP3_75_SL18_Slope2_75: us0955Tp = 3.75; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
-                default: /* TP4_SL18_Slope2_75 */          us0955Tp = 4; us0955Sl = 18; Us0955MinimumSlope = 2.75; break;
+                case EMALUs0955Setting.Disabled:                       us0955Tp = 3.75; us0955Sl = 18; Us0955MinimumSlope = 3.50; us0955SlopeWindow = 3; break;   // window is off; values are inert, see IsSessionEnabled
+                case EMALUs0955Setting.S1_TP3_75_SL18_Slope3_50_Win3:  us0955Tp = 3.75; us0955Sl = 18; Us0955MinimumSlope = 3.50; us0955SlopeWindow = 3; break;
+                // Legacy names resolve to the live preset AND rewrite the property - see the
+                // US 09:36-09:55 block above for why the rewrite matters. S4_TP3_75_SL18_Slope2_75
+                // is the one Steve actually runs today, so this is the path his install will take.
+                case EMALUs0955Setting.S1_TP4_SL18_Slope2_75:
+                case EMALUs0955Setting.S2_TP3_SL18_Slope2_75:
+                case EMALUs0955Setting.S3_TP3_SL16_Slope2_75:
+                case EMALUs0955Setting.S4_TP3_75_SL18_Slope2_75:
+                    Print(string.Format("EMAL CONFIG REMAP | US 09:55-10:30 legacy preset '{0}' from a saved template -> S1_TP3_75_SL18_Slope3_50_Win3 (slope 3.50, 3-bar window)", Us0955Setting));
+                    Us0955Setting = EMALUs0955Setting.S1_TP3_75_SL18_Slope3_50_Win3;
+                    goto default;
+                default: /* S1_TP3_75_SL18_Slope3_50_Win3 */           us0955Tp = 3.75; us0955Sl = 18; Us0955MinimumSlope = 3.50; us0955SlopeWindow = 3; break;
             }
             switch (AsiaSetting)
             {
-                case EMALAsiaSetting.Disabled:                        asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;   // window is off; values are inert, see IsSessionEnabled
-                case EMALAsiaSetting.TP4_SL20_Slope2_75:         asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;
-                default: /* TP4_SL20_Slope2_75 */                asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; break;
+                case EMALAsiaSetting.Disabled:                        asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; asiaSlopeWindow = DefaultSlopeWindowBars; break;   // window is off; values are inert, see IsSessionEnabled
+                case EMALAsiaSetting.TP4_SL20_Slope2_75:         asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; asiaSlopeWindow = DefaultSlopeWindowBars; break;
+                default: /* TP4_SL20_Slope2_75 */                asiaTp = 4;   asiaSl = 20; AsiaMinimumSlope = 2.75; asiaSlopeWindow = DefaultSlopeWindowBars; break;
             }
             switch (EuropeSetting)
             {
-                case EMALEuropeSetting.Disabled:                      europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
-                case EMALEuropeSetting.TP8_5_SL20_Slope2_75:   europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
-                default:                                              europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; break;
+                case EMALEuropeSetting.Disabled:                      europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; europeSlopeWindow = DefaultSlopeWindowBars; break;
+                case EMALEuropeSetting.TP8_5_SL20_Slope2_75:   europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; europeSlopeWindow = DefaultSlopeWindowBars; break;
+                default:                                              europeTp = 8.5; europeSl = 20; EuropeMinimumSlope = 2.75; europeSlopeWindow = DefaultSlopeWindowBars; break;
             }
             switch (PreMarketSetting)
             {
-                case EMALPreMarketSetting.Disabled:                       preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
-                case EMALPreMarketSetting.TP11_SL20_Slope2_75:  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
-                default:                                                  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; break;
+                case EMALPreMarketSetting.Disabled:                       preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; preMarketSlopeWindow = DefaultSlopeWindowBars; break;
+                case EMALPreMarketSetting.TP11_SL20_Slope2_75:  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; preMarketSlopeWindow = DefaultSlopeWindowBars; break;
+                default:                                                  preMarketTp = 11; preMarketSl = 20; PreMarketMinimumSlope = 2.75; preMarketSlopeWindow = DefaultSlopeWindowBars; break;
             }
             switch (USMiddaySetting)
             {
-                case EMALUSMiddaySetting.Disabled:                      usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
-                case EMALUSMiddaySetting.TP3_SL13_Slope2_75:   usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
-                default:                                                usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; break;
+                case EMALUSMiddaySetting.Disabled:                      usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; usMiddaySlopeWindow = DefaultSlopeWindowBars; break;
+                case EMALUSMiddaySetting.TP3_SL13_Slope2_75:   usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; usMiddaySlopeWindow = DefaultSlopeWindowBars; break;
+                default:                                                usMiddayTp = 3; usMiddaySl = 13; USMiddayMinimumSlope = 2.75; usMiddaySlopeWindow = DefaultSlopeWindowBars; break;
             }
         }
 
@@ -1288,8 +1361,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             DateTime barOpenRaw = GetBarOpenRaw();
             DateTime barOpen = ConvertToEastern(barOpenRaw);
             DateTime barOpenUtc = ConvertToUtc(barOpenRaw);
-            double slope = ema[1] - ema[2];
-            double slopePrev = ema[2] - ema[3];
+            int slopeWindow = GetConfiguredSlopeWindow(barOpenRaw);
+            double slope = ema[1] - ema[slopeWindow];
+            // slopePrev shifts the WHOLE window back one bar, so it stays a like-for-like "was the
+            // trend already this steep one bar ago" check at any window size (same convention the
+            // RVKTM research branch used, verified there at N=2/3/4).
+            double slopePrev = ema[2] - ema[1 + slopeWindow];
 
             double avgVol = 0.0;
             for (int i = 1; i <= 20; i++)
@@ -1877,7 +1954,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (configurationBlocked)
                 return "ERROR: " + configurationBlockReason;
 
-            if (CurrentBar < Math.Max(EmaPeriod, 20) + 2)
+            if (CurrentBar < Math.Max(EmaPeriod, 20) + MaxConfiguredSlopeWindow + 1)
                 return "Warmup in progress";
 
             // Limit entries need ticks; if none have ever arrived in real time the strategy
@@ -1949,8 +2026,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             // Current slope shown alongside the required threshold so it's easy to monitor
             // how close the live EMA slope is to triggering a signal (Steve, 2026-08-06).
             // Same completed-bar calc OnBarUpdate uses for the actual entry decision
-            // (ema[1] - ema[2]), signed - unlike the threshold, which is always positive.
-            double currentSlope = CurrentBar >= 2 ? ema[1] - ema[2] : double.NaN;
+            // (ema[1] - ema[N] for this session's window), signed - unlike the threshold, which
+            // is always positive.
+            double currentSlope = GetSessionSlope(raw);
             double requiredSlopePanel = GetRequiredSlope(raw);
             string currentSlopeText = double.IsNaN(currentSlope)
                 ? "n/a"
@@ -2401,8 +2479,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            // 20 covers the AvgVolume20 lookback used by the feature log.
-            if (CurrentBar < Math.Max(EmaPeriod, 20) + 2)
+            // 20 covers the AvgVolume20 lookback used by the feature log. The slope term is the
+            // WIDEST configured window, not this bar's session - see MaxConfiguredSlopeWindow.
+            if (CurrentBar < Math.Max(EmaPeriod, 20) + MaxConfiguredSlopeWindow + 1)
             {
                 CancelEntryOrderIfActive("warmup");
                 return;
@@ -2419,7 +2498,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             double currentPrice = Close[0];
             double completedEma = ema[1];
-            double completedEmaSlope = ema[1] - ema[2];
+            double completedEmaSlope = GetSessionSlope(GetBarOpenRaw());
             double requiredSlope = GetRequiredSlope(GetBarOpenRaw());
 
             bool longSignal = currentPrice > completedEma
@@ -6596,21 +6675,23 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         // ================================================================================
 
         [NinjaScriptProperty]
-        [Display(Name = "US 9:36-9:55 Setting", Description = "S1_TP4_SL18_Slope2_75, RR4.50\nWR89.27% PF1.775 Net$20,635 MaxDD$1,401 Net/DD14.73\n\nS2_TP3_SL18_Slope2_75, RR6.00 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum\nWR93.05% PF2.131 Net$20,920 MaxDD$756 Net/DD27.66\n\nBlocked time 9:43 (always on).\n\nPlayback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted.", GroupName = "B. Sessions", Order = 19)]
+        [TypeConverter(typeof(EMALLivePresetConverter))]
+        [Display(Name = "US 9:36-9:55 Setting", Description = "S1_TP4_SL18_Slope5_25_Win3, RR4.50 - the only preset; S2_TP3_SL18 was removed in EMAL-1077.\nWR87.87% PF1.613 Net$28,727 MaxDD$1,906 Net/DD15.07 AvgDaily$273.59, 1072 trades\nvs the EMAL-1076 shipped S1 (Slope2.75, 1-bar window) measured on the SAME capture: WR87.21% PF1.513 Net$26,139 MaxDD$2,060 Net/DD12.69 AvgDaily$248.94, 1102 trades - so +$2,588 net and -$154 MaxDD.\n\nSLOPE CALCULATION - CHANGED IN EMAL-1077. This session now judges the EMA slope over a TWO-BAR window, ema[1]-ema[3], instead of the one-bar ema[1]-ema[2] every cut through EMAL-1076 used. Win3 in the preset name is that window: N is the INDEX of the older EMA bar, so N=3 spans 2 bar intervals and the shipped N=2 spans 1. The threshold moves with it - 5.25 over two bars is NOT comparable to 2.75 over one, and reading it as a big tightening is the easy mistake. Only P1 and P2 use N=3; every other session stays at N=2.\n\nSource: RVKTM S=3 real-fill NT8 Playback capture, Apr27-Sep18 2026, 105 days, live brackets (Analysis_Plan §72.10/§75). NOT the CVYFX/MXQFL captures earlier presets quoted - do not compare absolute Net/MaxDD across captures.\n\nHONEST CAVEAT, read before trusting the numbers: this threshold was chosen from a 320-cell sweep and is NOT statistically distinguishable from the old setting. The nearest cell that was formally graded (S=3 @ 4.50 applied to BOTH sessions, not this per-session pair) showed funded dNet +$1,815 over 105 days, 95% CI [-$7,458, +$11,403], i.e. +$17.28/day at t=0.395 - so demonstrating it is real would need roughly 16 years of data (§75.6). No null was ever run on THIS per-session pairing specifically, which carries more post-hoc search than the graded cell, not less. Adopted 2026-09-25 as Steve's judgment call on the drawdown reduction - the same kind of call as the S4 adoption on P2 - not as a demonstrated edge.\n\nBlocked time 9:43 (always on).", GroupName = "B. Sessions", Order = 19)]
         public EMALUs0928Setting Us0928Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:36-09:55 Min Slope", Description = "Driven by the US 09:36-09:55 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 20)]
+        [Display(Name = "US 09:36-09:55 Min Slope", Description = "Driven by the US 09:36-09:55 Setting preset; not user-editable. EMAL-1077: 5.25, measured over a TWO-bar window (ema[1]-ema[3]), so it is not comparable to the 2.75 one-bar threshold used through EMAL-1076.", GroupName = "B. Sessions", Order = 20)]
         public double Us0928MinimumSlope { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "US 9:55-10:30 Setting", Description = "S1_TP4_SL18_Slope2_75, RR4.50\nWR89.92% PF1.902 Net$49,079 MaxDD$1,322 Net/DD37.12\n\nS2_TP3_SL18_Slope2_75, RR6.00 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum\nWR93.62% PF2.337 Net$46,021 MaxDD$1,051 Net/DD43.78\n\nS3_TP3_SL16_Slope2_75, RR5.33 - EVAL ACCOUNTS ONLY, exceeds funded 1:5 minimum\nWR92.59% PF2.232 Net$43,907 MaxDD$1,179 Net/DD37.25\n\nS4_TP3_75_SL18_Slope2_75, RR4.80\nWR89.35% PF1.72 Net$82,259 MaxDD$2,357 Net/DD34.90 - MXQFL real-fill capture, Apr27-Sep18 2026, 105 days (NOT the same capture as S1-S3 above, which are CVYFX Apr26-Aug21 - do not compare absolute Net/MaxDD across the two). vs S1 measured on this SAME MXQFL capture: Net$83,151 MaxDD$3,391 - so S4 is Net-$892 (~1.1%) and MaxDD-$1,034 (~30% lower) vs S1, not the higher-looking numbers directly above. Full emal-analyst adoption-gate validation (Analysis_Plan §67); not a discovered edge over S1 (the net difference is within noise, 2/4 halves) - a deliberate risk/reward trade, chosen for the drawdown reduction.\n\nPlayback-reconstruction, CVYFX Apr26-Aug21, 1-tick grid / 1800s horizon, live-vs-Playback adjusted (S1-S3 only).", GroupName = "B. Sessions", Order = 21)]
+        [TypeConverter(typeof(EMALLivePresetConverter))]
+        [Display(Name = "US 9:55-10:30 Setting", Description = "S1_TP3_75_SL18_Slope3_50_Win3, RR4.80 - the only preset; S1_TP4/S2_TP3/S3_TP3_SL16 and the old S4 were removed in EMAL-1077. Brackets are unchanged from the S4 you were running.\nWR88.89% PF1.674 Net$57,118 MaxDD$1,769 Net/DD32.29 AvgDaily$543.98, 2125 trades\nvs the EMAL-1076 shipped S4 (TP3.75/SL18, Slope2.75, 1-bar window) measured on the SAME capture: WR89.38% PF1.764 Net$54,539 MaxDD$1,842 Net/DD29.60 AvgDaily$519.42, 1873 trades - so +$2,579 net and -$73 MaxDD. Note it nets more by taking 252 MORE trades, not better ones: $/trade falls 29.12 -> 26.88 and PF 1.764 -> 1.674.\n\nSLOPE CALCULATION - CHANGED IN EMAL-1077. This session now judges the EMA slope over a TWO-BAR window, ema[1]-ema[3], instead of the one-bar ema[1]-ema[2] every cut through EMAL-1076 used. Win3 in the preset name is that window: N is the INDEX of the older EMA bar, so N=3 spans 2 bar intervals and the shipped N=2 spans 1. A threshold of 3.50 over two bars is NOT comparable to 2.75 over one. Only P1 and P2 use N=3; every other session stays at N=2.\n\nSource: RVKTM S=3 real-fill NT8 Playback capture, Apr27-Sep18 2026, 105 days, live brackets (Analysis_Plan §72.10/§75). NOT the CVYFX/MXQFL captures earlier presets quoted.\n\nHONEST CAVEAT: chosen from a 320-cell sweep and NOT statistically distinguishable from the old setting (§75.3 - neither cell beats the other under a symmetric null). P2 is also the session where the evidence is THINNEST: the +$2,579 is 58 better days against 39 worse, median day +$71.90, but the top 3 days alone contribute +$2,660 - 103% of the total - and the other 102 days net -$81. Drop 2026-06-03 and the gain falls to +$1,505. Day-block bootstrap P(dNet>0) 74.7%, 95% CI [-$4,580, +$10,281]. §75.5's paired test on the ratio reads lower still (46.8%) and calls P2 'the pivot, and it says no'. Adopted 2026-09-25 as Steve's judgment call with all of that on the table, not as a demonstrated edge.\n\nFUNDED BOOK, P1 S1 + P2 S1 together: Net$85,844 MaxDD$1,948 Net/DD44.06 AvgDaily$817.56, 3197 trades, vs shipped Net$80,677 MaxDD$2,426 Net/DD33.26 AvgDaily$768.36, 2975 trades.", GroupName = "B. Sessions", Order = 21)]
         public EMALUs0955Setting Us0955Setting { get; set; }
 
         [Range(0.0, double.MaxValue), NinjaScriptProperty]
         [Browsable(false)]
-        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable.", GroupName = "B. Sessions", Order = 22)]
+        [Display(Name = "US 09:55-10:30 Min Slope", Description = "Driven by the US 09:55-10:30 Setting preset; not user-editable. EMAL-1077: 3.50, measured over a TWO-bar window (ema[1]-ema[3]), so it is not comparable to the 2.75 one-bar threshold used through EMAL-1076.", GroupName = "B. Sessions", Order = 22)]
         public double Us0955MinimumSlope { get; set; }
 
 
@@ -6655,8 +6736,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // the second member's date to today (IST) on every edit, even within the same cut.
     public enum EMALVersion
     {
-        version_1076,
-        modified_2026_09_24
+        version_1077,
+        modified_2026_09_25
     }
 
     // EMAL-1045: LastOnly reproduces the prior cut's Last-trade-only detection exactly;
@@ -6686,13 +6767,61 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     // re-run found S3 net -$5,618 vs shipped, 0/4 halves - not an improvement, a loss. Reverted
     // to the pre-1071 two-preset list. See EMAL-1071-changelog.txt for S3's original (now
     // superseded) rationale.
+    // EMAL-1077. Shows only the members NOT marked [Browsable(false)] in the property-grid
+    // dropdown, while EnumConverter's inherited ConvertFrom still parses every member by name -
+    // so legacy preset names in saved templates deserialize, but cannot be newly selected.
+    public class EMALLivePresetConverter : EnumConverter
+    {
+        public EMALLivePresetConverter(Type type) : base(type) { }
+
+        public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
+        {
+            List<object> visible = new List<object>();
+            foreach (object value in Enum.GetValues(EnumType))
+            {
+                FieldInfo field = EnumType.GetField(value.ToString());
+                if (field == null)
+                    continue;
+                BrowsableAttribute[] hidden = (BrowsableAttribute[])field.GetCustomAttributes(typeof(BrowsableAttribute), false);
+                if (hidden.Length > 0 && !hidden[0].Browsable)
+                    continue;
+                visible.Add(value);
+            }
+            return new StandardValuesCollection(visible);
+        }
+
+        // TRUE, deliberately: the visible list is exhaustive for SELECTION, so the grid renders a
+        // picker rather than an editable combo. It does not affect ConvertFrom, so legacy names in
+        // saved templates still parse - and NT8's XmlSerializer bypasses this converter entirely
+        // anyway. Returning false would let an operator type free text into a live-config property
+        // and hand a FormatException to the grid.
+        public override bool GetStandardValuesExclusive(ITypeDescriptorContext context) { return true; }
+    }
+
     public enum EMALUs0928Setting
     {
         Disabled,
-        S1_TP4_SL18_Slope2_75,
-        S2_TP3_SL18_Slope2_75
+
+        // LEGACY ALIASES - EMAL-1077. Hidden from the dropdown by EMALLivePresetConverter, but
+        // still PARSEABLE, which is the whole point: NT8 persists this property by member NAME
+        // into workspace XML and chart/Strategy-Analyzer templates. Steve has saved templates
+        // carrying these names. Delete them and NT8 cannot resolve the name on load, leaves the
+        // property at its SetDefaults value - Disabled - and the session SILENTLY TAKES NO TRADES
+        // on a chart that looks completely normal. ResolveWindowPresets maps them to the live
+        // preset, so an old template loads as the live config rather than as nothing.
+        // NOTE this means an eval account whose template said S2_TP3_SL18 (RR6.00) now runs the
+        // funded-legal RR4.50 preset instead - a real behavior change, deliberate, see changelog.
+        [Browsable(false)] S1_TP4_SL18_Slope2_75,
+        [Browsable(false)] S2_TP3_SL18_Slope2_75,
+
+        // The live preset is appended LAST so every legacy member keeps the ordinal it had in
+        // EMAL-1076. Name-based XML does not care, but any path that ever persists or compares this
+        // enum as an int would silently remap old values if the new member were inserted at 1.
+        S1_TP4_SL18_Slope5_25_Win3
     }
 
+    // HISTORICAL (EMAL-1073, superseded by EMAL-1077 - P2 now has ONE live preset plus hidden
+    // legacy aliases; the S4 described below is now one of those aliases, not a selectable option).
     // EMAL-1073 (Steve, 2026-09-19): S4-S7 (P2) REMOVED - same §64 finding as P1's S3 above.
     // Corrected re-run: S4 -$15,400, S5 -$11,722, S6 -$6,485, S7 -$8,911 vs shipped, all 0/4
     // halves. Reverted to the pre-1071 three-preset list. See EMAL-1071-changelog.txt for
@@ -6706,10 +6835,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     public enum EMALUs0955Setting
     {
         Disabled,
-        S1_TP4_SL18_Slope2_75,
-        S2_TP3_SL18_Slope2_75,
-        S3_TP3_SL16_Slope2_75,
-        S4_TP3_75_SL18_Slope2_75
+
+        // LEGACY ALIASES - see the EMALUs0928Setting comment above for why these must not be
+        // deleted. S4_TP3_75_SL18_Slope2_75 is the one Steve actually runs live today, so it is
+        // the alias that matters most on install.
+        [Browsable(false)] S1_TP4_SL18_Slope2_75,
+        [Browsable(false)] S2_TP3_SL18_Slope2_75,
+        [Browsable(false)] S3_TP3_SL16_Slope2_75,
+        [Browsable(false)] S4_TP3_75_SL18_Slope2_75,
+
+        // Appended last to preserve every legacy ordinal - see EMALUs0928Setting.
+        S1_TP3_75_SL18_Slope3_50_Win3
     }
 
     // EMAL-1051: four new sessions' presets, same shape as the two above - Disabled first,
