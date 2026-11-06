@@ -33,6 +33,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         // The entry signal remains the managed-order link for its stop and target.
         private const string LongEntrySignal = "Long";
         private const string ShortEntrySignal = "Short";
+        private const string FlattenExitSignal = "Exit";
         private const string ProfitTargetExitOrderName = "Profit target";
         private const string StopLossExitOrderName = "Stop loss";
 
@@ -85,6 +86,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private DateTime safetyProgressUtc = DateTime.UtcNow;
         private DateTime safetyWarningUtc = DateTime.MinValue;
         private bool safetyAccountReadWarning;
+        private bool previousRedTimeBlock;
+        private bool redTimeBlockCloseActive;
 
         protected override void OnStateChange()
         {
@@ -175,6 +178,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 tradingWindowOpenBrush = CreateFrozenBrush(24, 0, 128, 0);
                 tradingWindowBlockedBrush = CreateFrozenBrush(30, 178, 34, 34);
                 rsiEarlyExit = RSI(RsiEarlyExitPeriod, 1);
+                previousRedTimeBlock = false;
+                redTimeBlockCloseActive = false;
                 lock (exitSafetyLock)
                 {
                     if (IsHistoricalTradeSimulationContext())
@@ -315,6 +320,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             }
 
+            bool redTimeBlock = IsSkippedTime(Time[0]);
+            if (redTimeBlock && !previousRedTimeBlock)
+            {
+                redTimeBlockCloseActive = true;
+                ExitAllPositions("TimeBlock");
+                CancelRedTimeBlockOrders();
+            }
+            previousRedTimeBlock = redTimeBlock;
+
             if (ProcessExitSafety(false))
                 return;
 
@@ -334,6 +348,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (IsAccountDailyProfitBlocked() || IsAccountDailyLossBlocked())
                 return;
+
+            if (redTimeBlock)
+            {
+                ClearPendingSetup();
+                return;
+            }
 
             // A setup is live only during the bar after the rejection candle.
             // At the first tick of each new bar, the prior setup expires and the
@@ -1188,6 +1208,29 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return exitSafety.CanEnter;
         }
 
+        private void CancelRedTimeBlockOrders()
+        {
+            List<Order> owned = new List<Order>();
+            lock (exitSafetyLock)
+                foreach (SafetyOrderReference tracked in safetyOrders)
+                    if (tracked.Reference != null && !tracked.Reference.IsBacktestOrder
+                        && IsSafetyCancelAllowed(tracked.Reference.OrderState, tracked.Reference.OrderType))
+                        owned.Add(tracked.Reference);
+            if (State != State.Realtime || owned.Count == 0)
+                return;
+            try
+            {
+                if (Account == null)
+                    throw new InvalidOperationException("No account for red-zone order cancellation.");
+                Log("TIME_BLOCK_CANCEL|ownedOrders=" + owned.Count);
+                Account.Cancel(owned);
+            }
+            catch (Exception ex)
+            {
+                FailExitSafety("Red-zone cancellation failed: " + ex.Message);
+            }
+        }
+
         private void QueueExitSafetyProcessing()
         {
             lock (exitSafetyLock)
@@ -1270,7 +1313,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     else
                     {
                         Log("SAFE_CLOSE_CANCEL|reason=" + reason + "|id=" + target.OrderId + "|name=" + target.Name);
-                        CancelOrder(target);
+                        if (redTimeBlockCloseActive && State == State.Realtime)
+                        {
+                            if (Account == null)
+                                throw new InvalidOperationException("No account for red-zone order cancellation.");
+                            Account.Cancel(new[] { target });
+                        }
+                        else
+                            CancelOrder(target);
                         QueueExitSafetyProcessing();
                     }
                 }
@@ -1281,12 +1331,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         + (action.SignedQuantity > 0 ? "Long" : "Short") + "|quantity=" + remaining);
                     // This reservation is reached only after all brackets and their fills have settled.
                     if (action.SignedQuantity > 0)
-                        ExitLong(0, remaining, LongEntrySignal, string.Empty);
+                        ExitLong(0, remaining, FlattenExitSignal, string.Empty);
                     else
-                        ExitShort(0, remaining, ShortEntrySignal, string.Empty);
+                        ExitShort(0, remaining, FlattenExitSignal, string.Empty);
                 }
                 else if (action.Kind == WickExitActionKind.Complete)
+                {
+                    redTimeBlockCloseActive = false;
                     Log("SAFE_CLOSE_COMPLETE|reason=" + reason + "|ownedOrdersTerminal=true|strategyFlat=true");
+                }
 
                 if (closing && DateTime.UtcNow - safetyProgressUtc >= TimeSpan.FromSeconds(5)
                     && DateTime.UtcNow - safetyWarningUtc >= TimeSpan.FromSeconds(5))
