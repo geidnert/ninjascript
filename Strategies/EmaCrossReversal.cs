@@ -52,7 +52,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (State == State.SetDefaults)
             {
                 Name = "EmaCrossReversal";
-                Description = "Research-only EMA crossover reversal with optional EMA or entry-price exits. Five-minute NQ/MNQ, EMA9/26, no stop, target, or session-close exit.";
+                Description = "Research-only EMA crossover reversal with optional EMA or entry-price exits. Chart-selected minute/second NQ/MNQ bars, EMA9/26, no stop, target, or session-close exit.";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.AllEntries;
@@ -84,8 +84,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             }
             else if (State == State.DataLoaded)
             {
-                if (BarsPeriod.BarsPeriodType != BarsPeriodType.Minute || BarsPeriod.Value != 5)
-                    throw new InvalidOperationException("EmaCrossReversal requires an ordinary five-minute chart.");
+                if ((BarsPeriod.BarsPeriodType != BarsPeriodType.Minute
+                    && BarsPeriod.BarsPeriodType != BarsPeriodType.Second) || BarsPeriod.Value < 1)
+                    throw new InvalidOperationException("EmaCrossReversal requires an ordinary minute or second chart with a positive interval.");
 
                 string root = Instrument.MasterInstrument.Name;
                 if (!string.Equals(root, "NQ", StringComparison.OrdinalIgnoreCase)

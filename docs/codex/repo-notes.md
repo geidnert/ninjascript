@@ -41,7 +41,11 @@ domains.
 - 2026-11-12: `Strategies/EmaCrossReversal.cs` is a new, standalone
   research prototype under `AutoEdge`. Default-off early exits preserve the
   crossover-only baseline. Initial settings are ordinary five-minute NQ, one
-  contract, standard close-price EMA9/EMA26.
+  contract, standard close-price EMA9/EMA26. The five-minute-only guard was
+  removed at the user's request: the strategy follows any positive ordinary
+  Minute/Second chart interval for comparison. Five minutes is the reference,
+  not a lock. EMA periods/warmup count selected-chart bars; closed-bar rules
+  follow that interval. No timeframe optimization or profit comparison has run.
   Completed-bar side changes request a managed reversal; equality alone holds
   the preceding side. Optional EMA `FastEma`/`SlowEma` exits support intrabar
   `Touch` or completed `CloseBeyond` (default) confirmation. Separate default-off
@@ -63,12 +67,13 @@ domains.
   F5 to refresh the revised settings. No stop, target, time filter, account overlay, webhook,
   licensing module, or session-close flatten is included in this explicitly
   bare research scope. Do not treat it as a production/common-module bot or
-  enable it on a live account from this handoff. NQ/MNQ and five-minute chart
-  validation fail explicitly. Chart history warms the EMAs only; Analyzer
+  enable it on a live account from this handoff. Unsupported instruments or
+  non-minute/second bars and invalid intervals fail explicitly. Chart history
+  warms the EMAs only; Analyzer
   `Backtest`/accountless historical contexts retain historical orders. A chart
   start skips its startup candle and waits for a new completed crossover.
   The file is explicitly included in `NinjaTrader.Custom.csproj`. Its identical
-  source and 26 API-double contract checks are backed up in the Trader repo at
+  source and 28 API-double contract checks are backed up in the Trader repo at
   `custom-strategies/nt8/EmaCrossReversal.cs` and
   `tools/Trader.Nt8EmaCrossSmoke`; detailed handoff:
   `docs/codex/ema-cross-reversal-research.md` in that repo. Local contract and
