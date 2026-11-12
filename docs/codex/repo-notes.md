@@ -51,6 +51,15 @@ domains.
   `Touch` or completed `CloseBeyond` (default) confirmation. Separate default-off
   `UseEntryPriceProtection` adds an intrabar return-to-average-entry exit alongside
   either EMA exit (or alone with EMA Off), independently of EMA confirmation.
+  A new `FixedStop` mode is an ALTERNATIVE to Fast/Slow EMA exits, using positive
+  `StopLossPoints`. Independent `TakeProfitPoints` uses 0=off and positive points
+  for a native managed target in any mode. Both point fields default0 and must
+  be whole instrument ticks. SetStopLoss/SetProfitTarget are seeded per named
+  entry before entry/reversal, with ByStrategyPosition average-fill handling.
+  Native stop/target/OCO routing is owned by NT8; stop fills can slip. A TP or
+  SL flatten also waits for a NEW completed crossover; partial/pending fills
+  consume crosses rather than queue entries. Entry-price protection may still
+  run independently on top of FixedStop. No fixed bracket values were tuned.
   The user explicitly chose intrabar touch for this extra protection. Its arming
   is independent and requires a favorable observation after entry fills settle;
   it cannot protect an immediate adverse move before arming. EMA exits arm from
@@ -64,7 +73,8 @@ domains.
   managed-fill parity. Market exit prices and breakeven after fees are not
   guaranteed. The original mutually exclusive `EntryPrice` enum value was removed:
   recreate old EntryPrice templates using the new checkbox. Disable/re-add after
-  F5 to refresh the revised settings. No stop, target, time filter, account overlay, webhook,
+  F5 to refresh the revised settings. Fixed stops/targets are optional and off
+  by default. No time filter, account overlay, webhook,
   licensing module, or session-close flatten is included in this explicitly
   bare research scope. Do not treat it as a production/common-module bot or
   enable it on a live account from this handoff. Unsupported instruments or
@@ -73,7 +83,7 @@ domains.
   `Backtest`/accountless historical contexts retain historical orders. A chart
   start skips its startup candle and waits for a new completed crossover.
   The file is explicitly included in `NinjaTrader.Custom.csproj`. Its identical
-  source and 28 API-double contract checks are backed up in the Trader repo at
+  source and 35 API-double contract checks are backed up in the Trader repo at
   `custom-strategies/nt8/EmaCrossReversal.cs` and
   `tools/Trader.Nt8EmaCrossSmoke`; detailed handoff:
   `docs/codex/ema-cross-reversal-research.md` in that repo. Local contract and
