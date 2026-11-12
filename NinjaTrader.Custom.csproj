@@ -445,6 +445,7 @@
     <Compile Include="obj\x64\Release\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
     <Compile Include="NinjaTrader.Vendor.cs" />
     <Compile Include="VendorLicensing.cs" />
+    <Compile Include="Strategies\EmaCrossReversal.cs" />
     <Compile Include="Strategies\AURA.cs" />
     <Compile Include="Strategies\AURATesting.cs" />
     <Compile Include="Strategies\AURAProjectXSupport.cs" />

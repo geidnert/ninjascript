@@ -38,6 +38,36 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-12: `Strategies/EmaCrossReversal.cs` is a new, standalone
+  research prototype under `AutoEdge`. Default-off early exits preserve the
+  crossover-only baseline. Initial settings are ordinary five-minute NQ, one
+  contract, standard close-price EMA9/EMA26.
+  Completed-bar side changes request a managed reversal; equality alone holds
+  the preceding side. Optional `FastEma`/`SlowEma`/`EntryPrice` exits support
+  intrabar `Touch` or completed `CloseBeyond` (default) confirmation. EntryPrice
+  uses actual average fills and arms only after a favorable post-fill observation;
+  EMA exits arm from a favorable fill or later observation. Early exits close,
+  not reverse; stay flat until a NEW completed crossover after the exit finishes.
+  Crosses during pending/partial fills are consumed, never queued or replayed
+  from a bar ending before the final exit fill. Optional exits use OnEachTick,
+  but entries/reversals still use completed bars. Historical touch simulation
+  requires Tick Replay; this is not managed-fill parity. Market exit prices and
+  breakeven after fees are not guaranteed. No stop, target, time filter,
+  account overlay, webhook,
+  licensing module, or session-close flatten is included in this explicitly
+  bare research scope. Do not treat it as a production/common-module bot or
+  enable it on a live account from this handoff. NQ/MNQ and five-minute chart
+  validation fail explicitly. Chart history warms the EMAs only; Analyzer
+  `Backtest`/accountless historical contexts retain historical orders. A chart
+  start skips its startup candle and waits for a new completed crossover.
+  The file is explicitly included in `NinjaTrader.Custom.csproj`. Its identical
+  source and 23 API-double contract checks are backed up in the Trader repo at
+  `custom-strategies/nt8/EmaCrossReversal.cs` and
+  `tools/Trader.Nt8EmaCrossSmoke`; detailed handoff:
+  `docs/codex/ema-cross-reversal-research.md` in that repo. Local contract and
+  formatting checks pass, but Windows NinjaTrader compilation, rendered-chart
+  acceptance, Playback fills and profitability remain unverified. Obtain visual
+  approval before porting or scoring the NQ baseline; no tuning has run.
 - `Strategies/DUO.cs` is the default reference for shared bot modules:
   session/skip/news windows, transition safety, heartbeat lifecycle,
   strategy-prefixed signals, entry confirmation, `MaxAccountBalance`,
