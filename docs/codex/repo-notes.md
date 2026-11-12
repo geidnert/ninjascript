@@ -43,17 +43,24 @@ domains.
   crossover-only baseline. Initial settings are ordinary five-minute NQ, one
   contract, standard close-price EMA9/EMA26.
   Completed-bar side changes request a managed reversal; equality alone holds
-  the preceding side. Optional `FastEma`/`SlowEma`/`EntryPrice` exits support
-  intrabar `Touch` or completed `CloseBeyond` (default) confirmation. EntryPrice
-  uses actual average fills and arms only after a favorable post-fill observation;
-  EMA exits arm from a favorable fill or later observation. Early exits close,
+  the preceding side. Optional EMA `FastEma`/`SlowEma` exits support intrabar
+  `Touch` or completed `CloseBeyond` (default) confirmation. Separate default-off
+  `UseEntryPriceProtection` adds an intrabar return-to-average-entry exit alongside
+  either EMA exit (or alone with EMA Off), independently of EMA confirmation.
+  The user explicitly chose intrabar touch for this extra protection. Its arming
+  is independent and requires a favorable observation after entry fills settle;
+  it cannot protect an immediate adverse move before arming. EMA exits arm from
+  a favorable fill or later observation. Both paths share the pending-order fence,
+  so simultaneous triggers cannot duplicate exits. Early exits close,
   not reverse; stay flat until a NEW completed crossover after the exit finishes.
   Crosses during pending/partial fills are consumed, never queued or replayed
   from a bar ending before the final exit fill. Optional exits use OnEachTick,
   but entries/reversals still use completed bars. Historical touch simulation
-  requires Tick Replay; this is not managed-fill parity. Market exit prices and
-  breakeven after fees are not guaranteed. No stop, target, time filter,
-  account overlay, webhook,
+  requires Tick Replay, including any enabled entry-price protection; this is not
+  managed-fill parity. Market exit prices and breakeven after fees are not
+  guaranteed. The original mutually exclusive `EntryPrice` enum value was removed:
+  recreate old EntryPrice templates using the new checkbox. Disable/re-add after
+  F5 to refresh the revised settings. No stop, target, time filter, account overlay, webhook,
   licensing module, or session-close flatten is included in this explicitly
   bare research scope. Do not treat it as a production/common-module bot or
   enable it on a live account from this handoff. NQ/MNQ and five-minute chart
@@ -61,7 +68,7 @@ domains.
   `Backtest`/accountless historical contexts retain historical orders. A chart
   start skips its startup candle and waits for a new completed crossover.
   The file is explicitly included in `NinjaTrader.Custom.csproj`. Its identical
-  source and 23 API-double contract checks are backed up in the Trader repo at
+  source and 26 API-double contract checks are backed up in the Trader repo at
   `custom-strategies/nt8/EmaCrossReversal.cs` and
   `tools/Trader.Nt8EmaCrossSmoke`; detailed handoff:
   `docs/codex/ema-cross-reversal-research.md` in that repo. Local contract and

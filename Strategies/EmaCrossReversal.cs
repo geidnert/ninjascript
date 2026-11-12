@@ -14,8 +14,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
     {
         Off,
         FastEma,
-        SlowEma,
-        EntryPrice
+        SlowEma
     }
 
     public enum EmaCrossReversalExitConfirmation
@@ -39,6 +38,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool entryPending;
         private bool earlyExitPending;
         private bool earlyExitArmed;
+        private bool entryPriceExitArmed;
         private bool skipFirstExitObservation;
         private bool orderFaulted;
         private string activeEntryOrderId;
@@ -66,6 +66,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Contracts = 1;
                 EarlyExitLevel = EmaCrossReversalExitLevel.Off;
                 ExitConfirmation = EmaCrossReversalExitConfirmation.CloseBeyond;
+                UseEntryPriceProtection = false;
             }
             else if (State == State.Configure)
             {
@@ -78,8 +79,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     throw new InvalidOperationException("EmaCrossReversal requires valid early-exit settings.");
 
                 BarsRequiredToTrade = SlowEmaPeriod;
-                Calculate = EarlyExitLevel == EmaCrossReversalExitLevel.Off
-                    ? Calculate.OnBarClose : Calculate.OnEachTick;
+                Calculate = EarlyExitLevel != EmaCrossReversalExitLevel.Off || UseEntryPriceProtection
+                    ? Calculate.OnEachTick : Calculate.OnBarClose;
             }
             else if (State == State.DataLoaded)
             {
@@ -90,8 +91,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (!string.Equals(root, "NQ", StringComparison.OrdinalIgnoreCase)
                     && !string.Equals(root, "MNQ", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("EmaCrossReversal requires NQ or MNQ.");
-                if (EarlyExitLevel != EmaCrossReversalExitLevel.Off
-                    && ExitConfirmation == EmaCrossReversalExitConfirmation.Touch
+                if ((UseEntryPriceProtection || (EarlyExitLevel != EmaCrossReversalExitLevel.Off
+                    && ExitConfirmation == EmaCrossReversalExitConfirmation.Touch))
                     && IsHistoricalSimulation() && !Bars.IsTickReplay)
                     throw new InvalidOperationException("EmaCrossReversal requires Tick Replay for historical touch exits; use Market Replay Playback for fill verification.");
 
@@ -107,6 +108,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 entryPending = false;
                 earlyExitPending = false;
                 earlyExitArmed = false;
+                entryPriceExitArmed = false;
                 skipFirstExitObservation = false;
                 orderFaulted = false;
                 activeEntryOrderId = null;
@@ -135,7 +137,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!tickCallbacks || IsFirstTickOfBar)
                 ProcessCompletedBar(tickCallbacks ? 1 : 0);
 
-            if (EarlyExitLevel == EmaCrossReversalExitLevel.Off
+            if ((EarlyExitLevel == EmaCrossReversalExitLevel.Off && !UseEntryPriceProtection)
                 || !CanTrade(CurrentBar))
                 return;
 
@@ -145,8 +147,14 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
             }
 
-            EvaluatePriceExit(Close[0], ExitLevelPrice(0),
-                ExitConfirmation == EmaCrossReversalExitConfirmation.Touch);
+            if (UseEntryPriceProtection)
+                EvaluatePriceExit(Close[0], Position.AveragePrice, ref entryPriceExitArmed, true, true);
+
+            if (EarlyExitLevel != EmaCrossReversalExitLevel.Off)
+            {
+                bool touch = ExitConfirmation == EmaCrossReversalExitConfirmation.Touch;
+                EvaluatePriceExit(Close[0], ExitLevelPrice(0), ref earlyExitArmed, touch, touch);
+            }
         }
 
         private void ProcessCompletedBar(int barsAgo)
@@ -195,7 +203,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (EarlyExitLevel != EmaCrossReversalExitLevel.Off
                 && ExitConfirmation == EmaCrossReversalExitConfirmation.CloseBeyond
                 && Time[barsAgo] > activeEntryFillTime)
-                EvaluatePriceExit(Close[barsAgo], ExitLevelPrice(barsAgo), true);
+                EvaluatePriceExit(Close[barsAgo], ExitLevelPrice(barsAgo), ref earlyExitArmed, false, true);
         }
 
         private bool IsHistoricalSimulation()
@@ -219,14 +227,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     return fastEma[barsAgo];
                 case EmaCrossReversalExitLevel.SlowEma:
                     return slowEma[barsAgo];
-                case EmaCrossReversalExitLevel.EntryPrice:
-                    return Position.AveragePrice;
                 default:
                     throw new InvalidOperationException("EmaCrossReversal requires an enabled exit level.");
             }
         }
 
-        private void EvaluatePriceExit(double price, double level, bool allowExit)
+        private void EvaluatePriceExit(double price, double level, ref bool armed, bool touch, bool allowExit)
         {
             if (entryPending || earlyExitPending || orderFaulted)
                 return;
@@ -234,19 +240,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             MarketPosition side = Position.MarketPosition;
             if (side == MarketPosition.Flat)
             {
-                earlyExitArmed = false;
+                armed = false;
                 return;
             }
             if (side != activeEntrySide)
                 return;
 
-            if (!earlyExitArmed)
+            if (!armed)
             {
-                earlyExitArmed = side == MarketPosition.Long ? price > level : price < level;
+                armed = side == MarketPosition.Long ? price > level : price < level;
                 return;
             }
 
-            bool reached = ExitConfirmation == EmaCrossReversalExitConfirmation.Touch
+            bool reached = touch
                 ? (side == MarketPosition.Long ? price <= level : price >= level)
                 : (side == MarketPosition.Long ? price < level : price > level);
             if (!allowExit || !reached)
@@ -298,6 +304,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     entryFilledQuantity = 0;
                     activeEntrySide = signal == LongEntrySignal ? MarketPosition.Long : MarketPosition.Short;
                     earlyExitArmed = false;
+                    entryPriceExitArmed = false;
                 }
 
                 entryFilledQuantity += quantity;
@@ -305,7 +312,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeEntryFillTime = time;
                 skipFirstExitObservation = true;
                 if (EarlyExitLevel != EmaCrossReversalExitLevel.Off
-                    && EarlyExitLevel != EmaCrossReversalExitLevel.EntryPrice && !earlyExitArmed
+                    && !earlyExitArmed
                     && Position.MarketPosition == activeEntrySide)
                 {
                     fastEma.Update();
@@ -319,6 +326,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 earlyExitPending = false;
                 earlyExitArmed = false;
+                entryPriceExitArmed = false;
                 activeEntrySide = MarketPosition.Flat;
                 activeEntryFillTime = DateTime.MinValue;
                 lastEarlyExitFillTime = time;
@@ -341,11 +349,15 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         public int Contracts { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Early-exit level", Description = "Off preserves crossover-only exits. Choose the configured fast/slow EMA or actual average entry price. EntryPrice arms only after a favorable observed move.", Order = 1, GroupName = "Optional early exit")]
+        [Display(Name = "Entry-price protection", Description = "Independent intrabar exit on return to actual average entry after a favorable observed move. Can run alongside either EMA exit. Market fills and fees can still produce a loss.", Order = 1, GroupName = "Optional early exit")]
+        public bool UseEntryPriceProtection { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EMA early-exit level", Description = "Choose Off or the configured fast/slow EMA. Entry-price protection is a separate switch.", Order = 2, GroupName = "Optional early exit")]
         public EmaCrossReversalExitLevel EarlyExitLevel { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Exit confirmation", Description = "Touch exits intrabar at/through the level; CloseBeyond requires a completed candle strictly beyond it. Wait for a new EMA crossover after an exit.", Order = 2, GroupName = "Optional early exit")]
+        [Display(Name = "EMA exit confirmation", Description = "EMA exits only: Touch exits intrabar at/through the EMA; CloseBeyond requires a completed candle strictly beyond it. Entry-price protection always uses intrabar touch. Wait for a new EMA crossover after either exit.", Order = 3, GroupName = "Optional early exit")]
         public EmaCrossReversalExitConfirmation ExitConfirmation { get; set; }
     }
 }
