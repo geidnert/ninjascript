@@ -38,6 +38,21 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-13: `Strategies/EmaCrossReversal.cs` adds default-off
+  `MaxDailyProfit` under Daily risk. As in FAST15, it uses THIS run's realized
+  gross since 18:00 ET plus its own open profit at exit-side bid/ask, before
+  commissions; it is not an account-wide equity or evaluation drawdown guard.
+  At the threshold it cancels pending entries, flattens with a market request
+  and latches until the next actual-market-time 18:00 ET or strategy restart.
+  Cancellation acknowledgments, partial/late fills and Filled-before-execution
+  callbacks fence liquidation; slippage can finish below the cap. Invalid
+  books explicitly block marking/new entries, never substitute Last. Tick
+  Replay is required for historical daily-cap simulation. Trader's canonical
+  source is byte-identical; 42 existing plus 13 daily-profit source-contract
+  checks pass. Compile F5 and reload/re-add before supervised SIM/Playback.
+  Windows compilation/native order routing remain unverified; no account was
+  enabled. The separate generic evaluation research is NOT provider compliance
+  or a production promotion and needs an external daily-flatten overlay.
 - 2026-11-13: `Strategies/EmaCrossReversal.cs` now exposes default-off
   `MinimumSlowEmaSlopeAtr` under Entry filter. It ports the locked Trader
   research rule: directional configured slow-EMA change over THREE completed

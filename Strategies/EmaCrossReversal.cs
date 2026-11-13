@@ -1,5 +1,6 @@
 #region Using declarations
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Windows.Media;
 using NinjaTrader.Cbi;
@@ -32,6 +33,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortEarlyExitSignal = "EmaCrossReversalEarlyExitShort";
         private const string LongSlopeExitSignal = "EmaCrossReversalSlopeExitLong";
         private const string ShortSlopeExitSignal = "EmaCrossReversalSlopeExitShort";
+        private const string LongDailyExitSignal = "EmaCrossReversalDailyProfitLong";
+        private const string ShortDailyExitSignal = "EmaCrossReversalDailyProfitShort";
         private const string ProfitTargetOrderName = "Profit target";
         private const string StopLossOrderName = "Stop loss";
         private const int SlopeLookback = 3;
@@ -54,6 +57,34 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private MarketPosition activeEntrySide = MarketPosition.Flat;
         private DateTime activeEntryFillTime = DateTime.MinValue;
         private DateTime lastEarlyExitFillTime = DateTime.MinValue;
+        private readonly List<DailyOrderProgress> dailyOrders = new List<DailyOrderProgress>();
+        private TimeZoneInfo platformZone;
+        private TimeZoneInfo easternZone;
+        private DateTime dailyDay = DateTime.MinValue;
+        private DateTime dailyMarketTime = DateTime.MinValue;
+        private double dailyRealized;
+        private double dailyAverage;
+        private int dailyQuantity;
+        private double dailyBid;
+        private double dailyAsk;
+        private bool dailyProfitReached;
+        private bool dailyLiquidating;
+        private bool dailyMissingBookReported;
+        private bool dailyPositionWaitReported;
+        private bool entrySubmissionInProgress;
+        private bool dailyExitSubmitting;
+        private string awaitingExitSignal;
+
+        private sealed class DailyOrderProgress
+        {
+            public Order Order;
+            public bool Entry;
+            public bool ExitFence;
+            public bool Terminal;
+            public bool CancelRequested;
+            public int ReportedFilled;
+            public int Executed;
+        }
 
         private bool UsesEmaExit => EarlyExitLevel == EmaCrossReversalExitLevel.FastEma
             || EarlyExitLevel == EmaCrossReversalExitLevel.SlowEma;
@@ -82,6 +113,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 StopLossPoints = 0;
                 TakeProfitPoints = 0;
                 MinimumSlowEmaSlopeAtr = 0;
+                MaxDailyProfit = 0;
             }
             else if (State == State.Configure)
             {
@@ -99,9 +131,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     throw new InvalidOperationException("EmaCrossReversal requires positive Stop loss points in FixedStop mode.");
                 if (double.IsNaN(MinimumSlowEmaSlopeAtr) || double.IsInfinity(MinimumSlowEmaSlopeAtr) || MinimumSlowEmaSlopeAtr < 0)
                     throw new InvalidOperationException("EmaCrossReversal requires a finite, non-negative minimum slow EMA slope.");
+                if (double.IsNaN(MaxDailyProfit) || double.IsInfinity(MaxDailyProfit) || MaxDailyProfit < 0)
+                    throw new InvalidOperationException("EmaCrossReversal requires a finite, non-negative daily profit cap.");
 
                 BarsRequiredToTrade = SlowEmaPeriod;
-                Calculate = UsesEmaExit || UseEntryPriceProtection
+                Calculate = UsesEmaExit || UseEntryPriceProtection || MaxDailyProfit > 0
                     ? Calculate.OnEachTick : Calculate.OnBarClose;
             }
             else if (State == State.DataLoaded)
@@ -117,10 +151,19 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (Math.Abs(StopLossPoints / TickSize - Math.Round(StopLossPoints / TickSize)) > 1e-8
                     || Math.Abs(TakeProfitPoints / TickSize - Math.Round(TakeProfitPoints / TickSize)) > 1e-8)
                     throw new InvalidOperationException("EmaCrossReversal requires stop/target points in whole instrument ticks.");
-                if ((UseEntryPriceProtection || (UsesEmaExit
+                if ((MaxDailyProfit > 0 || UseEntryPriceProtection || (UsesEmaExit
                     && ExitConfirmation == EmaCrossReversalExitConfirmation.Touch))
                     && IsHistoricalSimulation() && !Bars.IsTickReplay)
-                    throw new InvalidOperationException("EmaCrossReversal requires Tick Replay for historical touch exits; use Market Replay Playback for fill verification.");
+                    throw new InvalidOperationException("EmaCrossReversal requires Tick Replay for historical touch exits or daily-profit protection; use Market Replay Playback for fill verification.");
+
+                if (MaxDailyProfit > 0)
+                {
+                    platformZone = NinjaTrader.Core.Globals.GeneralOptions.TimeZoneInfo;
+                    easternZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+                    if (platformZone == null || Instrument.MasterInstrument.PointValue <= 0
+                        || double.IsNaN(Instrument.MasterInstrument.PointValue) || double.IsInfinity(Instrument.MasterInstrument.PointValue))
+                        throw new InvalidOperationException("EmaCrossReversal daily-profit protection requires a platform time zone and positive instrument point value.");
+                }
 
                 fastEma = EMA(Close, FastEmaPeriod);
                 slowEma = EMA(Close, SlowEmaPeriod);
@@ -143,11 +186,27 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeEntrySide = MarketPosition.Flat;
                 activeEntryFillTime = DateTime.MinValue;
                 lastEarlyExitFillTime = DateTime.MinValue;
+                dailyOrders.Clear();
+                dailyDay = DateTime.MinValue;
+                dailyMarketTime = DateTime.MinValue;
+                dailyRealized = 0;
+                dailyAverage = 0;
+                dailyQuantity = 0;
+                dailyBid = dailyAsk = 0;
+                dailyProfitReached = dailyLiquidating = false;
+                dailyMissingBookReported = dailyPositionWaitReported = false;
+                entrySubmissionInProgress = dailyExitSubmitting = false;
+                awaitingExitSignal = null;
             }
             else if (State == State.Realtime)
             {
                 realtimeStartBar = CurrentBar;
                 lastProcessedSignalBar = -1;
+                if (MaxDailyProfit > 0)
+                {
+                    dailyMarketTime = DateTime.MinValue;
+                    dailyBid = dailyAsk = 0;
+                }
             }
         }
 
@@ -233,10 +292,20 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (TakeProfitPoints > 0)
                     SetProfitTarget(entrySignal, CalculationMode.Ticks, TakeProfitPoints / TickSize);
                 // A managed opposite entry closes the old side and opens Contracts on the new side.
-                if (relationship > 0)
-                    EnterLong(Contracts, entrySignal);
-                else
-                    EnterShort(Contracts, entrySignal);
+                entrySubmissionInProgress = true;
+                try
+                {
+                    if (relationship > 0)
+                        EnterLong(Contracts, entrySignal);
+                    else
+                        EnterShort(Contracts, entrySignal);
+                }
+                finally
+                {
+                    entrySubmissionInProgress = false;
+                }
+                if (MaxDailyProfit > 0)
+                    FinishDailyLiquidation();
                 return;
             }
 
@@ -268,7 +337,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             return barIndex >= BarsRequiredToTrade
                 && (State != State.Historical || IsHistoricalSimulation())
-                && (State != State.Realtime || barIndex > realtimeStartBar);
+                && (State != State.Realtime || barIndex > realtimeStartBar)
+                && (MaxDailyProfit == 0 || (dailyMarketTime != DateTime.MinValue && DailyBookReady()
+                    && !dailyProfitReached && !dailyLiquidating));
         }
 
         private double ExitLevelPrice(int barsAgo)
@@ -320,16 +391,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 return;
 
             earlyExitPending = true;
+            string signal = side == MarketPosition.Long
+                ? (rejectedSlope ? LongSlopeExitSignal : LongEarlyExitSignal)
+                : (rejectedSlope ? ShortSlopeExitSignal : ShortEarlyExitSignal);
+            if (MaxDailyProfit > 0)
+                awaitingExitSignal = signal;
             if (side == MarketPosition.Long)
-                ExitLong(rejectedSlope ? LongSlopeExitSignal : LongEarlyExitSignal, LongEntrySignal);
+                ExitLong(signal, LongEntrySignal);
             else
-                ExitShort(rejectedSlope ? ShortSlopeExitSignal : ShortEarlyExitSignal, ShortEntrySignal);
+                ExitShort(signal, ShortEntrySignal);
         }
 
         private bool IsStrategyFlattenSignal(string signal)
         {
             return signal == LongEarlyExitSignal || signal == ShortEarlyExitSignal
-                || signal == LongSlopeExitSignal || signal == ShortSlopeExitSignal;
+                || signal == LongSlopeExitSignal || signal == ShortSlopeExitSignal
+                || signal == LongDailyExitSignal || signal == ShortDailyExitSignal;
         }
 
         private bool IsManagedProtectionOrder(Order order)
@@ -345,6 +422,22 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (order == null)
                 return;
 
+            if (MaxDailyProfit > 0)
+            {
+                DailyOrderProgress progress = DailyProgress(order);
+                progress.ReportedFilled = Math.Max(progress.ReportedFilled, filled);
+                progress.Terminal = orderState == OrderState.Filled || orderState == OrderState.Cancelled || orderState == OrderState.Rejected;
+                if (IsManagedProtectionOrder(order) && (orderState == OrderState.PartFilled || orderState == OrderState.Filled))
+                    progress.ExitFence = true;
+                if (order.Name == awaitingExitSignal)
+                    awaitingExitSignal = null;
+                if (error != ErrorCode.NoError)
+                {
+                    orderFaulted = true;
+                    Print(string.Format("EmaCrossReversal|DAILY_ORDER_ERROR|time={0:O}|signal={1}|error={2}|comment={3}",
+                        time, order.Name, error, comment));
+                }
+            }
             if (IsManagedProtectionOrder(order)
                 && (orderState == OrderState.PartFilled || orderState == OrderState.Filled))
                 earlyExitPending = true;
@@ -364,6 +457,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Print(string.Format("EmaCrossReversal|ORDER_CANCELLED|time={0:O}|signal={1}|filled={2}",
                     time, order.Name, filled));
             }
+            if (MaxDailyProfit > 0)
+                FinishDailyLiquidation();
         }
 
         protected override void OnExecutionUpdate(Execution execution, string executionId,
@@ -372,6 +467,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (execution == null || execution.Order == null)
                 return;
 
+            if (MaxDailyProfit > 0)
+            {
+                DailyProgress(execution.Order).Executed += quantity;
+                RecordDailyExecution(execution.Order.OrderAction, price, quantity, time);
+            }
             string signal = execution.Order.Name;
             if (signal == LongEntrySignal || signal == ShortEntrySignal)
             {
@@ -408,6 +508,186 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeEntryFillTime = DateTime.MinValue;
                 lastEarlyExitFillTime = time;
             }
+            if (MaxDailyProfit > 0)
+            {
+                CheckDailyProfit();
+                FinishDailyLiquidation();
+            }
+        }
+
+        protected override void OnMarketData(MarketDataEventArgs update)
+        {
+            if (MaxDailyProfit == 0 || (State == State.Historical && !IsHistoricalSimulation()))
+                return;
+            if (update.MarketDataType != MarketDataType.Bid && update.MarketDataType != MarketDataType.Ask
+                && update.MarketDataType != MarketDataType.Last)
+                return;
+
+            AdvanceDailyDay(update.Time);
+            if (update.MarketDataType == MarketDataType.Bid)
+                dailyBid = update.Price;
+            else if (update.MarketDataType == MarketDataType.Ask)
+                dailyAsk = update.Price;
+            else
+            {
+                dailyBid = update.Bid;
+                dailyAsk = update.Ask;
+            }
+            if (!DailyBookReady())
+            {
+                if (!dailyMissingBookReported)
+                    Print("EmaCrossReversal|DAILY_BOOK_MISSING|daily-profit marking and new entries wait for valid bid/ask; native protection remains working.");
+                dailyMissingBookReported = true;
+            }
+            else if (dailyMissingBookReported)
+            {
+                dailyMissingBookReported = false;
+                Print("EmaCrossReversal|DAILY_BOOK_RESTORED");
+            }
+            CheckDailyProfit();
+            FinishDailyLiquidation();
+        }
+
+        private DateTime AdvanceDailyDay(DateTime time)
+        {
+            DateTime et = TimeZoneInfo.ConvertTime(DateTime.SpecifyKind(time, DateTimeKind.Unspecified), platformZone, easternZone);
+            DateTime key = et.AddHours(6).Date;
+            if (dailyMarketTime == DateTime.MinValue || time > dailyMarketTime)
+                dailyMarketTime = time;
+            if (key > dailyDay)
+            {
+                dailyDay = key;
+                dailyRealized = 0;
+                dailyProfitReached = false;
+                Print(string.Format("EmaCrossReversal|DAILY_RESET|time={0:O}|day={1:yyyy-MM-dd}|cleanupPending={2}", time, key, dailyLiquidating));
+            }
+            return key;
+        }
+
+        private bool DailyBookReady()
+        {
+            return dailyBid > 0 && dailyAsk >= dailyBid && !double.IsInfinity(dailyBid)
+                && !double.IsInfinity(dailyAsk) && !double.IsNaN(dailyBid) && !double.IsNaN(dailyAsk);
+        }
+
+        private DailyOrderProgress DailyProgress(Order order)
+        {
+            for (int i = 0; i < dailyOrders.Count; i++)
+                if (dailyOrders[i].Order == order || (!string.IsNullOrEmpty(order.OrderId)
+                    && dailyOrders[i].Order.OrderId == order.OrderId))
+                {
+                    dailyOrders[i].Order = order;
+                    return dailyOrders[i];
+                }
+            DailyOrderProgress progress = new DailyOrderProgress
+            {
+                Order = order,
+                Entry = order.Name == LongEntrySignal || order.Name == ShortEntrySignal,
+                ExitFence = IsStrategyFlattenSignal(order.Name) || order.Name == "Close position"
+            };
+            dailyOrders.Add(progress);
+            return progress;
+        }
+
+        private void RecordDailyExecution(OrderAction action, double price, int quantity, DateTime time)
+        {
+            DateTime key = AdvanceDailyDay(time);
+            int change = (action == OrderAction.Buy || action == OrderAction.BuyToCover) ? quantity : -quantity;
+            int closed = dailyQuantity * change < 0 ? Math.Min(Math.Abs(dailyQuantity), quantity) : 0;
+            if (key == dailyDay)
+                dailyRealized += Math.Sign(dailyQuantity) * (price - dailyAverage) * closed * Instrument.MasterInstrument.PointValue;
+            else
+                Print(string.Format("EmaCrossReversal|DAILY_LATE_EXECUTION|time={0:O}|day={1:yyyy-MM-dd}|currentDay={2:yyyy-MM-dd}", time, key, dailyDay));
+
+            int next = dailyQuantity + change;
+            if (next == 0)
+                dailyAverage = 0;
+            else if (dailyQuantity == 0 || Math.Sign(next) != Math.Sign(dailyQuantity))
+                dailyAverage = price;
+            else if (closed == 0)
+                dailyAverage = (dailyAverage * Math.Abs(dailyQuantity) + price * quantity) / Math.Abs(next);
+            dailyQuantity = next;
+        }
+
+        private void CheckDailyProfit()
+        {
+            if (dailyProfitReached || orderFaulted)
+                return;
+            if (dailyQuantity != 0 && !DailyBookReady())
+                return;
+            double open = dailyQuantity == 0 ? 0 : dailyQuantity
+                * ((dailyQuantity > 0 ? dailyBid : dailyAsk) - dailyAverage) * Instrument.MasterInstrument.PointValue;
+            if (dailyRealized + open < MaxDailyProfit)
+                return;
+            dailyProfitReached = dailyLiquidating = true;
+            Print(string.Format("EmaCrossReversal|DAILY_PROFIT_REACHED|day={0:yyyy-MM-dd}|realized={1:F2}|open={2:F2}|cap={3:F2}|no entries until18:00ET",
+                dailyDay, dailyRealized, open, MaxDailyProfit));
+        }
+
+        private void FinishDailyLiquidation()
+        {
+            if (!dailyLiquidating || orderFaulted || dailyExitSubmitting)
+                return;
+            bool unsettled = entrySubmissionInProgress;
+            for (int i = 0; i < dailyOrders.Count; i++)
+            {
+                DailyOrderProgress progress = dailyOrders[i];
+                if (!progress.Entry)
+                    continue;
+                if (!progress.Terminal)
+                {
+                    unsettled = true;
+                    if (!progress.CancelRequested && (progress.Order.OrderState == OrderState.Submitted
+                        || progress.Order.OrderState == OrderState.Accepted || progress.Order.OrderState == OrderState.Working
+                        || progress.Order.OrderState == OrderState.PartFilled))
+                    {
+                        progress.CancelRequested = true;
+                        try { CancelOrder(progress.Order); }
+                        catch (InvalidOperationException ex)
+                        {
+                            orderFaulted = true;
+                            Print("EmaCrossReversal|DAILY_CANCEL_ERROR|" + ex.Message + "|CHECK STRATEGY POSITION");
+                            return;
+                        }
+                    }
+                }
+                if (progress.Executed < progress.ReportedFilled)
+                    unsettled = true;
+            }
+            if (unsettled || awaitingExitSignal != null)
+                return;
+            entryPending = false;
+            for (int i = 0; i < dailyOrders.Count; i++)
+                if (dailyOrders[i].ExitFence && (!dailyOrders[i].Terminal
+                    || dailyOrders[i].Executed < dailyOrders[i].ReportedFilled))
+                    return;
+            earlyExitPending = false;
+            if (dailyQuantity == 0 && Position.MarketPosition == MarketPosition.Flat)
+            {
+                if (!dailyProfitReached)
+                    dailyLiquidating = false;
+                return;
+            }
+            MarketPosition side = dailyQuantity > 0 ? MarketPosition.Long : MarketPosition.Short;
+            if (dailyQuantity == 0 || Position.MarketPosition != side || Position.Quantity != Math.Abs(dailyQuantity))
+            {
+                if (!dailyPositionWaitReported)
+                    Print("EmaCrossReversal|DAILY_POSITION_WAIT|waiting for position/execution settlement before flattening");
+                dailyPositionWaitReported = true;
+                return;
+            }
+            dailyPositionWaitReported = false;
+            earlyExitPending = true;
+            awaitingExitSignal = side == MarketPosition.Long ? LongDailyExitSignal : ShortDailyExitSignal;
+            dailyExitSubmitting = true;
+            try
+            {
+                if (side == MarketPosition.Long)
+                    ExitLong(LongDailyExitSignal, LongEntrySignal);
+                else
+                    ExitShort(ShortDailyExitSignal, ShortEntrySignal);
+            }
+            finally { dailyExitSubmitting = false; }
         }
 
         [NinjaScriptProperty]
@@ -451,5 +731,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(0, double.MaxValue)]
         [Display(Name = "Take profit points", Description = "0 disables the target. Positive points enable a managed profit target with any exit mode. After a target or stop fill, wait for a new completed EMA crossover.", Order = 2, GroupName = "Fixed TP / SL")]
         public double TakeProfitPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "Max daily profit ($)", Description = "0 disables. This strategy run's realized gross since18:00 New York plus its own open profit at exit-side bid/ask, before commissions. Reaching the cap cancels its pending entries, closes its position at market and blocks entries until18:00 ET or restart. Fill slippage can finish below the cap.", Order = 1, GroupName = "Daily risk")]
+        public double MaxDailyProfit { get; set; }
     }
 }
