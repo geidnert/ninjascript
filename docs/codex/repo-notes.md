@@ -38,6 +38,28 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-13: `Strategies/EmaCrossReversal.cs` now exposes default-off
+  `MinimumSlowEmaSlopeAtr` under Entry filter. It ports the locked Trader
+  research rule: directional configured slow-EMA change over THREE completed
+  bars divided by `3 * ATR14`, with native hosted ATR. Candidate verification:
+  NQ / 10-minute / CME ETH / 1 contract / EMA34/124 / threshold0.01;
+  mode Off, entry-price protection false, SL0 and TP0. Threshold0 disables;
+  EMA9/26 and all other defaults remain unchanged. Rejecting an opposite
+  crossover CLOSES the old side without reversing, via prefixed
+  EmaCrossReversalSlopeExitLong/Short market requests; wait for another fresh
+  qualifying cross. Alignment/slope improvement alone cannot enter, and slope
+  weakening alone does not exit. Existing price/TP/SL exits remain available.
+  Compile F5 then reload/re-add to refresh the new setting. Use supervised
+  SIM/Playback, not a live promotion. Trader's completed 552-row provisional
+  research (not fresh OOS/native fills) supersedes the older no-tuning status
+  below; full provenance/limits are in its
+  `docs/codex/ema-cross-reversal-research.md`. Local source-contract checks42
+  pass; independent EMA/ATR/raw-bar comparison matches20,114 bar/threshold
+  cases across8 windows with threshold0/0.01. No original research artifacts
+  or score/parameter selection changed. The copied source is byte-identical
+  to Trader's canonical file. These checks are API-shaped, not native Windows
+  compilation or order-fill parity; candidate NT8 compile/Playback remains
+  outstanding. No Trader assemblies are required by the NT8 source.
 - 2026-11-12: `Strategies/EmaCrossReversal.cs` is a new, standalone
   research prototype under `AutoEdge`. Default-off early exits preserve the
   crossover-only baseline. Initial settings are ordinary five-minute NQ, one

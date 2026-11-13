@@ -30,11 +30,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortEntrySignal = "EmaCrossReversalShort";
         private const string LongEarlyExitSignal = "EmaCrossReversalEarlyExitLong";
         private const string ShortEarlyExitSignal = "EmaCrossReversalEarlyExitShort";
+        private const string LongSlopeExitSignal = "EmaCrossReversalSlopeExitLong";
+        private const string ShortSlopeExitSignal = "EmaCrossReversalSlopeExitShort";
         private const string ProfitTargetOrderName = "Profit target";
         private const string StopLossOrderName = "Stop loss";
+        private const int SlopeLookback = 3;
+        private const int SlopeAtrPeriod = 14;
 
         private EMA fastEma;
         private EMA slowEma;
+        private ATR slopeAtr;
         private int previousRelationship;
         private int realtimeStartBar = -1;
         private int lastProcessedSignalBar = -1;
@@ -58,7 +63,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (State == State.SetDefaults)
             {
                 Name = "EmaCrossReversal";
-                Description = "Research-only EMA crossover reversal with optional EMA exits, fixed point stop/target and independent entry-price protection. Chart-selected minute/second NQ/MNQ bars, EMA9/26, no session-close exit.";
+                Description = "Research-only EMA crossover reversal with optional ATR-normalized slow-EMA slope filter, EMA exits, fixed point stop/target and entry-price protection. Chart-selected minute/second NQ/MNQ bars, no session-close exit.";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.AllEntries;
@@ -76,6 +81,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 UseEntryPriceProtection = false;
                 StopLossPoints = 0;
                 TakeProfitPoints = 0;
+                MinimumSlowEmaSlopeAtr = 0;
             }
             else if (State == State.Configure)
             {
@@ -91,6 +97,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     throw new InvalidOperationException("EmaCrossReversal requires finite, non-negative stop/target points.");
                 if (EarlyExitLevel == EmaCrossReversalExitLevel.FixedStop && StopLossPoints <= 0)
                     throw new InvalidOperationException("EmaCrossReversal requires positive Stop loss points in FixedStop mode.");
+                if (double.IsNaN(MinimumSlowEmaSlopeAtr) || double.IsInfinity(MinimumSlowEmaSlopeAtr) || MinimumSlowEmaSlopeAtr < 0)
+                    throw new InvalidOperationException("EmaCrossReversal requires a finite, non-negative minimum slow EMA slope.");
 
                 BarsRequiredToTrade = SlowEmaPeriod;
                 Calculate = UsesEmaExit || UseEntryPriceProtection
@@ -116,6 +124,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 fastEma = EMA(Close, FastEmaPeriod);
                 slowEma = EMA(Close, SlowEmaPeriod);
+                slopeAtr = MinimumSlowEmaSlopeAtr > 0 ? ATR(SlopeAtrPeriod) : null;
                 fastEma.Plots[0].Brush = Brushes.DodgerBlue;
                 slowEma.Plots[0].Brush = Brushes.Orange;
                 AddChartIndicator(fastEma);
@@ -149,6 +158,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             fastEma.Update();
             slowEma.Update();
+            if (slopeAtr != null)
+                slopeAtr.Update();
 
             bool tickCallbacks = Calculate == Calculate.OnEachTick
                 && (State == State.Realtime || Bars.IsTickReplay);
@@ -208,6 +219,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 MarketPosition targetSide = relationship > 0 ? MarketPosition.Long : MarketPosition.Short;
                 if (Position.MarketPosition == targetSide)
                     return;
+                if (!SlopeAllowsEntry(relationship, barsAgo))
+                {
+                    if (Position.MarketPosition != MarketPosition.Flat)
+                        RequestMarketExit(true);
+                    return;
+                }
 
                 entryPending = true;
                 string entrySignal = relationship > 0 ? LongEntrySignal : ShortEntrySignal;
@@ -227,6 +244,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 && ExitConfirmation == EmaCrossReversalExitConfirmation.CloseBeyond
                 && Time[barsAgo] > activeEntryFillTime)
                 EvaluatePriceExit(Close[barsAgo], ExitLevelPrice(barsAgo), ref earlyExitArmed, false, true);
+        }
+
+        private bool SlopeAllowsEntry(int direction, int barsAgo)
+        {
+            if (MinimumSlowEmaSlopeAtr == 0)
+                return true;
+            if (CurrentBar - barsAgo < SlopeLookback)
+                return false;
+
+            double atr = slopeAtr[barsAgo];
+            return atr > 0 && direction * (slowEma[barsAgo] - slowEma[barsAgo + SlopeLookback])
+                / (SlopeLookback * atr) >= MinimumSlowEmaSlopeAtr;
         }
 
         private bool IsHistoricalSimulation()
@@ -281,11 +310,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (!allowExit || !reached)
                 return;
 
+            RequestMarketExit(false);
+        }
+
+        private void RequestMarketExit(bool rejectedSlope)
+        {
+            MarketPosition side = Position.MarketPosition;
+            if (side == MarketPosition.Flat || entryPending || earlyExitPending || orderFaulted)
+                return;
+
             earlyExitPending = true;
             if (side == MarketPosition.Long)
-                ExitLong(LongEarlyExitSignal, LongEntrySignal);
+                ExitLong(rejectedSlope ? LongSlopeExitSignal : LongEarlyExitSignal, LongEntrySignal);
             else
-                ExitShort(ShortEarlyExitSignal, ShortEntrySignal);
+                ExitShort(rejectedSlope ? ShortSlopeExitSignal : ShortEarlyExitSignal, ShortEntrySignal);
+        }
+
+        private bool IsStrategyFlattenSignal(string signal)
+        {
+            return signal == LongEarlyExitSignal || signal == ShortEarlyExitSignal
+                || signal == LongSlopeExitSignal || signal == ShortSlopeExitSignal;
         }
 
         private bool IsManagedProtectionOrder(Order order)
@@ -315,7 +359,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             {
                 if (order.Name == LongEntrySignal || order.Name == ShortEntrySignal)
                     entryPending = false;
-                if (order.Name == LongEarlyExitSignal || order.Name == ShortEarlyExitSignal)
+                if (IsStrategyFlattenSignal(order.Name))
                     earlyExitPending = false;
                 Print(string.Format("EmaCrossReversal|ORDER_CANCELLED|time={0:O}|signal={1}|filled={2}",
                     time, order.Name, filled));
@@ -354,8 +398,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     earlyExitArmed = activeEntrySide == MarketPosition.Long ? price > level : price < level;
                 }
             }
-            else if ((signal == LongEarlyExitSignal || signal == ShortEarlyExitSignal
-                || IsManagedProtectionOrder(execution.Order))
+            else if ((IsStrategyFlattenSignal(signal) || IsManagedProtectionOrder(execution.Order))
                 && (marketPosition == MarketPosition.Flat || Position.MarketPosition == MarketPosition.Flat))
             {
                 earlyExitPending = false;
@@ -381,6 +424,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(1, 20)]
         [Display(Name = "Contracts", Order = 3, GroupName = "Parameters")]
         public int Contracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "Minimum slow EMA slope / ATR", Description = "0 disables. Directional slow-EMA change over 3 completed bars, divided by 3 x ATR14. Research candidate: 0.01 on 10-minute EMA34/124. A rejected opposite cross closes without reversing; wait for a fresh qualifying cross.", Order = 1, GroupName = "Entry filter")]
+        public double MinimumSlowEmaSlopeAtr { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Entry-price protection", Description = "Independent intrabar exit on return to actual average entry after a favorable observed move. Can run alongside either EMA exit. Market fills and fees can still produce a loss.", Order = 1, GroupName = "Optional early exit")]
