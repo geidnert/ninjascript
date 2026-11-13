@@ -35,6 +35,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private const string ShortSlopeExitSignal = "EmaCrossReversalSlopeExitShort";
         private const string LongDailyExitSignal = "EmaCrossReversalDailyProfitLong";
         private const string ShortDailyExitSignal = "EmaCrossReversalDailyProfitShort";
+        private const string LongSessionExitSignal = "EmaCrossReversalSessionEndLong";
+        private const string ShortSessionExitSignal = "EmaCrossReversalSessionEndShort";
         private const string ProfitTargetOrderName = "Profit target";
         private const string StopLossOrderName = "Stop loss";
         private const int SlopeLookback = 3;
@@ -74,6 +76,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         private bool entrySubmissionInProgress;
         private bool dailyExitSubmitting;
         private string awaitingExitSignal;
+        private bool sessionLiquidating;
+        private bool sessionOrdersUnsettled;
+        private bool trackedEntriesUnsettled;
+        private int pendingSessionBar = -1;
+        private int pendingSessionRelationship;
+        private DateTime sessionSignalTime = DateTime.MinValue;
 
         private sealed class DailyOrderProgress
         {
@@ -88,14 +96,16 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private bool UsesEmaExit => EarlyExitLevel == EmaCrossReversalExitLevel.FastEma
             || EarlyExitLevel == EmaCrossReversalExitLevel.SlowEma;
+        private bool UsesOrderTracking => MaxDailyProfit > 0 || UseSessionWindow;
+        private string LiquidationLabel => dailyLiquidating || !UseSessionWindow ? "DAILY" : "SESSION";
 
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
                 Name = "EmaCrossReversal";
-                Description = "Research-only EMA crossover reversal with optional ATR-normalized slow-EMA slope filter, EMA exits, fixed point stop/target and entry-price protection. Chart-selected minute/second NQ/MNQ bars, no session-close exit.";
-                Calculate = Calculate.OnBarClose;
+                Description = "Research-only EMA crossover reversal with adjustable New York session and observed end-of-window flatten, optional slope filter, EMA exits, fixed point stop/target and entry-price protection. Chart-selected minute/second NQ/MNQ bars.";
+                Calculate = Calculate.OnEachTick;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.AllEntries;
                 StopTargetHandling = StopTargetHandling.ByStrategyPosition;
@@ -114,6 +124,9 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 TakeProfitPoints = 0;
                 MinimumSlowEmaSlopeAtr = 0;
                 MaxDailyProfit = 0;
+                UseSessionWindow = true;
+                SessionStartTime = 930;
+                SessionEndTime = 1130;
             }
             else if (State == State.Configure)
             {
@@ -133,9 +146,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     throw new InvalidOperationException("EmaCrossReversal requires a finite, non-negative minimum slow EMA slope.");
                 if (double.IsNaN(MaxDailyProfit) || double.IsInfinity(MaxDailyProfit) || MaxDailyProfit < 0)
                     throw new InvalidOperationException("EmaCrossReversal requires a finite, non-negative daily profit cap.");
+                if (!ValidSessionTime(SessionStartTime) || !ValidSessionTime(SessionEndTime)
+                    || (UseSessionWindow && SessionStartTime >= SessionEndTime))
+                    throw new InvalidOperationException("EmaCrossReversal requires valid HHmm session times with start earlier than end on the same New York day.");
 
                 BarsRequiredToTrade = SlowEmaPeriod;
-                Calculate = UsesEmaExit || UseEntryPriceProtection || MaxDailyProfit > 0
+                Calculate = UsesEmaExit || UseEntryPriceProtection || UsesOrderTracking
                     ? Calculate.OnEachTick : Calculate.OnBarClose;
             }
             else if (State == State.DataLoaded)
@@ -151,18 +167,18 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (Math.Abs(StopLossPoints / TickSize - Math.Round(StopLossPoints / TickSize)) > 1e-8
                     || Math.Abs(TakeProfitPoints / TickSize - Math.Round(TakeProfitPoints / TickSize)) > 1e-8)
                     throw new InvalidOperationException("EmaCrossReversal requires stop/target points in whole instrument ticks.");
-                if ((MaxDailyProfit > 0 || UseEntryPriceProtection || (UsesEmaExit
+                if ((UsesOrderTracking || UseEntryPriceProtection || (UsesEmaExit
                     && ExitConfirmation == EmaCrossReversalExitConfirmation.Touch))
                     && IsHistoricalSimulation() && !Bars.IsTickReplay)
-                    throw new InvalidOperationException("EmaCrossReversal requires Tick Replay for historical touch exits or daily-profit protection; use Market Replay Playback for fill verification.");
+                    throw new InvalidOperationException("EmaCrossReversal requires Tick Replay for historical session timing, touch exits or daily-profit protection; use Market Replay Playback for fill verification.");
 
-                if (MaxDailyProfit > 0)
+                if (UsesOrderTracking)
                 {
                     platformZone = NinjaTrader.Core.Globals.GeneralOptions.TimeZoneInfo;
                     easternZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
                     if (platformZone == null || Instrument.MasterInstrument.PointValue <= 0
                         || double.IsNaN(Instrument.MasterInstrument.PointValue) || double.IsInfinity(Instrument.MasterInstrument.PointValue))
-                        throw new InvalidOperationException("EmaCrossReversal daily-profit protection requires a platform time zone and positive instrument point value.");
+                        throw new InvalidOperationException("EmaCrossReversal requires a platform time zone and positive instrument point value for session/daily order guards.");
                 }
 
                 fastEma = EMA(Close, FastEmaPeriod);
@@ -197,13 +213,28 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 dailyMissingBookReported = dailyPositionWaitReported = false;
                 entrySubmissionInProgress = dailyExitSubmitting = false;
                 awaitingExitSignal = null;
+                sessionLiquidating = sessionOrdersUnsettled = trackedEntriesUnsettled = false;
+                pendingSessionBar = -1;
+                pendingSessionRelationship = 0;
+                sessionSignalTime = DateTime.MinValue;
             }
             else if (State == State.Realtime)
             {
                 realtimeStartBar = CurrentBar;
                 lastProcessedSignalBar = -1;
-                if (MaxDailyProfit > 0)
+                pendingSessionBar = -1;
+                sessionSignalTime = DateTime.MinValue;
+                if (UsesOrderTracking)
                 {
+                    for (int i = dailyOrders.Count - 1; i >= 0; i--)
+                    {
+                        Order historical = dailyOrders[i].Order;
+                        if (ResolveRealtimeOrder(historical) == null && awaitingExitSignal == historical.Name)
+                            awaitingExitSignal = null;
+                    }
+                    RefreshSessionOrderFence();
+                    if (!trackedEntriesUnsettled && !entrySubmissionInProgress)
+                        entryPending = false;
                     dailyMarketTime = DateTime.MinValue;
                     dailyBid = dailyAsk = 0;
                 }
@@ -222,9 +253,26 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool tickCallbacks = Calculate == Calculate.OnEachTick
                 && (State == State.Realtime || Bars.IsTickReplay);
+            if (UseSessionWindow && tickCallbacks && (State != State.Historical || IsHistoricalSimulation()))
+            {
+                if (IsFirstTickOfBar && CurrentBar > 0)
+                {
+                    if (pendingSessionBar >= 0 && pendingSessionBar != CurrentBar - 1)
+                        DiscardPendingSessionBar();
+                    pendingSessionBar = CurrentBar - 1;
+                    pendingSessionRelationship = fastEma[1] > slowEma[1] ? 1
+                        : fastEma[1] < slowEma[1] ? -1 : 0;
+                }
+                return;
+            }
             if (!tickCallbacks || IsFirstTickOfBar)
                 ProcessCompletedBar(tickCallbacks ? 1 : 0);
 
+            ProcessPriceObservation();
+        }
+
+        private void ProcessPriceObservation()
+        {
             if ((!UsesEmaExit && !UseEntryPriceProtection)
                 || !CanTrade(CurrentBar))
                 return;
@@ -260,7 +308,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (relationship != 0)
                 previousRelationship = relationship;
 
-            if (!CanTrade(signalBar) || entryPending || earlyExitPending || orderFaulted)
+            if (!CanTrade(signalBar) || entryPending || earlyExitPending || orderFaulted
+                || (UseSessionWindow && !SessionAllowsBar(Time[barsAgo])))
                 return;
 
             bool crossed = priorRelationship != 0 && relationship != 0
@@ -304,8 +353,12 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 {
                     entrySubmissionInProgress = false;
                 }
-                if (MaxDailyProfit > 0)
+                if (UsesOrderTracking)
+                {
+                    RefreshSessionOrderFence();
+                    CheckSessionWindow();
                     FinishDailyLiquidation();
+                }
                 return;
             }
 
@@ -338,6 +391,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             return barIndex >= BarsRequiredToTrade
                 && (State != State.Historical || IsHistoricalSimulation())
                 && (State != State.Realtime || barIndex > realtimeStartBar)
+                && (!UseSessionWindow || (SessionContains(dailyMarketTime) && !sessionLiquidating && !sessionOrdersUnsettled))
                 && (MaxDailyProfit == 0 || (dailyMarketTime != DateTime.MinValue && DailyBookReady()
                     && !dailyProfitReached && !dailyLiquidating));
         }
@@ -394,7 +448,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             string signal = side == MarketPosition.Long
                 ? (rejectedSlope ? LongSlopeExitSignal : LongEarlyExitSignal)
                 : (rejectedSlope ? ShortSlopeExitSignal : ShortEarlyExitSignal);
-            if (MaxDailyProfit > 0)
+            if (UsesOrderTracking)
                 awaitingExitSignal = signal;
             if (side == MarketPosition.Long)
                 ExitLong(signal, LongEntrySignal);
@@ -406,7 +460,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         {
             return signal == LongEarlyExitSignal || signal == ShortEarlyExitSignal
                 || signal == LongSlopeExitSignal || signal == ShortSlopeExitSignal
-                || signal == LongDailyExitSignal || signal == ShortDailyExitSignal;
+                || signal == LongDailyExitSignal || signal == ShortDailyExitSignal
+                || signal == LongSessionExitSignal || signal == ShortSessionExitSignal;
         }
 
         private bool IsManagedProtectionOrder(Order order)
@@ -422,8 +477,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (order == null)
                 return;
 
-            if (MaxDailyProfit > 0)
+            if (UsesOrderTracking)
             {
+                order = ResolveRealtimeOrder(order);
+                if (order == null)
+                    return;
                 DailyOrderProgress progress = DailyProgress(order);
                 progress.ReportedFilled = Math.Max(progress.ReportedFilled, filled);
                 progress.Terminal = orderState == OrderState.Filled || orderState == OrderState.Cancelled || orderState == OrderState.Rejected;
@@ -434,9 +492,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 if (error != ErrorCode.NoError)
                 {
                     orderFaulted = true;
-                    Print(string.Format("EmaCrossReversal|DAILY_ORDER_ERROR|time={0:O}|signal={1}|error={2}|comment={3}",
-                        time, order.Name, error, comment));
+                    Print(string.Format("EmaCrossReversal|{0}_ORDER_ERROR|time={1:O}|signal={2}|error={3}|comment={4}",
+                        LiquidationLabel, time, order.Name, error, comment));
                 }
+                RefreshSessionOrderFence();
             }
             if (IsManagedProtectionOrder(order)
                 && (orderState == OrderState.PartFilled || orderState == OrderState.Filled))
@@ -457,8 +516,11 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Print(string.Format("EmaCrossReversal|ORDER_CANCELLED|time={0:O}|signal={1}|filled={2}",
                     time, order.Name, filled));
             }
-            if (MaxDailyProfit > 0)
+            if (UsesOrderTracking)
+            {
+                CheckSessionWindow();
                 FinishDailyLiquidation();
+            }
         }
 
         protected override void OnExecutionUpdate(Execution execution, string executionId,
@@ -467,12 +529,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             if (execution == null || execution.Order == null)
                 return;
 
-            if (MaxDailyProfit > 0)
+            Order order = execution.Order;
+            if (UsesOrderTracking)
             {
-                DailyProgress(execution.Order).Executed += quantity;
-                RecordDailyExecution(execution.Order.OrderAction, price, quantity, time);
+                order = ResolveRealtimeOrder(order);
+                if (order == null)
+                    return;
+                DailyProgress(order).Executed += quantity;
+                RecordDailyExecution(order.OrderAction, price, quantity, time);
+                RefreshSessionOrderFence();
             }
-            string signal = execution.Order.Name;
+            string signal = order.Name;
             if (signal == LongEntrySignal || signal == ShortEntrySignal)
             {
                 if (activeEntryOrderId != orderId)
@@ -485,7 +552,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
                 activeEntrySide = signal == LongEntrySignal ? MarketPosition.Long : MarketPosition.Short;
                 entryFilledQuantity += quantity;
-                entryPending = entryFilledQuantity < execution.Order.Quantity;
+                entryPending = entryFilledQuantity < order.Quantity;
                 activeEntryFillTime = time;
                 skipFirstExitObservation = true;
                 if (UsesEmaExit
@@ -498,7 +565,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                     earlyExitArmed = activeEntrySide == MarketPosition.Long ? price > level : price < level;
                 }
             }
-            else if ((IsStrategyFlattenSignal(signal) || IsManagedProtectionOrder(execution.Order))
+            else if ((IsStrategyFlattenSignal(signal) || IsManagedProtectionOrder(order))
                 && (marketPosition == MarketPosition.Flat || Position.MarketPosition == MarketPosition.Flat))
             {
                 earlyExitPending = false;
@@ -508,16 +575,17 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 activeEntryFillTime = DateTime.MinValue;
                 lastEarlyExitFillTime = time;
             }
-            if (MaxDailyProfit > 0)
+            if (UsesOrderTracking)
             {
                 CheckDailyProfit();
+                CheckSessionWindow();
                 FinishDailyLiquidation();
             }
         }
 
         protected override void OnMarketData(MarketDataEventArgs update)
         {
-            if (MaxDailyProfit == 0 || (State == State.Historical && !IsHistoricalSimulation()))
+            if (!UsesOrderTracking || (State == State.Historical && !IsHistoricalSimulation()))
                 return;
             if (update.MarketDataType != MarketDataType.Bid && update.MarketDataType != MarketDataType.Ask
                 && update.MarketDataType != MarketDataType.Last)
@@ -533,7 +601,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 dailyBid = update.Bid;
                 dailyAsk = update.Ask;
             }
-            if (!DailyBookReady())
+            if (MaxDailyProfit > 0 && !DailyBookReady())
             {
                 if (!dailyMissingBookReported)
                     Print("EmaCrossReversal|DAILY_BOOK_MISSING|daily-profit marking and new entries wait for valid bid/ask; native protection remains working.");
@@ -545,12 +613,116 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 Print("EmaCrossReversal|DAILY_BOOK_RESTORED");
             }
             CheckDailyProfit();
+            CheckSessionWindow();
             FinishDailyLiquidation();
+            if (UseSessionWindow && update.MarketDataType == MarketDataType.Last)
+            {
+                // NT8 delivers Last after its bar update; never use the live candle's future end as the clock.
+                sessionSignalTime = update.Time;
+                if (pendingSessionBar >= 0)
+                {
+                    if (pendingSessionBar == CurrentBar - 1)
+                    {
+                        pendingSessionBar = -1;
+                        ProcessCompletedBar(1);
+                    }
+                    else
+                        DiscardPendingSessionBar();
+                }
+                ProcessPriceObservation();
+                FinishDailyLiquidation();
+            }
+        }
+
+        private static bool ValidSessionTime(int time) => time >= 0 && time <= 2359 && time % 100 < 60;
+
+        private DateTime EasternTime(DateTime time) =>
+            TimeZoneInfo.ConvertTime(DateTime.SpecifyKind(time, DateTimeKind.Unspecified), platformZone, easternZone);
+
+        private bool SessionContains(DateTime time)
+        {
+            if (time == DateTime.MinValue)
+                return false;
+            DateTime et = EasternTime(time);
+            int clock = et.Hour * 100 + et.Minute;
+            return clock >= SessionStartTime && clock < SessionEndTime;
+        }
+
+        private bool SessionAllowsBar(DateTime time)
+        {
+            return sessionSignalTime != DateTime.MinValue && time <= sessionSignalTime
+                && SessionContains(sessionSignalTime) && SessionContains(time)
+                && EasternTime(time).Date == EasternTime(sessionSignalTime).Date
+                && EasternTime(sessionSignalTime).Date == EasternTime(dailyMarketTime).Date;
+        }
+
+        private void DiscardPendingSessionBar()
+        {
+            if (pendingSessionBar > lastProcessedSignalBar)
+            {
+                lastProcessedSignalBar = pendingSessionBar;
+                if (pendingSessionRelationship != 0)
+                    previousRelationship = pendingSessionRelationship;
+                Print("EmaCrossReversal|SESSION_SIGNAL_SKIPPED|completed bar had no matching observed Last callback; cross consumed.");
+            }
+            pendingSessionBar = -1;
+        }
+
+        private void RefreshSessionOrderFence()
+        {
+            trackedEntriesUnsettled = sessionOrdersUnsettled = false;
+            for (int i = 0; i < dailyOrders.Count; i++)
+            {
+                DailyOrderProgress progress = dailyOrders[i];
+                bool unfinished = !progress.Terminal || progress.Executed < progress.ReportedFilled;
+                if (progress.Entry && unfinished)
+                    trackedEntriesUnsettled = true;
+                if (unfinished && (progress.Entry || progress.ExitFence || (dailyQuantity == 0
+                    && Position.MarketPosition == MarketPosition.Flat && IsManagedProtectionOrder(progress.Order))))
+                    sessionOrdersUnsettled = true;
+            }
+        }
+
+        private void CheckSessionWindow()
+        {
+            if (!UseSessionWindow || dailyMarketTime == DateTime.MinValue
+                || SessionContains(dailyMarketTime) || sessionLiquidating)
+                return;
+            if (!entryPending && !entrySubmissionInProgress && !sessionOrdersUnsettled
+                && dailyQuantity == 0 && Position.MarketPosition == MarketPosition.Flat)
+                return;
+            sessionLiquidating = true;
+            Print(string.Format("EmaCrossReversal|SESSION_END|time={0:O}|window={1:0000}-{2:0000} New York|cancel entries and flatten after order settlement",
+                dailyMarketTime, SessionStartTime, SessionEndTime));
+        }
+
+        private Order ResolveRealtimeOrder(Order order)
+        {
+            if (State != State.Realtime || !order.IsBacktestOrder)
+                return order;
+            Order live = GetRealtimeOrder(order);
+            for (int i = dailyOrders.Count - 1; i >= 0; i--)
+                if (dailyOrders[i].Order == order || (!string.IsNullOrEmpty(order.OrderId)
+                    && dailyOrders[i].Order.OrderId == order.OrderId))
+                {
+                    if (live == null)
+                    {
+                        dailyOrders.RemoveAt(i);
+                    }
+                    else
+                        dailyOrders[i].Order = live;
+                }
+            if (live == null)
+            {
+                Print("EmaCrossReversal|NO_REALTIME_ORDER|historical reference cleared; no live counterpart.");
+                RefreshSessionOrderFence();
+            }
+            return live;
         }
 
         private DateTime AdvanceDailyDay(DateTime time)
         {
-            DateTime et = TimeZoneInfo.ConvertTime(DateTime.SpecifyKind(time, DateTimeKind.Unspecified), platformZone, easternZone);
+            DateTime et = EasternTime(time);
             DateTime key = et.AddHours(6).Date;
             if (dailyMarketTime == DateTime.MinValue || time > dailyMarketTime)
                 dailyMarketTime = time;
@@ -559,7 +731,8 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 dailyDay = key;
                 dailyRealized = 0;
                 dailyProfitReached = false;
-                Print(string.Format("EmaCrossReversal|DAILY_RESET|time={0:O}|day={1:yyyy-MM-dd}|cleanupPending={2}", time, key, dailyLiquidating));
+                if (MaxDailyProfit > 0)
+                    Print(string.Format("EmaCrossReversal|DAILY_RESET|time={0:O}|day={1:yyyy-MM-dd}|cleanupPending={2}", time, key, dailyLiquidating));
             }
             return key;
         }
@@ -611,7 +784,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void CheckDailyProfit()
         {
-            if (dailyProfitReached || orderFaulted)
+            if (MaxDailyProfit == 0 || dailyProfitReached || orderFaulted)
                 return;
             if (dailyQuantity != 0 && !DailyBookReady())
                 return;
@@ -626,7 +799,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
         private void FinishDailyLiquidation()
         {
-            if (!dailyLiquidating || orderFaulted || dailyExitSubmitting)
+            if ((!dailyLiquidating && !sessionLiquidating) || orderFaulted || dailyExitSubmitting)
                 return;
             bool unsettled = entrySubmissionInProgress;
             for (int i = 0; i < dailyOrders.Count; i++)
@@ -646,7 +819,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                         catch (InvalidOperationException ex)
                         {
                             orderFaulted = true;
-                            Print("EmaCrossReversal|DAILY_CANCEL_ERROR|" + ex.Message + "|CHECK STRATEGY POSITION");
+                            Print("EmaCrossReversal|" + LiquidationLabel + "_CANCEL_ERROR|" + ex.Message + "|CHECK STRATEGY POSITION");
                             return;
                         }
                     }
@@ -664,31 +837,73 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
             earlyExitPending = false;
             if (dailyQuantity == 0 && Position.MarketPosition == MarketPosition.Flat)
             {
+                bool protectionPending = false;
+                if (UseSessionWindow)
+                    for (int i = 0; i < dailyOrders.Count; i++)
+                    {
+                        DailyOrderProgress progress = dailyOrders[i];
+                        if (!IsManagedProtectionOrder(progress.Order) || progress.Terminal)
+                            continue;
+                        protectionPending = true;
+                        if (!progress.CancelRequested && (progress.Order.OrderState == OrderState.Submitted
+                            || progress.Order.OrderState == OrderState.Accepted || progress.Order.OrderState == OrderState.Working
+                            || progress.Order.OrderState == OrderState.PartFilled))
+                        {
+                            progress.CancelRequested = true;
+                            try { CancelOrder(progress.Order); }
+                            catch (InvalidOperationException ex)
+                            {
+                                orderFaulted = true;
+                                Print("EmaCrossReversal|" + LiquidationLabel + "_CANCEL_ERROR|" + ex.Message + "|CHECK STRATEGY POSITION");
+                                return;
+                            }
+                        }
+                    }
+                if (protectionPending)
+                    return;
                 if (!dailyProfitReached)
                     dailyLiquidating = false;
+                sessionLiquidating = false;
+                RefreshSessionOrderFence();
                 return;
             }
             MarketPosition side = dailyQuantity > 0 ? MarketPosition.Long : MarketPosition.Short;
             if (dailyQuantity == 0 || Position.MarketPosition != side || Position.Quantity != Math.Abs(dailyQuantity))
             {
                 if (!dailyPositionWaitReported)
-                    Print("EmaCrossReversal|DAILY_POSITION_WAIT|waiting for position/execution settlement before flattening");
+                    Print("EmaCrossReversal|" + LiquidationLabel + "_POSITION_WAIT|waiting for position/execution settlement before flattening");
                 dailyPositionWaitReported = true;
                 return;
             }
             dailyPositionWaitReported = false;
             earlyExitPending = true;
-            awaitingExitSignal = side == MarketPosition.Long ? LongDailyExitSignal : ShortDailyExitSignal;
+            awaitingExitSignal = side == MarketPosition.Long
+                ? (dailyLiquidating ? LongDailyExitSignal : LongSessionExitSignal)
+                : (dailyLiquidating ? ShortDailyExitSignal : ShortSessionExitSignal);
             dailyExitSubmitting = true;
             try
             {
                 if (side == MarketPosition.Long)
-                    ExitLong(LongDailyExitSignal, LongEntrySignal);
+                    ExitLong(awaitingExitSignal, LongEntrySignal);
                 else
-                    ExitShort(ShortDailyExitSignal, ShortEntrySignal);
+                    ExitShort(awaitingExitSignal, ShortEntrySignal);
             }
             finally { dailyExitSubmitting = false; }
         }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use trading session", Description = "Defaults on. New entries require both an observed market clock and a completed signal bar inside the New York window. At the end, cancel pending entries and flatten after order settlement. Disable to restore all-hours entry behavior.", Order = 1, GroupName = "Session (New York)")]
+        public bool UseSessionWindow { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2359)]
+        [Display(Name = "Session start (HHmm)", Description = "New York time, including DST. 930 means09:30. Same-day windows only; start is inclusive. Full chart history still warms the EMAs.", Order = 2, GroupName = "Session (New York)")]
+        public int SessionStartTime { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 2359)]
+        [Display(Name = "Session end (HHmm)", Description = "New York time. 1130 means11:30. End is exclusive for entries. Flatten is requested from the first observed bid/ask/trade at or after the boundary, never from a future bar end; exact-time flat is not guaranteed.", Order = 3, GroupName = "Session (New York)")]
+        public int SessionEndTime { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]

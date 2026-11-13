@@ -38,6 +38,26 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-13: User-requested `EmaCrossReversal` session inputs are installed:
+  Session (New York), Use trading session=true, start(HHmm)=930,
+  end(HHmm)=1130. Both actual observed request time and completed signal-bar
+  end must be within that same New York window, start inclusive/end exclusive.
+  Full ETH/chart EMA history remains; outside crosses are consumed, not queued.
+  Entries remain completed-bar decisions dispatched after their matching Last
+  callback, not from a live candle's future end. The first observed Bid/Ask/Last
+  at end requests cancel+flatten, with entry/exit/late-fill/protection fences
+  and rollover-safe cleanup. Historical references translate to live orders
+  or clear; orphan callbacks cannot release a new pending entry.
+  Uncheck the window for prior all-hours entry behavior. All other defaults
+  (EMA9/26, one contract, optional exits/TP/SL/slope/daily cap off) remain.
+  Historical session simulations require Tick Replay. Compile F5 then reload/
+  re-add to refresh inputs; native Windows compilation/routing is unverified.
+  Trader's canonical source is byte-identical at SHA8e03e96b..., with
+  42 original+13 daily-profit+18 session API-shaped checks and format passing.
+  Manual research diagnostic:2mMNQ EMA21/55q1 slope0 FixedStopSL60 TP120
+  09:30-11:30NY on ETH history, not live/eval-approved defaults. No account was
+  enabled. Quotes may reach end before research's old trade-triggered flatten;
+  that timing difference needs explicit separate assessment, not a parity claim.
 - 2026-11-13: `Strategies/EmaCrossReversal.cs` adds default-off
   `MaxDailyProfit` under Daily risk. As in FAST15, it uses THIS run's realized
   gross since 18:00 ET plus its own open profit at exit-side bid/ask, before
