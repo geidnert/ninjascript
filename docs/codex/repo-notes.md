@@ -38,6 +38,23 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-14: `Strategies/OrderFlow.cs` now has optional entry styles
+  `ReversalOnly` (unchanged default), `ExpansionOnly`, and `Both`.
+  Expansion requires a configurable minimum of consecutive completed closes
+  strictly above VAH (long) or below VAL (short), initially 3 including the first.
+  Inside/boundary closes, direction changes, missing bar slots and new profiles
+  reset the run. One signal per outside run; occupied confirmations are consumed,
+  not queued. Inside does not force-close or reverse an open expansion.
+  `Both` keeps existing flat/volume-or-engulfing reversal requirements.
+  Expansion TP40/SL20 are independent fixed points from actual managed fills;
+  existing OrderFlowLong/Short routing and order-submission-off default remain.
+  `Strategies/OrderFlowExpansionLogic.cs` is portable shared source, identical
+  to Trader's `custom-strategies/nt8/OrderFlowExpansionLogic.cs`; each native file
+  has one explicit project compile item. Local 17 API-shaped NT8 checks and
+  15 research expansion assertions plus legacy checks pass, not native approval.
+  Actual NT8 F5 compilation/Playback remain unverified. F5, remove/re-add,
+  choose ExpansionOnly/3/TP40/SL20 on NQ or MNQ 15-minute CME ETH with prior-session
+  tick history; inspect markers/output with orders off before supervised SIM.
 - 2026-11-13: User-requested `EmaCrossReversal` session inputs are installed:
   Session (New York), Use trading session=true, start(HHmm)=930,
   end(HHmm)=1130. Both actual observed request time and completed signal-bar
