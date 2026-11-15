@@ -38,6 +38,19 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-15: OrderFlow accepts positive ordinary Minute/Second chart intervals
+  for the user-authorized preliminary joint research comparison. Fifteen minutes
+  remains the reference, not a lock; expansion bar-start/session and missing-slot
+  calculations now use the actual chart interval. No entry defaults, brackets,
+  account or order-submission settings were promoted. Trader's canonical copy
+  is byte-identical at SHA-256
+  `d672475ff4dd1755fd03047bceb4d627f6c2c14141bd4ce6a549503e2180a729`.
+  Eighteen local API-shaped source checks include a 30-second Nth-close case;
+  actual Windows NT8 F5 compilation/Playback are still unverified. Compile and
+  remove/re-add before supervised SIM; require prior-session tick history and
+  matched timeframe/source/settings before comparing to research. The finite
+  preregistered study is in Trader's `docs/codex/orderflow-joint-20261114/`;
+  arithmetic OHLC research fills are not native or account-risk evidence.
 - 2026-11-14: `Strategies/OrderFlow.cs` now has optional entry styles
   `ReversalOnly` (unchanged default), `ExpansionOnly`, and `Both`.
   Expansion requires a configurable minimum of consecutive completed closes

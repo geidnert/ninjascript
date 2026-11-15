@@ -412,7 +412,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void EvaluateExpansions()
         {
-            DateTime easternBarStart = ConvertToEastern(Time[0]).AddMinutes(-15);
+            TimeSpan interval = PrimaryBarInterval();
+            DateTime easternBarStart = ConvertToEastern(Time[0]).Subtract(interval);
             if (GetSessionDate(easternBarStart) != collectingSessionDateEastern)
             {
                 expansionState.Reset();
@@ -420,7 +421,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             DateTime utcClose = TimeZoneInfo.ConvertTimeToUtc(
                 DateTime.SpecifyKind(Time[0], DateTimeKind.Unspecified), platformZone);
-            long barSlot = utcClose.Ticks / TimeSpan.FromMinutes(15).Ticks;
+            long barSlot = utcClose.Ticks / interval.Ticks;
             int direction = expansionState.Observe(barSlot, (decimal)Close[0],
                 (decimal)previousSessionProfile.Val, (decimal)previousSessionProfile.Vah,
                 ExpansionClosesOutsideValue);
@@ -654,7 +655,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private bool ValidateRequiredPrimaryTimeframe()
         {
-            return BarsPeriod.BarsPeriodType == BarsPeriodType.Minute && BarsPeriod.Value == 15;
+            return (BarsPeriod.BarsPeriodType == BarsPeriodType.Minute
+                || BarsPeriod.BarsPeriodType == BarsPeriodType.Second) && BarsPeriod.Value > 0;
+        }
+
+        private TimeSpan PrimaryBarInterval()
+        {
+            return BarsPeriod.BarsPeriodType == BarsPeriodType.Second
+                ? TimeSpan.FromSeconds(BarsPeriod.Value) : TimeSpan.FromMinutes(BarsPeriod.Value);
         }
 
         private bool ValidateRequiredPrimaryInstrument()
@@ -682,7 +690,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             configurationWarningShown = true;
             Print(!isConfiguredTimeframeValid || !isConfiguredInstrumentValid
-                ? "OrderFlow is disabled: use an NQ or MNQ 15-minute chart."
+                ? "OrderFlow is disabled: use an NQ or MNQ ordinary Minute or Second chart."
                 : "OrderFlow is disabled: choose a valid entry mode, at least one expansion close, and positive expansion TP/SL points.");
         }
 
