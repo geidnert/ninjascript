@@ -7,6 +7,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
+using Trader.Indicators;
 using NinjaTrader.Cbi;
 using NinjaTrader.Data;
 using NinjaTrader.Gui.Tools;
@@ -168,6 +169,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 UsePriorLegFilter = false;
                 PriorLegBars = 3;
                 PriorLegMustOpposeEntry = true;
+                UseSwingProximityFilter = false;
+                SwingProximityStrength = 2;
+                SwingProximityLookbackBars = 100;
+                MaximumSwingDistancePoints = 2.0;
                 PriorSessionProfileFilter = PriorSessionProfileMode.Disabled;
                 PriorSessionValueAreaPercent = 80;
             }
@@ -428,6 +433,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             }
 
+            if (!AllowsSwingProximity(pendingLong))
+                return;
             pendingSetupBar = CurrentBar - 1;
             pendingRejectionWickPrice = pendingLong ? Low[1] : High[1];
             if (pendingLong)
@@ -437,6 +444,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             Log(string.Format("SETUP|direction={0}|setupBar={1}|lowerWick={2:F2}|upperWick={3:F2}|trigger={4:F2}|level={5}",
                 pendingLong ? "Long" : "Short", pendingSetupBar, lowerWick, upperWick, pendingTriggerPrice, BreakoutLevel));
+        }
+
+        private bool AllowsSwingProximity(bool isLong)
+        {
+            if (!UseSwingProximityFilter)
+                return true;
+            decimal level;
+            int pivotBarsAgo;
+            bool found = NinjaSwingPattern.TryFindBeforeRejection(SwingProximityStrength,
+                SwingProximityLookbackBars, CurrentBar, !isLong,
+                ago => (decimal)(isLong ? Low[ago] : High[ago]), out level, out pivotBarsAgo);
+            if (!found)
+            {
+                Log("SETUP_SKIPPED|reason=no_prior_confirmed_swing");
+                return false;
+            }
+            decimal extreme = (decimal)(isLong ? Low[1] : High[1]);
+            decimal distance = Math.Abs(extreme - level);
+            bool allowed = NinjaSwingPattern.WithinDistance(extreme, level, (decimal)MaximumSwingDistancePoints);
+            Log(string.Format(CultureInfo.InvariantCulture,
+                "SWING_PROXIMITY|direction={0}|level={1:F2}|pivotBarsAgo={2}|distance={3:F2}|maximum={4:F2}|allowed={5}",
+                isLong ? "Long" : "Short", level, pivotBarsAgo, distance, MaximumSwingDistancePoints, allowed));
+            if (!allowed)
+                Log("SETUP_SKIPPED|reason=swing_too_far");
+            return allowed;
         }
 
         private void EvaluatePendingSetup()
@@ -1013,6 +1045,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 && IsWholeTickAmount(ProfitTargetPoints)
                 && IsWholeTickAmount(StopLossPoints)
                 && PriorLegBars >= 1
+                && (!UseSwingProximityFilter || (SwingProximityStrength >= 1 && SwingProximityStrength <= 20
+                    && SwingProximityLookbackBars >= SwingProximityStrength + 1 && SwingProximityLookbackBars <= 2000
+                    && IsWholeTickAmountOrZero(MaximumSwingDistancePoints)))
                 && (!UseRsiEarlyExit || (RsiEarlyExitPeriod >= 2
                     && RsiEarlyExitLower >= 0.0
                     && RsiEarlyExitLower < 50.0
@@ -1570,6 +1605,25 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(50, 95)]
         [Display(Name = "Prior session value area percent", Description = "Used by Outside value area and Reversal at value edge modes. The current research candidate is 80.", GroupName = "Research filters", Order = 15)]
         public int PriorSessionValueAreaPercent { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use swing proximity filter", Description = "Require the rejection wick tip near the most recent swing confirmed before that candle. Crossing the level is not required.", GroupName = "Swing proximity", Order = 0)]
+        public bool UseSwingProximityFilter { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 20)]
+        [Display(Name = "Swing strength", Description = "Completed bars required on each side of the pivot. Neither the rejection candle nor its live confirmation bar can confirm it.", GroupName = "Swing proximity", Order = 1)]
+        public int SwingProximityStrength { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(2, 2000)]
+        [Display(Name = "Swing lookback bars", GroupName = "Swing proximity", Order = 2)]
+        public int SwingProximityLookbackBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1000.0)]
+        [Display(Name = "Maximum swing distance points", Description = "Inclusive absolute distance from wick tip to swing level. 0 requires an exact touch. Independent of TP/SL.", GroupName = "Swing proximity", Order = 3)]
+        public double MaximumSwingDistancePoints { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Use skip time slot 1", GroupName = "Time filter", Order = 14)]
