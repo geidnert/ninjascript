@@ -102,6 +102,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BracketMode = SessionBrakeoutBracketMode.SessionRangeRewardRisk;
                 FixedProfitTargetPoints = 20.0;
                 FixedStopLossPoints = 10.0;
+                UseRangeQualification = true;
                 MinimumSessionRangePoints = 8.0;
                 MaximumSessionRangePoints = 300.0;
                 MaximumNetMovePercent = 60.0;
@@ -260,13 +261,17 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (range.Kind == SessionKind.NyPm)
                 nyPmRange = range;
 
-            Print(string.Format("SessionBrakeout|RANGE|{0}|{1:yyyy-MM-dd HH:mm}|size={2:F2}|netMove={3:F1}%|central={4:F1}%|qualified={5}",
-                range.Kind, range.StartTime, range.Size, GetNetMovePercent(range), GetCentralClosePercent(range), range.Qualified));
+            Print(string.Format("SessionBrakeout|RANGE|{0}|{1:yyyy-MM-dd HH:mm}|size={2:F2}|netMove={3:F1}%|central={4:F1}%|qualified={5}|qualificationEnabled={6}",
+                range.Kind, range.StartTime, range.Size, GetNetMovePercent(range), GetCentralClosePercent(range), range.Qualified, UseRangeQualification));
         }
 
         private bool IsBalancedRange(SessionRange range)
         {
-            if (range.Size < MinimumSessionRangePoints || range.Size > MaximumSessionRangePoints || range.Closes.Count == 0)
+            if (range.Closes.Count == 0)
+                return false;
+            if (!UseRangeQualification)
+                return true;
+            if (range.Size < MinimumSessionRangePoints || range.Size > MaximumSessionRangePoints)
                 return false;
             return GetNetMovePercent(range) <= MaximumNetMovePercent
                 && GetCentralClosePercent(range) >= MinimumCentralClosePercent;
@@ -462,7 +467,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             long midpointTicks = range.DrawStartTime.Ticks + (endTime.Ticks - range.DrawStartTime.Ticks) / 2;
             DateTime midpoint = new DateTime(midpointTicks);
             string target = GetSessionDisplayName(GetTargetSessionKind(range.Kind));
-            string status = range.Qualified
+            string status = !UseRangeQualification ? "Range qualification disabled" : range.Qualified
                 ? string.Format("Accepted | net {0:F1}% | inside band {1:F1}%",
                     GetNetMovePercent(range), GetCentralClosePercent(range))
                 : "Rejected: " + GetRejectionReason(range);
@@ -854,6 +859,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0.25, double.MaxValue)]
         [Display(Name = "Fixed stop loss (points)", Description = "Used only in FixedPoints mode. Distance from actual entry fill, not a guaranteed maximum filled loss.", GroupName = "Risk", Order = 2)]
         public double FixedStopLossPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use range qualification", Description = "When off, bypass minimum/maximum source range, net-move and central-close tests. Session, EMA, breakout and risk rules still apply.", GroupName = "Range qualification", Order = 9)]
+        public bool UseRangeQualification { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.25, double.MaxValue)]

@@ -38,6 +38,11 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-16: SessionBrakeout adds default-true `UseRangeQualification`.
+  Off bypasses source-size/net-move/central-close tests for observed ranges;
+  no empty source, session, EMA, breakout, risk or one-trade-per-range bypass.
+  Labels explicitly show qualification disabled. Canonical source and local
+  checks updated; actual NT8 F5/Playback still unverified.
 - 2026-11-16: SessionBrakeout `Risk -> Bracket mode` now offers FixedPoints
   with independent TP/SL point inputs (inactive defaults20/10). Original
   SessionRangeRewardRisk remains default; fixed mode ignores the RR multiple
