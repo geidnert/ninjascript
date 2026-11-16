@@ -38,6 +38,12 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-16: SessionBrakeout `Risk -> Bracket mode` now offers FixedPoints
+  with independent TP/SL point inputs (inactive defaults20/10). Original
+  SessionRangeRewardRisk remains default; fixed mode ignores the RR multiple
+  and range size. Validate finite positive whole-tick distances, keep managed
+  brackets linked to actual Long/Short fills, no guaranteed stop-loss fill.
+  Canonical Trader source/checks updated; actual NT8 F5/Playback unverified.
 - 2026-11-16: SessionBrakeout draws a thin light-gray dotted box around only
   each selected source session's configured window/high-low. It updates live
   and ends exactly at the configured source end after finalization; chart-zone

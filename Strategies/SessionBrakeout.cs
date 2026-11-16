@@ -18,6 +18,12 @@ using NinjaTrader.NinjaScript.Indicators;
 // All session times are New York time, independent of NinjaTrader's display time zone.
 namespace NinjaTrader.NinjaScript.Strategies
 {
+    public enum SessionBrakeoutBracketMode
+    {
+        SessionRangeRewardRisk,
+        FixedPoints
+    }
+
     public class SessionBrakeout : Strategy
     {
         private const string StrategySignalPrefix = "SessionBrakeout";
@@ -93,6 +99,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 Quantity = 1;
                 RewardRiskMultiple = 1.75;
+                BracketMode = SessionBrakeoutBracketMode.SessionRangeRewardRisk;
+                FixedProfitTargetPoints = 20.0;
+                FixedStopLossPoints = 10.0;
                 MinimumSessionRangePoints = 8.0;
                 MaximumSessionRangePoints = 300.0;
                 MaximumNetMovePercent = 60.0;
@@ -123,7 +132,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SetupTimeZones();
                 isConfiguredTimeframeValid = ValidateRequiredPrimaryTimeframe();
                 isConfiguredInstrumentValid = ValidateRequiredPrimaryInstrument();
-                isConfiguredSettingsValid = ValidateSessionSettings() && EmaPeriod >= 1;
+                isConfiguredSettingsValid = ValidateSessionSettings() && EmaPeriod >= 1 && ValidateBracketSettings();
                 if (UseEmaFilter && isConfiguredSettingsValid)
                 {
                     entryEma = EMA(EmaPeriod);
@@ -331,8 +340,21 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (!AllowsEmaEntry(isLong, breakoutClose))
                 return;
-            int stopTicks = Math.Max(1, (int)Math.Ceiling((range.Size * 0.5) / TickSize));
-            int targetTicks = Math.Max(1, (int)Math.Round(stopTicks * RewardRiskMultiple, MidpointRounding.AwayFromZero));
+            int stopTicks;
+            int targetTicks;
+            if (BracketMode == SessionBrakeoutBracketMode.FixedPoints)
+            {
+                if (!TryGetFixedTicks(FixedStopLossPoints, out stopTicks) || !TryGetFixedTicks(FixedProfitTargetPoints, out targetTicks))
+                {
+                    Print("SessionBrakeout|INVALID_BRACKETS|Fixed TP/SL must be positive, finite whole-tick distances.");
+                    return;
+                }
+            }
+            else
+            {
+                stopTicks = Math.Max(1, (int)Math.Ceiling((range.Size * 0.5) / TickSize));
+                targetTicks = Math.Max(1, (int)Math.Round(stopTicks * RewardRiskMultiple, MidpointRounding.AwayFromZero));
+            }
             string signal = isLong ? LongEntrySignal : ShortEntrySignal;
             if (!ConfirmEntry(isLong ? "Buy breakout" : "Sell-short breakout", breakoutClose, range))
                 return;
@@ -341,12 +363,36 @@ namespace NinjaTrader.NinjaScript.Strategies
             SetProfitTarget(signal, CalculationMode.Ticks, targetTicks);
             range.TradeTaken = true;
             range.Armed = false;
-            Print(string.Format("SessionBrakeout|BREAKOUT|{0}|source={1}|close={2:F2}|range={3:F2}|stopTicks={4}|targetTicks={5}",
-                isLong ? "Long" : "Short", range.Kind, breakoutClose, range.Size, stopTicks, targetTicks));
+            Print(string.Format("SessionBrakeout|BREAKOUT|{0}|source={1}|close={2:F2}|range={3:F2}|stopTicks={4}|targetTicks={5}|mode={6}",
+                isLong ? "Long" : "Short", range.Kind, breakoutClose, range.Size, stopTicks, targetTicks, BracketMode));
             if (isLong)
                 EnterLong(Quantity, LongEntrySignal);
             else
                 EnterShort(Quantity, ShortEntrySignal);
+        }
+
+        private bool ValidateBracketSettings()
+        {
+            if (BracketMode == SessionBrakeoutBracketMode.SessionRangeRewardRisk)
+                return true;
+            int ticks;
+            return BracketMode == SessionBrakeoutBracketMode.FixedPoints
+                && TryGetFixedTicks(FixedStopLossPoints, out ticks)
+                && TryGetFixedTicks(FixedProfitTargetPoints, out ticks);
+        }
+
+        private bool TryGetFixedTicks(double points, out int ticks)
+        {
+            ticks = 0;
+            if (double.IsNaN(points) || double.IsInfinity(points) || points <= 0.0 || TickSize <= 0.0)
+                return false;
+            double exact = points / TickSize;
+            double rounded = Math.Round(exact, MidpointRounding.AwayFromZero);
+            if (double.IsNaN(rounded) || double.IsInfinity(rounded) || rounded < 1.0 || rounded > int.MaxValue
+                || Math.Abs(exact - rounded) > 1e-8)
+                return false;
+            ticks = (int)rounded;
+            return true;
         }
 
         private bool AllowsEmaEntry(bool isLong, double breakoutClose)
@@ -725,7 +771,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (configurationWarningShown)
                 return;
             configurationWarningShown = true;
-            Print(string.Format("SessionBrakeout is disabled: it requires a 5-minute NQ or MNQ chart, a positive EMA period, and valid HHmm windows in Asia -> London -> NY AM -> NY PM order without overlaps (current: {0} {1}).",
+            Print(string.Format("SessionBrakeout is disabled: it requires a 5-minute NQ or MNQ chart, a positive EMA period, valid whole-tick fixed TP/SL when selected, and valid HHmm windows in Asia -> London -> NY AM -> NY PM order without overlaps (current: {0} {1}).",
                 BarsPeriod == null ? "unknown" : BarsPeriod.ToString(), Instrument == null ? "unknown" : Instrument.FullName));
         }
 
@@ -794,6 +840,20 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0.1, 20.0)]
         [Display(Name = "Reward/risk multiple", GroupName = "Parameters", Order = 1)]
         public double RewardRiskMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bracket mode", Description = "SessionRangeRewardRisk uses half the source range for SL and the reward/risk multiple for TP. FixedPoints uses the two independent point inputs.", GroupName = "Risk", Order = 0)]
+        public SessionBrakeoutBracketMode BracketMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.25, double.MaxValue)]
+        [Display(Name = "Fixed take profit (points)", Description = "Used only in FixedPoints mode. Distance from actual entry fill; must be a whole number of instrument ticks.", GroupName = "Risk", Order = 1)]
+        public double FixedProfitTargetPoints { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.25, double.MaxValue)]
+        [Display(Name = "Fixed stop loss (points)", Description = "Used only in FixedPoints mode. Distance from actual entry fill, not a guaranteed maximum filled loss.", GroupName = "Risk", Order = 2)]
+        public double FixedStopLossPoints { get; set; }
 
         [NinjaScriptProperty]
         [Range(0.25, double.MaxValue)]
