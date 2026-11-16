@@ -38,6 +38,16 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-16: SessionBrakeout adds default-off `UseEmaCloseExit` using the
+  existing EMA period (entry filter may be off): long completed close<=EMA/
+  short>= requests a latched managed market exit, NOT an intrabar touch or
+  guaranteed EMA fill. New default-off `AllowOppositeRetryAfterStop` permits
+  only one opposite breakout after an actual fully closed SL, from the same
+  source/immediate target; partial/TP/EMA exits do not rearm, no third trade.
+  Entry/EMA/session/account gates remain. Callbacks fence pending entries/
+  exits and translate or clear historical order references. Local API-shaped
+  checks pass, actual F5/Playback unverified. User paused tuning before any
+  research port/grid or scores; no Native defaults promoted.
 - 2026-11-16: SessionBrakeout adds default-true `UseRangeQualification`.
   Off bypasses source-size/net-move/central-close tests for observed ranges;
   no empty source, session, EMA, breakout, risk or one-trade-per-range bypass.

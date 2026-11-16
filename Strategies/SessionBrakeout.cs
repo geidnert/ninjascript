@@ -34,6 +34,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private const string MaxBalanceExitSignal = StrategySignalPrefix + "MaxBalance";
         private const string MaxDailyProfitExitSignal = StrategySignalPrefix + "MaxDailyProfit";
         private const string InvalidConfigurationExitSignal = StrategySignalPrefix + "InvalidConfiguration";
+        private const string EmaExitSignal = StrategySignalPrefix + "EmaCloseExit";
 
         private enum SessionKind { None = -1, Asia, London, NyAm, NyPm }
 
@@ -54,6 +55,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             public bool TradeTaken;
             public bool Finalized;
             public bool RangeLevelTouched;
+            public bool OppositeRetryUsed;
+            public int RequiredEntryDirection;
 
             public double Size { get { return High - Low; } }
         }
@@ -78,6 +81,20 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double dailyProfitStartBalance;
         private EMA entryEma;
         private bool isConfiguredSettingsValid = true;
+        private SessionRange activeTradeRange;
+        private bool activeTradeWasLong;
+        private bool activeEntryFilled;
+        private DateTime activeEntryFillTime;
+        private Order activeEntryOrder;
+        private bool entryOrderPending;
+        private bool emaExitPending;
+        private int activeEntryExecutedQuantity;
+        private int activeExitExecutedQuantity;
+        private readonly HashSet<string> handledExecutions = new HashSet<string>();
+        private string completedExitName;
+        private OrderState completedExitState;
+        private DateTime completedExitTime;
+        private bool completedExitWasFlat;
 
         protected override void OnStateChange()
         {
@@ -127,6 +144,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 NyPmEndHHmm = 1800;
                 UseEmaFilter = false;
                 EmaPeriod = 50;
+                UseEmaCloseExit = false;
+                AllowOppositeRetryAfterStop = false;
             }
             else if (State == State.DataLoaded)
             {
@@ -134,11 +153,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                 isConfiguredTimeframeValid = ValidateRequiredPrimaryTimeframe();
                 isConfiguredInstrumentValid = ValidateRequiredPrimaryInstrument();
                 isConfiguredSettingsValid = ValidateSessionSettings() && EmaPeriod >= 1 && ValidateBracketSettings();
-                if (UseEmaFilter && isConfiguredSettingsValid)
+                if ((UseEmaFilter || UseEmaCloseExit) && isConfiguredSettingsValid)
                 {
                     entryEma = EMA(EmaPeriod);
                     AddChartIndicator(entryEma);
                 }
+            }
+            else if (State == State.Realtime && activeEntryOrder != null && activeEntryOrder.IsBacktestOrder)
+            {
+                activeEntryOrder = GetRealtimeOrder(activeEntryOrder);
+                if (activeEntryOrder == null)
+                    entryOrderPending = false;
             }
         }
 
@@ -157,6 +182,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             RefreshDailyProfitBaseline();
             if (CheckAccountGuards())
                 return;
+            bool emaExitRequested = EvaluateEmaCloseExit();
 
             // Under OnBarClose, Time[0]/OHLC[0] are the newly completed bar.  Use
             // that same bar in both historical calculation and Playback.
@@ -169,7 +195,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar == 0)
                 return;
 
-            EvaluateArmedBreakouts(currentSession, true, Close[0]);
+            if (!emaExitRequested && !emaExitPending)
+                EvaluateArmedBreakouts(currentSession, true, Close[0]);
         }
 
         private void AppendCompletedBar(int barsAgo)
@@ -326,7 +353,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!candidate.Qualified)
                 return;
 
-            if (Position.MarketPosition != MarketPosition.Flat)
+            if (Position.MarketPosition != MarketPosition.Flat || entryOrderPending || emaExitPending)
                 return;
 
             if (!IsTradeEnabled(currentSession))
@@ -335,9 +362,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!candidate.Armed || candidate.TradeTaken)
                 return;
 
-            if (completedClose > candidate.High)
+            if (completedClose > candidate.High && candidate.RequiredEntryDirection >= 0)
                 SubmitBreakout(true, candidate, completedClose);
-            else if (completedClose < candidate.Low)
+            else if (completedClose < candidate.Low && candidate.RequiredEntryDirection <= 0)
                 SubmitBreakout(false, candidate, completedClose);
         }
 
@@ -368,12 +395,156 @@ namespace NinjaTrader.NinjaScript.Strategies
             SetProfitTarget(signal, CalculationMode.Ticks, targetTicks);
             range.TradeTaken = true;
             range.Armed = false;
+            activeTradeRange = range;
+            activeTradeWasLong = isLong;
+            activeEntryFilled = false;
+            activeEntryFillTime = DateTime.MinValue;
+            activeEntryOrder = null;
+            entryOrderPending = true;
+            emaExitPending = false;
+            activeEntryExecutedQuantity = 0;
+            activeExitExecutedQuantity = 0;
+            completedExitName = null;
+            completedExitWasFlat = false;
             Print(string.Format("SessionBrakeout|BREAKOUT|{0}|source={1}|close={2:F2}|range={3:F2}|stopTicks={4}|targetTicks={5}|mode={6}",
                 isLong ? "Long" : "Short", range.Kind, breakoutClose, range.Size, stopTicks, targetTicks, BracketMode));
             if (isLong)
                 EnterLong(Quantity, LongEntrySignal);
             else
                 EnterShort(Quantity, ShortEntrySignal);
+        }
+
+        private bool EvaluateEmaCloseExit()
+        {
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                emaExitPending = false;
+                return false;
+            }
+            if (!UseEmaCloseExit || entryEma == null || CurrentBar + 1 < EmaPeriod || entryOrderPending)
+                return false;
+            if (emaExitPending)
+                return true;
+            double value = entryEma[0];
+            if (double.IsNaN(value) || double.IsInfinity(value))
+                return false;
+            bool isLong = Position.MarketPosition == MarketPosition.Long;
+            if (isLong ? Close[0] > value : Close[0] < value)
+                return false;
+            emaExitPending = true;
+            Print(string.Format("SessionBrakeout|EMA_EXIT|direction={0}|close={1:F2}|ema={2:F2}|period={3}",
+                isLong ? "Long" : "Short", Close[0], value, EmaPeriod));
+            if (isLong)
+                ExitLong(EmaExitSignal, LongEntrySignal);
+            else
+                ExitShort(EmaExitSignal, ShortEntrySignal);
+            return true;
+        }
+
+        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice,
+            int quantity, int filled, double averageFillPrice, OrderState orderState, DateTime time,
+            ErrorCode error, string nativeError)
+        {
+            if (order == null || activeTradeRange == null)
+                return;
+            if (State == State.Realtime && order.IsBacktestOrder)
+            {
+                Order realtimeOrder = GetRealtimeOrder(order);
+                if (ReferenceEquals(activeEntryOrder, order))
+                    activeEntryOrder = realtimeOrder;
+                if (realtimeOrder == null)
+                {
+                    if (order.Name == (activeTradeWasLong ? LongEntrySignal : ShortEntrySignal))
+                        entryOrderPending = false;
+                    return;
+                }
+                order = realtimeOrder;
+            }
+            string entrySignal = activeTradeWasLong ? LongEntrySignal : ShortEntrySignal;
+            if (order.Name == entrySignal && entryOrderPending
+                && (activeEntryOrder == null || ReferenceEquals(activeEntryOrder, order)
+                    || (!string.IsNullOrEmpty(order.OrderId) && activeEntryOrder.OrderId == order.OrderId)))
+            {
+                activeEntryOrder = order;
+                if (orderState == OrderState.Cancelled || orderState == OrderState.Rejected)
+                {
+                    entryOrderPending = filled > activeEntryExecutedQuantity;
+                    if (!activeEntryFilled && filled == 0)
+                        activeTradeRange = null;
+                    Print("SessionBrakeout|ENTRY_TERMINAL|" + orderState + "|" + nativeError);
+                    CompleteTrackedExit();
+                }
+            }
+            else if (order.Name == EmaExitSignal && order.FromEntrySignal == entrySignal
+                && time >= activeEntryFillTime && (orderState == OrderState.Cancelled || orderState == OrderState.Rejected))
+            {
+                emaExitPending = false;
+                Print("SessionBrakeout|EMA_EXIT_TERMINAL|" + orderState + "|retry=next_completed_bar|" + nativeError);
+            }
+        }
+
+        protected override void OnExecutionUpdate(Execution execution, string executionId, double price,
+            int quantity, MarketPosition marketPosition, string orderId, DateTime time)
+        {
+            if (execution == null || execution.Order == null || activeTradeRange == null)
+                return;
+            if (!string.IsNullOrEmpty(executionId) && !handledExecutions.Add(executionId))
+                return;
+            Order order = execution.Order;
+            string entrySignal = activeTradeWasLong ? LongEntrySignal : ShortEntrySignal;
+            if (order.Name == entrySignal)
+            {
+                if (activeEntryOrder != null && !ReferenceEquals(activeEntryOrder, order)
+                    && (string.IsNullOrEmpty(order.OrderId) || activeEntryOrder.OrderId != order.OrderId))
+                    return;
+                activeEntryOrder = order;
+                if (!activeEntryFilled)
+                    activeEntryFillTime = time;
+                activeEntryFilled = true;
+                activeEntryExecutedQuantity += quantity;
+                entryOrderPending = activeEntryExecutedQuantity < order.Filled
+                    || (order.OrderState != OrderState.Filled && order.OrderState != OrderState.Cancelled && order.OrderState != OrderState.Rejected);
+                CompleteTrackedExit();
+                return;
+            }
+            if (!activeEntryFilled || order.FromEntrySignal != entrySignal || time < activeEntryFillTime)
+                return;
+            activeExitExecutedQuantity += quantity;
+            completedExitName = order.Name;
+            completedExitState = order.OrderState;
+            completedExitTime = time;
+            completedExitWasFlat = marketPosition == MarketPosition.Flat;
+            CompleteTrackedExit();
+        }
+
+        private void CompleteTrackedExit()
+        {
+            if (activeTradeRange == null || completedExitName == null || !completedExitWasFlat
+                || entryOrderPending || activeExitExecutedQuantity != activeEntryExecutedQuantity)
+                return;
+
+            bool stopped = completedExitName == "Stop loss" && completedExitState == OrderState.Filled;
+            DateTime time = completedExitTime;
+            SessionRange range = activeTradeRange;
+            bool wasLong = activeTradeWasLong;
+            activeTradeRange = null;
+            activeEntryOrder = null;
+            activeEntryFilled = false;
+            emaExitPending = false;
+            completedExitName = null;
+            if (!AllowOppositeRetryAfterStop || !stopped || range.OppositeRetryUsed)
+                return;
+            DateTime easternTime = ConvertToEastern(time);
+            SessionKind target = GetTargetSessionKind(range.Kind);
+            if (GetSessionKind(easternTime) != target
+                || range.StartTime != GetSessionStart(GetSessionStart(easternTime, target), range.Kind))
+                return;
+            range.OppositeRetryUsed = true;
+            range.RequiredEntryDirection = wasLong ? -1 : 1;
+            range.TradeTaken = false;
+            range.Armed = true;
+            Print(string.Format("SessionBrakeout|OPPOSITE_RETRY_ARMED|source={0}|direction={1}",
+                range.Kind, wasLong ? "Short" : "Long"));
         }
 
         private bool ValidateBracketSettings()
@@ -549,7 +720,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else
             {
-                tradeText = "Armed: close outside range";
+                tradeText = candidate.RequiredEntryDirection == 0 ? "Armed: close outside range"
+                    : candidate.RequiredEntryDirection > 0 ? "Armed: opposite long retry" : "Armed: opposite short retry";
             }
 
             string text = string.Format(
@@ -961,6 +1133,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(1, int.MaxValue)]
         [Display(Name = "EMA period", Description = "EMA of chart closes. Requires at least this many chart bars before entries; disabled by default.", GroupName = "EMA filter", Order = 1)]
         public int EmaPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Exit on EMA close", Description = "Exit an open long when a completed bar closes at/below EMA, or short at/above EMA. Uses EMA period even if the entry filter is off. Market request, not a guaranteed EMA fill.", GroupName = "EMA filter", Order = 2)]
+        public bool UseEmaCloseExit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Allow one opposite retry after SL", Description = "After a fully closed stop-loss trade, permit one opposite-direction breakout from the same source range during its immediate target session. EMA/normal breakout rules still apply. TP/EMA exits do not rearm.", GroupName = "Trade sessions", Order = 34)]
+        public bool AllowOppositeRetryAfterStop { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Require entry confirmation", GroupName = "Safety", Order = 30)]
