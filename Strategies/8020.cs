@@ -36,6 +36,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private Order longTargetOrder;
 		private Order shortStopOrder;
 		private Order shortTargetOrder;
+		private readonly Dictionary<string, ProtectionBracket> protectionBrackets = new Dictionary<string, ProtectionBracket>();
+		private readonly HashSet<string> handledExecutions = new HashSet<string>();
+		private bool protectionRecovery;
+
+		private sealed class ProtectionBracket
+		{
+			public string Oco;
+			public string SafetySignal;
+			public bool IsLong;
+			public int Remaining;
+			public int StopExecuted;
+			public int TargetExecuted;
+			public int SafetyExecuted;
+			public double Stop;
+			public double Target;
+			public Order StopOrder;
+			public Order TargetOrder;
+			public Order SafetyOrder;
+			public bool TargetSubmitted;
+			public bool SafetySubmitted;
+			public bool Failed;
+			public string ExitReason;
+		}
 		private bool ordersPlaced;
 		private int activeBase;
 		private int lastOrdersPlacedLogBase;
@@ -216,6 +239,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.DataLoaded)
 			{
+				protectionBrackets.Clear();
+				handledExecutions.Clear();
+				protectionRecovery = false;
 				activeBase = int.MinValue;
 				lastOrdersPlacedLogBase = int.MinValue;
 				tradesInRange = 0;
@@ -225,6 +251,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 				volumeFastSma = SMA(Volume, VolumeFastSmaPeriod);
 				volumeSlowSma = SMA(Volume, VolumeSlowSmaPeriod);
 				LogDebug($"Init: EntryHandling={EntryHandling} StopTargetHandling={StopTargetHandling}");
+			}
+			else if (State == State.Realtime)
+			{
+				longEntryOrder = RealtimeOrder(longEntryOrder);
+				shortEntryOrder = RealtimeOrder(shortEntryOrder);
+				longStopOrder = RealtimeOrder(longStopOrder);
+				longTargetOrder = RealtimeOrder(longTargetOrder);
+				shortStopOrder = RealtimeOrder(shortStopOrder);
+				shortTargetOrder = RealtimeOrder(shortTargetOrder);
+				foreach (ProtectionBracket bracket in protectionBrackets.Values)
+				{
+					bracket.StopOrder = RealtimeOrder(bracket.StopOrder);
+					bracket.TargetOrder = RealtimeOrder(bracket.TargetOrder);
+					bracket.SafetyOrder = RealtimeOrder(bracket.SafetyOrder);
+				}
 			}
 		}
 
@@ -240,6 +281,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (CurrentBars[1] < 2)
 				return;
+
+			if (protectionRecovery)
+			{
+				CancelEntryOrders();
+				bool unsettled = IsWorking(longEntryOrder) || IsWorking(shortEntryOrder);
+				foreach (ProtectionBracket bracket in new List<ProtectionBracket>(protectionBrackets.Values))
+				{
+					if (bracket.Failed)
+						TrySubmitSafetyExit(bracket);
+					unsettled |= bracket.Remaining > 0;
+				}
+				if (!unsettled && Position.MarketPosition == MarketPosition.Flat)
+					protectionRecovery = false;
+				return;
+			}
 
 			if (ordersPlaced && !IsWorking(longEntryOrder) && !IsWorking(shortEntryOrder) && Position.MarketPosition == MarketPosition.Flat)
 				ordersPlaced = false;
@@ -308,6 +364,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			bool isInBand = lastPrice >= triggerLowerPrice && lastPrice <= triggerUpperPrice;
 			bool hitTrigger = !wasInBand && isInBand;
 
+			if (hitTrigger && (Position.MarketPosition != MarketPosition.Flat || HasUnsettledProtection()))
+				return;
+
 			if (hitTrigger && baseKey != activeBase)
 			{
 				ResetForNewBase(baseKey);
@@ -339,6 +398,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				longEntryOrder = SubmitOrderUnmanaged(
 					1, OrderAction.Buy, OrderType.Limit, Contracts, longEntry, 0, null, LongSignal);
+				if (protectionRecovery)
+					return;
 				shortEntryOrder = SubmitOrderUnmanaged(
 					1, OrderAction.SellShort, OrderType.Limit, Contracts, shortEntry, 0, null, ShortSignal);
 
@@ -361,6 +422,36 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (order == null)
 				return;
 
+			ProtectionBracket bracket = FindBracket(order);
+			if (State == State.Realtime && order.IsBacktestOrder)
+			{
+				Order realtime = GetRealtimeOrder(order);
+				if (order.Name == LongSignal)
+					longEntryOrder = realtime;
+				else if (order.Name == ShortSignal)
+					shortEntryOrder = realtime;
+				else if (order.Name == LongStopSignal)
+					longStopOrder = realtime;
+				else if (order.Name == LongTargetSignal)
+					longTargetOrder = realtime;
+				else if (order.Name == ShortStopSignal)
+					shortStopOrder = realtime;
+				else if (order.Name == ShortTargetSignal)
+					shortTargetOrder = realtime;
+				if (bracket != null)
+				{
+					if (order.Name == LongStopSignal || order.Name == ShortStopSignal)
+						bracket.StopOrder = realtime;
+					else if (order.Name == LongTargetSignal || order.Name == ShortTargetSignal)
+						bracket.TargetOrder = realtime;
+					else
+						bracket.SafetyOrder = realtime;
+				}
+				order = realtime;
+				if (order == null)
+					return;
+			}
+
 			if (order.Name == LongSignal)
 				longEntryOrder = order;
 			else if (order.Name == ShortSignal)
@@ -378,12 +469,39 @@ namespace NinjaTrader.NinjaScript.Strategies
 				$"OrderUpdate {order.Name} State={orderState} Qty={quantity} Filled={filled} AvgFill={averageFillPrice:0.00} " +
 				$"Limit={limitPrice:0.00} Stop={stopPrice:0.00} Error={error} Comment={comment}",
 				time);
+
+			if (bracket == null)
+				return;
+			bool isStop = order.Name == LongStopSignal || order.Name == ShortStopSignal;
+			bool isTarget = order.Name == LongTargetSignal || order.Name == ShortTargetSignal;
+			if (isStop)
+				bracket.StopOrder = order;
+			else if (isTarget)
+				bracket.TargetOrder = order;
+			else
+				bracket.SafetyOrder = order;
+
+			if (orderState == OrderState.Rejected)
+			{
+				Print($"8020|ORDER_REJECTED|{order.Name}|{error}|{comment}");
+				if (isStop || isTarget)
+					RequestSafetyExit(bracket, "ProtectionRejected");
+				return;
+			}
+			if (bracket.Failed)
+			{
+				TrySubmitSafetyExit(bracket);
+				return;
+			}
+			if (isStop && (orderState == OrderState.Accepted || orderState == OrderState.Working))
+				TrySubmitTarget(bracket);
 		}
 
 		protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
 			MarketPosition marketPosition, string orderId, DateTime time)
 		{
-			if (execution?.Order == null)
+			if (execution?.Order == null || quantity <= 0 ||
+				(!string.IsNullOrEmpty(executionId) && !handledExecutions.Add(executionId)))
 				return;
 
 			LogDebug(
@@ -391,43 +509,184 @@ namespace NinjaTrader.NinjaScript.Strategies
 				$"MP={marketPosition} ExecId={executionId}",
 				time);
 
-			if (execution.Order.Name == LongSignal && execution.Order.OrderState == OrderState.Filled)
+			if (execution.Order.Name == LongSignal || execution.Order.Name == ShortSignal)
 			{
-				double entryPrice = execution.Order.AverageFillPrice;
-				double stopPrice = Instrument.MasterInstrument.RoundToTickSize(entryPrice - StopLossPoints);
-				double targetPrice = Instrument.MasterInstrument.RoundToTickSize(entryPrice + TakeProfitPoints);
+				bool isLong = execution.Order.Name == LongSignal;
 				string oco = Guid.NewGuid().ToString("N");
-				longStopOrder = SubmitOrderUnmanaged(1, OrderAction.Sell, OrderType.StopMarket, quantity, 0, stopPrice, oco, LongStopSignal);
-				longTargetOrder = SubmitOrderUnmanaged(1, OrderAction.Sell, OrderType.Limit, quantity, targetPrice, 0, oco, LongTargetSignal);
-				LogDebug($"Long exits submitted. Stop={stopPrice:0.00} Target={targetPrice:0.00} OCO={oco}");
+				ProtectionBracket bracket = new ProtectionBracket
+				{
+					Oco = oco,
+					SafetySignal = (isLong ? "SafetyLong8020_" : "SafetyShort8020_") + oco,
+					IsLong = isLong,
+					Remaining = quantity,
+					Stop = Instrument.MasterInstrument.RoundToTickSize(price + (isLong ? -StopLossPoints : StopLossPoints)),
+					Target = Instrument.MasterInstrument.RoundToTickSize(price + (isLong ? TakeProfitPoints : -TakeProfitPoints))
+				};
+				protectionBrackets.Add(oco, bracket);
+				if (protectionRecovery || !ProtectionIsValid(bracket))
+				{
+					RequestSafetyExit(bracket, "ProtectionCrossed");
+					return;
+				}
+				bracket.StopOrder = SubmitOrderUnmanaged(1, isLong ? OrderAction.Sell : OrderAction.BuyToCover,
+					OrderType.StopMarket, quantity, 0, bracket.Stop, oco, isLong ? LongStopSignal : ShortStopSignal);
 			}
-			else if (execution.Order.Name == ShortSignal && execution.Order.OrderState == OrderState.Filled)
+			else
 			{
-				double entryPrice = execution.Order.AverageFillPrice;
-				double stopPrice = Instrument.MasterInstrument.RoundToTickSize(entryPrice + StopLossPoints);
-				double targetPrice = Instrument.MasterInstrument.RoundToTickSize(entryPrice - TakeProfitPoints);
-				string oco = Guid.NewGuid().ToString("N");
-				shortStopOrder = SubmitOrderUnmanaged(1, OrderAction.BuyToCover, OrderType.StopMarket, quantity, 0, stopPrice, oco, ShortStopSignal);
-				shortTargetOrder = SubmitOrderUnmanaged(1, OrderAction.BuyToCover, OrderType.Limit, quantity, targetPrice, 0, oco, ShortTargetSignal);
-				LogDebug($"Short exits submitted. Stop={stopPrice:0.00} Target={targetPrice:0.00} OCO={oco}");
+				ProtectionBracket bracket = FindBracket(execution.Order);
+				if (bracket == null)
+				{
+					ReconcileExternalExit(execution.Order.OrderAction, quantity);
+					return;
+				}
+				if (execution.Order.Name == LongStopSignal || execution.Order.Name == ShortStopSignal)
+					bracket.StopExecuted += quantity;
+				else if (execution.Order.Name == LongTargetSignal || execution.Order.Name == ShortTargetSignal)
+					bracket.TargetExecuted += quantity;
+				else
+					bracket.SafetyExecuted += quantity;
+				bracket.Remaining -= quantity;
+				if (bracket.Remaining < 0)
+					throw new InvalidOperationException("8020 protective executions exceeded the filled entry quantity.");
+				if (bracket.Remaining == 0)
+				{
+					CancelIfWorking(bracket.StopOrder);
+					CancelIfWorking(bracket.TargetOrder);
+					RecordCompletedTrade();
+				}
+				else if (bracket.Failed)
+					TrySubmitSafetyExit(bracket);
+				else
+				{
+					ResizeProtection(bracket.StopOrder, bracket.Remaining);
+					ResizeProtection(bracket.TargetOrder, bracket.Remaining);
+				}
 			}
-			else if (execution.Order.Name == LongStopSignal || execution.Order.Name == LongTargetSignal)
+		}
+
+		private bool ProtectionIsValid(ProtectionBracket bracket)
+		{
+			double market = bracket.IsLong ? GetCurrentBid() : GetCurrentAsk();
+			if (State == State.Historical && (!IsPrice(market)))
+				market = Closes[1][0];
+			return IsPrice(market) && IsPrice(bracket.Stop) && IsPrice(bracket.Target) &&
+				(bracket.IsLong ? bracket.Stop < market && bracket.Target > market
+					: bracket.Stop > market && bracket.Target < market);
+		}
+
+		private static bool IsPrice(double price)
+		{
+			return price > 0 && !double.IsNaN(price) && !double.IsInfinity(price);
+		}
+
+		private void TrySubmitTarget(ProtectionBracket bracket)
+		{
+			if (bracket.Failed || bracket.TargetSubmitted || bracket.Remaining <= 0 ||
+				bracket.StopOrder == null || bracket.StopOrder.Filled != bracket.StopExecuted ||
+				(bracket.StopOrder.OrderState != OrderState.Accepted && bracket.StopOrder.OrderState != OrderState.Working))
+				return;
+			if (!ProtectionIsValid(bracket))
 			{
-				CancelIfWorking(longStopOrder);
-				CancelIfWorking(longTargetOrder);
-				RecordCompletedTrade();
+				RequestSafetyExit(bracket, "ProtectionCrossed");
+				return;
 			}
-			else if (execution.Order.Name == ShortStopSignal || execution.Order.Name == ShortTargetSignal)
+			bracket.TargetSubmitted = true;
+			bracket.TargetOrder = SubmitOrderUnmanaged(1, bracket.IsLong ? OrderAction.Sell : OrderAction.BuyToCover,
+				OrderType.Limit, bracket.Remaining, bracket.Target, 0, bracket.Oco,
+				bracket.IsLong ? LongTargetSignal : ShortTargetSignal);
+		}
+
+		private void RequestSafetyExit(ProtectionBracket bracket, string reason)
+		{
+			if (!bracket.Failed)
 			{
-				CancelIfWorking(shortStopOrder);
-				CancelIfWorking(shortTargetOrder);
-				RecordCompletedTrade();
+				bracket.Failed = true;
+				bracket.ExitReason = reason;
+				Print($"8020|PROTECTION_EXIT|{reason}|{(bracket.IsLong ? "Long" : "Short")}|Qty={bracket.Remaining}|Stop={bracket.Stop}|Target={bracket.Target}|Bid={GetCurrentBid()}|Ask={GetCurrentAsk()}");
 			}
+			protectionRecovery = true;
+			CancelEntryOrders();
+			TrySubmitSafetyExit(bracket);
+		}
+
+		private void TrySubmitSafetyExit(ProtectionBracket bracket)
+		{
+			CancelIfWorking(bracket.StopOrder);
+			CancelIfWorking(bracket.TargetOrder);
+			// A cancelled order can still have an execution callback in flight.
+			if (bracket.Remaining <= 0 || bracket.SafetySubmitted ||
+				IsWorking(bracket.StopOrder) || IsWorking(bracket.TargetOrder) ||
+				(bracket.StopOrder != null && bracket.StopOrder.Filled != bracket.StopExecuted) ||
+				(bracket.TargetOrder != null && bracket.TargetOrder.Filled != bracket.TargetExecuted))
+				return;
+			bracket.SafetySubmitted = true;
+			bracket.SafetyOrder = SubmitOrderUnmanaged(1, bracket.IsLong ? OrderAction.Sell : OrderAction.BuyToCover,
+				OrderType.Market, bracket.Remaining, 0, 0, null, bracket.SafetySignal);
+		}
+
+		private ProtectionBracket FindBracket(Order order)
+		{
+			ProtectionBracket bracket;
+			if (!string.IsNullOrEmpty(order.Oco) && protectionBrackets.TryGetValue(order.Oco, out bracket))
+				return bracket;
+			foreach (ProtectionBracket candidate in protectionBrackets.Values)
+				if (order.Name == candidate.SafetySignal)
+					return candidate;
+			return null;
+		}
+
+		private void ResizeProtection(Order order, int remaining)
+		{
+			if (order != null && (order.OrderState == OrderState.Accepted || order.OrderState == OrderState.Working ||
+				order.OrderState == OrderState.PartFilled) && order.Quantity != order.Filled + remaining)
+				ChangeOrder(order, order.Filled + remaining, order.LimitPrice, order.StopPrice);
+		}
+
+		private bool HasUnsettledProtection()
+		{
+			foreach (ProtectionBracket bracket in protectionBrackets.Values)
+				if (bracket.Remaining > 0 || IsWorking(bracket.StopOrder) ||
+					IsWorking(bracket.TargetOrder) || IsWorking(bracket.SafetyOrder))
+					return true;
+			return false;
+		}
+
+		private void ReconcileExternalExit(OrderAction action, int quantity)
+		{
+			foreach (ProtectionBracket bracket in new List<ProtectionBracket>(protectionBrackets.Values))
+			{
+				if (quantity <= 0)
+					break;
+				if (bracket.Remaining <= 0 ||
+					(bracket.IsLong ? action != OrderAction.Sell : action != OrderAction.BuyToCover))
+					continue;
+				int consumed = Math.Min(quantity, bracket.Remaining);
+				bracket.Remaining -= consumed;
+				quantity -= consumed;
+				if (bracket.Remaining == 0)
+				{
+					CancelIfWorking(bracket.StopOrder);
+					CancelIfWorking(bracket.TargetOrder);
+					RecordCompletedTrade();
+				}
+				else
+				{
+					ResizeProtection(bracket.StopOrder, bracket.Remaining);
+					ResizeProtection(bracket.TargetOrder, bracket.Remaining);
+				}
+			}
+		}
+
+		private Order RealtimeOrder(Order order)
+		{
+			return order != null && order.IsBacktestOrder ? GetRealtimeOrder(order) : order;
 		}
 
 		private void CancelIfWorking(Order order)
 		{
-			if (IsWorking(order))
+			if (order != null && (order.OrderState == OrderState.Submitted || order.OrderState == OrderState.Accepted ||
+				order.OrderState == OrderState.Working || order.OrderState == OrderState.PartFilled ||
+				order.OrderState == OrderState.TriggerPending))
 				CancelOrder(order);
 		}
 
@@ -439,6 +698,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			CancelIfWorking(longTargetOrder);
 			CancelIfWorking(shortStopOrder);
 			CancelIfWorking(shortTargetOrder);
+			foreach (ProtectionBracket bracket in new List<ProtectionBracket>(protectionBrackets.Values))
+			{
+				CancelIfWorking(bracket.StopOrder);
+				CancelIfWorking(bracket.TargetOrder);
+			}
 		}
 
 		private void CancelEntryOrders()
@@ -449,6 +713,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private void FlattenAll(string reason)
 		{
+			bool trackedExposure = false;
+			CancelEntryOrders();
+			foreach (ProtectionBracket bracket in new List<ProtectionBracket>(protectionBrackets.Values))
+			{
+				if (bracket.Remaining <= 0)
+					continue;
+				trackedExposure = true;
+				RequestSafetyExit(bracket, reason);
+			}
+			if (trackedExposure)
+				return;
+
 			CancelAllWorkingOrders();
 
 			if (Position.MarketPosition == MarketPosition.Long && Position.Quantity > 0)
@@ -488,7 +764,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private bool IsWorking(Order order)
 		{
-			return order != null && (order.OrderState == OrderState.Working || order.OrderState == OrderState.Accepted);
+			return order != null && order.OrderState != OrderState.Filled &&
+				order.OrderState != OrderState.Cancelled && order.OrderState != OrderState.Rejected;
 		}
 
 		private bool PassesVolumeSmaFilter()

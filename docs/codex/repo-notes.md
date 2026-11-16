@@ -38,6 +38,16 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-16: `Strategies/8020.cs` validates filled-entry protection against
+  current bid/ask before submitting a stop or its target. Crossed/missing
+  realtime book requests a latched market exit, not a widened invalid stop.
+  Only an accepted/working stop stages its target; rejected OCOs are retired.
+  Protective cancellation acknowledgements and reported fill executions
+  must settle before a replacement market exit, avoiding accidental reversal.
+  Partial entries get per-execution quantity/fill-price brackets/fresh OCOs.
+  Default rejection fail-safe remains enabled; ordinary signals/inputs unchanged.
+  Trader tests/Trader.Nt8.Strategy8020Checks:36 local API-shaped checks pass;
+  original source fails screenshot case. Actual NT8 F5/Playback unverified.
 - 2026-11-16: Fixed SessionBrakeout's enabled-but-never-rearmed exit bug.
   OnExecutionUpdate marketPosition is the fill direction Long/Short, not the
   remaining strategy position. Waiting for Flat blocked every rearm. Now use
