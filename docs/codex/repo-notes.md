@@ -38,6 +38,18 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-16: `SessionBrakeout` now has independent New York HHmm start/end
+  inputs for Asia/London/NY AM/NY PM, retaining18:00-03:00-09:30-13:00-18:00
+  defaults. Gaps allow no new entries/range collection; windows may wrap
+  midnight but must follow the original cycle without overlaps/empty spans.
+  Configured boundaries also drive source/target drawings and stale-range
+  protection. Default-off `UseEmaFilter`/`EmaPeriod=50`: completed breakout
+  close strictly above EMA for longs/below for shorts; equality/warmup veto,
+  no new exits, future fill not assumed. Existing brackets/guards unchanged.
+  Trader canonical copy `custom-strategies/nt8/SessionBrakeout.cs` is identical;
+  its API-shaped source checks are not actual NT8 F5/Playback. Compile F5
+  inside NT8 and reload/re-add before supervised SIM. Full handoff:
+  Trader `docs/codex/sessionbrakeout-settings-20261116.md`.
 - 2026-11-15: OrderFlow accepts positive ordinary Minute/Second chart intervals
   for the user-authorized preliminary joint research comparison. Fifteen minutes
   remains the reference, not a lock; expansion bar-start/session and missing-slot
