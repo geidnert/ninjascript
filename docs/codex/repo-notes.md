@@ -38,6 +38,14 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-16: User supersedes SessionBrakeout's SL-only/single-retry rule:
+  `Allow opposite re-entries after any exit` now rearms after each fully
+  closed SL/EMA/TP/other strategy exit, with unlimited alternating directions
+  in the same immediate target session. Require a completed breakout bar
+  strictly after the prior exit; all entry/account gates remain. Toggle
+  stays default OFF; internal AllowOppositeRetryAfterStop name retained for
+  saved templates, so explicitly enable it on old OFF instances. Local
+  checks cover third/fourth trades and EMA/TP exits; actual F5 unverified.
 - 2026-11-16: SessionBrakeout adds default-off `UseEmaCloseExit` using the
   existing EMA period (entry filter may be off): long completed close<=EMA/
   short>= requests a latched managed market exit, NOT an intrabar touch or

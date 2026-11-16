@@ -55,8 +55,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             public bool TradeTaken;
             public bool Finalized;
             public bool RangeLevelTouched;
-            public bool OppositeRetryUsed;
             public int RequiredEntryDirection;
+            public DateTime ReentryAfterTime;
 
             public double Size { get { return High - Low; } }
         }
@@ -361,6 +361,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (!candidate.Armed || candidate.TradeTaken)
                 return;
+            if (candidate.RequiredEntryDirection != 0 && Time[0] <= candidate.ReentryAfterTime)
+                return;
 
             if (completedClose > candidate.High && candidate.RequiredEntryDirection >= 0)
                 SubmitBreakout(true, candidate, completedClose);
@@ -507,7 +509,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 CompleteTrackedExit();
                 return;
             }
-            if (!activeEntryFilled || order.FromEntrySignal != entrySignal || time < activeEntryFillTime)
+            bool matchesExit = order.FromEntrySignal == entrySignal
+                || (string.IsNullOrEmpty(order.FromEntrySignal)
+                    && order.OrderAction == (activeTradeWasLong ? OrderAction.Sell : OrderAction.BuyToCover));
+            if (!activeEntryFilled || !matchesExit || time < activeEntryFillTime)
                 return;
             activeExitExecutedQuantity += quantity;
             completedExitName = order.Name;
@@ -523,7 +528,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 || entryOrderPending || activeExitExecutedQuantity != activeEntryExecutedQuantity)
                 return;
 
-            bool stopped = completedExitName == "Stop loss" && completedExitState == OrderState.Filled;
+            bool exitOrderFilled = completedExitState == OrderState.Filled;
+            string exitReason = completedExitName;
             DateTime time = completedExitTime;
             SessionRange range = activeTradeRange;
             bool wasLong = activeTradeWasLong;
@@ -532,19 +538,19 @@ namespace NinjaTrader.NinjaScript.Strategies
             activeEntryFilled = false;
             emaExitPending = false;
             completedExitName = null;
-            if (!AllowOppositeRetryAfterStop || !stopped || range.OppositeRetryUsed)
+            if (!AllowOppositeRetryAfterStop || !exitOrderFilled)
                 return;
             DateTime easternTime = ConvertToEastern(time);
             SessionKind target = GetTargetSessionKind(range.Kind);
             if (GetSessionKind(easternTime) != target
                 || range.StartTime != GetSessionStart(GetSessionStart(easternTime, target), range.Kind))
                 return;
-            range.OppositeRetryUsed = true;
             range.RequiredEntryDirection = wasLong ? -1 : 1;
+            range.ReentryAfterTime = time;
             range.TradeTaken = false;
             range.Armed = true;
-            Print(string.Format("SessionBrakeout|OPPOSITE_RETRY_ARMED|source={0}|direction={1}",
-                range.Kind, wasLong ? "Short" : "Long"));
+            Print(string.Format("SessionBrakeout|OPPOSITE_REENTRY_ARMED|source={0}|direction={1}|exitReason={2}",
+                range.Kind, wasLong ? "Short" : "Long", exitReason));
         }
 
         private bool ValidateBracketSettings()
@@ -1139,7 +1145,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool UseEmaCloseExit { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Allow one opposite retry after SL", Description = "After a fully closed stop-loss trade, permit one opposite-direction breakout from the same source range during its immediate target session. EMA/normal breakout rules still apply. TP/EMA exits do not rearm.", GroupName = "Trade sessions", Order = 34)]
+        [Display(Name = "Allow opposite re-entries after any exit", Description = "After each fully closed trade (SL, EMA, TP or another strategy exit), rearm the same source for an opposite breakout on a later completed bar in its target session. No fixed trade limit; directions must alternate. Normal entry and risk gates still apply.", GroupName = "Trade sessions", Order = 34)]
+        // Retain the property name so saved templates keep their existing toggle value.
         public bool AllowOppositeRetryAfterStop { get; set; }
 
         [NinjaScriptProperty]
