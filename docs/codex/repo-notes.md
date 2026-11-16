@@ -38,6 +38,13 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-16: SessionBrakeout draws a thin light-gray dotted box around only
+  each selected source session's configured window/high-low. It updates live
+  and ends exactly at the configured source end after finalization; chart-zone
+  conversion and overnight dates are preserved. Existing colored levels and
+  accepted/rejected background still span the target session. Drawing-only,
+  existing draw toggle respected; no signal/order changes. Local API-shaped
+  drawing checks pass, not actual NT8 F5/Playback.
 - 2026-11-16: `SessionBrakeout` now has independent New York HHmm start/end
   inputs for Asia/London/NY AM/NY PM, retaining18:00-03:00-09:30-13:00-18:00
   defaults. Gaps allow no new entries/range collection; windows may wrap

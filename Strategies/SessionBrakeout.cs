@@ -225,6 +225,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 liveVisualSessionStart, liveVisualHigh, Time[0], liveVisualHigh, brush, DashStyleHelper.Solid, 2);
             Draw.Line(this, StrategySignalPrefix + "Low_" + key, false,
                 liveVisualSessionStart, liveVisualLow, Time[0], liveVisualLow, brush, DashStyleHelper.Solid, 2);
+            DrawSourceSessionBox(collectingRange, Time[0]);
         }
 
         private void FinalizeRange(SessionRange range)
@@ -390,7 +391,24 @@ namespace NinjaTrader.NinjaScript.Strategies
             Draw.Line(this, StrategySignalPrefix + "Low_" + key, false, range.DrawStartTime, range.Low, endTime, range.Low,
                 brush, DashStyleHelper.Solid, 2);
             if (isFinal)
+            {
+                DrawSourceSessionBox(range, ConvertToPlatform(range.EndTime));
                 DrawRangeStatusLabel(range, endTime, key);
+            }
+        }
+
+        private void DrawSourceSessionBox(SessionRange range, DateTime endTime)
+        {
+            string key = StrategySignalPrefix + "SourceBox_" + range.Kind + "_" + range.StartTime.ToString("yyyyMMddHHmm");
+            DateTime startTime = ConvertToPlatform(range.StartTime);
+            Draw.Line(this, key + "_Top", false, startTime, range.High, endTime, range.High,
+                Brushes.LightGray, DashStyleHelper.Dot, 1);
+            Draw.Line(this, key + "_Bottom", false, startTime, range.Low, endTime, range.Low,
+                Brushes.LightGray, DashStyleHelper.Dot, 1);
+            Draw.Line(this, key + "_Start", false, startTime, range.High, startTime, range.Low,
+                Brushes.LightGray, DashStyleHelper.Dot, 1);
+            Draw.Line(this, key + "_End", false, endTime, range.High, endTime, range.Low,
+                Brushes.LightGray, DashStyleHelper.Dot, 1);
         }
 
         private void DrawRangeStatusLabel(SessionRange range, DateTime endTime, string key)
