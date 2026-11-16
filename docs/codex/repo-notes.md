@@ -38,6 +38,15 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-16: Fixed SessionBrakeout's enabled-but-never-rearmed exit bug.
+  OnExecutionUpdate marketPosition is the fill direction Long/Short, not the
+  remaining strategy position. Waiting for Flat blocked every rearm. Now use
+  balanced executed quantities plus pending/terminal-order fences; actual new
+  entry still requires Position.Flat. Corrected API test helper first reproduced
+  the failure, then passed with the source fix. Official docs:
+  https://docs.ninjatrader.com/ninjascript/onexecutionupdate .
+  Toggle remains ON for re-entry; F5/reload and real Playback verification
+  still required. No settings/tuning change.
 - 2026-11-16: User supersedes SessionBrakeout's SL-only/single-retry rule:
   `Allow opposite re-entries after any exit` now rearms after each fully
   closed SL/EMA/TP/other strategy exit, with unlimited alternating directions

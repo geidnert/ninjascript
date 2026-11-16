@@ -94,7 +94,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         private string completedExitName;
         private OrderState completedExitState;
         private DateTime completedExitTime;
-        private bool completedExitWasFlat;
 
         protected override void OnStateChange()
         {
@@ -407,7 +406,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             activeEntryExecutedQuantity = 0;
             activeExitExecutedQuantity = 0;
             completedExitName = null;
-            completedExitWasFlat = false;
             Print(string.Format("SessionBrakeout|BREAKOUT|{0}|source={1}|close={2:F2}|range={3:F2}|stopTicks={4}|targetTicks={5}|mode={6}",
                 isLong ? "Long" : "Short", range.Kind, breakoutClose, range.Size, stopTicks, targetTicks, BracketMode));
             if (isLong)
@@ -518,14 +516,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             completedExitName = order.Name;
             completedExitState = order.OrderState;
             completedExitTime = time;
-            completedExitWasFlat = marketPosition == MarketPosition.Flat;
             CompleteTrackedExit();
         }
 
         private void CompleteTrackedExit()
         {
-            if (activeTradeRange == null || completedExitName == null || !completedExitWasFlat
-                || entryOrderPending || activeExitExecutedQuantity != activeEntryExecutedQuantity)
+            // OnExecutionUpdate marketPosition is the fill direction, not the remaining strategy position.
+            if (activeTradeRange == null || completedExitName == null || entryOrderPending
+                || activeEntryExecutedQuantity <= 0 || activeExitExecutedQuantity != activeEntryExecutedQuantity)
                 return;
 
             bool exitOrderFilled = completedExitState == OrderState.Filled;
