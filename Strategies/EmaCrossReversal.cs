@@ -117,6 +117,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
                 FastEmaPeriod = 9;
                 SlowEmaPeriod = 26;
                 Contracts = 1;
+                ReverseOnOppositeCross = true;
                 EarlyExitLevel = EmaCrossReversalExitLevel.Off;
                 ExitConfirmation = EmaCrossReversalExitConfirmation.CloseBeyond;
                 UseEntryPriceProtection = false;
@@ -314,7 +315,7 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
 
             bool crossed = priorRelationship != 0 && relationship != 0
                 && relationship != priorRelationship;
-            if (crossed)
+            if (crossed && (ReverseOnOppositeCross || Position.MarketPosition == MarketPosition.Flat))
             {
                 // Consume stale/pending crosses instead of entering later on mere alignment.
                 if (Position.MarketPosition == MarketPosition.Flat
@@ -919,6 +920,10 @@ namespace NinjaTrader.NinjaScript.Strategies.AutoEdge
         [Range(1, 20)]
         [Display(Name = "Contracts", Order = 3, GroupName = "Parameters")]
         public int Contracts { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Reverse on opposite cross", Description = "Enabled: an opposite EMA cross closes and reverses the position. Disabled: crosses while a position is open are consumed without a crossover exit or reversal; other enabled exits still apply. After flat, require a fresh completed-bar cross.", Order = 4, GroupName = "Parameters")]
+        public bool ReverseOnOppositeCross { get; set; }
 
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
