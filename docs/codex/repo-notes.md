@@ -38,6 +38,13 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-18: `Strategies/EmaCrossReversal.cs` adds Parameters > Reverse on
+  opposite cross, default ON. OFF consumes crosses while any position remains
+  open, without crossover/slope-rejection exit or reversal. Existing stop,
+  target, EMA/entry-price, daily and session exits still apply; after fully
+  flat require a fresh completed-bar cross, never queued alignment entry.
+  Trader canonical mirror matches; 44+13+18 API-shaped source checks pass.
+  Windows F5/Playback unverified; reload the instance after compilation.
 - 2026-11-18: `Strategies/SELL2525.cs` fixes Playback never reaching the open:
   use Connection.PlaybackConnection.Now for strategy timing when connected,
   Globals.Now otherwise, with milliseconds intact. Entry/exit/quote windows,
