@@ -448,6 +448,7 @@
     <Compile Include="obj\x64\Release\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
     <Compile Include="NinjaTrader.Vendor.cs" />
     <Compile Include="VendorLicensing.cs" />
+    <Compile Include="Strategies\SELL2525.cs" />
     <Compile Include="Strategies\EmaCrossReversal.cs" />
     <Compile Include="Strategies\OrderFlow.cs" />
     <Compile Include="Strategies\OrderFlowExpansionLogic.cs" />

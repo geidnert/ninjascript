@@ -38,6 +38,17 @@ domains.
   Only use `git add -f` for ignored docs after user approval.
 
 ## Key Source Files
+- 2026-11-18: `Strategies/SELL2525.cs` fixes Playback never reaching the open:
+  use Connection.PlaybackConnection.Now for strategy timing when connected,
+  Globals.Now otherwise, with milliseconds intact. Entry/exit/quote windows,
+  callback/CSV clocks and protection/flatten retries share that clock;
+  protection throttle follows replay speed, live/network UTC stays unchanged.
+  Startup shows clock source and numeric balance cap. Rules/defaults unchanged.
+  Explicit SELL2525 compile item added. Trader mirror and
+  tests/Trader.Nt8.Sell2525Checks: 31 source/API-shaped checks pass; original
+  fails screenshot regression. User Native Nov13 Playback now confirms
+  entry/brackets/timed close +32.25pts,26s hold; sends245/495ms late.
+  Time exit cancels unfilled TP by design. Not live/all-safety certification.
 - 2026-11-16: `Strategies/8020.cs` validates filled-entry protection against
   current bid/ask before submitting a stop or its target. Crossed/missing
   realtime book requests a latched market exit, not a widened invalid stop.
